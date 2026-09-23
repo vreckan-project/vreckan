@@ -1,0 +1,1736 @@
+:root {
+  /* antitux.net design tokens */
+  --bg: #0d0f14;
+  --bg-alt: #12151d;
+  --surface: #181c26;
+  --surface-2: #1f2532;
+  --border: #2a3140;
+  --text: #e6e9ef;
+  --text-muted: #9aa3b2;
+  --text-dim: #6b7280;
+  --accent: #00ffff;
+  --accent-2: #008b99;
+  --accent-soft: rgba(0, 255, 255, 0.14);
+  --green: #2ecc71;
+  --amber: #ffb020;
+  --red: #ff7675;
+  --radius: 12px;
+  --radius-sm: 8px;
+  --font: "Liberation Sans", system-ui, -apple-system, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+  --mono: ui-monospace, "Cascadia Code", "SF Mono", Consolas, monospace;
+
+  /* Legacy names, aliased to the tokens above (kept for compatibility). */
+  --bg-primary: var(--bg);
+  --bg-secondary: var(--surface);
+  --bg-tertiary: var(--surface-2);
+  --text-primary: var(--text);
+  --border-color: var(--border);
+  --accent-primary: var(--accent);
+  --accent-primary-hover: #00b3c4;
+  --danger: var(--red);
+  --success: var(--green);
+  --border-radius: var(--radius);
+}
+
+* {
+  box-sizing: border-box;
+}
+
+/* Ensure the `hidden` attribute always wins over any `display` rule
+   (e.g. .modal-backdrop's `display:flex`), so hidden views/modals stay hidden. */
+[hidden] {
+  display: none !important;
+}
+
+html,
+body {
+  margin: 0;
+  padding: 0;
+  min-height: 100vh;
+}
+
+body {
+  font-family: var(--font);
+  font-size: 17px;
+  line-height: 1.65;
+  background: var(--bg);
+  color: var(--text);
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+}
+
+#app {
+  min-height: 100vh;
+}
+
+/* Full-width content column — mirrors the antitux.dev `.container`
+   (max-width: 100% with 20px gutters) so the body fills the window
+   instead of floating in a narrow centered column with wide margins. */
+.content {
+  width: 100%;
+  max-width: 100%;
+  margin: 0 auto;
+  /* Top gutter matches the 20px left/right gutters so the content sits
+     evenly inside the window; a larger bottom gutter keeps scroll room. */
+  padding: 20px 20px 64px;
+}
+
+.view {
+  animation: fadein 0.15s ease;
+}
+
+@keyframes fadein {
+  from { opacity: 0; transform: translateY(4px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+
+.muted {
+  color: var(--text-muted);
+}
+
+a {
+  color: var(--accent);
+  text-decoration: none;
+}
+
+a:hover {
+  text-decoration: underline;
+  text-underline-offset: 2px;
+}
+
+.error {
+  color: var(--danger);
+  margin: 12px 0 0;
+  font-size: 0.9rem;
+}
+
+/* ===== Card ===== */
+.card {
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  padding: 20px;
+}
+
+/* ===== Login ===== */
+#view-login {
+  min-height: 100vh;
+  background: radial-gradient(640px 320px at 50% 0%, var(--accent-soft), transparent 70%);
+}
+
+.login-card {
+  max-width: 400px;
+  margin: 12vh auto 48px;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding: 28px 26px;
+  box-shadow: 0 24px 64px rgba(0, 0, 0, 0.45);
+}
+
+.login-brand {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 4px;
+  text-align: center;
+  margin-bottom: 8px;
+}
+
+.login-brand p {
+  margin: 4px 0 0;
+}
+
+.brand-icon {
+  width: 56px;
+  height: 56px;
+  border-radius: 12px;
+}
+
+.brand-icon-sm {
+  width: 26px;
+  height: 26px;
+  border-radius: 6px;
+}
+
+.login-brand h1 {
+  font-size: 1.6rem;
+  font-weight: 750;
+  letter-spacing: -0.5px;
+  margin: 6px 0 0;
+}
+
+/* ===== Forms ===== */
+label {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  font-size: 0.85rem;
+  font-weight: 500;
+  color: var(--text-muted);
+  margin: 10px 0;
+}
+
+input[type="text"],
+input[type="password"],
+input[type="number"],
+input[type="search"],
+select,
+textarea {
+  font-family: inherit;
+  font-size: 15px;
+  color: var(--text);
+  background: var(--bg);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  padding: 9px 12px;
+  outline: none;
+  transition: border-color 0.15s ease, box-shadow 0.15s ease;
+}
+
+input:focus,
+select:focus,
+textarea:focus {
+  border-color: var(--accent);
+  box-shadow: 0 0 0 3px var(--accent-soft);
+}
+
+/* Search inputs: drop the native clear-button/rounded-look differences so
+   they render identically to the other themed inputs. */
+input[type="search"] {
+  -webkit-appearance: none;
+  appearance: none;
+}
+input[type="search"]::-webkit-search-cancel-button,
+input[type="search"]::-webkit-search-decoration {
+  -webkit-appearance: none;
+}
+
+/* File inputs: theme the box and the native picker button to match .btn-ghost. */
+input[type="file"] {
+  font-family: inherit;
+  font-size: 14px;
+  color: var(--text);
+  background: var(--bg);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  padding: 6px;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  cursor: pointer;
+}
+input[type="file"]::file-selector-button {
+  font-family: inherit;
+  font-size: 0.85rem;
+  font-weight: 600;
+  color: var(--text);
+  background: transparent;
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  padding: 6px 14px;
+  margin: 0;
+  cursor: pointer;
+  transition: background 0.15s ease, border-color 0.15s ease;
+}
+input[type="file"]::file-selector-button:hover {
+  background: var(--bg-alt);
+  border-color: var(--border-light);
+}
+input[type="file"]:focus {
+  border-color: var(--accent);
+  box-shadow: 0 0 0 3px var(--accent-soft);
+}
+
+input::placeholder {
+  color: var(--text-dim);
+  opacity: 1;
+}
+
+/* ===== Buttons (antitux.net pill style) ===== */
+.btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  font-family: inherit;
+  font-size: 15px;
+  font-weight: 600;
+  line-height: 1.2;
+  cursor: pointer;
+  background: var(--surface);
+  color: var(--text);
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  padding: 9px 18px;
+  text-decoration: none;
+  transition: transform 0.08s ease, background 0.15s ease, border-color 0.15s ease, color 0.15s ease;
+}
+
+.btn:disabled {
+  opacity: 0.55;
+  cursor: not-allowed;
+}
+
+.btn-primary {
+  background: var(--accent-2);
+  border-color: var(--accent);
+  color: #fff;
+}
+
+.btn-primary:hover:not(:disabled) {
+  background: var(--accent-primary-hover);
+  border-color: var(--accent);
+  transform: translateY(-1px);
+}
+
+.btn-ghost {
+  background: transparent;
+  color: var(--text-muted);
+  border-color: var(--border);
+}
+
+.btn-ghost:hover:not(:disabled) {
+  color: var(--text);
+  border-color: var(--accent);
+  transform: translateY(-1px);
+}
+
+.btn-danger {
+  background: transparent;
+  color: var(--red);
+  border-color: rgba(255, 118, 117, 0.45);
+}
+
+.btn-danger:hover:not(:disabled) {
+  background: var(--red);
+  border-color: var(--red);
+  color: #fff;
+}
+
+.btn-block {
+  width: 100%;
+}
+
+.btn-sm {
+  padding: 6px 13px;
+  font-size: 13.5px;
+}
+
+/* ===== App shell: persistent sidebar + scrollable content (Feat 5) ===== */
+.shell {
+  display: flex;
+  height: 100vh;
+  overflow: hidden;
+}
+
+.sidebar {
+  width: 250px;
+  flex-shrink: 0;
+  display: flex;
+  flex-direction: column;
+  background: var(--bg-alt);
+  border-right: 1px solid var(--border);
+  padding: 18px 14px 14px;
+  overflow: hidden;
+}
+
+.sidebar-header {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 0 6px;
+  margin-bottom: 18px;
+}
+
+/* The logo/wordmark doubles as a "home" link back to the Apps screen. */
+#brand-home {
+  cursor: pointer;
+  border-radius: var(--radius-sm);
+}
+#brand-home:hover .brand-name {
+  color: var(--accent);
+}
+
+.brand-name {
+  font-size: 18px;
+  font-weight: 700;
+  letter-spacing: -0.3px;
+  transition: color 0.15s ease;
+}
+
+.sidebar-nav {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  flex: 1;
+  min-height: 0;
+  overflow-y: auto;
+}
+
+/* Nav links mirror the old admin-nav look: muted links, 2px accent
+   left-border on the active item. */
+.nav-link {
+  position: relative;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  width: 100%;
+  padding: 9px 14px;
+  border: none;
+  border-left: 2px solid transparent;
+  border-radius: var(--radius-sm);
+  font-size: 15px;
+  font-weight: 550;
+  font-family: inherit;
+  color: var(--text-muted);
+  background: transparent;
+  cursor: pointer;
+  text-align: left;
+  transition: background 0.15s ease, color 0.15s ease, border-color 0.15s ease;
+}
+
+.nav-link:hover {
+  background: var(--surface);
+  color: var(--text);
+}
+
+.nav-link.active {
+  background: var(--surface);
+  border-left-color: var(--accent);
+  color: var(--text);
+}
+
+/* Sidebar nav is split into labelled groups (General / Access / Apps /
+   System). Each group is a column of links under a small uppercase label. */
+.nav-group {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.nav-group + .nav-group {
+  position: relative;
+  margin-top: 12px;
+  padding-top: 12px;
+}
+
+/* A thin rule between sidebar sections, inset to line up with the link text. */
+.nav-group + .nav-group::before {
+  content: "";
+  position: absolute;
+  top: 0;
+  left: 14px;
+  right: 14px;
+  height: 1px;
+  background: var(--border);
+}
+
+.nav-group-label {
+  padding: 0 14px;
+  margin-bottom: 2px;
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--text-muted);
+  opacity: 0.75;
+  user-select: none;
+}
+
+.sidebar-footer {
+  margin-top: auto;
+  padding-top: 12px;
+  border-top: 1px solid var(--border);
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.sidebar-footer-actions {
+  display: flex;
+  gap: 8px;
+}
+
+.sidebar-footer-actions .btn {
+  flex: 1;
+}
+
+#user-label {
+  /* Match the nav-link text style (15px / 550 / muted — the .muted class
+     already supplies the color) and indent to line the account name up with
+     the nav-link text, which sits 16px further in (14px sidebar padding +
+     2px border + 14px button padding = 30px from the sidebar edge, vs. the
+     label's 14px). */
+  padding-left: 16px;
+  font-size: 15px;
+  font-weight: 550;
+  max-width: 100%;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.main-area {
+  flex: 1;
+  min-width: 0;
+  overflow-y: auto;
+}
+
+/* The `hidden` attribute (display:none in the UA sheet) is overridden by the
+   display rules above, so re-assert it for the elements we toggle. */
+.shell[hidden],
+.nav-link[hidden],
+.nav-group[hidden] {
+  display: none;
+}
+
+/* ===== Launch options ===== */
+.launch-options {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 14px;
+  align-items: flex-end;
+  margin-bottom: 28px;
+}
+
+.launch-options .field {
+  flex: 1 1 160px;
+  min-width: 140px;
+  margin: 0;
+}
+
+.field {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  font-size: 0.85rem;
+  color: var(--text-muted);
+}
+
+.field-row {
+  flex-direction: row;
+  align-items: center;
+}
+
+/* A control row inside a .field: select (grows) + an inline action button. */
+.field-inline {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+.field-inline select {
+  flex: 1;
+  min-width: 0;
+}
+
+/* Home-directory management modal (self-service create/delete). */
+.homedir-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 8px 0;
+  border-bottom: 1px solid var(--border-color);
+}
+.homedir-row:last-child {
+  border-bottom: none;
+}
+.homedir-row-actions {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+/* Pinned launch options list (Feat 7). */
+.pinned-list {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  margin-bottom: 24px;
+}
+.pinned-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  background: var(--surface);
+  border: 1px solid var(--border-color);
+  border-radius: var(--radius);
+  padding: 10px 14px;
+}
+.pinned-info {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 0;
+}
+.pinned-actions {
+  display: flex;
+  gap: 8px;
+  flex-shrink: 0;
+}
+.default-badge {
+  display: inline-block;
+  font-size: 11px;
+  font-weight: 600;
+  color: var(--accent);
+  background: var(--accent-soft);
+  border: 1px solid var(--accent-2);
+  border-radius: 999px;
+  padding: 1px 8px;
+  letter-spacing: 0.02em;
+  vertical-align: middle;
+}
+
+label.check,
+label.checkbox {
+  flex-direction: row;
+  align-items: center;
+  gap: 8px;
+  margin: 0;
+  font-size: 0.9rem;
+  color: var(--text);
+  cursor: pointer;
+}
+
+label.check input,
+label.checkbox input {
+  width: 16px;
+  height: 16px;
+  accent-color: var(--accent);
+}
+
+/* ===== Sections ===== */
+.section-title {
+  font-size: 1.9rem;
+  font-weight: 750;
+  letter-spacing: -0.3px;
+  margin: 36px 0 16px;
+}
+
+/* Inside the admin panel the same heading is used at card scale. */
+.admin-panel .section-title {
+  font-size: 1.15rem;
+  margin: 18px 0 10px;
+}
+
+/* ===== App grid ===== */
+.app-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(150px, 1fr));
+  gap: 18px;
+}
+
+.app-tile {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 10px;
+  padding: 22px 12px;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  cursor: pointer;
+  transition: transform 0.12s ease, border-color 0.15s ease, box-shadow 0.15s ease;
+}
+
+.app-tile:hover {
+  border-color: var(--accent);
+  transform: translateY(-3px);
+  box-shadow: 0 10px 30px rgba(0, 0, 0, 0.35);
+}
+
+.app-tile img {
+  width: 56px;
+  height: 56px;
+  object-fit: contain;
+  border-radius: 10px;
+}
+
+.app-tile .app-name {
+  font-size: 15px;
+  font-weight: 600;
+  text-align: center;
+  word-break: break-word;
+}
+
+.app-tile .app-meta {
+  display: flex;
+  gap: 6px;
+  flex-wrap: wrap;
+  justify-content: center;
+}
+
+.badge {
+  display: inline-block;
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--text-muted);
+  background: var(--surface-2);
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  padding: 2px 10px;
+  letter-spacing: 0.02em;
+}
+
+.badge.nvidia { color: var(--green); background: rgba(46, 204, 113, 0.12); border-color: rgba(46, 204, 113, 0.4); }
+.badge.url { color: #5aa9ff; background: rgba(90, 169, 255, 0.12); border-color: rgba(90, 169, 255, 0.4); }
+.badge.files { color: var(--amber); background: rgba(255, 176, 32, 0.12); border-color: rgba(255, 176, 32, 0.4); }
+.badge.lab { color: #b07aff; background: rgba(176, 122, 255, 0.12); border-color: rgba(176, 122, 255, 0.4); }
+
+.lab-icon-preview {
+  width: 48px;
+  height: 48px;
+  object-fit: contain;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: var(--surface-2);
+}
+
+.lab-session-frame {
+  width: 100%;
+  height: 480px;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: #000;
+}
+
+.lab-status { margin: 10px 0 0; font-size: 0.9rem; }
+.lab-status-error { color: var(--danger); }
+.lab-status-ok { color: var(--green); }
+
+.empty-state {
+  color: var(--text-muted);
+  grid-column: 1 / -1;
+  padding: 12px 0;
+}
+
+/* ===== Skeleton ===== */
+.skeleton {
+  background: linear-gradient(90deg, var(--surface) 25%, var(--surface-2) 50%, var(--surface) 75%);
+  background-size: 200% 100%;
+  animation: shimmer 1.4s infinite;
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+}
+
+.skeleton-app {
+  height: 128px;
+}
+
+@keyframes shimmer {
+  0% { background-position: 200% 0; }
+  100% { background-position: -200% 0; }
+}
+
+/* ===== Sessions ===== */
+.sessions-list {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.session-item {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  padding: 12px 16px;
+  transition: border-color 0.15s ease;
+}
+
+.session-item:hover {
+  border-color: rgba(0, 255, 255, 0.35);
+}
+
+.session-item img {
+  width: 36px;
+  height: 36px;
+  object-fit: contain;
+  border-radius: 6px;
+  flex-shrink: 0;
+}
+
+.session-info {
+  flex: 1;
+  min-width: 0;
+}
+
+.session-info .app-name {
+  font-weight: 600;
+}
+
+.session-info .session-meta {
+  font-size: 0.8rem;
+  color: var(--text-muted);
+  display: flex;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
+.session-actions {
+  display: flex;
+  gap: 8px;
+  flex-shrink: 0;
+}
+
+.session-info a {
+  color: inherit;
+  text-decoration: none;
+}
+
+.session-info a:hover {
+  color: var(--accent);
+}
+
+/* ===== Modal ===== */
+.modal-backdrop {
+  position: fixed;
+  inset: 0;
+  background: rgba(13, 15, 20, 0.7);
+  -webkit-backdrop-filter: blur(6px);
+  backdrop-filter: blur(6px);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 50;
+  padding: 20px;
+}
+
+.modal {
+  width: 100%;
+  max-width: 400px;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  padding: 24px;
+  box-shadow: 0 24px 64px rgba(0, 0, 0, 0.5);
+}
+
+.modal h3 {
+  margin: 0 0 6px;
+  font-size: 1.25rem;
+  font-weight: 700;
+  letter-spacing: -0.3px;
+}
+
+.modal-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 10px;
+  margin-top: 14px;
+}
+
+/* ===== Toasts ===== */
+.toasts {
+  position: fixed;
+  bottom: 20px;
+  right: 20px;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  z-index: 100;
+}
+
+.toast {
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-left: 3px solid var(--accent);
+  border-radius: var(--radius-sm);
+  padding: 10px 16px;
+  max-width: 340px;
+  box-shadow: 0 10px 30px rgba(0, 0, 0, 0.35);
+  animation: fadein 0.15s ease;
+  font-size: 14.5px;
+}
+
+.toast.success {
+  border-left-color: var(--green);
+}
+
+.toast.error {
+  border-left-color: var(--red);
+}
+
+/* ===== File manager ===== */
+.fm-toolbar {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: flex-end;
+  gap: 16px;
+  margin-bottom: 18px;
+  padding: 16px 18px;
+}
+
+.fm-toolbar .field {
+  display: flex;
+  flex-direction: column;
+  gap: 5px;
+  min-width: 200px;
+}
+
+.fm-crumbs {
+  flex: 1;
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 4px;
+  min-height: 36px;
+  font-size: 0.9rem;
+}
+
+.fm-crumbs .crumb {
+  color: var(--accent);
+  cursor: pointer;
+  text-decoration: none;
+}
+
+.fm-crumbs .crumb:hover {
+  text-decoration: underline;
+}
+
+.fm-crumbs .crumb.current {
+  color: var(--text);
+  cursor: default;
+}
+
+.fm-crumbs .crumb.current:hover {
+  text-decoration: none;
+}
+
+.fm-crumbs .sep {
+  color: var(--text-dim);
+}
+
+.fm-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  align-items: center;
+}
+
+/* Progress list */
+.fm-progress {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  margin-bottom: 16px;
+}
+
+.fm-progress-item {
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  padding: 10px 14px;
+}
+
+.fm-progress-label {
+  display: flex;
+  justify-content: space-between;
+  font-size: 0.85rem;
+  margin-bottom: 6px;
+}
+
+.fm-progress-track {
+  height: 8px;
+  border-radius: 6px;
+  background: var(--bg);
+  overflow: hidden;
+}
+
+.fm-progress-fill {
+  height: 100%;
+  width: 0%;
+  border-radius: 6px;
+  background: var(--accent);
+  transition: width 0.15s ease;
+}
+
+.fm-progress-item.done .fm-progress-fill {
+  background: var(--green);
+}
+
+.fm-progress-item.error .fm-progress-fill {
+  background: var(--red);
+}
+
+/* Table */
+.fm-table {
+  width: 100%;
+  border-collapse: collapse;
+}
+
+.fm-table th {
+  text-align: left;
+  font-size: 12px;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  color: var(--text-muted);
+  background: var(--bg-alt);
+  padding: 10px 12px;
+  border-bottom: 1px solid var(--border);
+}
+
+.fm-table td {
+  padding: 10px 12px;
+  font-size: 14.5px;
+  border-bottom: 1px solid var(--border);
+}
+
+.fm-table tbody tr:last-child td {
+  border-bottom: none;
+}
+
+.fm-table tbody tr {
+  cursor: default;
+}
+
+.fm-table tbody tr.is-dir {
+  cursor: pointer;
+}
+
+.fm-table tbody tr:hover {
+  background: var(--surface-2);
+}
+
+.fm-table tbody tr.selected {
+  background: var(--accent-soft);
+}
+
+.fm-col-sel {
+  width: 36px;
+}
+
+input[type="checkbox"] {
+  accent-color: var(--accent);
+  width: 16px;
+  height: 16px;
+  cursor: pointer;
+}
+
+.fm-name {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.fm-name .icon {
+  font-size: 1rem;
+}
+
+/* Pager */
+.fm-pager {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 14px;
+  margin-top: 16px;
+}
+
+/* Shares list */
+.share-row {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  padding: 10px 0;
+  border-bottom: 1px solid var(--border);
+}
+
+.share-row:last-child {
+  border-bottom: none;
+}
+
+.share-row .share-meta {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+  min-width: 180px;
+}
+
+.share-row .share-url {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex: 1;
+}
+
+.share-row code {
+  background: var(--bg);
+  border: 1px solid var(--border);
+  padding: 4px 8px;
+  border-radius: var(--radius-sm);
+  font-family: var(--mono);
+  font-size: 0.82rem;
+  color: #7fe7ef;
+  word-break: break-all;
+}
+
+.fm-share-url {
+  display: flex;
+  gap: 8px;
+  align-items: center;
+  margin: 8px 0;
+}
+
+.fm-share-url code {
+  background: var(--bg);
+  border: 1px solid var(--border);
+  padding: 6px 10px;
+  border-radius: var(--radius-sm);
+  font-family: var(--mono);
+  font-size: 0.82rem;
+  color: #7fe7ef;
+  word-break: break-all;
+  flex: 1;
+}
+
+/* ============================ Admin console ============================ */
+/* .admin-content inherits the full-width .content column (no max-width),
+   matching the antitux.dev layout so admin pages fill the window too. */
+.admin-panel {
+  flex: 1;
+  min-width: 0;
+}
+
+.admin-panel .card {
+  margin-bottom: 16px;
+}
+
+.admin-panel h3 {
+  margin: 0 0 4px;
+  font-size: 1.15rem;
+  font-weight: 700;
+  letter-spacing: -0.3px;
+}
+
+.admin-table {
+  width: 100%;
+  border-collapse: collapse;
+}
+
+.admin-table th {
+  text-align: left;
+  font-size: 12px;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  color: var(--text-muted);
+  background: var(--bg-alt);
+  padding: 10px 12px;
+  border-bottom: 1px solid var(--border);
+}
+
+.admin-table td {
+  padding: 10px 12px;
+  font-size: 14.5px;
+  border-bottom: 1px solid var(--border);
+}
+
+.admin-table tbody tr:last-child td {
+  border-bottom: none;
+}
+
+.admin-table tbody tr:hover {
+  background: var(--surface-2);
+}
+
+.admin-actions {
+  display: flex;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
+/* Permission / role checkbox groups (Roles, Accounts access, Groups). */
+.perm-group {
+  margin-bottom: 10px;
+}
+
+.perm-group-label {
+  font-size: 12px;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  color: var(--text-muted);
+  margin-bottom: 6px;
+}
+
+.perm-group label.check {
+  display: inline-flex;
+  margin-right: 14px;
+  margin-bottom: 4px;
+}
+
+/* SSO page: a small badge showing where a value currently comes from
+   (db = edited in the UI, env = from the environment, default = built-in). */
+.src-badge {
+  font-size: 11px;
+  padding: 1px 7px;
+  border-radius: 10px;
+  background: #2b2f36;
+  color: #9aa3ad;
+  border: 1px solid #3a3f47;
+  white-space: nowrap;
+}
+
+.src-badge.db {
+  background: rgba(46, 204, 113, 0.14);
+  color: var(--green);
+  border-color: rgba(46, 204, 113, 0.4);
+}
+
+/* SSO page: labels that carry a source badge lay out inline. */
+label:has(.src-badge) {
+  flex-direction: row;
+  align-items: center;
+  gap: 8px;
+}
+
+/* SSO page: tag input for the admin/user group lists. */
+.tag-input {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  align-items: center;
+  border: 1px solid #3a3f47;
+  border-radius: 6px;
+  padding: 6px 8px;
+  min-height: 38px;
+  background: #171a1f;
+}
+
+.tag-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  background: #23272e;
+  border: 1px solid #3a3f47;
+  border-radius: 14px;
+  padding: 3px 6px 3px 10px;
+  font-size: 13px;
+}
+
+.tag-chip .tag-remove {
+  border: 0;
+  background: transparent;
+  color: #9aa3ad;
+  cursor: pointer;
+  font-size: 14px;
+  line-height: 1;
+  padding: 0 2px;
+}
+
+.tag-chip .tag-remove:hover {
+  color: #fff;
+}
+
+.tag-input input {
+  flex: 1;
+  min-width: 120px;
+  border: 0;
+  background: transparent;
+  color: var(--text);
+  outline: none;
+  font-size: 13px;
+}
+
+/* SSO page: the "Test connection" result line. */
+.test-result {
+  font-size: 13px;
+}
+
+.test-result.ok {
+  color: var(--green);
+}
+
+.test-result.err {
+  color: var(--red, #e08a8a);
+}
+
+.badge-ok {
+  background: rgba(46, 204, 113, 0.14);
+  border-color: rgba(46, 204, 113, 0.4);
+  color: var(--green);
+}
+
+.badge-warn {
+  background: rgba(255, 176, 32, 0.14);
+  border-color: rgba(255, 176, 32, 0.4);
+  color: var(--amber);
+}
+
+.badge-pull {
+  background: var(--accent-soft);
+  border-color: rgba(0, 255, 255, 0.4);
+  color: var(--accent);
+}
+
+.key-block {
+  background: var(--bg);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  padding: 10px 12px;
+  font-family: var(--mono);
+  font-size: 0.8rem;
+  white-space: pre-wrap;
+  word-break: break-all;
+  color: var(--text-muted);
+}
+
+.kv-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(220px, 1fr));
+  gap: 12px 18px;
+}
+
+.kv-item .kv-label {
+  font-size: 12px;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  color: var(--text-muted);
+  margin-bottom: 2px;
+}
+
+.kv-item .kv-value {
+  font-size: 15px;
+  word-break: break-word;
+}
+
+.admin-settings-form {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(220px, 1fr));
+  gap: 12px 18px;
+  align-items: end;
+}
+
+.admin-settings-form .field {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.admin-settings-form label.check,
+.admin-settings-form label.checkbox {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 0.9rem;
+}
+
+.admin-form-row {
+  display: flex;
+  gap: 10px;
+  align-items: flex-end;
+  flex-wrap: wrap;
+}
+
+.admin-form-row .field {
+  flex: 1;
+  min-width: 140px;
+}
+
+/* ===== Shared modal (dynamic, created by modal.js) ===== */
+.modal-wide {
+  max-width: 480px;
+}
+
+.modal-body {
+  margin: 6px 0 2px;
+}
+
+.modal-message {
+  margin: 4px 0 0;
+}
+
+/* ===== Progress bars (shared: install modal + admin table rows) ===== */
+.progress-track {
+  height: 10px;
+  border-radius: 6px;
+  background: var(--bg);
+  border: 1px solid var(--border);
+  overflow: hidden;
+}
+
+.progress-fill {
+  height: 100%;
+  width: 0%;
+  border-radius: 6px;
+  background: var(--accent);
+  transition: width 0.4s ease;
+}
+
+.progress-label {
+  display: flex;
+  justify-content: space-between;
+  gap: 10px;
+  font-size: 0.85rem;
+  margin-bottom: 6px;
+}
+
+.row-progress {
+  margin-top: 6px;
+  max-width: 220px;
+}
+
+.progress-pct {
+  font-size: 0.75rem;
+  margin-top: 3px;
+}
+
+/* ===== Spinner ===== */
+.spinner {
+  width: 18px;
+  height: 18px;
+  border: 2px solid var(--border);
+  border-top-color: var(--accent);
+  border-radius: 50%;
+  animation: spin 0.8s linear infinite;
+  display: inline-block;
+  flex-shrink: 0;
+}
+
+.spinner-lg {
+  width: 34px;
+  height: 34px;
+  border-width: 3px;
+}
+
+@keyframes spin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+.launch-wait {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 10px;
+  text-align: center;
+  padding: 12px 0 6px;
+}
+
+/* ===== App tile "launching" state ===== */
+.app-tile-launching {
+  opacity: 0.75;
+  border-color: var(--accent);
+  cursor: progress;
+}
+
+.tile-spinner {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 4px;
+  font-size: 0.75rem;
+  color: var(--accent);
+}
+
+/* ===== Responsive (antitux.net breakpoints) ===== */
+@media (max-width: 720px) {
+  /* The persistent sidebar becomes a full-width block above the content. */
+  .shell {
+    flex-direction: column;
+  }
+  .sidebar {
+    width: 100%;
+    height: auto;
+    border-right: none;
+    border-bottom: 1px solid var(--border);
+    padding: 12px;
+  }
+  .sidebar-header {
+    margin-bottom: 10px;
+  }
+  .sidebar-nav {
+    flex-direction: row;
+    flex-wrap: wrap;
+    overflow: visible;
+    gap: 6px;
+  }
+  .nav-link {
+    width: auto;
+    white-space: nowrap;
+    padding: 6px 12px;
+    border-left: none;
+    border-bottom: 2px solid transparent;
+  }
+  .nav-link.active {
+    border-left-color: transparent;
+    border-bottom-color: var(--accent);
+  }
+  .nav-group {
+    flex-direction: row;
+    flex-wrap: wrap;
+    gap: 6px;
+  }
+  /* Groups wrap horizontally on narrow screens, so the vertical separator
+     between them doesn't make sense there. */
+  .nav-group + .nav-group {
+    margin-top: 0;
+    padding-top: 0;
+  }
+  .nav-group + .nav-group::before {
+    display: none;
+  }
+  .nav-group-label {
+    width: 100%;
+    padding: 0;
+    margin-bottom: 4px;
+  }
+  .sidebar-footer {
+    margin-top: 10px;
+    padding-top: 10px;
+  }
+  .main-area {
+    flex: 1;
+    min-height: 0;
+  }
+  .launch-options {
+    flex-direction: column;
+    align-items: stretch;
+  }
+  .section-title {
+    font-size: 1.5rem;
+  }
+}
+
+/* ===== Feat 14: app template editor ===== */
+.admin-form-row .tpl-actions {
+  flex: 0 0 auto;
+  min-width: 0;
+}
+.tpl-actions {
+  display: flex;
+  gap: 8px;
+}
+.tpl-form-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(300px, 1fr));
+  gap: 10px 16px;
+}
+.tpl-field {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+.tpl-field > label {
+  margin: 0;
+}
+.tpl-desc {
+  font-size: 12.5px;
+  margin: 0;
+}
+.tpl-section-title {
+  font-size: 13px;
+  font-weight: 600;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--text-muted);
+  margin: 18px 0 10px;
+  padding-bottom: 6px;
+  border-bottom: 1px solid var(--border);
+}
+.tpl-section-title:first-child {
+  margin-top: 0;
+}
+.tpl-preview-container {
+  background: var(--bg);
+  border: 1px solid var(--border);
+  padding: 16px;
+  border-radius: var(--radius);
+  display: flex;
+  justify-content: center;
+}
+.tpl-browser-window {
+  width: 100%;
+  max-width: 960px;
+  aspect-ratio: 16 / 9;
+  border: 1px solid var(--border);
+  background: var(--bg-alt);
+  border-radius: var(--radius-sm);
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+}
+.tpl-browser-header {
+  background: var(--surface);
+  padding: 6px 10px;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  border-bottom: 1px solid var(--border);
+  flex-shrink: 0;
+}
+.tpl-browser-dots {
+  width: 55px;
+  height: 12px;
+  background-image:
+    radial-gradient(circle at center, #ff5f57 5px, transparent 5px),
+    radial-gradient(circle at center, #febc2e 5px, transparent 5px),
+    radial-gradient(circle at center, #28c840 5px, transparent 5px);
+  background-position: 0 0, 20px 0, 40px 0;
+  background-repeat: no-repeat;
+  flex-shrink: 0;
+}
+.tpl-browser-address-bar {
+  background: var(--bg);
+  border-radius: 999px;
+  padding: 3px 12px;
+  flex-grow: 1;
+  color: var(--text-muted);
+  font-size: 13px;
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+}
+.tpl-browser-content {
+  display: flex;
+  flex-grow: 1;
+  min-height: 0;
+}
+.tpl-sidebar {
+  width: 30%;
+  background: var(--bg);
+  border-right: 1px solid var(--border);
+  padding: 1rem;
+  overflow-y: auto;
+  font-size: 13px;
+  color: var(--text-muted);
+  transition: all 0.4s ease;
+}
+.tpl-sidebar-header {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding-bottom: 10px;
+  margin-bottom: 10px;
+  border-bottom: 1px solid var(--border);
+}
+.tpl-logo {
+  width: 24px;
+  height: 24px;
+  flex-shrink: 0;
+  border-radius: 50%;
+  background: linear-gradient(135deg, var(--accent), var(--accent-2));
+}
+.tpl-sidebar-header h2 {
+  margin: 0;
+  font-size: 1rem;
+  font-weight: 700;
+  color: var(--accent);
+  background-image: linear-gradient(135deg, var(--accent), var(--accent-2));
+  -webkit-background-clip: text;
+  background-clip: text;
+  -webkit-text-fill-color: transparent;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.tpl-sidebar-section {
+  padding: 8px;
+  margin-bottom: 8px;
+  border: 1px dashed var(--border);
+  border-radius: var(--radius-sm);
+  background: var(--bg-alt);
+}
+.tpl-main-content {
+  flex-grow: 1;
+  padding: 1rem;
+  position: relative;
+  display: flex;
+  justify-content: center;
+  align-items: center;
+}
+.tpl-keyboard-button {
+  position: absolute;
+  bottom: 1rem;
+  right: 1rem;
+  width: 32px;
+  height: 32px;
+  background: linear-gradient(135deg, var(--accent), var(--accent-2));
+  color: #fff;
+  border-radius: var(--radius-sm);
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  font-weight: bold;
+}
+
+/* Global Settings page: editable template-schema rows */
+.gs-category {
+  margin: 16px 0 6px;
+  font-size: 0.78rem;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  color: var(--text-muted);
+}
+.gs-row {
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  padding: 10px 12px;
+  margin-bottom: 8px;
+  background: var(--bg-alt);
+}
+.gs-row-top {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+.gs-row-top .gs-name {
+  flex: 1;
+  font-family: var(--mono);
+  font-weight: 600;
+}
+.gs-row-fields {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+  margin-top: 8px;
+}
+.gs-row-fields .gs-label,
+.gs-row-fields .gs-description {
+  flex: 1;
+  min-width: 120px;
+}
+/* The default/current value pair sits on its own row so both fields get
+   room to breathe. */
+.gs-row-values {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-top: 8px;
+}
+.gs-row-values .field {
+  flex: 1;
+  min-width: 220px;
+}
+.gs-row-values .field label {
+  margin: 0;
+  font-size: 0.75rem;
+}
+/* The image baseline is reference-only for built-in settings. */
+.gs-default {
+  color: var(--text-dim);
+}
+.gs-default[readonly] {
+  cursor: default;
+}
+.gs-row-options {
+  margin-top: 8px;
+}
+/* Matches the site-wide label.check checkbox convention. */
+.gs-docker-label {
+  display: inline-flex;
+  flex-direction: row;
+  align-items: center;
+  gap: 8px;
+  font-size: 0.9rem;
+  white-space: nowrap;
+  color: var(--text);
+  cursor: pointer;
+}

@@ -1,0 +1,25 @@
+# Explicit-ignore style: anything NOT listed here is tracked by default, so
+# new source directories never vanish silently (the old `*/` whitelist in
+# server/.gitignore used to do exactly that — see the 2026-09-23 reorg).
+
+# Python bytecode / test caches (regenerated on every run; the dev container
+# writes these as root, so they can be annoying to delete by hand).
+**/__pycache__/**
+*.pyc
+*.pyo
+.pytest_cache/
+
+# Environment files contain secrets (OIDC client secret, etc.) — never commit.
+# (.env.example is a separate filename and stays tracked.)
+.env
+
+# Persistent app state (DB, storage, ssl, caches) — bind-mounted to /data.
+vreckan-data/**
+
+# UI verification screenshots (local reference, not part of the repo).
+screenshots/
+
+# Security-scan output (trivy/grype JSON reports + the parse helper).
+_scan_out/
+
+codeto*

@@ -1,0 +1,18 @@
+fastapi
+uvicorn[standard]
+uvloop
+python-jose[cryptography]
+pydantic
+cryptography
+# httpx2: the app's HTTP client (OIDC/SSO, app-store fetches, proxy, health
+# checks). starlette's TestClient (test suite) also prefers httpx2 over httpx,
+# so the "httpx is deprecated" warning stays gone.
+httpx2
+websockets
+docker
+PyYAML
+python-multipart
+argon2-cffi
+sqlalchemy
+aiosqlite
+pytest

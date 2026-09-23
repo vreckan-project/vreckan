@@ -1,0 +1,1210 @@
+# Vreckan application template schema.
+#
+# Each entry describes one environment variable that the template editor in the
+# admin UI exposes. The server serves this file at GET /api/admin/apps/templates/schema so
+# a new variable ships with the server image instead of a client release.
+#
+# The variables mirror what the linuxserver/docker-baseimage-selkies init
+# scripts and the upstream Selkies server (src/selkies/settings.py) read. The
+# editor only stores values that differ from `default`, so `default` must be
+# the value the container effectively runs with when the variable is unset.
+#
+# Fields:
+#   name      Environment variable name passed to the session container.
+#   category  Editor grouping: ui, app, hardening, general, webrtc, docker.
+#   type      text | boolean | select.
+#   default   Default value shown in the editor (always a string).
+#   docker    true when the variable is translated into a Docker run option
+#             instead of being passed to the container environment.
+#   options   For select types: list of {value, label_key} or {value, label}.
+#             label_key resolves to the translation key
+#             options.appTemplates.settings.<NAME>.options.<label_key>.
+#
+# Labels and descriptions are looked up by the client from its translations at
+# options.appTemplates.settings.<NAME>.label / .description and fall back to the
+# variable name when missing, so hand-added entries work without translations.
+#
+# Renamed upstream variables (SELKIES_H264_* -> SELKIES_VIDEO_*, the clipboard
+# trio -> SELKIES_ENABLE_CLIPBOARD, ...) are translated from older templates by
+# migrate_legacy_template_settings in server/app/config_store.py.
+settings:
+  # ---------------------------------------------------------------------------
+  # UI
+  # ---------------------------------------------------------------------------
+  - name: TITLE
+    label: "Page Title"
+    description: "The page title displayed on the web browser."
+    category: ui
+    type: text
+    default: "Selkies"
+    docker: false
+  - name: SELKIES_UI_TITLE
+    label: "Sidebar Title"
+    description: "Title in top left corner of sidebar."
+    category: ui
+    type: text
+    default: "Selkies"
+    docker: false
+  - name: SELKIES_UI_SHOW_SIDEBAR
+    label: "Show Sidebar"
+    description: "Show the main sidebar UI."
+    category: ui
+    type: boolean
+    default: "true"
+    docker: false
+  - name: SELKIES_UI_SHOW_LOGO
+    label: "Show Logo"
+    description: "Show the Selkies logo in the sidebar."
+    category: ui
+    type: boolean
+    default: "true"
+    docker: false
+  - name: SELKIES_UI_SHOW_CORE_BUTTONS
+    label: "Show Core Buttons"
+    description: "Show the core components buttons (display, audio, etc)."
+    category: ui
+    type: boolean
+    default: "true"
+    docker: false
+  - name: SELKIES_UI_SIDEBAR_SHOW_VIDEO_SETTINGS
+    label: "Show Video Settings"
+    description: "Show the video settings section in the sidebar."
+    category: ui
+    type: boolean
+    default: "true"
+    docker: false
+  - name: SELKIES_UI_SIDEBAR_SHOW_SCREEN_SETTINGS
+    label: "Show Screen Settings"
+    description: "Show the screen settings section in the sidebar."
+    category: ui
+    type: boolean
+    default: "true"
+    docker: false
+  - name: SELKIES_UI_SIDEBAR_SHOW_AUDIO_SETTINGS
+    label: "Show Audio Settings"
+    description: "Show the audio settings section in the sidebar."
+    category: ui
+    type: boolean
+    default: "true"
+    docker: false
+  - name: SELKIES_UI_SIDEBAR_SHOW_STATS
+    label: "Show Stats"
+    description: "Show the stats section in the sidebar."
+    category: ui
+    type: boolean
+    default: "true"
+    docker: false
+  - name: SELKIES_UI_SIDEBAR_SHOW_SHORTCUTS
+    label: "Show Keyboard Shortcuts Section"
+    description: "Show the keyboard shortcuts section in the sidebar."
+    category: ui
+    type: boolean
+    default: "true"
+    docker: false
+  - name: SELKIES_UI_SIDEBAR_SHOW_CLIPBOARD
+    label: "Show Clipboard"
+    description: "Show the clipboard section in the sidebar."
+    category: ui
+    type: boolean
+    default: "true"
+    docker: false
+  - name: SELKIES_UI_SIDEBAR_SHOW_FILES
+    label: "Show Files Section"
+    description: "Show the file transfer section in the sidebar."
+    category: ui
+    type: boolean
+    default: "true"
+    docker: false
+  - name: SELKIES_UI_SIDEBAR_SHOW_APPS
+    label: "Show Apps Section"
+    description: "Show the applications section in the sidebar."
+    category: ui
+    type: boolean
+    default: "true"
+    docker: false
+  - name: SELKIES_UI_SIDEBAR_SHOW_SHARING
+    label: "Show Sharing Section"
+    description: "Show the sharing section in the sidebar."
+    category: ui
+    type: boolean
+    default: "true"
+    docker: false
+  - name: SELKIES_UI_SIDEBAR_SHOW_GAMEPADS
+    label: "Show Gamepads Section"
+    description: "Show the gamepads section in the sidebar."
+    category: ui
+    type: boolean
+    default: "true"
+    docker: false
+  - name: SELKIES_UI_SIDEBAR_SHOW_FULLSCREEN
+    label: "Show Fullscreen Button"
+    description: "Show the fullscreen button in the sidebar."
+    category: ui
+    type: boolean
+    default: "true"
+    docker: false
+  - name: SELKIES_UI_SIDEBAR_SHOW_GAMING_MODE
+    label: "Show Gaming Mode Button"
+    description: "Show the gaming mode (pointer lock) button in the sidebar."
+    category: ui
+    type: boolean
+    default: "true"
+    docker: false
+  - name: SELKIES_UI_SIDEBAR_SHOW_TRACKPAD
+    label: "Show Trackpad Button"
+    description: "Show the virtual trackpad button in the sidebar."
+    category: ui
+    type: boolean
+    default: "true"
+    docker: false
+  - name: SELKIES_UI_SIDEBAR_SHOW_KEYBOARD_BUTTON
+    label: "Show Keyboard Button"
+    description: "Show the on-screen keyboard button."
+    category: ui
+    type: boolean
+    default: "true"
+    docker: false
+  - name: SELKIES_UI_SIDEBAR_SHOW_SOFT_BUTTONS
+    label: "Show Soft Buttons"
+    description: "Show the soft buttons section (for mobile)."
+    category: ui
+    type: boolean
+    default: "true"
+    docker: false
+  - name: WATERMARK_PNG
+    label: "Watermark PNG Path"
+    description: "Full path inside the container to a watermark png."
+    category: ui
+    type: text
+    default: ""
+    docker: false
+  - name: WATERMARK_LOCATION
+    label: "Watermark Location"
+    description: "Where to paint the image over the stream."
+    category: ui
+    type: select
+    default: "-1"
+    docker: false
+    options:
+      - value: "-1"
+        label_key: disabled
+        label: "Disabled"
+      - value: "1"
+        label_key: topLeft
+        label: "Top-Left"
+      - value: "2"
+        label_key: topRight
+        label: "Top-Right"
+      - value: "3"
+        label_key: bottomLeft
+        label: "Bottom-Left"
+      - value: "4"
+        label_key: bottomRight
+        label: "Bottom-Right"
+      - value: "5"
+        label_key: centered
+        label: "Centered"
+      - value: "6"
+        label_key: animated
+        label: "Animated"
+  - name: DASHBOARD
+    label: "Dashboard Style"
+    description: "Allows the user to set their dashboard."
+    category: ui
+    type: select
+    default: ""
+    docker: false
+    options:
+      - value: ""
+        label_key: default
+        label: "Default"
+      - value: "selkies-dashboard"
+        label_key: selkiesDefault
+        label: "Selkies (Default)"
+      - value: "selkies-dashboard-wish"
+        label_key: wish
+        label: "Wish"
+  # ---------------------------------------------------------------------------
+  # App: features
+  # ---------------------------------------------------------------------------
+  - name: SELKIES_AUDIO_ENABLED
+    label: "Enable Audio"
+    description: "Enable server-to-client audio streaming."
+    category: app
+    type: boolean
+    default: "true"
+    docker: false
+  - name: SELKIES_MICROPHONE_ENABLED
+    label: "Enable Microphone"
+    description: "Enable client-to-server microphone forwarding. Off by default upstream."
+    category: app
+    type: boolean
+    default: "false"
+    docker: false
+  - name: SELKIES_GAMEPAD_ENABLED
+    label: "Enable Gamepad"
+    description: "Enable gamepad support."
+    category: app
+    type: boolean
+    default: "true"
+    docker: false
+  - name: SELKIES_ENABLE_CLIPBOARD
+    label: "Clipboard Policy"
+    description: "Which clipboard directions are allowed. 'Server to client only' also stops the page reading the local clipboard, which is what triggers paste prompts in Firefox and Safari."
+    category: app
+    type: select
+    default: "true"
+    docker: false
+    options:
+      - value: "true"
+        label_key: both
+        label: "Both directions"
+      - value: "in"
+        label_key: inOnly
+        label: "Client to server only"
+      - value: "out"
+        label_key: outOnly
+        label: "Server to client only"
+      - value: "false"
+        label_key: disabled
+        label: "Disabled"
+  - name: SELKIES_ENABLE_BINARY_CLIPBOARD
+    label: "Enable Binary Clipboard"
+    description: "Allow binary data (images) on the clipboard."
+    category: app
+    type: boolean
+    default: "true"
+    docker: false
+  - name: SELKIES_COMMAND_ENABLED
+    label: "Enable Command Websocket"
+    description: "Enable parsing of command websocket messages."
+    category: app
+    type: boolean
+    default: "true"
+    docker: false
+  - name: SELKIES_FILE_TRANSFERS
+    label: "File Transfers"
+    description: "Allowed directions ('upload,download', 'upload', 'download' or 'none'). Emptied by Harden Desktop unless set here."
+    category: app
+    type: text
+    default: "upload,download"
+    docker: false
+  - name: SELKIES_FILE_TRANSFER_LIMIT_MBPS
+    label: "File Transfer Limit (Mbit/s)"
+    description: "Static throttle shared by all uploads and downloads. 0 disables the cap."
+    category: app
+    type: text
+    default: "0"
+    docker: false
+  - name: SELKIES_ENABLE_SHARING
+    label: "Enable All Sharing"
+    description: "Master toggle for all sharing features."
+    category: app
+    type: boolean
+    default: "true"
+    docker: false
+  - name: SELKIES_ENABLE_SHARED
+    label: "Enable View-Only Sharing"
+    description: "Enable view-only sharing links."
+    category: app
+    type: boolean
+    default: "true"
+    docker: false
+  - name: SELKIES_ENABLE_COLLAB
+    label: "Enable Collaboration"
+    description: "Let a viewer holding the session's master token act as a read-write collaborator. Required for Vreckan rooms."
+    category: app
+    type: boolean
+    default: "true"
+    docker: false
+  - name: SELKIES_ENABLE_PLAYER2
+    label: "Enable Player 2 Sharing"
+    description: "Enable the sharing link for gamepad player 2."
+    category: app
+    type: boolean
+    default: "true"
+    docker: false
+  - name: SELKIES_ENABLE_PLAYER3
+    label: "Enable Player 3 Sharing"
+    description: "Enable the sharing link for gamepad player 3."
+    category: app
+    type: boolean
+    default: "true"
+    docker: false
+  - name: SELKIES_ENABLE_PLAYER4
+    label: "Enable Player 4 Sharing"
+    description: "Enable the sharing link for gamepad player 4."
+    category: app
+    type: boolean
+    default: "true"
+    docker: false
+  - name: SELKIES_SECOND_SCREEN
+    label: "Enable Second Screen"
+    description: "Enable support for a second monitor/display."
+    category: app
+    type: boolean
+    default: "true"
+    docker: false
+  - name: SELKIES_ENABLE_RESIZE
+    label: "Enable Dynamic Resize"
+    description: "Resize the remote display to match the browser window."
+    category: app
+    type: boolean
+    default: "true"
+    docker: false
+  - name: SELKIES_USE_BROWSER_CURSORS
+    label: "Use Browser Cursors"
+    description: "Use browser CSS cursors instead of rendering to canvas."
+    category: app
+    type: boolean
+    default: "true"
+    docker: false
+  - name: SELKIES_ENABLE_CURSORS
+    label: "Enable Remote Cursors"
+    description: "Send the application's own cursor shapes to the client."
+    category: app
+    type: boolean
+    default: "true"
+    docker: false
+  - name: SELKIES_CURSOR_SIZE
+    label: "Cursor Size"
+    description: "Cursor size in points at 96 DPI, scaled with the session DPI. -1 uses the platform default (32 on X11, 24 on Wayland)."
+    category: app
+    type: text
+    default: "-1"
+    docker: false
+  - name: SELKIES_USE_CSS_SCALING
+    label: "Use CSS Scaling (LoDPI)"
+    description: "If true, a lower resolution is sent and the canvas is stretched."
+    category: app
+    type: boolean
+    default: "false"
+    docker: false
+  - name: SELKIES_MANUAL_RESOLUTION
+    label: "Manual Resolution Mode"
+    description: "Lock the resolution to the manual width/height values."
+    category: app
+    type: boolean
+    default: "false"
+    docker: false
+  - name: SELKIES_FORCE_ALIGNED_RESOLUTION
+    label: "Force Aligned Resolution"
+    description: "Forces the display resolution to be a multiple of 16 pixels."
+    category: app
+    type: boolean
+    default: "false"
+    docker: false
+  - name: SELKIES_MANUAL_WIDTH
+    label: "Manual Width"
+    description: "Lock width to a fixed value. Forces manual mode."
+    category: app
+    type: text
+    default: "0"
+    docker: false
+  - name: SELKIES_MANUAL_HEIGHT
+    label: "Manual Height"
+    description: "Lock height to a fixed value. Forces manual mode."
+    category: app
+    type: text
+    default: "0"
+    docker: false
+  - name: SELKIES_SCALING_DPI
+    label: "UI Scaling DPI"
+    description: "The default DPI for UI scaling."
+    category: app
+    type: select
+    default: "96"
+    docker: false
+    options:
+      - value: "96"
+        label: "100%"
+      - value: "120"
+        label: "125%"
+      - value: "144"
+        label: "150%"
+      - value: "168"
+        label: "175%"
+      - value: "192"
+        label: "200%"
+      - value: "216"
+        label: "225%"
+      - value: "240"
+        label: "250%"
+      - value: "264"
+        label: "275%"
+      - value: "288"
+        label: "300%"
+  # ---------------------------------------------------------------------------
+  # App: audio
+  # ---------------------------------------------------------------------------
+  - name: SELKIES_AUDIO_BITRATE
+    label: "Audio Bitrate"
+    description: "The default Opus audio bitrate."
+    category: app
+    type: select
+    default: "128000"
+    docker: false
+    options:
+      - value: "32000"
+        label: "32kbps"
+      - value: "48000"
+        label: "48kbps"
+      - value: "64000"
+        label: "64kbps"
+      - value: "96000"
+        label: "96kbps"
+      - value: "128000"
+        label: "128kbps"
+      - value: "192000"
+        label: "192kbps"
+      - value: "256000"
+        label: "256kbps"
+      - value: "320000"
+        label: "320kbps"
+      - value: "384000"
+        label: "384kbps"
+      - value: "510000"
+        label: "510kbps"
+  - name: SELKIES_AUDIO_FRAME_DURATION_MS
+    label: "Audio Frame Duration"
+    description: "Opus frame duration. Lower values cut audio latency at a small bandwidth and packet-rate cost."
+    category: app
+    type: select
+    default: "10"
+    docker: false
+    options:
+      - value: "2.5"
+        label: "2.5 ms"
+      - value: "5"
+        label: "5 ms"
+      - value: "10"
+        label: "10 ms"
+      - value: "20"
+        label: "20 ms"
+      - value: "40"
+        label: "40 ms"
+      - value: "60"
+        label: "60 ms"
+  - name: SELKIES_AUDIO_CHANNELS
+    label: "Audio Channels"
+    description: "Number of audio channels; 2 is stereo."
+    category: app
+    type: text
+    default: "2"
+    docker: false
+  - name: SELKIES_AUDIO_REDUNDANCY
+    label: "Audio Redundancy (Opus RED)"
+    description: "Carry prior audio frames as redundancy to cut dropouts under packet loss."
+    category: app
+    type: boolean
+    default: "true"
+    docker: false
+  - name: SELKIES_AUDIO_REDUNDANCY_DISTANCE
+    label: "Audio Redundancy Distance"
+    description: "Number of prior frames carried as redundancy (0-4). Higher survives longer loss bursts at proportionally more bandwidth."
+    category: app
+    type: text
+    default: "2"
+    docker: false
+  # ---------------------------------------------------------------------------
+  # App: video encoding
+  # ---------------------------------------------------------------------------
+  - name: SELKIES_ENCODER
+    label: "Encoders"
+    description: "Comma-separated list of allowed encoders (vah264enc, h264enc, h264enc-striped, jpeg). The first is the default; a single value locks the choice. Note: only h264enc streams over WebRTC, so with vah264enc first the default encoder uses the non-WebRTC transport."
+    category: app
+    type: text
+    default: "vah264enc,h264enc,h264enc-striped,jpeg"
+    docker: false
+  - name: SELKIES_USE_CPU
+    label: "Force CPU Encoding"
+    description: "Force CPU-based encoding for pixelflux."
+    category: app
+    type: boolean
+    default: "false"
+    docker: false
+  - name: SELKIES_FRAMERATE
+    label: "Framerate (Range or Fixed)"
+    description: "e.g. '8-240' for a range, '60' for a fixed initial value, '60,8-240' for both; '60-60' locks it."
+    category: app
+    type: text
+    default: "8-240"
+    docker: false
+  - name: SELKIES_RATE_CONTROL_MODE
+    label: "Rate Control Mode"
+    description: "Default H.264 rate control: constant quality (CRF) or constant bitrate (CBR)."
+    category: app
+    type: select
+    default: "crf"
+    docker: false
+    options:
+      - value: "crf"
+        label_key: crf
+        label: "Constant quality (CRF)"
+      - value: "cbr"
+        label_key: cbr
+        label: "Constant bitrate (CBR)"
+  - name: SELKIES_ENABLE_RATE_CONTROL
+    label: "Allow Rate Control Switching"
+    description: "Let clients switch between CRF and CBR. Off locks the encoder to its built-in default."
+    category: app
+    type: boolean
+    default: "true"
+    docker: false
+  - name: SELKIES_VIDEO_CRF
+    label: "Video CRF (Range or Fixed)"
+    description: "H.264 constant quality: '5-50' for a range, '25' for a fixed initial value, or '25,5-50' for both."
+    category: app
+    type: text
+    default: "5-50"
+    docker: false
+  - name: SELKIES_VIDEO_BITRATE
+    label: "Video Bitrate kbps (Range or Fixed)"
+    description: "CBR bitrate in kilobits per second: '100-1000000' for a range, '8000' for a fixed initial value, or '8000,100-1000000' for both."
+    category: app
+    type: text
+    default: "100-1000000"
+    docker: false
+  - name: SELKIES_VIDEO_MIN_QP
+    label: "Video Minimum QP"
+    description: "CBR-mode minimum H.264 quantizer (0 = encoder default). Raising it caps bit spend on easy content."
+    category: app
+    type: text
+    default: "0"
+    docker: false
+  - name: SELKIES_VIDEO_MAX_QP
+    label: "Video Maximum QP"
+    description: "CBR-mode maximum H.264 quantizer (0 = encoder default). Lowering it keeps text legible under motion at the cost of overshooting the bitrate target."
+    category: app
+    type: text
+    default: "0"
+    docker: false
+  - name: SELKIES_KEYFRAME_INTERVAL
+    label: "Keyframe Interval (seconds)"
+    description: "Seconds between scheduled recovery keyframes. 0 keeps the GOP infinite and sends keyframes only on demand."
+    category: app
+    type: text
+    default: "0"
+    docker: false
+  - name: SELKIES_JPEG_QUALITY
+    label: "JPEG Quality (Range or Fixed)"
+    description: "'1-100' for a range, '40' for a fixed initial value, or '40,1-100' for both."
+    category: app
+    type: text
+    default: "1-100"
+    docker: false
+  - name: SELKIES_VIDEO_FULLCOLOR
+    label: "Video Full Color (4:4:4)"
+    description: "Encode H.264 with 4:4:4 chroma instead of 4:2:0. Clients without a 4:4:4 decoder fall back to JPEG when this is locked on."
+    category: app
+    type: boolean
+    default: "false"
+    docker: false
+  - name: SELKIES_VIDEO_STREAMING_MODE
+    label: "Video Streaming (Turbo) Mode"
+    description: "Encode every frame like a traditional video encoder instead of only changed regions."
+    category: app
+    type: boolean
+    default: "false"
+    docker: false
+  - name: SELKIES_USE_PAINT_OVER_QUALITY
+    label: "Use Paint-Over Quality"
+    description: "Enable high-quality paint-over for static scenes."
+    category: app
+    type: boolean
+    default: "true"
+    docker: false
+  - name: SELKIES_PAINT_OVER_JPEG_QUALITY
+    label: "Paint-Over JPEG Quality"
+    description: "'1-100' for a range, '90' for a fixed initial value, or '90,1-100' for both."
+    category: app
+    type: text
+    default: "1-100"
+    docker: false
+  - name: SELKIES_VIDEO_PAINTOVER_CRF
+    label: "Paint-Over Video CRF"
+    description: "'5-50' for a range, '18' for a fixed initial value, or '18,5-50' for both."
+    category: app
+    type: text
+    default: "5-50"
+    docker: false
+  - name: SELKIES_VIDEO_PAINTOVER_BURST_FRAMES
+    label: "Paint-Over Burst Frames"
+    description: "'1-30' for a range, '5' for a fixed initial value, or '5,1-30' for both."
+    category: app
+    type: text
+    default: "1-30"
+    docker: false
+  - name: SELKIES_BACKPRESSURE_QUEUE_SIZE
+    label: "Backpressure Queue Size"
+    description: "Frames and audio chunks buffered per stream before dropping under backpressure (WebSockets mode). Higher tolerates client hiccups at the cost of latency."
+    category: app
+    type: text
+    default: "120"
+    docker: false
+  # ---------------------------------------------------------------------------
+  # App: webcam
+  # ---------------------------------------------------------------------------
+  - name: SELKIES_WEBCAM_WIDTH
+    label: "Webcam Width"
+    description: "Width of the virtual webcam device; client frames are scaled and letterboxed to fit."
+    category: app
+    type: text
+    default: "1280"
+    docker: false
+  - name: SELKIES_WEBCAM_HEIGHT
+    label: "Webcam Height"
+    description: "Height of the virtual webcam device; client frames are scaled and letterboxed to fit."
+    category: app
+    type: text
+    default: "720"
+    docker: false
+  - name: SELKIES_WEBCAM_ENCODER
+    label: "Webcam Uplink Encoder"
+    description: "Codec WebSocket clients use to send camera frames. Auto picks the best the browser can sustain."
+    category: app
+    type: select
+    default: "auto"
+    docker: false
+    options:
+      - value: "auto"
+        label_key: auto
+        label: "Auto"
+      - value: "h264"
+        label: "H.264"
+      - value: "vp8"
+        label: "VP8"
+      - value: "mjpeg"
+        label: "MJPEG"
+  - name: SELKIES_WEBCAM_PIXEL_FORMAT
+    label: "Webcam Pixel Format"
+    description: "Pixel format of the virtual webcam device. Auto follows what the client sends."
+    category: app
+    type: select
+    default: "auto"
+    docker: false
+    options:
+      - value: "auto"
+        label_key: auto
+        label: "Auto"
+      - value: "I420"
+        label: "I420"
+      - value: "NV12"
+        label: "NV12"
+      - value: "YUYV"
+        label: "YUYV"
+      - value: "MJPEG"
+        label: "MJPEG"
+  # ---------------------------------------------------------------------------
+  # Hardening
+  # ---------------------------------------------------------------------------
+  - name: HARDEN_DESKTOP
+    label: "Harden Desktop (Preset)"
+    description: "Enables DISABLE_OPEN_TOOLS, DISABLE_SUDO and DISABLE_TERMINALS, and unless set explicitly also disables file transfers, the command websocket and the files and apps sidebar sections. Forced on for users with Harden Container."
+    category: hardening
+    type: boolean
+    default: "false"
+    docker: false
+  - name: HARDEN_OPENBOX
+    label: "Harden Window Manager (Preset)"
+    description: "Enables DISABLE_CLOSE_BUTTON, DISABLE_MOUSE_BUTTONS and HARDEN_KEYBINDS for Openbox and labwc, and RESTART_APP unless set explicitly. Forced on for users with Harden Window Manager."
+    category: hardening
+    type: boolean
+    default: "false"
+    docker: false
+  - name: DISABLE_OPEN_TOOLS
+    label: "Disable Open Tools"
+    description: "Disables xdg-open and exo-open binaries."
+    category: hardening
+    type: boolean
+    default: "false"
+    docker: false
+  - name: DISABLE_SUDO
+    label: "Disable Sudo"
+    description: "Disables the sudo command."
+    category: hardening
+    type: boolean
+    default: "false"
+    docker: false
+  - name: DISABLE_TERMINALS
+    label: "Disable Terminals"
+    description: "Disables common terminal emulators."
+    category: hardening
+    type: boolean
+    default: "false"
+    docker: false
+  - name: DISABLE_CLOSE_BUTTON
+    label: "Disable Window Close Button"
+    description: "Removes the close button from window title bars."
+    category: hardening
+    type: boolean
+    default: "false"
+    docker: false
+  - name: DISABLE_MOUSE_BUTTONS
+    label: "Disable Right/Middle Click"
+    description: "Disables right-click and middle-click context menus."
+    category: hardening
+    type: boolean
+    default: "false"
+    docker: false
+  - name: HARDEN_KEYBINDS
+    label: "Harden Keybinds"
+    description: "Disables window manager keybinds such as Alt+F4, Alt+Escape, Alt+Space and Super+E, and locks the window manager config."
+    category: hardening
+    type: boolean
+    default: "false"
+    docker: false
+  - name: RESTART_APP
+    label: "Restart App on Close"
+    description: "Automatically restarts the main application if it is closed and makes the autostart file read-only."
+    category: hardening
+    type: boolean
+    default: "false"
+    docker: false
+  # ---------------------------------------------------------------------------
+  # General
+  # ---------------------------------------------------------------------------
+  - name: MAX_RES
+    label: "Maximum Resolution"
+    description: "Max resolution for the container, default is 16k."
+    category: general
+    type: text
+    default: "15360x8640"
+    docker: false
+  - name: START_DOCKER
+    label: "Start Docker-in-Docker"
+    description: "If false, a privileged container will not start DinD."
+    category: general
+    type: boolean
+    default: "true"
+    docker: false
+  - name: DISABLE_IPV6
+    label: "Disable IPv6"
+    description: "If true, this will disable IPv6."
+    category: general
+    type: boolean
+    default: "false"
+    docker: false
+  - name: DISABLE_ZINK
+    label: "Disable Zink"
+    description: "Do not set Zink env vars if a video card is detected."
+    category: general
+    type: boolean
+    default: "false"
+    docker: false
+  - name: DISABLE_DRI3
+    label: "Disable DRI3"
+    description: "Do not use DRI3 acceleration if a video card is detected."
+    category: general
+    type: boolean
+    default: "false"
+    docker: false
+  - name: AUTO_GPU
+    label: "Automatic GPU Selection"
+    description: "'true' renders on the first GPU, 'false' disables it, or a vendor, driver or PCI vendor ID (nvidia, amdgpu, 0x10de) picks a specific one."
+    category: general
+    type: text
+    default: "true"
+    docker: false
+  - name: NO_DECOR
+    label: "No Window Decorations"
+    description: "Run application without window borders for PWA use."
+    category: general
+    type: boolean
+    default: "false"
+    docker: false
+  - name: NO_FULL
+    label: "No Fullscreen"
+    description: "Do not automatically fullscreen applications."
+    category: general
+    type: boolean
+    default: "false"
+    docker: false
+  - name: NO_GAMEPAD
+    label: "Disable Gamepad Injection"
+    description: "Skip the userspace gamepad interposer. Also hides the gamepad section and player sharing links."
+    category: general
+    type: boolean
+    default: "false"
+    docker: false
+  - name: NO_WEBCAM
+    label: "Disable Webcam Injection"
+    description: "Skip the virtual webcam device and interposer. Also hides the webcam button."
+    category: general
+    type: boolean
+    default: "false"
+    docker: false
+  - name: SELKIES_RUN_AFTER_CONNECT
+    label: "Run After Connect"
+    description: "Shell command run inside the container when the first client connects."
+    category: general
+    type: text
+    default: ""
+    docker: false
+  - name: SELKIES_RUN_AFTER_DISCONNECT
+    label: "Run After Disconnect"
+    description: "Shell command run inside the container when the last client disconnects."
+    category: general
+    type: text
+    default: ""
+    docker: false
+  - name: SELKIES_DEBUG
+    label: "Enable Selkies Debugging"
+    description: "Enable debug logging for streaming components."
+    category: general
+    type: boolean
+    default: "false"
+    docker: false
+  # ---------------------------------------------------------------------------
+  # WebRTC. The base image switches the container to WebRTC (with dual mode on)
+  # as soon as any STUN/TURN/Cloudflare/public-IP variable below is non-empty,
+  # or when SELKIES_MODE is "webrtc". Defaults mirror upstream Selkies.
+  # ---------------------------------------------------------------------------
+  - name: SELKIES_MODE
+    label: "Streaming Mode"
+    description: "Transport used by default. Auto picks WebRTC when any TURN/STUN value is set, otherwise WebSockets."
+    category: webrtc
+    type: select
+    default: ""
+    docker: false
+    options:
+      - value: ""
+        label_key: auto
+        label: "Auto"
+      - value: "websockets"
+        label_key: websockets
+        label: "WebSockets"
+      - value: "webrtc"
+        label_key: webrtc
+        label: "WebRTC"
+  - name: SELKIES_ENABLE_DUAL_MODE
+    label: "Dual Mode"
+    description: "Let users switch between WebRTC and WebSockets from the sidebar. Auto enables it only when WebRTC is configured."
+    category: webrtc
+    type: select
+    default: ""
+    docker: false
+    options:
+      - value: ""
+        label_key: auto
+        label: "Auto"
+      - value: "true"
+        label_key: enabled
+        label: "Enabled"
+      - value: "false"
+        label_key: disabled
+        label: "Disabled"
+  - name: SELKIES_WEBRTC_PACER
+    label: "WebRTC Pacer"
+    description: "Pace outgoing WebRTC packets with strict priorities so audio and input are protected from video bursts on congested links."
+    category: webrtc
+    type: boolean
+    default: "true"
+    docker: false
+  - name: SELKIES_CONGESTION_CONTROL
+    label: "Congestion Control"
+    description: "Adapt the video bitrate to the bandwidth estimate from WebRTC receiver feedback. Effective in CBR mode."
+    category: webrtc
+    type: boolean
+    default: "false"
+    docker: false
+  - name: SELKIES_STUN_HOST
+    label: "STUN Host"
+    description: "STUN server for NAT hole punching. Point at an internal server for networks without internet."
+    category: webrtc
+    type: text
+    default: "stun.l.google.com"
+    docker: false
+  - name: SELKIES_STUN_PORT
+    label: "STUN Port"
+    description: "Port of the STUN server."
+    category: webrtc
+    type: text
+    default: "19302"
+    docker: false
+  - name: SELKIES_TURN_HOST
+    label: "TURN Host"
+    description: "TURN server used with the shared secret or long-term credentials. Wrap IPv6 addresses in square brackets."
+    category: webrtc
+    type: text
+    default: "staticauth.openrelay.metered.ca"
+    docker: false
+  - name: SELKIES_TURN_PORT
+    label: "TURN Port"
+    description: "Port of the TURN server."
+    category: webrtc
+    type: text
+    default: "443"
+    docker: false
+  - name: SELKIES_TURN_PROTOCOL
+    label: "TURN Protocol"
+    description: "Transport the client uses to reach TURN. UDP is strongly recommended; use TCP only where UDP is blocked."
+    category: webrtc
+    type: select
+    default: "udp"
+    docker: false
+    options:
+      - value: "udp"
+        label: "UDP"
+      - value: "tcp"
+        label: "TCP"
+  - name: SELKIES_TURN_TLS
+    label: "TURN over TLS/DTLS"
+    description: "Use TURN over TLS (TCP) or DTLS (UDP). Requires a valid certificate on the TURN server."
+    category: webrtc
+    type: boolean
+    default: "false"
+    docker: false
+  - name: SELKIES_TURN_SHARED_SECRET
+    label: "TURN Shared Secret"
+    description: "Shared secret used to generate time-limited HMAC TURN credentials."
+    category: webrtc
+    type: text
+    default: "openrelayprojectsecret"
+    docker: false
+  - name: SELKIES_TURN_USERNAME
+    label: "TURN Username"
+    description: "Legacy long-term TURN credential username."
+    category: webrtc
+    type: text
+    default: ""
+    docker: false
+  - name: SELKIES_TURN_PASSWORD
+    label: "TURN Password"
+    description: "Legacy long-term TURN credential password."
+    category: webrtc
+    type: text
+    default: ""
+    docker: false
+  - name: SELKIES_TURN_REST_URI
+    label: "TURN REST API URI"
+    description: "URI of a TURN REST credential service, e.g. http://localhost:8008."
+    category: webrtc
+    type: text
+    default: ""
+    docker: false
+  - name: SELKIES_TURN_REST_API_KEY
+    label: "TURN REST API Key"
+    description: "API key sent to the TURN REST service."
+    category: webrtc
+    type: text
+    default: ""
+    docker: false
+  - name: SELKIES_TURN_REST_USERNAME
+    label: "TURN REST Username"
+    description: "Username the TURN REST service embeds in the credential. Empty uses 'selkies'."
+    category: webrtc
+    type: text
+    default: ""
+    docker: false
+  - name: SELKIES_WEBRTC_PUBLIC_IP
+    label: "WebRTC Public IP"
+    description: "Public address to advertise in host ICE candidates for a server behind static 1:1 NAT. One IPv4 and/or one IPv6 address."
+    category: webrtc
+    type: text
+    default: ""
+    docker: false
+  - name: SELKIES_ENABLE_CLOUDFLARE_TURN
+    label: "Enable Cloudflare TURN"
+    description: "Use the Cloudflare TURN service. Requires the token ID and API token below."
+    category: webrtc
+    type: boolean
+    default: "false"
+    docker: false
+  - name: SELKIES_CLOUDFLARE_TURN_TOKEN_ID
+    label: "Cloudflare TURN Token ID"
+    description: "The Cloudflare TURN app token ID."
+    category: webrtc
+    type: text
+    default: ""
+    docker: false
+  - name: SELKIES_CLOUDFLARE_TURN_API_TOKEN
+    label: "Cloudflare TURN API Token"
+    description: "The Cloudflare TURN API token."
+    category: webrtc
+    type: text
+    default: ""
+    docker: false
+  - name: SELKIES_RTC_CONFIG_JSON
+    label: "RTC Config JSON Path"
+    description: "Path inside the container to a JSON file with the WebRTC configuration. Overrides every other STUN/TURN setting and is re-read periodically."
+    category: webrtc
+    type: text
+    default: ""
+    docker: false
+  # ---------------------------------------------------------------------------
+  # Docker run options
+  # ---------------------------------------------------------------------------
+  - name: DOCKER_PRIVILEGED
+    label: "Privileged Mode"
+    description: "Give all caps to container, lift cgroup restrictions, mounts all host devices. This will break things!"
+    category: docker
+    type: boolean
+    default: "false"
+    docker: true
+  - name: DOCKER_BIND_MOUNTS
+    label: "Extra Bind Mounts"
+    description: "Extra host binds (comma separated, e.g., /host/path:/container/path:ro)."
+    category: docker
+    type: text
+    default: ""
+    docker: true
+  - name: DOCKER_ENV
+    label: "Environment Variables"
+    description: "Extra environment variables (comma separated, e.g., KEY=VALUE,KEY2=VALUE2)."
+    category: docker
+    type: text
+    default: ""
+    docker: true
+  - name: DOCKER_CAP_ADD
+    label: "Cap Add"
+    description: "Add kernel capabilities (comma separated, e.g., SYS_ADMIN,MKNOD)."
+    category: docker
+    type: text
+    default: ""
+    docker: true
+  - name: DOCKER_CAP_DROP
+    label: "Cap Drop"
+    description: "Drop kernel capabilities (comma separated)."
+    category: docker
+    type: text
+    default: ""
+    docker: true
+  - name: DOCKER_SECURITY_OPT
+    label: "Security Options"
+    description: "Security options (comma separated, e.g., seccomp=unconfined,apparmor=unconfined)."
+    category: docker
+    type: text
+    default: ""
+    docker: true
+  - name: DOCKER_DEVICES
+    label: "Devices"
+    description: "Expose host devices (comma separated, e.g., /dev/sda:/dev/xvda:rwm)."
+    category: docker
+    type: text
+    default: ""
+    docker: true
+  - name: DOCKER_SHM_SIZE
+    label: "SHM Size"
+    description: "Size of /dev/shm (e.g. 1G, 2G)."
+    category: docker
+    type: text
+    default: ""
+    docker: true
+  - name: DOCKER_MEM_LIMIT
+    label: "Memory Limit"
+    description: "Memory limit (e.g. 1g, 512m)."
+    category: docker
+    type: text
+    default: ""
+    docker: true
+  - name: DOCKER_CPU_SHARES
+    label: "CPU Shares"
+    description: "CPU shares (relative weight integer)."
+    category: docker
+    type: text
+    default: ""
+    docker: true
+  - name: DOCKER_NANO_CPUS
+    label: "Nano CPUs"
+    description: "CPU quota in units of 1e-9 CPUs."
+    category: docker
+    type: text
+    default: ""
+    docker: true
+  - name: DOCKER_NETWORK_MODE
+    label: "Network Mode"
+    description: "Networking mode for the container."
+    category: docker
+    type: select
+    default: ""
+    docker: true
+    options:
+      - value: ""
+        label_key: default
+        label: "Default (Bridge)"
+      - value: "host"
+        label_key: host
+        label: "Host"
+      - value: "none"
+        label_key: none
+        label: "None"
+      - value: "bridge"
+        label_key: bridge
+        label: "Bridge"
+  - name: DOCKER_IPC_MODE
+    label: "IPC Mode"
+    description: "Set the IPC mode for the container."
+    category: docker
+    type: select
+    default: ""
+    docker: true
+    options:
+      - value: ""
+        label_key: default
+        label: "Default"
+      - value: "host"
+        label_key: host
+        label: "Host"
+      - value: "private"
+        label_key: private
+        label: "Private"
+      - value: "shareable"
+        label_key: shareable
+        label: "Shareable"
+  - name: DOCKER_PID_MODE
+    label: "PID Mode"
+    description: "Set the PID mode for the container."
+    category: docker
+    type: select
+    default: ""
+    docker: true
+    options:
+      - value: ""
+        label_key: default
+        label: "Default"
+      - value: "host"
+        label_key: host
+        label: "Host"
+  - name: DOCKER_DNS
+    label: "DNS Servers"
+    description: "Custom DNS servers (comma separated)."
+    category: docker
+    type: text
+    default: ""
+    docker: true
+  - name: DOCKER_EXTRA_HOSTS
+    label: "Extra Hosts"
+    description: "Host to IP mappings (comma separated, e.g., hostname:1.2.3.4)."
+    category: docker
+    type: text
+    default: ""
+    docker: true
+  - name: DOCKER_SYSCTLS
+    label: "Sysctls"
+    description: "Kernel parameters (comma separated, e.g., net.ipv4.ip_forward=1)."
+    category: docker
+    type: text
+    default: ""
+    docker: true
+  - name: DOCKER_ULIMITS
+    label: "Ulimits"
+    description: "Ulimits (comma separated, e.g., nofile=1024:1024)."
+    category: docker
+    type: text
+    default: ""
+    docker: true
+  - name: DOCKER_TMPFS
+    label: "Tmpfs Mounts"
+    description: "Temporary filesystems (comma separated, e.g., /run:rw,noexec,nosuid,size=65536k)."
+    category: docker
+    type: text
+    default: ""
+    docker: true
+  - name: DOCKER_GROUP_ADD
+    label: "Group Add"
+    description: "List of additional group names and/or IDs (comma separated)."
+    category: docker
+    type: text
+    default: ""
+    docker: true

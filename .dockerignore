@@ -1,0 +1,22 @@
+# Keep the Docker build context lean. Persistent state is provided at runtime
+# by Docker volumes / bind mounts, not baked into the image.
+data/
+vreckan-data/
+screenshots/
+tests/
+.pytest_cache/
+codeto*
+__pycache__/
+**/__pycache__/
+*.pyc
+*.pyo
+.git/
+.gitignore
+.env
+*.md
+shots/
+# Security-scan output (trivy/grype JSON reports + the parse helper) — kept
+# out of the image. Safe to delete; regenerate with the Task 8 scan commands.
+_scan_out/
+*.log
+val_out.txt

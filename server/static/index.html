@@ -1,0 +1,327 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Vreckan</title>
+<link rel="icon" type="image/png" href="/img/icon128.png">
+<link rel="stylesheet" href="/css/app.css">
+</head>
+<body>
+<div id="app">
+  <!-- ===== Login view ===== -->
+  <section id="view-login" class="view" hidden>
+    <div class="login-card card">
+      <div class="login-brand">
+        <img src="/img/icon128.png" alt="" class="brand-icon">
+        <h1>Vreckan</h1>
+        <p class="muted">Sign in to launch containerized apps</p>
+      </div>
+      <form id="login-form" autocomplete="on">
+        <label>Username
+          <input type="text" id="login-username" name="username" autocomplete="username" required>
+        </label>
+        <label>Password
+          <input type="password" id="login-password" name="password" autocomplete="current-password" required>
+        </label>
+        <button type="submit" class="btn btn-primary btn-block" id="login-submit">Sign in</button>
+        <div id="login-sso-divider" class="sso-divider" hidden><span>or</span></div>
+        <button type="button" class="btn btn-block" id="login-sso" hidden>Sign in with SSO</button>
+        <p id="login-error" class="error" role="alert" hidden></p>
+      </form>
+    </div>
+  </section>
+
+  <!-- ===== App shell: persistent sidebar + views (Feat 5) ===== -->
+  <div id="shell" class="shell" hidden>
+    <aside class="sidebar">
+      <div class="sidebar-header" id="brand-home">
+        <img src="/img/icon128.png" alt="" class="brand-icon-sm">
+        <span class="brand-name">Vreckan</span>
+      </div>
+      <nav class="sidebar-nav" id="sidebar-nav">
+        <div class="nav-group">
+          <button id="tab-apps" class="nav-link active" data-view="main">Apps</button>
+          <button id="tab-files" class="nav-link" data-view="files" hidden>Files</button>
+        </div>
+        <div class="nav-group admin-group" data-admin-group="access" hidden>
+          <div class="nav-group-label">Access</div>
+          <button class="nav-link admin-link" data-admin-section="overview" hidden>Overview</button>
+          <button class="nav-link admin-link" data-admin-section="accounts" hidden>Accounts</button>
+          <button class="nav-link admin-link" data-admin-section="groups" hidden>Groups</button>
+          <button class="nav-link admin-link" data-admin-section="roles" hidden>Roles</button>
+          <button class="nav-link admin-link" data-admin-section="global-settings" hidden>Global Settings</button>
+          <button class="nav-link admin-link" data-admin-section="sso" hidden>SSO</button>
+        </div>
+        <div class="nav-group admin-group" data-admin-group="apps" hidden>
+          <div class="nav-group-label">Apps</div>
+          <button class="nav-link admin-link" data-admin-section="apps" hidden>Installed Apps</button>
+          <button class="nav-link admin-link" data-admin-section="stores" hidden>App Stores</button>
+          <button class="nav-link admin-link" data-admin-section="templates" hidden>Templates</button>
+          <button class="nav-link admin-link" data-admin-section="laboratory" hidden>Laboratory</button>
+        </div>
+        <div class="nav-group admin-group" data-admin-group="system" hidden>
+          <div class="nav-group-label">System</div>
+          <button class="nav-link admin-link" data-admin-section="mounts" hidden>Volume mounts</button>
+          <button class="nav-link admin-link" data-admin-section="backup" hidden>Backup</button>
+          <button class="nav-link admin-link" data-admin-section="sessions" hidden>Sessions</button>
+        </div>
+      </nav>
+      <div class="sidebar-footer">
+        <span id="user-label" class="muted"></span>
+        <div class="sidebar-footer-actions">
+          <button id="btn-change-password" class="btn btn-ghost btn-sm">Password</button>
+          <button id="btn-logout" class="btn btn-ghost btn-sm">Sign out</button>
+        </div>
+      </div>
+    </aside>
+
+    <div class="main-area">
+
+  <!-- ===== Main view ===== -->
+  <section id="view-main" class="view" hidden>
+    <main class="content">
+      <!-- Launch options -->
+      <div class="launch-options card">
+        <div class="field">
+          <label for="opt-home">Home directory</label>
+          <div class="field-inline">
+            <select id="opt-home">
+              <option value="auto" selected>Auto</option>
+              <option value="cleanroom">Cleanroom</option>
+            </select>
+            <button id="btn-manage-homedirs" class="btn btn-ghost btn-sm" type="button" hidden>Manage</button>
+          </div>
+        </div>
+        <div class="field">
+          <label for="opt-language">Language</label>
+          <select id="opt-language"></select>
+        </div>
+        <div class="field" id="field-gpu" hidden>
+          <label for="opt-gpu">GPU</label>
+          <select id="opt-gpu"></select>
+        </div>
+        <div class="field field-row">
+          <label class="check">
+            <input type="checkbox" id="opt-room-mode">
+            <span>Launch in room mode</span>
+          </label>
+        </div>
+        <div class="field field-row">
+          <label class="check">
+            <input type="checkbox" id="opt-wayland" checked>
+            <span>Wayland</span>
+          </label>
+        </div>
+        <div class="field field-row">
+          <button type="button" class="btn btn-ghost btn-sm" id="btn-save-preset">Save these launch options as a preset</button>
+        </div>
+        <div class="field field-row">
+          <button type="button" class="btn btn-ghost btn-sm" id="btn-upload-storage" hidden>Upload a file to shared storage</button>
+        </div>
+      </div>
+
+      <!-- Pinned launch options (Feat 7) -->
+      <div id="pinned-section" hidden>
+        <h2 class="section-title">Pinned</h2>
+        <div id="pinned-list" class="pinned-list"></div>
+      </div>
+
+      <!-- Launcher -->
+      <h2 class="section-title">Apps</h2>
+      <div id="app-grid" class="app-grid">
+        <div class="skeleton skeleton-app"></div>
+        <div class="skeleton skeleton-app"></div>
+        <div class="skeleton skeleton-app"></div>
+      </div>
+
+      <!-- Sessions -->
+      <h2 class="section-title">Active sessions</h2>
+      <div id="sessions-list" class="sessions-list">
+        <p class="muted">No active sessions.</p>
+      </div>
+    </main>
+  </section>
+
+  <!-- ===== Files view ===== -->
+  <section id="view-files" class="view" hidden>
+    <div class="content">
+      <div class="fm-toolbar card">
+        <label class="field">
+          <span class="label">Folder</span>
+          <select id="fm-home"></select>
+        </label>
+        <div id="fm-breadcrumb" class="fm-crumbs"></div>
+        <div class="fm-actions">
+          <button id="fm-up" class="btn btn-ghost" title="Up one level">Up</button>
+          <button id="fm-refresh" class="btn btn-ghost" title="Refresh">Refresh</button>
+          <button id="fm-new-folder" class="btn btn-ghost">New folder</button>
+          <button id="fm-upload" class="btn btn-ghost">Upload</button>
+          <input type="file" id="fm-upload-input" multiple hidden>
+          <button id="fm-download" class="btn btn-primary" disabled>Download</button>
+          <button id="fm-share" class="btn btn-primary" disabled>Share</button>
+          <button id="fm-open-in-app" class="btn btn-primary" disabled>Open in app</button>
+          <button id="fm-delete" class="btn btn-danger" disabled>Delete</button>
+          <button id="fm-shares-btn" class="btn btn-ghost">Shares</button>
+        </div>
+      </div>
+
+      <div id="fm-progress" class="fm-progress" hidden></div>
+
+      <div class="card">
+        <table class="fm-table" id="fm-table">
+          <thead>
+            <tr>
+              <th class="fm-col-sel"><input type="checkbox" id="fm-select-all"></th>
+              <th>Name</th>
+              <th>Size</th>
+              <th>Modified</th>
+            </tr>
+          </thead>
+          <tbody id="fm-body"></tbody>
+        </table>
+        <p id="fm-empty" class="empty-state" hidden>No files here.</p>
+      </div>
+
+      <div class="fm-pager">
+        <button id="fm-prev" class="btn btn-ghost" disabled>Prev</button>
+        <span id="fm-page-info" class="muted">Page 1</span>
+        <button id="fm-next" class="btn btn-ghost" disabled>Next</button>
+      </div>
+
+      <!-- Shares panel -->
+      <div id="fm-shares-panel" class="card" hidden>
+        <h2 class="section-title">Active shares</h2>
+        <div id="fm-shares-list"></div>
+      </div>
+    </div>
+  </section>
+
+  <!-- ===== Admin view ===== -->
+  <section id="view-admin" class="view" hidden>
+    <div class="content admin-content">
+      <div class="admin-panel">
+        <div id="admin-section"></div>
+      </div>
+    </div>
+  </section>
+    </div><!-- /.main-area -->
+  </div><!-- /#shell -->
+</div><!-- /#app -->
+
+<!-- ===== Change password modal ===== -->
+<div id="modal-password" class="modal-backdrop" hidden>
+  <div class="modal card">
+    <h3>Change password</h3>
+    <form id="change-password-form">
+      <label>Current password
+        <input type="password" id="cp-old" required autocomplete="current-password">
+      </label>
+      <label>New password
+        <input type="password" id="cp-new" required autocomplete="new-password">
+      </label>
+      <label>Confirm new password
+        <input type="password" id="cp-confirm" required autocomplete="new-password">
+      </label>
+      <p id="cp-error" class="error" role="alert" hidden></p>
+      <div class="modal-actions">
+        <button type="button" class="btn btn-ghost" id="cp-cancel">Cancel</button>
+        <button type="submit" class="btn btn-primary">Save</button>
+      </div>
+    </form>
+  </div>
+</div>
+
+<!-- ===== File share modal ===== -->
+<div id="modal-file-share" class="modal-backdrop" hidden>
+  <div class="modal card">
+    <h3>Share file</h3>
+    <p id="file-share-path" class="muted"></p>
+    <form id="file-share-form">
+      <label>Password (optional)
+        <input type="password" id="fs-password" autocomplete="off">
+      </label>
+      <label>Expires in hours (optional)
+        <input type="number" id="fs-expiry" min="1" placeholder="e.g. 72">
+      </label>
+      <p id="fs-error" class="error" role="alert" hidden></p>
+      <div id="fs-result" hidden>
+        <p class="muted">Share link:</p>
+        <div class="fm-share-url">
+          <code id="fs-url"></code>
+          <button type="button" class="btn btn-primary btn-sm" id="fs-copy">Copy</button>
+        </div>
+      </div>
+      <div class="modal-actions">
+        <button type="button" class="btn btn-ghost" id="fs-cancel">Close</button>
+        <button type="submit" class="btn btn-primary">Create</button>
+      </div>
+    </form>
+  </div>
+</div>
+
+<!-- ===== Share modal ===== -->
+<div id="modal-share" class="modal-backdrop" hidden>
+  <div class="modal card">
+    <h3>Share</h3>
+    <form id="share-form">
+      <label>Share with
+        <input type="text" id="sh-to" required>
+      </label>
+      <p id="sh-error" class="error" role="alert" hidden></p>
+      <div class="modal-actions">
+        <button type="button" class="btn btn-ghost" id="sh-cancel">Cancel</button>
+        <button type="submit" class="btn btn-primary">Share</button>
+      </div>
+    </form>
+  </div>
+</div>
+
+<!-- ===== Launch modal (file-backed apps — Feat 12) ===== -->
+<div id="modal-launch" class="modal-backdrop" hidden>
+  <div class="modal card">
+    <h3 id="launch-title">Launch app</h3>
+    <p class="muted" id="launch-sub">The app will launch without opening a file. Check "Open file on launch" to pick one.</p>
+    <form id="launch-form">
+      <div class="field">
+        <label for="launch-name">Session name (optional)</label>
+        <input type="text" id="launch-name" placeholder="Appears in the window title and session list">
+      </div>
+      <div class="field field-row">
+        <label class="check">
+          <input type="checkbox" id="launch-open-on-launch">
+          <span>Open file on launch</span>
+        </label>
+      </div>
+      <div id="launch-file-fields" hidden>
+        <div class="field">
+          <label for="launch-file">File to open (optional, from your computer)</label>
+          <input type="file" id="launch-file">
+        </div>
+        <p id="launch-upload-status" class="muted" hidden></p>
+        <hr>
+        <div class="field">
+          <label for="launch-server-file">Or open a file already in shared storage</label>
+          <input type="text" id="launch-server-file" placeholder="filename in shared storage">
+        </div>
+      </div>
+      <p id="launch-error" class="error" role="alert" hidden></p>
+      <div class="modal-actions">
+        <button type="button" class="btn btn-ghost" id="launch-cancel">Cancel</button>
+        <button type="submit" class="btn btn-primary" id="launch-submit">Launch</button>
+      </div>
+    </form>
+  </div>
+</div>
+
+<!-- Hidden file picker for "Send File" on a session (Feat 9) -->
+<input type="file" id="session-send-file" hidden>
+<!-- Hidden file picker for "Upload to Storage" (Feat 10) -->
+<input type="file" id="storage-upload-input" hidden>
+
+<!-- ===== Toasts ===== -->
+<div id="toasts" class="toasts" aria-live="polite"></div>
+
+<script type="module" src="/js/app.js"></script>
+</body>
+</html>
