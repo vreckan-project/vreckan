@@ -161,6 +161,16 @@ class UserSettings(BaseModel):
     gpu: bool = True
     storage_limit: int = -1
     session_limit: int = -1
+    # The user's preferred UI language (an i18n locale code, e.g. "de").
+    # Personal preference, not an admin-managed capability; set via the
+    # sidebar language selector and reported back on /api/auth/me.
+    ui_language: Optional[str] = None
+
+
+class UiPreferencesRequest(BaseModel):
+    """Body for PUT /api/auth/preferences — the caller's personal UI prefs."""
+    ui_language: Optional[str] = None
+
 
 class AdminStatusResponse(BaseModel):
     is_admin: bool

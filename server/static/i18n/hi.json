@@ -1,0 +1,1782 @@
+{
+  "background": {
+    "contextMenu": {
+      "openUrl": "SealSkin में लिंक खोलें",
+      "openFile": "लिंक लक्ष्य को SealSkin में फ़ाइल के रूप में खोलें",
+      "sendMedia": "मीडिया को SealSkin में भेजें",
+      "searchText": "SealSkin में \"%s\" खोजें",
+      "sendDownload": "अगला डाउनलोड SealSkin में भेजें"
+    }
+  },
+  "common": {
+    "actions": "कार्रवाइयाँ",
+    "active": "सक्रिय",
+    "cancel": "रद्द करें",
+    "manage": "प्रबंधित करें",
+    "delete": "हटाएं",
+    "edit": "संपादित करें",
+    "save": "सहेजें",
+    "none": "कोई नहीं",
+    "error": "त्रुटि",
+    "na": "लागू नहीं",
+    "of": "का",
+    "status": "स्थिति",
+    "username": "उपयोगकर्ता नाम",
+    "group": "समूह",
+    "groups": "समूह",
+    "publicKey": "सार्वजनिक कुंजी",
+    "name": "नाम",
+    "source": "स्रोत",
+    "imageVersion": "छवि संस्करण",
+    "language": "भाषा",
+    "storage": "भंडारण",
+    "gpu": "GPU",
+    "version": "संस्करण",
+    "checked": "जाँचा गया",
+    "never": "कभी नहीं",
+    "stop": "रोकें",
+    "reopen": "फिर से खोलें",
+    "sendFile": "फ़ाइल भेजें",
+    "share": "साझा करें",
+    "search": "खोजें",
+    "refresh": "ताज़ा करें",
+    "close": "बंद करें",
+    "copy": "कॉपी करें",
+    "open": "खोलें",
+    "copyUrl": "URL कॉपी करें",
+    "download": "डाउनलोड",
+    "next": "अगला",
+    "previous": "पिछला",
+    "page": "पृष्ठ",
+    "home": "होम डायरेक्टरी",
+    "homes": "होम डायरेक्टरी",
+    "sessions": "सत्र",
+    "users": "उपयोगकर्ता",
+    "admins": "प्रशासक",
+    "yes": "हाँ",
+    "no": "नहीं",
+    "daysAgo": "{count, plural, one {1 दिन पहले} other {{count} दिन पहले}}",
+    "hoursAgo": "{count, plural, one {1 घंटा पहले} other {{count} घंटे पहले}}",
+    "minutesAgo": "{count, plural, one {1 मिनट पहले} other {{count} मिनट पहले}}",
+    "justNow": "अभी-अभी",
+    "bytes": "बाइट्स",
+    "kb": "KB",
+    "mb": "MB",
+    "gb": "GB",
+    "tb": "TB",
+    "pb": "PB",
+    "password": "पासवर्ड",
+    "upload": "अपलोड",
+    "create": "बनाएं",
+    "apply": "लागू करें",
+    "saved": "सहेजा गया",
+    "loading": "लोड हो रहा है…",
+    "remove": "हटाएँ",
+    "connect": "जोड़ें"
+  },
+  "options": {
+    "sidebar": {
+      "config": "कॉन्फ़िगरेशन",
+      "home": "होम डायरेक्टरी",
+      "sessions": "सक्रिय सत्र",
+      "pinned": "पिन किया गया व्यवहार",
+      "appStore": "ऐप स्टोर",
+      "appTemplates": "ऐप टेम्पलेट्स",
+      "appLaboratory": "ऐप प्रयोगशाला",
+      "installedApps": "स्थापित ऐप्स",
+      "users": "उपयोगकर्ता",
+      "groups": "समूह",
+      "admins": "प्रशासक"
+    },
+    "dashboard": {
+      "title": "डैशबोर्ड",
+      "clientSettings": "क्लाइंट सेटिंग्स",
+      "exportConfig": "कॉन्फ़िगरेशन निर्यात करें",
+      "userStatus": "उपयोगकर्ता स्थिति",
+      "loggedInAs": "इस रूप में लॉग इन हैं:",
+      "role": "भूमिका",
+      "roleAdmin": "प्रशासक",
+      "roleUser": "मानक उपयोगकर्ता",
+      "serverInfo": "सर्वर जानकारी",
+      "server": "सर्वर:",
+      "cpuModel": "सीपीयू मॉडल:",
+      "storageUsage": "भंडारण उपयोग:",
+      "detectedGpus": "पता लगाए गए जीपीयू:",
+      "logout": "लॉगआउट और कॉन्फ़िग साफ़ करें",
+      "howTo": "SealSkin का उपयोग कैसे करें",
+      "howToDescription": "इस अनुभाग में एक्सटेंशन का उपयोग करने के तरीके पर बुनियादी दस्तावेज़ शामिल हैं।",
+      "howToList": [
+        "<strong>सामग्री को अलगाव में खोलने के लिए:</strong> किसी भी लिंक, छवि, या चयनित पाठ पर राइट-क्लिक करें और \"SealSkin Isolation\" संदर्भ मेनू से एक विकल्प चुनें।",
+        "<strong>डाउनलोड को अलगाव में भेजने के लिए:</strong> पृष्ठ पर राइट-क्लिक करें और \"अगला डाउनलोड अलगाव में भेजें\" चुनें। आपके द्वारा डाउनलोड की जाने वाली अगली फ़ाइल को रोककर एक सुरक्षित सत्र में भेजा जाएगा।",
+        "<strong>एक स्वच्छ एप्लिकेशन लॉन्च करने के लिए:</strong> अपने ब्राउज़र के टूलबार में SealSkin आइकन पर क्लिक करें।",
+        "<strong>स्थायी भंडारण का प्रबंधन करने के लिए:</strong> इस पृष्ठ पर \"होम डायरेक्टरी\" टैब का उपयोग करके भंडारण वॉल्यूम बनाएं और हटाएं जिनका उपयोग कई सत्रों में किया जा सकता है।",
+        "<strong>लॉन्च विकल्पों को सहेजने के लिए:</strong> किसी विशिष्ट फ़ाइल प्रकार (जैसे, .pdf) या सभी URL के लिए एप्लिकेशन लॉन्च करने से पहले पॉपअप में \"इन लॉन्च विकल्पों को सहेजें\" बॉक्स को चेक करें। इन सहेजी गई प्राथमिकताओं को \"पिन किया गया व्यवहार\" टैब में प्रबंधित करें।"
+      ],
+      "confirmLogout": "क्या आप वाकई लॉगआउट करना चाहते हैं? यह इस ब्राउज़र से आपकी सहेजी गई कॉन्फ़िगरेशन को साफ़ कर देगा।"
+    },
+    "config": {
+      "quickSetup": "त्वरित सेटअप",
+      "quickSetupDescription": "अपने व्यवस्थापक द्वारा प्रदान की गई कॉन्फ़िगरेशन फ़ाइल (.json) अपलोड करें, या एक्सटेंशन को स्वचालित रूप से सेट करने के लिए नीचे इसकी सामग्री पेस्ट करें।",
+      "uploadLabel": "कॉन्फ़िग फ़ाइल अपलोड करें",
+      "pasteLabel": "या कॉन्फ़िग टेक्स्ट पेस्ट करें",
+      "pastePlaceholder": "अपना JSON कॉन्फ़िगरेशन यहाँ पेस्ट करें...",
+      "applyButton": "कॉन्फ़िगरेशन लागू करें",
+      "manualLink": "मैनुअल कॉन्फ़िगरेशन",
+      "advancedTitle": "क्लाइंट कॉन्फ़िगरेशन (उन्नत)",
+      "serverIpLabel": "सर्वर आईपी या डोमेन",
+      "serverIpPlaceholder": "उदा., 192.168.1.100",
+      "apiPortLabel": "एपीआई पोर्ट",
+      "apiPortPlaceholder": "उदा., 8000",
+      "sessionPortLabel": "सत्र पोर्ट",
+      "sessionPortPlaceholder": "उदा., 8443",
+      "usernameLabel": "उपयोगकर्ता नाम",
+      "usernamePlaceholder": "आपका उपयोगकर्ता नाम",
+      "privateKeyLabel": "आपकी निजी कुंजी (PEM प्रारूप)",
+      "privateKeyPlaceholder": "अपनी निजी कुंजी की सामग्री यहाँ पेस्ट करें",
+      "serverKeyLabel": "सर्वर सार्वजनिक कुंजी (PEM प्रारूप)",
+      "serverKeyPlaceholder": "server_public.pem की सामग्री यहाँ पेस्ट करें",
+      "searchEngineLabel": "चयनित पाठ के लिए डिफ़ॉल्ट खोज इंजन",
+      "saveButton": "कॉन्फ़िगरेशन सहेजें",
+      "loginButton": "लॉगिन और परीक्षण करें",
+      "automaticLink": "स्वचालित कॉन्फ़िगरेशन",
+      "chooseFile": "फ़ाइल चुनें",
+      "keyGeneration": "कुंजी निर्माण",
+      "keyGenDescription": "यदि आपके पास कुंजी जोड़ी नहीं है, तो आप यहाँ एक बना सकते हैं। निजी कुंजी ऊपर भर दी जाएगी। अपने प्रशासक को सार्वजनिक कुंजी प्रदान करें।",
+      "generateKeyButton": "नया कुंजी जोड़ा उत्पन्न करें",
+      "publicKeyForAdminLabel": "आपकी सार्वजनिक कुंजी (व्यवस्थापक के लिए)"
+    },
+    "home": {
+      "title": "आपकी होम डायरेक्टरी",
+      "description": "सत्रों में उपयोग के लिए स्थायी भंडारण डायरेक्टरी बनाएं। ये आपके कॉन्फ़िगरेशन डायरेक्टरी के रूप में आपके एप्लिकेशन में माउंट की जाएंगी।",
+      "newTitle": "नई होम डायरेक्टरी बनाएं",
+      "nameLabel": "डायरेक्टरी का नाम:",
+      "namePlaceholder": "उदा., my-project-files",
+      "nameTitle": "केवल अक्षर, संख्याएं, अंडरस्कोर, या हाइफ़न का उपयोग करें।",
+      "createButton": "डायरेक्टरी बनाएं",
+      "isLaboratory": "यह एक प्रयोगशाला ऐप है, जो कस्टम सेटिंग्स के साथ बेस इमेज से बनाया गया है।",
+      "laboratory": "प्रयोगशाला",
+      "confirmDelete": "क्या आप वाकई स्थापित ऐप '{appName}' को हटाना चाहते हैं?"
+    },
+    "sessions": {
+      "title": "सक्रिय सत्र",
+      "application": "एप्लिकेशन",
+      "started": "शुरू हुआ",
+      "noSessionsUser": "कोई सक्रिय सत्र नहीं मिला।",
+      "noSessionsAdmin": "किसी भी उपयोगकर्ता के लिए कोई सक्रिय सत्र नहीं मिला।",
+      "sessionsFor": "{username} के लिए सत्र ({count})",
+      "confirmStop": "क्या आप वाकई इस सत्र को रोकना चाहते हैं? कंटेनर नष्ट हो जाएगा।"
+    },
+    "pinned": {
+      "title": "पिन किया गया एक्सटेंशन व्यवहार",
+      "description": "यह तालिका आपके द्वारा विशिष्ट फ़ाइल प्रकारों या सभी URL के लिए सहेजे गए लॉन्च विकल्पों को दिखाती है। आप लॉन्च विकल्पों के लिए फिर से संकेत पाने के लिए पिन किए गए व्यवहार को हटा सकते हैं।",
+      "trigger": "ट्रिगर",
+      "savedApp": "सहेजा गया एप्लिकेशन",
+      "triggerSimple": "सरल लॉन्च (टूलबार बटन)",
+      "triggerUrl": "सभी यूआरएल (संदर्भ मेनू से)",
+      "triggerFile": "फ़ाइल प्रकार: <strong>{fileType}</strong>",
+      "unknownApp": "अज्ञात ऐप ({appId}...)"
+    },
+    "admins": {
+      "serverKeyTitle": "सर्वर सार्वजनिक कुंजी",
+      "serverKeyDescription": "यह वह सार्वजनिक कुंजी है जिसकी आवश्यकता उपयोगकर्ता कॉन्फ़िगरेशन फ़ाइलों को इस सर्वर से कनेक्ट करने के लिए होगी।",
+      "title": "व्यवस्थापक प्रबंधन",
+      "searchPlaceholder": "व्यवस्थापकों को खोजें...",
+      "newTitle": "नया व्यवस्थापक बनाएं",
+      "publicKeyOptionalLabel": "सार्वजनिक कुंजी (वैकल्पिक):",
+      "publicKeyPlaceholder": "सार्वजनिक कुंजी यहाँ पेस्ट करें, या एक उत्पन्न करने के लिए खाली छोड़ दें।",
+      "createButton": "व्यवस्थापक बनाएं",
+      "confirmDelete": "क्या आप वाकई व्यवस्थापक '{username}' को हटाना चाहते हैं? यह उनके सभी स्थायी भंडारण को भी हटा देगा और इसे पूर्ववत नहीं किया जा सकता है।"
+    },
+    "users": {
+      "title": "उपयोगकर्ता प्रबंधन",
+      "searchPlaceholder": "नाम या समूह द्वारा उपयोगकर्ताओं को खोजें...",
+      "newTitle": "नया उपयोगकर्ता बनाएं",
+      "publicKeyOptionalLabel": "सार्वजनिक कुंजी (वैकल्पिक):",
+      "publicKeyPlaceholder": "उपयोगकर्ता की सार्वजनिक कुंजी यहाँ पेस्ट करें, या एक उत्पन्न करने के लिए खाली छोड़ दें।",
+      "settingsTitle": "उपयोगकर्ता सेटिंग्स",
+      "sessionLimitLabel": "सत्र सीमा",
+      "sessionLimitTitle": "एक उपयोगकर्ता के पास सक्रिय सत्रों की संख्या। असीमित के लिए -1।",
+      "permissionsTitle": "अनुमतियाँ और सुदृढीकरण",
+      "activeAccount": "सक्रिय खाता",
+      "allowStorage": "स्थायी भंडारण की अनुमति दें",
+      "allowGpu": "जीपीयू एक्सेस की अनुमति दें",
+      "hardenContainer": "कंटेनर को सुदृढ़ करें",
+      "hardenWm": "विंडो मैनेजर को सुदृढ़ करें",
+      "createButton": "उपयोगकर्ता बनाएं",
+      "homesDisabledTooltip": "इस उपयोगकर्ता के लिए स्थायी भंडारण अक्षम है",
+      "confirmDelete": "क्या आप वाकई उपयोगकर्ता '{username}' को हटाना चाहते हैं? यह उनके सभी स्थायी भंडारण को भी हटा देगा और इसे पूर्ववत नहीं किया जा सकता है।",
+      "allowPublicSharing": "सार्वजनिक फ़ाइल साझाकरण की अनुमति दें"
+    },
+    "groups": {
+      "title": "समूह प्रबंधन",
+      "searchPlaceholder": "समूह खोजें...",
+      "newTitle": "नया समूह बनाएं",
+      "nameLabel": "समूह का नाम:",
+      "overrideTitle": "समूह ओवरराइड सेटिंग्स",
+      "permissionsTitle": "अनुमतियाँ और सुदृढीकरण ओवरराइड",
+      "createButton": "समूह बनाएं",
+      "confirmDelete": "क्या आप वाकई समूह '{groupName}' को हटाना चाहते हैं? इस समूह के उपयोगकर्ता अपनी व्यक्तिगत सेटिंग्स पर वापस आ जाएंगे।"
+    },
+    "installedApps": {
+      "title": "स्थापित एप्लिकेशन",
+      "searchPlaceholder": "स्थापित ऐप्स खोजें...",
+      "noAppsFound": "कोई स्थापित ऐप नहीं मिला।",
+      "pulling": "नई छवि खींची जा रही है...",
+      "notLocal": "छवि स्थानीय रूप से नहीं मिली",
+      "confirmDelete": "क्या आप वाकई स्थापित ऐप '{appName}' को हटाना चाहते हैं?"
+    },
+    "appStore": {
+      "title": "ऐप स्टोर",
+      "refreshTitle": "चयनित स्टोर को ताज़ा करें",
+      "selectLabel": "ऐप स्टोर चुनें",
+      "addLabel": "नया ऐप स्टोर जोड़ें",
+      "namePlaceholder": "स्टोर का नाम",
+      "urlPlaceholder": "स्टोर YAML यूआरएल",
+      "availableTitle": "उपलब्ध ऐप्स",
+      "addManual": "मैन्युअल ऐप जोड़ें",
+      "searchPlaceholder": "उपलब्ध ऐप्स खोजें...",
+      "noAppsFound": "कोई एप्लिकेशन नहीं मिला।",
+      "availableFrom": "{storeName} से उपलब्ध ऐप्स",
+      "couldNotLoad": "इस स्टोर से ऐप्स लोड नहीं किए जा सके।"
+    },
+    "appTemplates": {
+      "title": "एप्लिकेशन टेम्पलेट संपादक",
+      "loadLabel": "टेम्पलेट लोड करें",
+      "createOption": "नया टेम्पलेट बनाएं",
+      "nameLabel": "टेम्पलेट का नाम",
+      "namePlaceholder": "नए टेम्पलेट के लिए एक नाम दर्ज करें",
+      "saveButton": "प्रोफ़ाइल सहेजें",
+      "deleteButton": "हटाएं",
+      "previewTitle": "यूआई पूर्वावलोकन",
+      "contentArea": "एप्लिकेशन सामग्री क्षेत्र",
+      "confirmDelete": "क्या आप वाकई टेम्पलेट '{templateName}' को हटाना चाहते हैं? यह क्रिया पूर्ववत नहीं की जा सकती है।",
+      "deleteDisabled": "यह टेम्पलेट हटाया नहीं जा सकता।",
+      "enterName": "कृपया नए टेम्पलेट के लिए एक नाम दर्ज करें।",
+      "settings": {
+        "TITLE": {
+          "label": "पृष्ठ शीर्षक",
+          "description": "वेब ब्राउज़र पर प्रदर्शित पृष्ठ शीर्षक।"
+        },
+        "SELKIES_UI_TITLE": {
+          "label": "साइडबार शीर्षक",
+          "description": "साइडबार के ऊपरी बाएं कोने में शीर्षक।"
+        },
+        "SELKIES_UI_SHOW_SIDEBAR": {
+          "label": "साइडबार दिखाएं",
+          "description": "मुख्य साइडबार यूआई दिखाएं।"
+        },
+        "SELKIES_UI_SHOW_LOGO": {
+          "label": "लोगो दिखाएं",
+          "description": "साइडबार में सेल्कीज़ लोगो दिखाएं।"
+        },
+        "SELKIES_UI_SHOW_CORE_BUTTONS": {
+          "label": "कोर बटन दिखाएं",
+          "description": "कोर कंपोनेंट्स बटन (डिस्प्ले, ऑडियो, आदि) दिखाएं।"
+        },
+        "SELKIES_UI_SIDEBAR_SHOW_VIDEO_SETTINGS": {
+          "label": "वीडियो सेटिंग्स दिखाएं",
+          "description": "साइडबार में वीडियो सेटिंग्स अनुभाग दिखाएं।"
+        },
+        "SELKIES_UI_SIDEBAR_SHOW_SCREEN_SETTINGS": {
+          "label": "स्क्रीन सेटिंग्स दिखाएं",
+          "description": "साइडबार में स्क्रीन सेटिंग्स अनुभाग दिखाएं।"
+        },
+        "SELKIES_UI_SIDEBAR_SHOW_AUDIO_SETTINGS": {
+          "label": "ऑडियो सेटिंग्स दिखाएं",
+          "description": "साइडबार में ऑडियो सेटिंग्स अनुभाग दिखाएं।"
+        },
+        "SELKIES_UI_SIDEBAR_SHOW_STATS": {
+          "label": "आँकड़े दिखाएं",
+          "description": "साइडबार में आँकड़े अनुभाग दिखाएं।"
+        },
+        "SELKIES_UI_SIDEBAR_SHOW_SHORTCUTS": {
+          "label": "कीबोर्ड शॉर्टकट अनुभाग दिखाएं",
+          "description": "साइडबार में कीबोर्ड शॉर्टकट अनुभाग दिखाएं।"
+        },
+        "SELKIES_UI_SIDEBAR_SHOW_CLIPBOARD": {
+          "label": "क्लिपबोर्ड दिखाएं",
+          "description": "साइडबार में क्लिपबोर्ड अनुभाग दिखाएं।"
+        },
+        "SELKIES_UI_SIDEBAR_SHOW_FILES": {
+          "label": "फ़ाइलें अनुभाग दिखाएं",
+          "description": "साइडबार में फ़ाइल स्थानांतरण अनुभाग दिखाएं।"
+        },
+        "SELKIES_UI_SIDEBAR_SHOW_APPS": {
+          "label": "ऐप्स अनुभाग दिखाएं",
+          "description": "साइडबार में एप्लिकेशन अनुभाग दिखाएं।"
+        },
+        "SELKIES_UI_SIDEBAR_SHOW_SHARING": {
+          "label": "साझाकरण अनुभाग दिखाएं",
+          "description": "साइडबार में साझाकरण अनुभाग दिखाएं।"
+        },
+        "SELKIES_UI_SIDEBAR_SHOW_GAMEPADS": {
+          "label": "गेमपैड अनुभाग दिखाएं",
+          "description": "साइडबार में गेमपैड अनुभाग दिखाएं।"
+        },
+        "SELKIES_UI_SIDEBAR_SHOW_FULLSCREEN": {
+          "label": "फुलस्क्रीन बटन दिखाएं",
+          "description": "साइडबार में फुलस्क्रीन बटन दिखाएं।"
+        },
+        "SELKIES_UI_SIDEBAR_SHOW_GAMING_MODE": {
+          "label": "गेमिंग मोड बटन दिखाएं",
+          "description": "साइडबार में गेमिंग मोड (पॉइंटर लॉक) बटन दिखाएं।"
+        },
+        "SELKIES_UI_SIDEBAR_SHOW_TRACKPAD": {
+          "label": "ट्रैकपैड बटन दिखाएं",
+          "description": "साइडबार में वर्चुअल ट्रैकपैड बटन दिखाएं।"
+        },
+        "SELKIES_UI_SIDEBAR_SHOW_KEYBOARD_BUTTON": {
+          "label": "कीबोर्ड बटन दिखाएं",
+          "description": "ऑन-स्क्रीन कीबोर्ड बटन दिखाएं।"
+        },
+        "SELKIES_UI_SIDEBAR_SHOW_SOFT_BUTTONS": {
+          "label": "सॉफ्ट बटन दिखाएं",
+          "description": "सॉफ्ट बटन अनुभाग (मोबाइल के लिए) दिखाएं।"
+        },
+        "WATERMARK_PNG": {
+          "label": "वॉटरमार्क पीएनजी पथ",
+          "description": "कंटेनर के अंदर वॉटरमार्क पीएनजी का पूरा पथ।"
+        },
+        "WATERMARK_LOCATION": {
+          "label": "वॉटरमार्क स्थान",
+          "description": "स्ट्रीम पर छवि को कहाँ पेंट करना है।",
+          "options": {
+            "disabled": "अक्षम",
+            "topLeft": "ऊपर-बाएँ",
+            "topRight": "ऊपर-दाएँ",
+            "bottomLeft": "नीचे-बाएँ",
+            "bottomRight": "नीचे-दाएँ",
+            "centered": "केंद्रित",
+            "animated": "एनिमेटेड"
+          }
+        },
+        "DASHBOARD": {
+          "label": "डैशबोर्ड शैली",
+          "description": "उपयोगकर्ता को अपना डैशबोर्ड सेट करने की अनुमति देता है।",
+          "options": {
+            "default": "डिफ़ॉल्ट",
+            "selkiesDefault": "सेल्कीज़ (डिफ़ॉल्ट)",
+            "wish": "विश"
+          }
+        },
+        "SELKIES_AUDIO_ENABLED": {
+          "label": "ऑडियो सक्षम करें",
+          "description": "सर्वर-से-क्लाइंट ऑडियो स्ट्रीमिंग सक्षम करें।"
+        },
+        "SELKIES_MICROPHONE_ENABLED": {
+          "label": "माइक्रोफ़ोन सक्षम करें",
+          "description": "क्लाइंट-से-सर्वर माइक्रोफ़ोन फॉरवर्डिंग सक्षम करें। अपस्ट्रीम में डिफ़ॉल्ट रूप से बंद।"
+        },
+        "SELKIES_GAMEPAD_ENABLED": {
+          "label": "गेमपैड सक्षम करें",
+          "description": "गेमपैड समर्थन सक्षम करें।"
+        },
+        "SELKIES_ENABLE_CLIPBOARD": {
+          "label": "क्लिपबोर्ड नीति",
+          "description": "कौन सी क्लिपबोर्ड दिशाएँ अनुमत हैं। 'केवल सर्वर-टू-क्लाइंट' पेज को स्थानीय क्लिपबोर्ड पढ़ने से भी रोकता है, जो Firefox और Safari में पेस्ट प्रॉम्प्ट का कारण बनता है।",
+          "options": {
+            "both": "दोनों दिशाएँ",
+            "inOnly": "केवल क्लाइंट-टू-सर्वर",
+            "outOnly": "केवल सर्वर-टू-क्लाइंट",
+            "disabled": "अक्षम"
+          }
+        },
+        "SELKIES_ENABLE_BINARY_CLIPBOARD": {
+          "label": "बाइनरी क्लिपबोर्ड सक्षम करें",
+          "description": "क्लिपबोर्ड पर बाइनरी डेटा (छवियों) की अनुमति दें।"
+        },
+        "SELKIES_COMMAND_ENABLED": {
+          "label": "कमांड वेबसॉकेट सक्षम करें",
+          "description": "कमांड वेबसॉकेट संदेशों का पार्सिंग सक्षम करें।"
+        },
+        "SELKIES_FILE_TRANSFERS": {
+          "label": "फ़ाइल स्थानांतरण",
+          "description": "अनुमत दिशाएँ ('upload,download', 'upload', 'download' या 'none')। यहाँ सेट न होने पर डेस्कटॉप को सुदृढ़ करें द्वारा खाली कर दिया जाता है।"
+        },
+        "SELKIES_FILE_TRANSFER_LIMIT_MBPS": {
+          "label": "फ़ाइल स्थानांतरण सीमा (Mbit/s)",
+          "description": "सभी अपलोड और डाउनलोड द्वारा साझा की गई स्थिर सीमा। 0 सीमा को अक्षम करता है।"
+        },
+        "SELKIES_ENABLE_SHARING": {
+          "label": "सभी साझाकरण सक्षम करें",
+          "description": "सभी साझाकरण सुविधाओं के लिए मास्टर टॉगल।"
+        },
+        "SELKIES_ENABLE_SHARED": {
+          "label": "केवल-देखने योग्य साझाकरण सक्षम करें",
+          "description": "केवल-देखने योग्य साझाकरण लिंक सक्षम करें।"
+        },
+        "SELKIES_ENABLE_COLLAB": {
+          "label": "सहयोग सक्षम करें",
+          "description": "सत्र का मास्टर टोकन रखने वाले दर्शक को रीड-राइट सहयोगी के रूप में काम करने दें। SealSkin रूम के लिए आवश्यक।"
+        },
+        "SELKIES_ENABLE_PLAYER2": {
+          "label": "प्लेयर 2 साझाकरण सक्षम करें",
+          "description": "गेमपैड प्लेयर 2 के लिए साझाकरण लिंक सक्षम करें।"
+        },
+        "SELKIES_ENABLE_PLAYER3": {
+          "label": "प्लेयर 3 साझाकरण सक्षम करें",
+          "description": "गेमपैड प्लेयर 3 के लिए साझाकरण लिंक सक्षम करें।"
+        },
+        "SELKIES_ENABLE_PLAYER4": {
+          "label": "प्लेयर 4 साझाकरण सक्षम करें",
+          "description": "गेमपैड प्लेयर 4 के लिए साझाकरण लिंक सक्षम करें।"
+        },
+        "SELKIES_SECOND_SCREEN": {
+          "label": "दूसरी स्क्रीन सक्षम करें",
+          "description": "दूसरे मॉनिटर/डिस्प्ले के लिए समर्थन सक्षम करें।"
+        },
+        "SELKIES_ENABLE_RESIZE": {
+          "label": "डायनामिक रीसाइज़ सक्षम करें",
+          "description": "रिमोट डिस्प्ले का आकार ब्राउज़र विंडो से मेल खाने के लिए बदलें।"
+        },
+        "SELKIES_USE_BROWSER_CURSORS": {
+          "label": "ब्राउज़र कर्सर का उपयोग करें",
+          "description": "कैनवास पर रेंडर करने के बजाय ब्राउज़र सीएसएस कर्सर का उपयोग करें।"
+        },
+        "SELKIES_ENABLE_CURSORS": {
+          "label": "रिमोट कर्सर सक्षम करें",
+          "description": "एप्लिकेशन के अपने कर्सर आकार क्लाइंट को भेजें।"
+        },
+        "SELKIES_CURSOR_SIZE": {
+          "label": "कर्सर आकार",
+          "description": "96 DPI पर पॉइंट में कर्सर आकार, सत्र DPI के अनुसार स्केल किया गया। -1 प्लेटफ़ॉर्म डिफ़ॉल्ट का उपयोग करता है (X11 पर 32, Wayland पर 24)।"
+        },
+        "SELKIES_USE_CSS_SCALING": {
+          "label": "सीएसएस स्केलिंग का उपयोग करें (LoDPI)",
+          "description": "यदि सत्य है, तो एक कम रिज़ॉल्यूशन भेजा जाता है और कैनवास को खींचा जाता है।"
+        },
+        "SELKIES_MANUAL_RESOLUTION": {
+          "label": "मैनुअल रिज़ॉल्यूशन मोड",
+          "description": "रिज़ॉल्यूशन को मैनुअल चौड़ाई/ऊंचाई मानों पर लॉक करें।"
+        },
+        "SELKIES_FORCE_ALIGNED_RESOLUTION": {
+          "label": "संरेखित रिज़ॉल्यूशन बाध्य करें",
+          "description": "डिस्प्ले रिज़ॉल्यूशन को 16 पिक्सल का गुणज होने के लिए बाध्य करता है."
+        },
+        "SELKIES_MANUAL_WIDTH": {
+          "label": "मैनुअल चौड़ाई",
+          "description": "चौड़ाई को एक निश्चित मान पर लॉक करें। मैनुअल मोड को बाध्य करता है।"
+        },
+        "SELKIES_MANUAL_HEIGHT": {
+          "label": "मैनुअल ऊंचाई",
+          "description": "ऊंचाई को एक निश्चित मान पर लॉक करें। मैनुअल मोड को बाध्य करता है।"
+        },
+        "SELKIES_SCALING_DPI": {
+          "label": "यूआई स्केलिंग डीपीआई",
+          "description": "यूआई स्केलिंग के लिए डिफ़ॉल्ट डीपीआई।"
+        },
+        "SELKIES_AUDIO_BITRATE": {
+          "label": "ऑडियो बिटरेट",
+          "description": "डिफ़ॉल्ट Opus ऑडियो बिटरेट।"
+        },
+        "SELKIES_AUDIO_FRAME_DURATION_MS": {
+          "label": "ऑडियो फ्रेम अवधि",
+          "description": "Opus फ्रेम अवधि। कम मान थोड़ी बैंडविड्थ और पैकेट-दर लागत पर ऑडियो विलंबता घटाते हैं।"
+        },
+        "SELKIES_AUDIO_CHANNELS": {
+          "label": "ऑडियो चैनल",
+          "description": "ऑडियो चैनलों की संख्या; 2 स्टीरियो है।"
+        },
+        "SELKIES_AUDIO_REDUNDANCY": {
+          "label": "ऑडियो रिडंडेंसी (Opus RED)",
+          "description": "पैकेट हानि के दौरान ड्रॉपआउट घटाने के लिए पिछले ऑडियो फ्रेम को रिडंडेंसी के रूप में साथ भेजें।"
+        },
+        "SELKIES_AUDIO_REDUNDANCY_DISTANCE": {
+          "label": "ऑडियो रिडंडेंसी दूरी",
+          "description": "रिडंडेंसी के रूप में भेजे गए पिछले फ्रेम की संख्या (0-4)। अधिक मान आनुपातिक रूप से अधिक बैंडविड्थ पर लंबे हानि-विस्फोट सहन करते हैं।"
+        },
+        "SELKIES_ENCODER": {
+          "label": "एन्कोडर्स",
+          "description": "अनुमत एन्कोडर्स की अल्पविराम से अलग की गई सूची (h264enc, h264enc-striped, jpeg)। पहला डिफ़ॉल्ट है; एक ही मान विकल्प को लॉक कर देता है। केवल h264enc WebRTC पर स्ट्रीम होता है।"
+        },
+        "SELKIES_USE_CPU": {
+          "label": "सीपीयू एन्कोडिंग को बाध्य करें",
+          "description": "पिक्सेलफ्लक्स के लिए सीपीयू-आधारित एन्कोडिंग को बाध्य करें।"
+        },
+        "SELKIES_FRAMERATE": {
+          "label": "फ्रेमरेट (रेंज या निश्चित)",
+          "description": "उदा., रेंज के लिए '8-240', निश्चित प्रारंभिक मान के लिए '60', दोनों के लिए '60,8-240'; '60-60' इसे लॉक कर देता है।"
+        },
+        "SELKIES_RATE_CONTROL_MODE": {
+          "label": "रेट कंट्रोल मोड",
+          "description": "डिफ़ॉल्ट H.264 रेट कंट्रोल: स्थिर गुणवत्ता (CRF) या स्थिर बिटरेट (CBR)।",
+          "options": {
+            "crf": "स्थिर गुणवत्ता (CRF)",
+            "cbr": "स्थिर बिटरेट (CBR)"
+          }
+        },
+        "SELKIES_ENABLE_RATE_CONTROL": {
+          "label": "रेट कंट्रोल स्विचिंग की अनुमति दें",
+          "description": "क्लाइंट को CRF और CBR के बीच स्विच करने दें। बंद करने पर एन्कोडर अपने अंतर्निहित डिफ़ॉल्ट पर लॉक हो जाता है।"
+        },
+        "SELKIES_VIDEO_CRF": {
+          "label": "वीडियो CRF (रेंज या निश्चित)",
+          "description": "H.264 स्थिर गुणवत्ता: रेंज के लिए '5-50', निश्चित प्रारंभिक मान के लिए '25', या दोनों के लिए '25,5-50'।"
+        },
+        "SELKIES_VIDEO_BITRATE": {
+          "label": "वीडियो बिटरेट kbps (रेंज या निश्चित)",
+          "description": "किलोबिट प्रति सेकंड में CBR बिटरेट: रेंज के लिए '100-1000000', निश्चित प्रारंभिक मान के लिए '8000', या दोनों के लिए '8000,100-1000000'।"
+        },
+        "SELKIES_VIDEO_MIN_QP": {
+          "label": "वीडियो न्यूनतम QP",
+          "description": "CBR-मोड न्यूनतम H.264 क्वांटाइज़र (0 = एन्कोडर डिफ़ॉल्ट)। इसे बढ़ाने से आसान सामग्री पर बिट खर्च सीमित होता है।"
+        },
+        "SELKIES_VIDEO_MAX_QP": {
+          "label": "वीडियो अधिकतम QP",
+          "description": "CBR-मोड अधिकतम H.264 क्वांटाइज़र (0 = एन्कोडर डिफ़ॉल्ट)। इसे घटाने से बिटरेट लक्ष्य से आगे जाने की कीमत पर गति के दौरान टेक्स्ट पठनीय रहता है।"
+        },
+        "SELKIES_KEYFRAME_INTERVAL": {
+          "label": "कीफ्रेम अंतराल (सेकंड)",
+          "description": "निर्धारित रिकवरी कीफ्रेम के बीच सेकंड। 0 GOP को अनंत रखता है और कीफ्रेम केवल मांग पर भेजता है।"
+        },
+        "SELKIES_JPEG_QUALITY": {
+          "label": "JPEG गुणवत्ता (रेंज या निश्चित)",
+          "description": "रेंज के लिए '1-100', निश्चित प्रारंभिक मान के लिए '40', या दोनों के लिए '40,1-100'।"
+        },
+        "SELKIES_VIDEO_FULLCOLOR": {
+          "label": "वीडियो पूर्ण रंग (4:4:4)",
+          "description": "H.264 को 4:2:0 के बजाय 4:4:4 क्रोमा के साथ एन्कोड करें। जब यह लॉक ऑन हो तो 4:4:4 डिकोडर के बिना क्लाइंट JPEG पर वापस चले जाते हैं।"
+        },
+        "SELKIES_VIDEO_STREAMING_MODE": {
+          "label": "वीडियो स्ट्रीमिंग (टर्बो) मोड",
+          "description": "केवल बदले हुए क्षेत्रों के बजाय हर फ्रेम को पारंपरिक वीडियो एन्कोडर की तरह एन्कोड करें।"
+        },
+        "SELKIES_USE_PAINT_OVER_QUALITY": {
+          "label": "पेंट-ओवर गुणवत्ता का उपयोग करें",
+          "description": "स्थिर दृश्यों के लिए उच्च-गुणवत्ता वाले पेंट-ओवर को सक्षम करें।"
+        },
+        "SELKIES_PAINT_OVER_JPEG_QUALITY": {
+          "label": "पेंट-ओवर JPEG गुणवत्ता",
+          "description": "रेंज के लिए '1-100', निश्चित प्रारंभिक मान के लिए '90', या दोनों के लिए '90,1-100'।"
+        },
+        "SELKIES_VIDEO_PAINTOVER_CRF": {
+          "label": "पेंट-ओवर वीडियो CRF",
+          "description": "रेंज के लिए '5-50', निश्चित प्रारंभिक मान के लिए '18', या दोनों के लिए '18,5-50'।"
+        },
+        "SELKIES_VIDEO_PAINTOVER_BURST_FRAMES": {
+          "label": "पेंट-ओवर बर्स्ट फ्रेम",
+          "description": "रेंज के लिए '1-30', निश्चित प्रारंभिक मान के लिए '5', या दोनों के लिए '5,1-30'।"
+        },
+        "SELKIES_BACKPRESSURE_QUEUE_SIZE": {
+          "label": "बैकप्रेशर कतार आकार",
+          "description": "बैकप्रेशर में ड्रॉप करने से पहले प्रति स्ट्रीम बफ़र किए गए फ्रेम और ऑडियो चंक (WebSockets मोड)। अधिक मान विलंबता की कीमत पर क्लाइंट की रुकावटें सहन करता है।"
+        },
+        "SELKIES_WEBCAM_WIDTH": {
+          "label": "वेबकैम चौड़ाई",
+          "description": "वर्चुअल वेबकैम डिवाइस की चौड़ाई; क्लाइंट फ्रेम को फिट करने के लिए स्केल और लेटरबॉक्स किया जाता है।"
+        },
+        "SELKIES_WEBCAM_HEIGHT": {
+          "label": "वेबकैम ऊंचाई",
+          "description": "वर्चुअल वेबकैम डिवाइस की ऊंचाई; क्लाइंट फ्रेम को फिट करने के लिए स्केल और लेटरबॉक्स किया जाता है।"
+        },
+        "SELKIES_WEBCAM_ENCODER": {
+          "label": "वेबकैम अपलिंक एन्कोडर",
+          "description": "कोडेक जिसका उपयोग WebSocket क्लाइंट कैमरा फ्रेम भेजने के लिए करते हैं। ऑटो वह सर्वश्रेष्ठ चुनता है जिसे ब्राउज़र बनाए रख सके।",
+          "options": {
+            "auto": "ऑटो"
+          }
+        },
+        "SELKIES_WEBCAM_PIXEL_FORMAT": {
+          "label": "वेबकैम पिक्सेल फ़ॉर्मेट",
+          "description": "वर्चुअल वेबकैम डिवाइस का पिक्सेल फ़ॉर्मेट। ऑटो वही अपनाता है जो क्लाइंट भेजता है।",
+          "options": {
+            "auto": "ऑटो"
+          }
+        },
+        "HARDEN_DESKTOP": {
+          "label": "डेस्कटॉप को सुदृढ़ करें (प्रीसेट)",
+          "description": "DISABLE_OPEN_TOOLS, DISABLE_SUDO और DISABLE_TERMINALS को सक्षम करता है, और स्पष्ट रूप से सेट न होने पर फ़ाइल स्थानांतरण, कमांड websocket और साइडबार के फ़ाइलें व ऐप्स अनुभागों को भी अक्षम करता है। कंटेनर को सुदृढ़ करें वाले उपयोगकर्ताओं के लिए बलपूर्वक चालू।"
+        },
+        "HARDEN_OPENBOX": {
+          "label": "विंडो मैनेजर को सुदृढ़ करें (प्रीसेट)",
+          "description": "Openbox और labwc के लिए DISABLE_CLOSE_BUTTON, DISABLE_MOUSE_BUTTONS और HARDEN_KEYBINDS को, और स्पष्ट रूप से सेट न होने पर RESTART_APP को भी सक्षम करता है। विंडो मैनेजर को सुदृढ़ करें वाले उपयोगकर्ताओं के लिए बलपूर्वक चालू।"
+        },
+        "DISABLE_OPEN_TOOLS": {
+          "label": "ओपन टूल्स अक्षम करें",
+          "description": "xdg-open और exo-open बाइनरी को अक्षम करता है।"
+        },
+        "DISABLE_SUDO": {
+          "label": "sudo अक्षम करें",
+          "description": "sudo कमांड को अक्षम करता है।"
+        },
+        "DISABLE_TERMINALS": {
+          "label": "टर्मिनल अक्षम करें",
+          "description": "सामान्य टर्मिनल एमुलेटर को अक्षम करता है।"
+        },
+        "DISABLE_CLOSE_BUTTON": {
+          "label": "विंडो बंद करें बटन अक्षम करें",
+          "description": "विंडो शीर्षक बार से बंद करें बटन को हटाता है।"
+        },
+        "DISABLE_MOUSE_BUTTONS": {
+          "label": "दायां/मध्य क्लिक अक्षम करें",
+          "description": "दायां-क्लिक और मध्य-क्लिक संदर्भ मेनू को अक्षम करता है।"
+        },
+        "HARDEN_KEYBINDS": {
+          "label": "कीबाइंड्स को सुदृढ़ करें",
+          "description": "Alt+F4, Alt+Escape, Alt+Space और Super+E जैसे विंडो मैनेजर कीबाइंड्स को अक्षम करता है, और विंडो मैनेजर कॉन्फ़िग को लॉक करता है।"
+        },
+        "RESTART_APP": {
+          "label": "बंद होने पर ऐप पुनः आरंभ करें",
+          "description": "यदि मुख्य एप्लिकेशन बंद हो जाता है तो उसे स्वचालित रूप से पुनः आरंभ करता है और ऑटोस्टार्ट फ़ाइल को केवल-पढ़ने योग्य बनाता है।"
+        },
+        "MAX_RES": {
+          "label": "अधिकतम रिज़ॉल्यूशन",
+          "description": "कंटेनर के लिए अधिकतम रिज़ॉल्यूशन, डिफ़ॉल्ट 16k है।"
+        },
+        "START_DOCKER": {
+          "label": "डॉकर-इन-डॉकर प्रारंभ करें",
+          "description": "यदि गलत है, तो एक विशेषाधिकार प्राप्त कंटेनर DinD प्रारंभ नहीं करेगा।"
+        },
+        "DISABLE_IPV6": {
+          "label": "IPv6 अक्षम करें",
+          "description": "यदि सत्य है, तो यह IPv6 को अक्षम कर देगा।"
+        },
+        "DISABLE_ZINK": {
+          "label": "जिंक अक्षम करें",
+          "description": "यदि वीडियो कार्ड का पता चलता है तो जिंक पर्यावरण चर सेट न करें।"
+        },
+        "DISABLE_DRI3": {
+          "label": "DRI3 अक्षम करें",
+          "description": "यदि वीडियो कार्ड का पता चलता है तो DRI3 त्वरण का उपयोग न करें।"
+        },
+        "AUTO_GPU": {
+          "label": "स्वचालित GPU चयन",
+          "description": "'true' पहले GPU पर रेंडर करता है, 'false' इसे अक्षम करता है, या कोई वेंडर, ड्राइवर या PCI वेंडर ID (nvidia, amdgpu, 0x10de) एक विशिष्ट GPU चुनता है।"
+        },
+        "NO_DECOR": {
+          "label": "कोई विंडो सजावट नहीं",
+          "description": "PWA उपयोग के लिए विंडो सीमाओं के बिना एप्लिकेशन चलाएं।"
+        },
+        "NO_FULL": {
+          "label": "कोई फ़ुलस्क्रीन नहीं",
+          "description": "एप्लिकेशन को स्वचालित रूप से फ़ुलस्क्रीन न करें।"
+        },
+        "NO_GAMEPAD": {
+          "label": "गेमपैड इंजेक्शन अक्षम करें",
+          "description": "उपयोगकर्ता-स्थान गेमपैड इंटरपोज़र को छोड़ दें। गेमपैड अनुभाग और प्लेयर साझाकरण लिंक भी छिपा देता है।"
+        },
+        "NO_WEBCAM": {
+          "label": "वेबकैम इंजेक्शन अक्षम करें",
+          "description": "वर्चुअल वेबकैम डिवाइस और इंटरपोज़र को छोड़ दें। वेबकैम बटन भी छिपा देता है।"
+        },
+        "SELKIES_RUN_AFTER_CONNECT": {
+          "label": "कनेक्ट के बाद चलाएं",
+          "description": "पहला क्लाइंट कनेक्ट होने पर कंटेनर के अंदर चलाया जाने वाला शेल कमांड।"
+        },
+        "SELKIES_RUN_AFTER_DISCONNECT": {
+          "label": "डिस्कनेक्ट के बाद चलाएं",
+          "description": "अंतिम क्लाइंट डिस्कनेक्ट होने पर कंटेनर के अंदर चलाया जाने वाला शेल कमांड।"
+        },
+        "SELKIES_DEBUG": {
+          "label": "सेल्कीज़ डिबगिंग सक्षम करें",
+          "description": "स्ट्रीमिंग घटकों के लिए डिबग लॉगिंग सक्षम करें।"
+        },
+        "SELKIES_MODE": {
+          "label": "स्ट्रीमिंग मोड",
+          "description": "डिफ़ॉल्ट रूप से उपयोग किया जाने वाला ट्रांसपोर्ट। कोई भी TURN/STUN मान सेट होने पर ऑटो WebRTC चुनता है, अन्यथा WebSockets।",
+          "options": {
+            "auto": "ऑटो",
+            "websockets": "WebSockets",
+            "webrtc": "WebRTC"
+          }
+        },
+        "SELKIES_ENABLE_DUAL_MODE": {
+          "label": "ड्यूअल मोड",
+          "description": "उपयोगकर्ताओं को साइडबार से WebRTC और WebSockets के बीच स्विच करने दें। ऑटो इसे केवल तभी सक्षम करता है जब WebRTC कॉन्फ़िगर हो।",
+          "options": {
+            "auto": "ऑटो",
+            "enabled": "सक्षम",
+            "disabled": "अक्षम"
+          }
+        },
+        "SELKIES_WEBRTC_PACER": {
+          "label": "WebRTC पेसर",
+          "description": "आउटगोइंग WebRTC पैकेट को सख्त प्राथमिकताओं के साथ पेस करें ताकि भीड़भाड़ वाले लिंक पर ऑडियो और इनपुट वीडियो बर्स्ट से सुरक्षित रहें।"
+        },
+        "SELKIES_CONGESTION_CONTROL": {
+          "label": "कंजेशन कंट्रोल",
+          "description": "WebRTC रिसीवर फ़ीडबैक से बैंडविड्थ अनुमान के अनुसार वीडियो बिटरेट को अनुकूलित करें। CBR मोड में प्रभावी।"
+        },
+        "SELKIES_STUN_HOST": {
+          "label": "STUN होस्ट",
+          "description": "NAT होल पंचिंग के लिए STUN सर्वर। इंटरनेट रहित नेटवर्क के लिए किसी आंतरिक सर्वर की ओर इंगित करें।"
+        },
+        "SELKIES_STUN_PORT": {
+          "label": "STUN पोर्ट",
+          "description": "STUN सर्वर का पोर्ट।"
+        },
+        "SELKIES_TURN_HOST": {
+          "label": "TURN होस्ट",
+          "description": "साझा सीक्रेट या दीर्घकालिक क्रेडेंशियल के साथ उपयोग किया जाने वाला TURN सर्वर। IPv6 पतों को वर्गाकार कोष्ठक में रखें।"
+        },
+        "SELKIES_TURN_PORT": {
+          "label": "TURN पोर्ट",
+          "description": "TURN सर्वर का पोर्ट।"
+        },
+        "SELKIES_TURN_PROTOCOL": {
+          "label": "TURN प्रोटोकॉल",
+          "description": "TURN तक पहुँचने के लिए क्लाइंट द्वारा उपयोग किया जाने वाला ट्रांसपोर्ट। UDP की दृढ़ता से अनुशंसा की जाती है; TCP का उपयोग केवल वहीं करें जहाँ UDP अवरुद्ध हो।"
+        },
+        "SELKIES_TURN_TLS": {
+          "label": "TLS/DTLS पर TURN",
+          "description": "TLS (TCP) या DTLS (UDP) पर TURN का उपयोग करें। TURN सर्वर पर वैध प्रमाणपत्र आवश्यक है।"
+        },
+        "SELKIES_TURN_SHARED_SECRET": {
+          "label": "TURN साझा सीक्रेट",
+          "description": "समय-सीमित HMAC TURN क्रेडेंशियल बनाने के लिए उपयोग किया जाने वाला साझा सीक्रेट।"
+        },
+        "SELKIES_TURN_USERNAME": {
+          "label": "TURN उपयोगकर्ता नाम",
+          "description": "लीगेसी दीर्घकालिक TURN क्रेडेंशियल उपयोगकर्ता नाम।"
+        },
+        "SELKIES_TURN_PASSWORD": {
+          "label": "TURN पासवर्ड",
+          "description": "लीगेसी दीर्घकालिक TURN क्रेडेंशियल पासवर्ड।"
+        },
+        "SELKIES_TURN_REST_URI": {
+          "label": "TURN REST API URI",
+          "description": "TURN REST क्रेडेंशियल सेवा का URI, उदा. http://localhost:8008।"
+        },
+        "SELKIES_TURN_REST_API_KEY": {
+          "label": "TURN REST API कुंजी",
+          "description": "TURN REST सेवा को भेजी जाने वाली API कुंजी।"
+        },
+        "SELKIES_TURN_REST_USERNAME": {
+          "label": "TURN REST उपयोगकर्ता नाम",
+          "description": "उपयोगकर्ता नाम जिसे TURN REST सेवा क्रेडेंशियल में एम्बेड करती है। खाली होने पर 'selkies' का उपयोग होता है।"
+        },
+        "SELKIES_WEBRTC_PUBLIC_IP": {
+          "label": "WebRTC सार्वजनिक IP",
+          "description": "स्थिर 1:1 NAT के पीछे सर्वर के लिए होस्ट ICE कैंडिडेट में विज्ञापित किया जाने वाला सार्वजनिक पता। एक IPv4 और/या एक IPv6 पता।"
+        },
+        "SELKIES_ENABLE_CLOUDFLARE_TURN": {
+          "label": "Cloudflare TURN सक्षम करें",
+          "description": "Cloudflare TURN सेवा का उपयोग करें। नीचे टोकन ID और API टोकन आवश्यक हैं।"
+        },
+        "SELKIES_CLOUDFLARE_TURN_TOKEN_ID": {
+          "label": "Cloudflare TURN टोकन ID",
+          "description": "Cloudflare TURN ऐप टोकन ID।"
+        },
+        "SELKIES_CLOUDFLARE_TURN_API_TOKEN": {
+          "label": "Cloudflare TURN API टोकन",
+          "description": "Cloudflare TURN API टोकन।"
+        },
+        "SELKIES_RTC_CONFIG_JSON": {
+          "label": "RTC कॉन्फ़िग JSON पथ",
+          "description": "WebRTC कॉन्फ़िगरेशन वाली JSON फ़ाइल का कंटेनर के अंदर का पथ। हर दूसरी STUN/TURN सेटिंग को ओवरराइड करता है और समय-समय पर फिर से पढ़ा जाता है।"
+        },
+        "DOCKER_PRIVILEGED": {
+          "label": "विशेषाधिकार प्राप्त मोड",
+          "description": "कंटेनर को सभी कैप्स दें, cgroup प्रतिबंध हटाएं, सभी होस्ट डिवाइस माउंट करें। इससे चीजें टूट जाएंगी!"
+        },
+        "DOCKER_BIND_MOUNTS": {
+          "label": "अतिरिक्त बाइंड माउंट",
+          "description": "अतिरिक्त होस्ट बाइंड (अल्पविराम से अलग, उदा., /host/path:/container/path:ro)।"
+        },
+        "DOCKER_ENV": {
+          "label": "पर्यावरण चर",
+          "description": "अतिरिक्त पर्यावरण चर (अल्पविराम से अलग, उदा., KEY=VALUE,KEY2=VALUE2)।"
+        },
+        "DOCKER_CAP_ADD": {
+          "label": "कैप जोड़ें",
+          "description": "कर्नेल क्षमताएं जोड़ें (अल्पविराम से अलग, उदा., SYS_ADMIN,MKNOD)।"
+        },
+        "DOCKER_CAP_DROP": {
+          "label": "कैप छोड़ें",
+          "description": "कर्नेल क्षमताएं छोड़ें (अल्पविराम से अलग)।"
+        },
+        "DOCKER_SECURITY_OPT": {
+          "label": "सुरक्षा विकल्प",
+          "description": "सुरक्षा विकल्प (अल्पविराम से अलग, उदा., seccomp=unconfined,apparmor=unconfined)।"
+        },
+        "DOCKER_DEVICES": {
+          "label": "उपकरण",
+          "description": "होस्ट डिवाइस उजागर करें (अल्पविराम से अलग, उदा., /dev/sda:/dev/xvda:rwm)।"
+        },
+        "DOCKER_SHM_SIZE": {
+          "label": "SHM आकार",
+          "description": "/dev/shm का आकार (उदा. 1G, 2G)।"
+        },
+        "DOCKER_MEM_LIMIT": {
+          "label": "मेमोरी सीमा",
+          "description": "मेमोरी सीमा (उदा. 1g, 512m)।"
+        },
+        "DOCKER_CPU_SHARES": {
+          "label": "CPU शेयर",
+          "description": "CPU शेयर (सापेक्ष भार पूर्णांक)।"
+        },
+        "DOCKER_NANO_CPUS": {
+          "label": "नैनो CPU",
+          "description": "1e-9 CPU की इकाइयों में CPU कोटा।"
+        },
+        "DOCKER_NETWORK_MODE": {
+          "label": "नेटवर्क मोड",
+          "description": "कंटेनर के लिए नेटवर्किंग मोड।",
+          "options": {
+            "default": "डिफ़ॉल्ट (ब्रिज)",
+            "host": "होस्ट",
+            "none": "कोई नहीं",
+            "bridge": "ब्रिज"
+          }
+        },
+        "DOCKER_IPC_MODE": {
+          "label": "IPC मोड",
+          "description": "कंटेनर के लिए IPC मोड सेट करें।",
+          "options": {
+            "default": "डिफ़ॉल्ट",
+            "host": "होस्ट",
+            "private": "निजी",
+            "shareable": "साझा करने योग्य"
+          }
+        },
+        "DOCKER_PID_MODE": {
+          "label": "PID मोड",
+          "description": "कंटेनर के लिए PID मोड सेट करें।",
+          "options": {
+            "default": "डिफ़ॉल्ट",
+            "host": "होस्ट"
+          }
+        },
+        "DOCKER_DNS": {
+          "label": "DNS सर्वर",
+          "description": "कस्टम DNS सर्वर (अल्पविराम से अलग)।"
+        },
+        "DOCKER_EXTRA_HOSTS": {
+          "label": "अतिरिक्त होस्ट",
+          "description": "होस्ट से IP मैपिंग (अल्पविराम से अलग, उदा., hostname:1.2.3.4)।"
+        },
+        "DOCKER_SYSCTLS": {
+          "label": "Sysctls",
+          "description": "कर्नेल पैरामीटर (अल्पविराम से अलग, उदा., net.ipv4.ip_forward=1)।"
+        },
+        "DOCKER_ULIMITS": {
+          "label": "Ulimits",
+          "description": "Ulimits (अल्पविराम से अलग, उदा., nofile=1024:1024)।"
+        },
+        "DOCKER_TMPFS": {
+          "label": "Tmpfs माउंट",
+          "description": "अस्थायी फाइल सिस्टम (अल्पविराम से अलग, उदा., /run:rw,noexec,nosuid,size=65536k)।"
+        },
+        "DOCKER_GROUP_ADD": {
+          "label": "समूह जोड़ें",
+          "description": "अतिरिक्त समूह नामों और/या आईडी की सूची (अल्पविराम से अलग)।"
+        }
+      }
+    },
+    "appLaboratory": {
+      "title": "ऐप प्रयोगशाला",
+      "description": "बेस ऐप के ऊपर परिवर्तनों को परत करके कस्टम एप्लिकेशन कॉन्फ़िगरेशन बनाएं और परीक्षण करें।",
+      "selectApp": "ऐप चुनें",
+      "createNew": "नया ऐप बनाएं",
+      "baseApp": "बेस एप्लिकेशन",
+      "baseAppDescription": "स्थापित एप्लिकेशन जिस पर आपका नया कस्टम ऐप आधारित होगा।",
+      "selectBase": "एक बेस ऐप चुनें",
+      "customizationTitle": "अनुकूलन",
+      "appName": "ऐप का नाम",
+      "appIcon": "ऐप आइकन",
+      "uploadIcon": "आइकन अपलोड करें",
+      "autostartScriptLabel": "कस्टम ऑटोस्टार्ट स्क्रिप्ट",
+      "permissionsTitle": "अनुमतियाँ",
+      "usersLabel": "अनुमत उपयोगकर्ता",
+      "groupsLabel": "अनुमत समूह",
+      "launchButton": "सहेजें और अनुकूलन सत्र लॉन्च करें",
+      "closeButton": "सत्र बंद करें और अंतिम रूप दें",
+      "savingAndLaunching": "सहेजा और लॉन्च किया जा रहा है...",
+      "placeholder": "ऐप प्रयोगशाला आपको मौजूदा स्थापित एप्लिकेशन के आधार पर एप्लिकेशन के लिए बेस होम डायरेक्टरी और लॉन्च स्क्रिप्ट को कॉन्फ़िगर करने की अनुमति देती है। यह होम डायरेक्टरी उपयोगकर्ता के लिए पहली बार इनिट पर सभी फ़ाइलों और सेटिंग्स के साथ कॉपी की जाएगी जो आपने इस सत्र में सेटअप की हैं। आप इसकी सामग्री को और संशोधित करने के लिए मौजूदा प्रयोगशाला ऐप को फिर से लॉन्च कर सकते हैं।",
+      "formInvalid": "कृपया एक बेस ऐप चुनें और नए ऐप के लिए एक नाम प्रदान करें।"
+    },
+    "modals": {
+      "editUserTitle": "उपयोगकर्ता संपादित करें: {username}",
+      "saveChanges": "बदलाव सहेजें",
+      "effectiveSettings": "प्रभावी सेटिंग्स (समूह ओवरराइड के साथ)",
+      "editGroupTitle": "समूह संपादित करें: {groupName}",
+      "userConfigTitle": "उपयोगकर्ता कॉन्फ़िगरेशन",
+      "warning": "यह एकमात्र समय है जब यह कॉन्फ़िगरेशन दिखाया जाएगा। इसे उपयोगकर्ता को सुरक्षित रूप से प्रदान करें।",
+      "info": "आप इस कॉन्फ़िगरेशन फ़ाइल को किसी अन्य डिवाइस पर आसानी से SealSkin सेट करने के लिए डाउनलोड कर सकते हैं। इस फ़ाइल को सुरक्षित रखें क्योंकि इसमें आपकी निजी कुंजी है।",
+      "configDataLabel": "कॉन्फ़िगरेशन डेटा (JSON)",
+      "copyButton": "टेक्स्ट कॉपी करें",
+      "downloadButton": "फ़ाइल डाउनलोड करें",
+      "manageHomeDirs": "होम डायरेक्टरी प्रबंधित करें",
+      "dirsForUser": "उपयोगकर्ता के लिए डायरेक्टरी: {username}",
+      "dirsForAdmin": "व्यवस्थापक के लिए डायरेक्टरी: {username}",
+      "newDirForUser": "उपयोगकर्ता के लिए नई डायरेक्टरी बनाएं",
+      "createDirButton": "डायरेक्टरी बनाएं",
+      "confirmDeleteDir": "क्या आप वाकई उपयोगकर्ता '{username}' के लिए '{homeName}' को हटाना चाहते हैं? यह स्थायी है।",
+      "installAppTitle": "{appName} इंस्टॉल करें",
+      "editAppTitle": "{appName} संपादित करें",
+      "customNameLabel": "कस्टम नाम",
+      "imageLabel": "कंटेनर छवि",
+      "permissions": "अनुमतियाँ",
+      "allowedUsersLabel": "अनुमत उपयोगकर्ता (अल्पविराम से अलग, सभी के लिए 'all')",
+      "allowedGroupsLabel": "अनुमत समूह (अल्पविराम से अलग, सभी के लिए 'all')",
+      "features": "विशेषताएँ",
+      "gpuSupport": "जीपीयू समर्थन",
+      "homeMounting": "होम डायरेक्टरी माउंटिंग",
+      "urlSupport": "यूआरएल खोलने का समर्थन",
+      "fileSupport": "फ़ाइल खोलने का समर्थन",
+      "autoUpdate": "छवि को स्वतः अपडेट करें",
+      "advancedSettings": "उन्नत सेटिंग्स",
+      "appTemplateLabel": "एप्लिकेशन टेम्पलेट",
+      "appTemplateDescription": "उन्नत कंटेनर लॉन्च सेटिंग्स के लिए एक पूर्व-कॉन्फ़िगर टेम्पलेट चुनें।",
+      "customAutostartScriptLabel": "कस्टम ऑटोस्टार्ट स्क्रिप्ट",
+      "customAutostartScriptDescription": "ऑटोस्टार्ट तर्क को अनुकूलित करें, एप्लिकेशन प्रदाता से डिफ़ॉल्ट का उपयोग करने के लिए खाली छोड़ दें।",
+      "saveInstallation": "इंस्टॉलेशन सहेजें",
+      "updateStatusTitle": "{appName} के लिए अपडेट स्थिति",
+      "checkingUpdates": "अपडेट की जाँच हो रही है...",
+      "updateAvailable": "एक नया छवि संस्करण उपलब्ध है!",
+      "yourVersion": "आपका संस्करण: {sha}",
+      "latestAvailable": "नवीनतम संस्करण रजिस्ट्री से खींचने के लिए उपलब्ध है।",
+      "pullLatest": "नवीनतम छवि खींचें",
+      "upToDate": "आपकी छवि अद्यतित है।",
+      "currentVersion": "वर्तमान संस्करण: {sha}",
+      "errorChecking": "अपडेट की जाँच में त्रुटि।",
+      "pullingLatest": "नवीनतम छवि खींची जा रही है... इसमें कुछ समय लग सकता है।",
+      "pullComplete": "खींचना पूरा हुआ!",
+      "newVersion": "नया संस्करण: {sha}",
+      "errorPulling": "छवि खींचने में त्रुटि।",
+      "manualInstallNote": "ध्यान दें: मैन्युअल रूप से जोड़ी गई छवियां selkies-baseimage संगत छवि पर आधारित होनी चाहिए।",
+      "generalTitle": "सामान्य और प्रदर्शन सेटिंग्स",
+      "webrtcTitle": "WebRTC और TURN सेटिंग्स",
+      "webrtcDescription": "सत्र डिफ़ॉल्ट रूप से WebSockets पर स्ट्रीम होते हैं। नीचे कोई भी STUN, TURN, Cloudflare या सार्वजनिक IP मान सेट करने, या WebRTC मोड चुनने पर कंटेनर ड्यूअल मोड सक्षम के साथ WebRTC पर स्विच हो जाता है, ताकि उपयोगकर्ता अभी भी WebSockets पर वापस जा सकें।",
+      "dockerTitle": "डॉकर उन्नत ओवरराइड",
+      "dockerDescription": "ये सेटिंग्स डिफ़ॉल्ट कंटेनर कॉन्फ़िगरेशन को ओवरराइड करती हैं। सावधानी से उपयोग करें और केवल तभी जब आप जानते हों कि आप क्या कर रहे हैं।"
+    },
+    "status": {
+      "loggingIn": "लॉग इन हो रहा है...",
+      "configSaved": "कॉन्फ़िगरेशन सफलतापूर्वक सहेजा गया!",
+      "configApplied": "कॉन्फ़िगरेशन लागू किया गया! कृपया लॉगिन और परीक्षण करें।",
+      "configApplyFailed": "कॉन्फ़िगरेशन लागू करने में विफल: {error}",
+      "fileReadError": "फ़ाइल पढ़ने में त्रुटि।",
+      "noConfig": "कृपया एक कॉन्फ़िग फ़ाइल या टेक्स्ट प्रदान करें।",
+      "loggedInAdmin": "व्यवस्थापक के रूप में लॉग इन: {username}",
+      "loggedInUser": "मानक उपयोगकर्ता के रूप में लॉग इन: {username}।",
+      "loginFailed": "लॉगिन विफल: {error}",
+      "adminDataRefreshFailed": "व्यवस्थापक डेटा को ताज़ा करने में विफल: {error}",
+      "logoutSuccess": "लॉग आउट और कॉन्फ़िगरेशन साफ़ किया गया।",
+      "generateConfigFailed": "कॉन्फ़िग उत्पन्न नहीं किया जा सका, उपयोगकर्ता विवरण गायब हैं।",
+      "copySuccess": "कॉन्फ़िगरेशन क्लिपबोर्ड पर कॉपी किया गया!",
+      "copyFailed": "टेक्स्ट कॉपी करने में विफल।",
+      "publicKeyCopied": "सार्वजनिक कुंजी कॉपी की गई!",
+      "keyCopyFailed": "कुंजी कॉपी करने में विफल।",
+      "creatingAdmin": "व्यवस्थापक बनाया जा रहा है...",
+      "adminCreated": "व्यवस्थापक '{username}' बनाया गया।",
+      "adminCreateFailed": "व्यवस्थापक बनाने में त्रुटि: {error}",
+      "adminDeleted": "व्यवस्थापक '{username}' सफलतापूर्वक हटा दिया गया।",
+      "adminDeleteFailed": "व्यवस्थापक हटाने में त्रुटि: {error}",
+      "creatingUser": "उपयोगकर्ता बनाया जा रहा है...",
+      "userCreated": "उपयोगकर्ता '{username}' बनाया गया।",
+      "userCreateFailed": "उपयोगकर्ता बनाने में त्रुटि: {error}",
+      "userDeleted": "उपयोगकर्ता '{username}' सफलतापूर्वक हटा दिया गया।",
+      "userDeleteFailed": "उपयोगकर्ता हटाने में त्रुटि: {error}",
+      "userUpdated": "उपयोगकर्ता '{username}' सफलतापूर्वक अपडेट किया गया।",
+      "userUpdateFailed": "उपयोगकर्ता अपडेट करने में त्रुटि: {error}",
+      "creatingGroup": "समूह बनाया जा रहा है...",
+      "groupCreated": "समूह '{groupName}' बनाया गया।",
+      "groupCreateFailed": "समूह बनाने में त्रुटि: {error}",
+      "groupDeleted": "समूह '{groupName}' सफलतापूर्वक हटा दिया गया।",
+      "groupDeleteFailed": "समूह हटाने में त्रुटि: {error}",
+      "groupUpdated": "समूह '{groupName}' सफलतापूर्वक अपडेट किया गया।",
+      "groupUpdateFailed": "समूह अपडेट करने में त्रुटि: {error}",
+      "homedirLoadFailed": "होम डायरेक्टरी लोड करने में विफल: {error}",
+      "homedirCreateFailed": "डायरेक्टरी बनाने में त्रुटि: {error}",
+      "homedirCreated": "होम डायरेक्टरी '{homeName}' बनाई गई।",
+      "homedirDeleted": "डायरेक्टरी '{homeName}' हटा दी गई।",
+      "homedirDeleteFailed": "डायरेक्टरी हटाने में त्रुटि: {error}",
+      "homedirCreatedFor": "{username} के लिए डायरेक्टरी '{homeName}' बनाई गई।",
+      "homedirDeletedFor": "{username} के लिए डायरेक्टरी '{homeName}' हटा दी गई।",
+      "sessionsLoadFailed": "सत्र लोड करने में विफल: {error}",
+      "sessionStopError": "सत्र रोकने में त्रुटि: {error}",
+      "sessionStopped": "सत्र सफलतापूर्वक रोका गया।",
+      "appDataRefreshFailed": "ऐप डेटा को ताज़ा करने में विफल: {error}",
+      "closingSession": "अनुकूलन सत्र प्रतिबद्ध किया जा रहा है...",
+      "sessionClosed": "अनुकूलन सत्र बंद हो गया।",
+      "sessionCloseFailed": "अनुकूलन सत्र बंद करने में विफल: {error}",
+      "fetchingApps": "स्टोर से ऐप्स प्राप्त किए जा रहे हैं...",
+      "fetchAppsFailed": "स्टोर से ऐप्स प्राप्त करने में विफल: {error}",
+      "appStoreAddFailed": "स्टोर जोड़ने में त्रुटि: {error}",
+      "appStoreAdded": "ऐप स्टोर '{name}' जोड़ा गया।",
+      "appSaved": "ऐप '{name}' सफलतापूर्वक {action}।",
+      "appSaveActions": {
+        "updated": "अद्यतन किया गया",
+        "installed": "स्थापित किया गया"
+      },
+      "appSaveFailed": "ऐप सहेजने में त्रुटि: {error}",
+      "appDeleted": "ऐप '{name}' हटा दिया गया।",
+      "appDeleteFailed": "ऐप हटाने में त्रुटि: {error}",
+      "templateSaved": "टेम्पलेट '{name}' सफलतापूर्वक सहेजा गया।",
+      "templateSaveFailed": "टेम्पलेट सहेजने में त्रुटि: {error}",
+      "templateDeleted": "टेम्पलेट '{name}' सफलतापूर्वक हटा दिया गया।",
+      "templateDeleteFailed": "टेम्पलेट हटाने में त्रुटि: {error}",
+      "pinRemoved": "पिन किया गया व्यवहार हटाया गया।",
+      "keyGenerated": "नई कुंजी जोड़ी उत्पन्न हुई।",
+      "keyGenFailed": "कुंजी निर्माण विफल: {error}",
+      "pendingConfigSaved": "लंबित कॉन्फ़िगरेशन सहेजा गया। अब आप अपने प्रशासक को अपनी सार्वजनिक कुंजी प्रदान कर सकते हैं।",
+      "settingsSaved": "सेटिंग्स सहेजी गईं।",
+      "appCreated": "ऐप '{name}' सफलतापूर्वक बनाया गया।",
+      "launchFailed": "लॉन्च विफल: {error}"
+    },
+    "placeholders": {
+      "noAdmins": "कोई व्यवस्थापक नहीं मिला।",
+      "noUsers": "कोई उपयोगकर्ता नहीं मिला।",
+      "noGroups": "कोई समूह नहीं मिला।",
+      "noHomeDirs": "कोई होम डायरेक्टरी नहीं मिली।",
+      "noSessions": "कोई सक्रिय सत्र नहीं मिला।",
+      "noPinned": "कोई पिन किया गया व्यवहार नहीं मिला।",
+      "errorLoading": "डायरेक्टरी लोड करने में त्रुटि।",
+      "noInstalledApps": "अभी तक कोई एप्लिकेशन इंस्टॉल नहीं किया गया है।"
+    }
+  },
+  "popup": {
+    "tabs": {
+      "launch": "नया लॉन्च करें",
+      "sessions": "सक्रिय सत्र",
+      "manageFiles": "फ़ाइलें प्रबंधित करें",
+      "uploadStorage": "भंडारण में अपलोड करें",
+      "uploadFiles": "फ़ाइलें अपलोड करें",
+      "uploadFilesTitle": "समर्पित फ़ाइल अपलोड पृष्ठ खोलें"
+    },
+    "launchView": {
+      "searchPlaceholder": "एप्लिकेशन खोजें...",
+      "uploadingFile": "फ़ाइल अपलोड हो रही है...",
+      "gpuLabel": "GPU",
+      "storageLabel": "भंडारण",
+      "languageLabel": "भाषा",
+      "cleanroom": "क्लीनरूम (अस्थायी)",
+      "noGpu": "कोई नहीं",
+      "saveOptions": "इन लॉन्च विकल्पों को सहेजें",
+      "saveOptionsForUrl": "सभी URL के लिए विकल्प सहेजें",
+      "saveOptionsForFile": ".{extension} फ़ाइलों के लिए विकल्प सहेजें",
+      "openFile": "लॉन्च पर फ़ाइल खोलें",
+      "launchButton": "लॉन्च करें",
+      "launchingButton": "लॉन्च हो रहा है...",
+      "uploadingButton": "अपलोड हो रहा है...",
+      "autoHome": "ऑटो (प्रति-ऐप दृढ़ता)",
+      "collaborationMode": "सहयोगी सत्र",
+      "waylandMode": "Wayland मोड"
+    },
+    "sessionsView": {
+      "noSessions": "कोई सक्रिय सत्र नहीं मिला।"
+    },
+    "uploadStorageView": {
+      "selectHome": "होम डायरेक्टरी चुनें",
+      "description": "यह फ़ाइल <strong>{filename}</strong> को भविष्य में उपयोग के लिए सीधे आपके फ़ाइल स्टोरेज में अपलोड करेगा।",
+      "descriptionFallback": "यह फ़ाइल <strong>{filename}</strong> को भविष्य में उपयोग के लिए सीधे आपके फ़ाइल स्टोरेज में अपलोड करेगा।",
+      "uploadButton": "फ़ाइल अपलोड करें",
+      "uploadingButton": "अपलोड हो रहा है...",
+      "preparing": "फ़ाइल तैयार हो रही है...",
+      "uploadingChunk": "हिस्सा {current} का {total} अपलोड हो रहा है...",
+      "finalizing": "अंतिम रूप दिया जा रहा है...",
+      "uploadComplete": "अपलोड पूरा हुआ!"
+    },
+    "status": {
+      "unconfigured": "कृपया विकल्प पृष्ठ के माध्यम से एक्सटेंशन को कॉन्फ़िगर करें।",
+      "openingServerFile": "सर्वर-साइड फ़ाइल खोली जा रही है: {filename}",
+      "openingFile": "फ़ाइल खोली जा रही है: {filename}",
+      "openingUrl": "यूआरएल खोला जा रहा है: {targetUrl}",
+      "error": "त्रुटि: {message}",
+      "preparingFile": "फ़ाइल तैयार हो रही है...",
+      "sendingFile": "सत्र में फ़ाइल भेजी जा रही है...",
+      "errorSendingFile": "फ़ाइल भेजने में त्रुटि: {message}",
+      "errorClosingSession": "सत्र बंद करने में त्रुटि: {message}",
+      "preparingSession": "पृथक सत्र तैयार हो रहा है...",
+      "fetchingData": "फ़ाइल डेटा प्राप्त किया जा रहा है...",
+      "fetchDataFailed": "फ़ाइल डेटा प्राप्त करने में विफल: {statusText}",
+      "unknownAction": "अज्ञात लॉन्च क्रिया।",
+      "noAppSelected": "कृपया एक एप्लिकेशन चुनें।",
+      "noAppsAvailable": "आपके खाते के लिए कोई एप्लिकेशन उपलब्ध नहीं है।",
+      "uploadSuccess": "फ़ाइल सफलतापूर्वक अपलोड हुई!",
+      "creatingAutoHome": "स्वचालित होम डायरेक्टरी बना रहा है..."
+    },
+    "languages": {
+      "default": "डिफ़ॉल्ट ({locale})"
+    }
+  },
+  "upload": {
+    "title": "फ़ाइल अपलोड",
+    "description": "इसे एक सुरक्षित, पृथक सत्र में खोलने के लिए अपने कंप्यूटर से एक फ़ाइल चुनें।",
+    "dropzone": {
+      "title": "एक फ़ाइल यहाँ खींचें और छोड़ें",
+      "or": "या",
+      "button": "फ़ाइल चुनें"
+    },
+    "confirm": {
+      "ready": "फ़ाइल सुरक्षित रूप से खोले जाने के लिए तैयार है।",
+      "button": "लॉन्च करने के लिए जारी रखें"
+    }
+  },
+  "files": {
+    "title": "SealSkin फ़ाइलें",
+    "header": {
+      "title": "फ़ाइलें",
+      "newFolder": "नया फ़ोल्डर",
+      "uploadFiles": "फ़ाइलें अपलोड करें",
+      "uploadFolder": "फ़ोल्डर अपलोड करें"
+    },
+    "sidebar": {
+      "sharedFiles": "SealSkin फ़ाइलें",
+      "publicShares": "सार्वजनिक शेयर"
+    },
+    "shares": "शेयर",
+    "table": {
+      "name": "नाम",
+      "size": "आकार",
+      "lastModified": "अंतिम संशोधित",
+      "created": "बनाया गया",
+      "expires": "समाप्त होता है",
+      "url": "सार्वजनिक URL",
+      "passwordProtected": "पासवर्ड"
+    },
+    "dropzone": {
+      "title": "अपलोड करने के लिए फ़ाइलें यहाँ छोड़ें"
+    },
+    "pagination": {
+      "previous": "« पिछला",
+      "next": "अगला »",
+      "pageOf": "पेज {page} / {totalPages}"
+    },
+    "modals": {
+      "newFolder": {
+        "title": "नया फ़ोल्डर बनाएँ",
+        "folderNameLabel": "फ़ोल्डर का नाम",
+        "nameTitle": "केवल अक्षर, संख्या, अंडरस्कोर, हाइफ़न, या अवधि का उपयोग करें।",
+        "createButton": "बनाएँ"
+      },
+      "confirmDelete": {
+        "title": "हटाने की पुष्टि करें",
+        "message": "क्या आप वाकई {count, plural, one {1 चयनित आइटम} other {{count} चयनित आइटम}} हटाना चाहते हैं? यह क्रिया पूर्ववत नहीं की जा सकती।",
+        "messageDefault": "क्या आप वाकई चयनित आइटम हटाना चाहते हैं? यह क्रिया पूर्ववत नहीं की जा सकती।"
+      },
+      "uploadProgress": {
+        "title": "अपलोड प्रगति",
+        "doneButton": "हो गया"
+      },
+      "share": {
+        "title": "फ़ाइल साझा करें",
+        "sharingFile": "फ़ाइल साझा की जा रही है: <strong>{filename}</strong>",
+        "passwordLabel": "पासवर्ड (वैकल्पिक)",
+        "passwordPlaceholder": "बिना पासवर्ड के लिए खाली छोड़ दें",
+        "expiryLabel": "समाप्त होने में (घंटे, वैकल्पिक)",
+        "expiryPlaceholder": "उदा., एक दिन के लिए 24",
+        "shareButton": "शेयर लिंक बनाएं"
+      }
+    },
+    "status": {
+      "homeDirLoadFailed": "होम निर्देशिका लोड करने में विफल: {error}",
+      "filesLoadFailed": "फ़ाइलें लोड करने में त्रुटि: {error}",
+      "deleteProtectedError": "संरक्षित सिस्टम फ़ोल्डर नहीं हटा सकते।",
+      "deletingItems": "{count, plural, one {1 आइटम} other {{count} आइटम}} हटा रहा है...",
+      "deleteSuccess": "सफलतापूर्वक हटाया गया।",
+      "deleteFailed": "हटाने में विफल: {error}",
+      "preparingUpload": "{count, plural, one {1 फ़ाइल} other {{count} फ़ाइलें}} अपलोड करने की तैयारी कर रहा है...",
+      "uploadPrepFailed": "फ़ोल्डर अपलोड की तैयारी के दौरान त्रुटि: {error}",
+      "notConfigured": "त्रुटि: SealSkin कॉन्फ़िगर नहीं है। कृपया विकल्पों में सेटअप करें।",
+      "folderCreated": "फ़ोल्डर '{folderName}' बनाया गया।",
+      "folderCreateFailed": "फ़ोल्डर बनाने में त्रुटि: {error}",
+      "shareCreated": "शेयर सफलतापूर्वक बनाया गया! लिंक आपके क्लिपबोर्ड पर कॉपी कर लिया गया है।",
+      "shareCreateFailed": "शेयर बनाने में विफल: {error}",
+      "sharesLoadFailed": "साझा की गई फ़ाइलों को लोड करने में विफल: {error}",
+      "shareDeleteFailed": "शेयर हटाने में विफल: {error}",
+      "shareDeleted": "शेयर सफलतापूर्वक हटा दिया गया।",
+      "urlCopied": "सार्वजनिक URL क्लिपबोर्ड पर कॉपी किया गया।"
+    },
+    "placeholders": {
+      "errorLoading": "फ़ाइलें लोड करने में त्रुटि।",
+      "folderEmpty": "यह फ़ोल्डर खाली है।",
+      "noHomeDirs": "कोई होम निर्देशिका उपलब्ध नहीं है।",
+      "noShares": "आपने अभी तक कोई फ़ाइल साझा नहीं की है।"
+    },
+    "uploadStatus": {
+      "pending": "लंबित",
+      "initiating": "शुरू हो रहा है...",
+      "uploading": "अपलोड हो रहा है...",
+      "finalizing": "अंतिम रूप दिया जा रहा है...",
+      "completed": "पूरा हुआ",
+      "error": "त्रुटि"
+    },
+    "upOneLevel": "एक स्तर ऊपर",
+    "newFolder": "नया फ़ोल्डर",
+    "upload": "अपलोड",
+    "openInApp": "ऐप में खोलें",
+    "size": "आकार",
+    "modified": "संशोधित",
+    "empty": "यहाँ कोई फ़ाइल नहीं।",
+    "activeShares": "सक्रिय शेयर",
+    "folder": "फ़ोल्डर",
+    "pageInfo": "पन्ना {page} में से {totalPages} · {total} आइटम",
+    "uploadFailed": "वीफल",
+    "uploaded": "{name} अपलोड हो गय",
+    "uploadFailedMsg": "अपलोड वीफल: {name}",
+    "newFolderTitle": "नया फ़ोल्डर",
+    "created": "{name} बनाई गयी",
+    "deleteConfirm": "{count} आइटम हटाएँ? यह वापस नहिन हो सकत।",
+    "deleted": "हटायी गय",
+    "deleteFailed": "हटाने में वीफल",
+    "deleteTimeout": "हटाने का समय खत्म — बाद में जाँचें",
+    "onlyFilesOpenable": "केवल फ़ाइलें ही एक ऐपलिकेशन में खोली जा सकत हैं।",
+    "noFileApps": "कोई फ़ाइल-आधारित ऐप इंस्टॉल नहिन।",
+    "openInAppTitle": "\"{name}\" खोलें",
+    "openInAppHelp": "इस फ़ाइल के साथ एक इंस्टॉल ऐप लॉन्च करें। फ़ाइल सेशन के स्टोरेज में कॉपी होकर ऐप में खोली जात है।",
+    "app": "ऐप",
+    "launched": "{name} लॉन्च हो गय",
+    "noShares": "कोई सक्रिय शेयर नहिन।",
+    "createdWord": "बनाई गय",
+    "expiresWord": "समाप्त",
+    "copied": "कॉपी हो गय",
+    "copyFailed": "कॉपी वीफल",
+    "revoke": "रद्द करें",
+    "revokeConfirm": "यह शेयर रद्द करें?",
+    "shareRevoked": "शेयर रद्द हो गय",
+    "up": "ऊपर"
+  },
+  "login": {
+    "tagline": "कंटेनराइज़्ड ऐप्स शुरू करने के लिए साइन इन करें",
+    "signIn": "साइन इन",
+    "or": "या",
+    "sso": "SSO से साइन इन",
+    "redirecting": "रेडायरेक्ट हो रहा है…"
+  },
+  "nav": {
+    "apps": "ऐप्स",
+    "files": "फ़ाइलें",
+    "access": "पहुँच",
+    "overview": "अवलोकन",
+    "accounts": "खाते",
+    "groups": "समूह",
+    "roles": "भूमिकाएँ",
+    "globalSettings": "वैश्विक सेटिंग्स",
+    "sso": "SSO",
+    "installedApps": "इंस्टॉल किए गए ऐप्स",
+    "appStores": "ऐप स्टोर",
+    "templates": "टेम्पलेट",
+    "laboratory": "प्रयोगशाला",
+    "system": "सिस्टम",
+    "volumeMounts": "वॉल्यूम",
+    "backup": "बैकअप",
+    "sessions": "सत्र",
+    "password": "पासवर्ड",
+    "signOut": "साइन आउट"
+  },
+  "launch": {
+    "homeDirectory": "होम डायरेक्टरी",
+    "auto": "ऑटो",
+    "cleanroom": "क्लीनरूम",
+    "roomMode": "रूम मोड में शुरू करें",
+    "wayland": "Wayland",
+    "savePreset": "इन लॉन्च विकल्पों को प्रीसेट के रूप में सहेजें",
+    "uploadStorage": "फ़ाइल साझा स्टोरेज में अपलोड करें",
+    "pinned": "पिन किए गए",
+    "activeSessions": "सक्रिय सत्र",
+    "noSessions": "कोई सक्रिय सत्र नहीं।",
+    "title": "ऐप शुरू करें",
+    "subtitle": "ऐप बिना फ़ाइल खोले शुरू होगा। एक चुनने के लिए \"लॉन्च पर फ़ाइल खोलें\" चुनें।",
+    "sessionName": "सत्र का नाम (वैकल्पिक)",
+    "sessionNamePlaceholder": "विंडो शीर्षक और सत्र सूची में दिखाई देता है",
+    "openFileOnLaunch": "लॉन्च पर फ़ाइल खोलें",
+    "fileToOpen": "खोलने के लिए फ़ाइल (वैकल्पिक, आपके कंप्यूटर से)",
+    "serverFile": "या साझा स्टोरेज में मौजूद फ़ाइल खोलें",
+    "serverFilePlaceholder": "साझा स्टोरेज में फ़ाइल का नाम",
+    "launch": "शुरू करें",
+    "gpuAuto": "ऑटो (कोई विशिष्ट GPU नहिन)",
+    "sessionLaunched": "सेशन लॉन्च हो गय",
+    "noSessionUrl": "लॉन्च वीफल: कोई सेशन URL लौटे नहिन",
+    "enterUrl": "खोलने के लिये URL दर्ज करें",
+    "url": "URL",
+    "launchApp": "{name} लॉन्च करें",
+    "pickFileOrServerFile": "खोलने के लिये एक फ़ाइल चुनें, या साझा स्टोरेज में पहले से मौजूद फ़ाइल नाम दर्ज करें।",
+    "uploading": "अपलोड हो रहें…",
+    "uploadingProgress": "अपलोड हो रहें… {done}/{total}",
+    "launching": "लॉन्च हो रहें…",
+    "finalizing": "अंतिम रूप दे रहें…",
+    "fileUploaded": "फ़ाइल '{name}' अपलोड हो गयी।"
+  },
+  "password": {
+    "title": "पासवर्ड बदलें",
+    "current": "वर्तमान पासवर्ड",
+    "new": "नया पासवर्ड",
+    "confirm": "नया पासवर्ड पुष्टि करें"
+  },
+  "share": {
+    "title": "फ़ाइल साझा करें",
+    "passwordLabel": "पासवर्ड (वैकल्पिक)",
+    "expiryLabel": "घंटों में समाप्त (वैकल्पिक)",
+    "linkLabel": "शेयर लिंक:",
+    "withLabel": "साझा करें"
+  },
+  "overview": {
+    "title": "अवलोकन",
+    "howToBtn": "Vreckan का उपयोग कैसे करें",
+    "description": "सर्वर स्थिति और कॉन्फ़िगरेशन।",
+    "mySettings": "मेरी सेटिंग्स",
+    "kvUsername": "यूज़रनेम",
+    "kvIsAdmin": "एडमिन है",
+    "kvCpu": "CPU",
+    "kvDiskTotal": "कुल डिस्क",
+    "kvDiskUsed": "उपयोग किया गया डिस्क",
+    "kvGpus": "GPUs",
+    "kvApiPort": "API पोर्ट",
+    "kvSessionPort": "सत्र पोर्ट",
+    "yes": "हाँ",
+    "no": "नहीं",
+    "none": "कोई नहीं"
+  },
+  "howto": {
+    "title": "Vreckan का उपयोग कैसे करें",
+    "intro": "Vreckan की मुख्य सुविधाओं का एक त्वरित मार्गदर्शक।",
+    "close": "बंद करें",
+    "item1Lead": "ऐप शुरू करें",
+    "item1Body": "ऐप्स टैब खोलें, एक एप्लिकेशन चुनें, अपने लॉन्च विकल्प (होम डायरेक्टरी, भाषा, GPU, …) सेट करें और लॉन्च पर क्लिक करें। आपका अलग सत्र एक नए टैब में खुलता है।",
+    "item2Lead": "ऐप में फ़ाइल खोलें",
+    "item2Body": "फ़ाइलें टैब में, एक फ़ाइल चुनें और \"ऐप में खोलें\" चुनें ताकि यह सीधे आपके चुने हुए एप्लिकेशन में खुले।",
+    "item3Lead": "स्थायी स्टोरेज प्रबंधित करें",
+    "item3Body": "होम डायरेक्टरी बनाएँ और हटाएँ (लॉन्च विकल्पों या फ़ाइलें टैब से) ताकि आपके फ़ाइलें सत्रों के बीच बनी रहें।",
+    "item4Lead": "लॉन्च विकल्प सहेजें",
+    "item4Body": "लॉन्च डायलॉग में \"इन लॉन्च विकल्पों को सहेजें\" पर टिक लगाएँ ताकि किसी फ़ाइल प्रकार या सभी URL के लिए एक प्रीसेट पिन हो। पिन किए गए के अंतर्गत प्रीसेट प्रबंधित करें।",
+    "item5Lead": "एडमिन कार्य",
+    "item5Body": "एडमिन टैब में आप उपयोगकर्ता, एडमिन, समूह, ऐप्स, टेम्पलेट, वॉल्यूम और बैकअप प्रबंधित कर सकते हैं।"
+  },
+  "settings": {
+    "active": "सक्रिय",
+    "group": "समूह",
+    "persistentStorage": "स्थायी स्टोरेज",
+    "publicSharing": "सार्वजनिक साझा",
+    "hardenContainer": "कंटेनर मज़बूत करें",
+    "hardenOpenbox": "Openbox मज़बूत करें",
+    "gpu": "GPU",
+    "storageLimit": "स्टोरेज सीमा (MB, -1 = असीमित)",
+    "sessionLimit": "सत्र सीमा (-1 = असीमित)",
+    "none": "कोई नहीं",
+    "adminPerms": "प्रशासक अनुमतीयां",
+    "userPerms": "उपयोगकर्ता अनुमतीयां"
+  },
+  "accounts": {
+    "heading": "खाते",
+    "addTitle": "खाता जोड़ें",
+    "addHelp": "एक नया खाता बनाएं। प्रशासक बनाने के लिए \"Admin\" पर टिक लगाएं।",
+    "labelAdmin": "प्रशासक",
+    "badgeAdmin": "प्रशासक",
+    "badgeSso": "SSO",
+    "btnSetPassword": "पासवर्ड सेट करें",
+    "btnAccess": "प्रवेश",
+    "btnHomeDirs": "होम निर्देशिकाएं",
+    "chipActive": "सक्रिय",
+    "chipInactive": "निष्क्रिय",
+    "chipPasswordSet": "पासवर्ड सेट",
+    "chipNoPassword": "पासवर्ड नहीं",
+    "chipStorage": "भंडारण",
+    "chipNoStorage": "भंडारण नहीं",
+    "chipSharing": "शेयरिंग",
+    "chipNoSharing": "शेयरिंग नहीं",
+    "chipGpu": "GPU",
+    "chipNoGpu": "GPU नहीं",
+    "badgeGroup": "समूह: {group}",
+    "badgeRoles": "भूमिकाएं: {roles}",
+    "badgeStorage": "भंडारण: {value}",
+    "badgeSessions": "सत्र: {value}",
+    "badgeHomeDirs": "होम निर्देशिकाएं: {homeText}",
+    "ssoGroupTitle": "SSO समूह",
+    "ssoGroupAdminTitle": "SSO समूह (प्रशासक प्रदान करता है)",
+    "ssoGroupBadge": "SSO: {group}",
+    "ssoGroupAdminSuffix": " · प्रशासक",
+    "confirmDelete": "{username} को हटाएं?",
+    "confirmDeleteTitle": "उपयोगकर्ता हटाएं",
+    "toastUsernameRequired": "उपयोगकर्ता नाम आवश्यक है",
+    "toastCreated": "बनाया गया",
+    "toastDeleted": "हटाया गया",
+    "btnRemove": "हटाएं",
+    "homedirsEmpty": "कोई होम निर्देशिका नहीं।",
+    "homedirsTitle": "होम निर्देशिकाएं — {username}",
+    "homedirsLabelNew": "नई होम निर्देशिका",
+    "homedirsPlaceholder": "उदा. games",
+    "btnAdd": "जोड़ें",
+    "toastNameRequired": "नाम आवश्यक है",
+    "toastAdded": "जोड़ा गया",
+    "confirmRemoveHome": "यह होम निर्देशिका हटाएं?",
+    "toastRemoved": "हटाया गया",
+    "toastNotFound": "नहीं मिला",
+    "builtinSuffix": " (निर्मित)",
+    "accessNoGroups": "कोई समूह परिभाषित नहीं।",
+    "accessTitle": "प्रवेश — {username}",
+    "accessHelp": "भूमिकाएं, प्रत्यक्ष अनुमतियां और समूह सदस्यता निर्धारित करें। खाते की प्रभावी प्रवेश तीनों का संयोजन है (सबसे अधिक अनुमत प्रभावी होता है)।",
+    "accessLabelRoles": "भूमिकाएं",
+    "accessLabelPerms": "प्रत्यक्ष अनुमतियां",
+    "accessLabelGroups": "समूह",
+    "toastAccessSaved": "प्रवेश सहेजा गया",
+    "passwordResetTitle": "पासवर्ड रीसेट करें — {username}",
+    "passwordSetTitle": "पासवर्ड सेट करें — {username}",
+    "passwordHelp": "{username} के लिए वेब-लॉगिन पासवर्ड सेट करता है। यह तुरंत प्रभावी होता है — वे वेब UI में साइन इन करने के लिए इसका उपयोग कर सकते हैं।",
+    "passwordLabelNew": "नया पासवर्ड",
+    "passwordPlaceholder": "कम से कम 8 अक्षर",
+    "passwordLabelConfirm": "पासवर्ड की पुष्टि करें",
+    "btnSavePassword": "पासवर्ड सहेजें",
+    "toastPasswordTooShort": "पासवर्ड कम से कम 8 अक्षर का होना चाहिए",
+    "toastPasswordMismatch": "पासवर्ड मेल नहीं खाते",
+    "passwordActionReset": "रीसेट",
+    "passwordActionSet": "सेट",
+    "toastPasswordDone": "{username} के लिए पासवर्ड {action}",
+    "editTitle": "{username} संपादित करें",
+    "editAdminLockedTitle": "बूटस्ट्रैप प्रशासक खाते को घटाया नहीं जा सकता।"
+  },
+  "groups": {
+    "heading": "समूह",
+    "addTitle": "समूह जोड़ें",
+    "editTitle": "{name} संपादित करें",
+    "confirmDelete": "समूह {name} हटाएँ?",
+    "confirmDeleteTitle": "समूह हटाएँ",
+    "empty": "कोई समूह नहिएं।",
+    "noRoles": "कोई भूमिका नहिएं",
+    "badgePerms": "अनुमतियाँ: {perms}",
+    "rolesLabel": "भूमिकाएँ (सभ सदस्यो क लेए प्रदान करत हए)",
+    "permsLabel": "अनुमतियाँ (सभ सदस्यो क लेए प्रदान करत हए)",
+    "ssoBadge": "SSO",
+    "ssoAdminSuffix": " · प्रशालक",
+    "ssoAdminTitle": "प्रशालक SSO सूची म हए (प्रशालक प्रदान करत हए)",
+    "ssoObservedTitle": "SSO स खोजा गय",
+    "noRolesDefined": "कोई भूमकाओं परिभाषित नहीं।"
+  },
+  "roles": {
+    "heading": "भूमिकानें",
+    "createTitle": "भूमिकान बनानें",
+    "editTitle": "{name} संपादित करें",
+    "description": "विवरण",
+    "permissions": "अनुमतियानें",
+    "empty": "कोई भूमिकान नहिएं।",
+    "builtin": "निर्मित",
+    "nameRequired": "नान आवश्यक है",
+    "created": "भूमिकान बनानी गई",
+    "deleted": "भूमिकान हटानी गई",
+    "saved": "भूमिकान सहेजी गई",
+    "confirmDelete": "भूमिकान {name} हटानें?",
+    "confirmDeleteTitle": "भूमिकान हटानें"
+  },
+  "gs": {
+    "heading": "वैश्विक सेटिंग्स",
+    "help": "सर्वर-स्तरीय सेटिंग्स जो ऐप-टेम्पलेट स्कीमा का हिस्सा नहीं हैं। प्रत्येक सेटिंग की बेस-लेयर डिफ़ॉल्ट्स (टेम्पलेट स्कीमा) <strong>{templates}</strong> पेज पर संपादित होती हैं, और SSO एडमिन समूह <strong>{groups}</strong> पेज पर प्रबंधित होते हैं।",
+    "gpuTitle": "वैश्विक डिफ़ॉल्ट GPU",
+    "gpuHelp": "उन लॉन्च के लिए बैकअप GPU जहाँ उपयोगकर्ता कोई GPU नहीं चुनता। GPU प्रकार का समर्थन न करने वाले ऐप प्रभावित नहीं होते।",
+    "gpuNone": "कोई नहीं (कोई वैश्विक डिफ़ॉल्ट नहीं)",
+    "save": "वैश्विक सेटिंग्स सहेजें",
+    "saved": "वैश्विक सेटिंग्स सहेजी गईं।",
+    "saveFailed": "सहेजने में विफल"
+  },
+  "sso": {
+    "heading": "SSO / OIDC",
+    "help": "Vreckan को एक OpenID Connect प्रदाता (जैसे authentik) से जोड़ें। Discovery <code>{issuer}/.well-known/openid-configuration</code> से ली जाती है। यहाँ सहेजा गया मान <code>VRECKAN_OIDC_*</code> परिवेश को ओवरराइड करता है; हर फ़ील्ड पर बैज उसका वर्तमान स्रोत दिखाता है।",
+    "enableLabel": "SSO साइन-इन सक्षम करें",
+    "enabled": "सक्रिय",
+    "issuerLabel": "Issuer URL",
+    "issuerHelp": "प्रदाता का मूल URL।",
+    "clientIdLabel": "क्लाइंट ID",
+    "clientSecretLabel": "क्लाइंट सीक्रेट",
+    "secretSet": "•••• (सेट, {length} अक्षर — रखने के लिए खाली छोड़ें)",
+    "secretOptional": "(सार्वजनिक क्लाइंट के लिए वैकल्पिक)",
+    "redirectUriLabel": "रिडायरेक्ट URI",
+    "redirectUriPlaceholder": "डिफ़ॉल्ट: {base}/api/auth/oidc/callback",
+    "scopesLabel": "स्कोप्स",
+    "allowSignupLabel": "नए उपयोगकर्ता स्वतः बनाएँ",
+    "allowSignupHelp": "नई SSO पहचान के लिए खाता बनाएँ",
+    "stateTtlLabel": "State TTL (सेकंड)",
+    "testButton": "कनेक्शन जाँचें",
+    "testing": "प्रदाता से संपर्क किया जा रहा है…",
+    "connected": "<strong>{issuer}</strong> से जुड़ा",
+    "endpoints": "अनुमोदन: {authorization} · उपयोगकर्ता-सूचना: {userinfo} · टोकन: {token}",
+    "groupMappingTitle": "समूह मैपिंग",
+    "groupMappingHelp": "हर SSO लॉगिन पर उपयोगकर्ता प्रदाता के हर समूह के लिए एक Vreckan समूह में जोड़ा जाता है। केवल नीचे सूचीबद्ध समूहों को भूमिकाएँ स्वतः मिलती हैं; कोई अन्य (नया देखा गया) समूह <strong>कोई अनुमतियाँ नहीं</strong> के साथ शुरू होता है, जब तक कि आप <strong>{groups}</strong> पृष्ठ पर उन्हें अनुमतियाँ न दें।",
+    "adminGroupsLabel": "एडमिन समूह",
+    "adminGroupsHelp": "सदस्य स्वतः Vreckan एडमिन बने (यह <code>admin</code> भूमिका देता है)।",
+    "userGroupsLabel": "उपयोगकर्ता समूह",
+    "userGroupsHelp": "सदस्यों को बिल्ट-इन <code>user</code> भूमिका मिलती है। उपयोगकर्ता जिसमें से पहले समूह का सदस्य है, वह उसका प्राथमिक समूह बन जाता है।",
+    "save": "SSO सेटिंग्स सहेजें",
+    "saved": "SSO सेटिंग्स सहेजी गईं",
+    "tagPlaceholder": "नाम लिखें, Enter दबाएँ",
+    "srcDb": "db",
+    "srcEnv": "env",
+    "srcDefault": "डिफ़ॉल्ट"
+  },
+  "mounts": {
+    "heading": "वॉल्यूमाउंट्स",
+    "addTitle": "वॉल्यूमाउंट जोड़ें",
+    "addHelp": "डॉकर होस्ट से एक निर्देशिका को ऐप कंटेनरों में बाइंड करें। कंटेनर पथ कंटेनर के अंदर उपयोगकर्ता की होम निर्देशिका के सापेक्ष हैं।",
+    "hostPath": "होस्ट पथ",
+    "containerPath": "कंटेनर पथ",
+    "access": "प्रवेश",
+    "readOnly": "केवल-पठन",
+    "assignTo": "सौंपें",
+    "scopeNone": "कोई नहीं (निष्क्रिय)",
+    "scopeUser": "उपयोगकर्ता",
+    "scopeGroup": "समूह",
+    "target": "लक्ष्य",
+    "mode": "मोड",
+    "assignedTo": "सौंपा गया",
+    "empty": "कोई वॉल्यूमाउंट नहीं।",
+    "nameRequired": "नाम आवश्यक है",
+    "hostPathRequired": "होस्ट पथ आवश्यक है",
+    "containerPathRequired": "कंटेनर पथ आवश्यक है",
+    "pickTarget": "कोई लक्ष्य चुनें",
+    "created": "बनाया गया",
+    "deleted": "हटाया गया",
+    "confirmDelete": "वॉल्यूमाउंट {name} हटाएँ?",
+    "confirmDeleteTitle": "वॉल्यूमाउंट हटाएँ",
+    "editTitle": "वॉल्यूमाउंट {name} संपादित करें"
+  },
+  "stores": {
+    "heading": "ऐप स्टोर",
+    "addTitle": "ऐप स्टोर जोड़ें",
+    "urlLabel": "URL (YAML)",
+    "urlPlaceholder": "https://…/store.yml",
+    "add": "जोड़ें",
+    "configuredTitle": "विन्यस्त स्टोर",
+    "url": "URL",
+    "empty": "कोई स्टोर नहीं।",
+    "nameUrlRequired": "नाम और URL आवश्यक है",
+    "added": "जोड़ा गया",
+    "deleted": "हटाया गया",
+    "confirmDelete": "स्टोर {name} हटाएँ?",
+    "confirmDeleteTitle": "स्टोर हटाएँ"
+  },
+  "apps": {
+    "heading": "ऐप्स",
+    "installFromStoreTitle": "स्टोर से ऐप इंस्टॉल करें",
+    "installFromStoreHelp": "उपलब्ध ऐप्स ब्राउज़ करने के लिए एक स्टोर चुनें, फिर इंस्टॉल करने के लिए एक ऐप चुनें।",
+    "store": "स्टोर",
+    "noStoresConfigured": "कोई स्टोर कॉन्फ़िगर नहीं",
+    "search": "खोजें",
+    "searchPlaceholder": "लोड किए गए ऐप्स फ़िल्टर करें…",
+    "load": "लोड करें",
+    "noStoreSelected": "कोई स्टोर चुना नहीं",
+    "loadingStore": "स्टोर लोड हो रहा है…",
+    "noAppsInStore": "इस स्टोर में कोई ऐप नहीं।",
+    "noAppsMatch": "“{q}” से कोई ऐप मेल नहीं खाता।",
+    "installedTitle": "इंस्टॉल किए गए ऐप्स",
+    "app": "ऐप",
+    "source": "स्रोत",
+    "homeDirs": "होम निर्देशिकाएँ",
+    "users": "उपयोगकर्ता",
+    "groups": "समूह",
+    "image": "छवि",
+    "noAppsInstalled": "कोई ऐप इंस्टॉल नहीं।",
+    "yes": "हाँ",
+    "no": "नहीं",
+    "check": "जाँचें",
+    "pull": "पुल करें",
+    "appNotFound": "ऐप नहीं मिला",
+    "confirmDelete": "यह ऐप हटाएँ?",
+    "confirmDeleteTitle": "ऐप हटाएँ",
+    "deleted": "हटाया गया",
+    "updateAvailable": "अपडेट उपलब्ध",
+    "upToDate": "अप-टू-डेट",
+    "pullStarted": "पुल शुरू — प्रगति तालिका में दिखाई देगी",
+    "pullFailed": "पुल विफल",
+    "pullComplete": "पुल पूर्ण",
+    "pullTimedOut": "पुल का समय समाप्त — बाद में फिर देखें",
+    "unknownError": "अज्ञात त्रुटि",
+    "pulling": "पुल हो रहा है",
+    "waitingToStart": "शुरू होने का इंतज़ार",
+    "unknown": "अज्ञात",
+    "installTitle": "{name} इंस्टॉल करें",
+    "installHelp": "ऐप इंस्टॉल करता है और उसकी कंटेनर छवि डाउनलोड करता है। डाउनलोड पृष्ठभूमि में चलता है — प्रगति नीचे दिखाई देगी।",
+    "appTemplate": "ऐप टेम्पलेट",
+    "accessLabel": "यह ऐप कौन उपयोग कर सकता है",
+    "allUsers": "सभी उपयोगकर्ता",
+    "noUsers": "कोई उपयोगकर्ता नहीं",
+    "noGroups": "कोई समूह नहीं",
+    "noOneSelected": "कोई चुना नहीं गया — यह ऐप सभी से छिपा रहेगा और कोई भी उपयोग नहीं कर पाएगा।",
+    "install": "इंस्टॉल करें",
+    "installing": "इंस्टॉल हो रहा है…",
+    "waitingDownload": "डाउनलोड का इंतज़ार…",
+    "downloading": "छवि डाउनलोड हो रही है…",
+    "downloadFailed": "डाउनलोड विफल",
+    "downloadFailedDefault": "छवि का डाउनलोड विफल रहा।",
+    "downloadComplete": "डाउनलोड पूर्ण",
+    "stillDownloading": "पृष्ठभूमि में अभी भी डाउनलोड हो रहा है…",
+    "done": "पूर्ण",
+    "close": "बंद करें",
+    "installed": "इंस्टॉल किया गया",
+    "editTitle": "{name} संपादित करें",
+    "urlEnvVarLabel": "URL पर्यावरण चर",
+    "urlEnvVarHelp": "यह वह पर्यावरण चर है जिससे ऐप लॉन्च URL पढ़ता है। अपस्ट्रीम linuxserver छवियाँ <code>&lt;APP&gt;_CLI</code> उपयोग करती हैं — जैसे Chrome के लिए <code>CHROME_CLI</code>, Firefox के लिए <code>FIREFOX_CLI</code>। यदि ऐप कोई URL नहीं खोलता तो खाली छोड़ दें।"
+  },
+  "tpl": {
+    "addSetting": "सेटिंग जोड़ें",
+    "appTemplatesHelp": "टेम्पलेट सेशन कंटेनरों को भेजे जाने वाले environment variables को परिभाषित करते हैं। केवल उन मानों को संग्रहीत किया जाता है जो डिफ़ॉल्ट से अलग हैं।",
+    "appTemplatesTitle": "ऐप टेम्पलेट",
+    "baseLayerHelp": "टेम्पलेट स्कीमा: ऐप टेम्पलेटों को प्रस्तावित किए जाने वाले environment variables और उनके डिफ़ॉल्ट (base-layer) मान। हर लॉन्च इन डिफ़ॉल्ट से शुरू होता है; per-app टेम्पलेट और per-launch विकल्प उन्हें override करते हैं। \"docker\" सेटिंग environment variables के बजाय container run-options बन जाती हैं। खाली मान image के built-in डिफ़ॉल्ट को लागू होने देता है। परिवर्तन नए लॉन्च पर लागू होते हैं।",
+    "baseLayerSaved": "Base layer सहेजा गया।",
+    "baseLayerTitle": "Base layer — वैश्विक डिफ़ॉल्ट",
+    "cannotDelete": "यह टेम्पलेट हटाया नहीं जा सकता।",
+    "cannotDeleteDefault": "डिफ़ॉल्ट टेम्पलेट हटाया नहीं जा सकता।",
+    "catApp": "ऐप सेटिंग",
+    "catDocker": "Docker उन्नत overrides",
+    "catGeneral": "सामान्य और प्रदर्शन",
+    "catHardening": "Hardening",
+    "catUi": "UI सेटिंग",
+    "catWebrtc": "WebRTC & TURN",
+    "category": "श्रेणी",
+    "confirmDelete": "टेम्पलेट \"{name}\" हटाएँ?",
+    "confirmDeleteTitle": "टेम्पलेट हटाएँ",
+    "createNew": "— नया बनाएँ —",
+    "current": "वर्तमान",
+    "currentLabel": "वर्तमान (base layer)",
+    "defaultLabel": "डिफ़ॉल्ट (image baseline)",
+    "deleted": "टेम्पलेट \"{name}\" हटाया गया।",
+    "description": "विवरण",
+    "dockerHelp": "ये सेटिंग डिफ़ॉल्ट container configuration को override करती हैं। सावधानी से और केवल तभी उपयोग करें जब आप जानते हों कि क्या कर रहे हैं।",
+    "duplicateName": "डुप्लिकेट सेटिंग नाम: '{name}'.",
+    "enterNameFirst": "पहले टेम्पलेट का नाम दर्ज करें।",
+    "heading": "टेम्पलेट",
+    "imageDefault": "image डिफ़ॉल्ट",
+    "invalidName": "अमान्य सेटिंग नाम: '{name}'.",
+    "label": "लेबल",
+    "namePlaceholder": "नए टेम्पलेट के लिए नाम दर्ज करें",
+    "noSettingsDefined": "कोई सेटिंग परिभाषित नहीं है।",
+    "optionsPlaceholder": "विकल्प, एक प्रति पंक्ति: value:label",
+    "previewApps": "ऐप्स",
+    "previewAudioSettings": "ऑडियो सेटिंग",
+    "previewClipboard": "क्लिपबोर्ड",
+    "previewContentArea": "Application Content Area",
+    "previewCoreButtons": "Core Buttons",
+    "previewFiles": "फ़ाइलें",
+    "previewGamepads": "गेमपैड",
+    "previewScreenSettings": "स्क्रीन सेटिंग",
+    "previewSharing": "शेयरिंग",
+    "previewSoftButtons": "Soft Buttons",
+    "previewStats": "आँकड़े",
+    "previewVideoSettings": "वीडियो सेटिंग",
+    "removed": "'{name}' हटाया गया — लागू करने के लिए \"{save}\" दबाएँ।",
+    "saveBaseLayer": "Base layer सहेजें",
+    "saved": "टेम्पलेट \"{name}\" सहेजा गया।",
+    "saveFailed": "सहेजने में विफल",
+    "template": "टेम्पलेट",
+    "uiPreviewTitle": "UI पूर्वावलोकन",
+    "useDefault": "डिफ़ॉल्ट उपयोग करें",
+    "webrtcHelp": "सेशन डिफ़ॉल्ट रूप से WebSockets के माध्यम से stream होते हैं। नीचे कोई भी STUN, TURN, Cloudflare या public IP मान सेट करना, या WebRTC mode चुनना, container को dual mode सक्षम WebRTC में बदल देता है ताकि उपयोगकर्ता WebSockets पर वापस गिर सकें।"
+  },
+  "sessions": {
+    "heading": "सत्र",
+    "session": "सत्र",
+    "started": "शुरू हुआ",
+    "roomMode": "रूम मोड",
+    "noActive": "कोई सक्रिय सत्र नहीं।",
+    "noActiveUsers": "किसी भी उपयोगकर्ता के लिए कोई सक्रिय सत्र नहीं मिला।",
+    "kill": "रोकें",
+    "killConfirm": "क्या आप वाकई इस सत्र को रोकना चाहते हैं?",
+    "killTitle": "सत्र रोकें",
+    "killed": "रोका गया",
+    "sendFileTitle": "अपने कंप्यूटर से इस सेशन में एक फ़ाइल अपलोड करें",
+    "terminated": "सेशन समाप्त",
+    "uploading": "अपलोड हो रहें {done}/{total}…",
+    "sending": "भेज रहें…",
+    "fileSent": "फ़ाइल '{name}' सेशन को भेजी गयी।"
+  },
+  "backup": {
+    "heading": "बैकअप",
+    "createTitle": "बैकअप बनाएँ",
+    "createHelp": "एप्लिकेशन कॉन्फ़िगरेशन का <code>tar.gz</code> <code>/data/backups</code> में बनाता है। रीस्टोर करन पर उसे चलत सरवर पर फिर से लागू कर दिये जात हैं, बिना रीस्टार्ट किये।",
+    "includeUserData": "उपयोगकर्ता डेटा शामिल करें (होम डायरेक्टरी)",
+    "create": "बैकअप बनाएँ",
+    "listTitle": "बैकअप",
+    "size": "आकार",
+    "created": "बनया गया",
+    "userData": "उपयोगकर्ता डेटा",
+    "noBackups": "अभी तक कोई बैकअप नहिए।",
+    "restoreFromFileTitle": "फ़ाइल से रीस्टोर करें",
+    "restoreFromFileHelp": "पहिले डाउनलोड किये गये बैकअप <code>tar.gz</code> को अपलोड करके उसे रीस्टोर करें। रीस्टोर करने पर आर्काइव में मौजूद कॉन्फ़िगरेशन फ़ाइलें ओवरराइट होत हैं; आर्काइव में नहिए मौजूद फ़ाइलें अपरिवर्तित रहत हैं। सक्रिय सत्र प्रभावित नहिए होत हैं।",
+    "restoreFileButton": "अपलोड किये गये फ़ाइल को रीस्टोर करें",
+    "createdToast": "{name} बनया गया",
+    "download": "डाउनलोड",
+    "downloadStarted": "डाउनलोड शुरू हो गय है",
+    "restore": "रीस्टोर करें",
+    "restoreConfirm": "{name} को रीस्टोर करें? आर्काइव में मौजूद कॉन्फ़िगरेशन फ़ाइलें ओवरराइट होकर फिर से लोड होत हैं। सक्रिय सत्र प्रभावित नहिए होत हैं। यदि आर्काइव वर्तमान व्यवस्थापक कुंजी से पुराना है, तब आप खुद को बाहर लॉक कर सकत हैं।",
+    "restoreTitle": "बैकअप रीस्टोर करें",
+    "restoredToast": "रीस्टोर और रीलोड हो गय है",
+    "deleteConfirm": "बैकअप {name} को हटाएँ?",
+    "deleteTitle": "बैकअप हटाएँ",
+    "deleted": "हटा दिय गय है",
+    "restoreFileNoFile": "पहिले एक बैकअप फ़ाइल चुनें",
+    "restoreFileConfirm": "{name} से रीस्टोर करें? आर्काइव में मौजूद कॉन्फ़िगरेशन फ़ाइलें ओवरराइट होकर फिर से लोड होत हैं। सक्रिय सत्र प्रभावित नहिए होत हैं।"
+  },
+  "lab": {
+    "heading": "ऐप प्रयोगशाला",
+    "help": "इंस्टॉल किये गये बेस ऐप से एक कस्टम ऐप बनाएँ, या मौजूदा ऐप को संपादित करें। “लॉन्च और बदलें” एक लाइव सत्र खोलत है जिसकी होम निर्देशिका ऐप क होम टेम्पलेट है — जे बदलाव आप अंदर करत हैं, उ टेम्पलेट में सहेजे जात हैं सभ भविष्य क सत्रां के लिए।",
+    "appToCustomize": "जिस ऐप को कस्टमाइज करन है",
+    "createNew": "— नया बनाएँ —",
+    "baseApp": "बेस ऐप्लिकेशन",
+    "selectBaseApp": "एक बेस ऐप्लिकेशन चुनें…",
+    "baseDesc": "नया ऐप बेस ऐप्लिकेशन से छवि और प्रोवाइडर क सेटिंग्स वरस करत है।",
+    "appName": "ऐप नाम",
+    "appIcon": "ऐप आइकॉन (PNG)",
+    "iconPreview": "आइकॉन प्रीव्यू",
+    "autostartX11": "ऑटोस्टार्ट स्क्रिप्ट (X11)",
+    "autostartWayland": "ऑटोस्टार्ट स्क्रिप्ट (Wayland)",
+    "allowedUsers": "अनुमत उपयोगकर्ता",
+    "allowedGroups": "अनुमत समूह",
+    "waylandMode": "Wayland मोड",
+    "saveChanges": "बदलाव सहेजें",
+    "launchModify": "लॉन्च करें और होम निर्देशिका बदलें",
+    "customizationSession": "कस्टमाइज़ेशन सत्र",
+    "sessionPlaceholder": "कस्टमाइज़ेशन सत्र यहाँ दिसेगा। ऐप क होम निर्देशिका टेम्पलेट बदलन के लिए एक सत्र लॉन्च करें।",
+    "sessionClosed": "कस्टमाइज़ेशन सत्र बंद हो गय है।",
+    "closeFailed": "सत्र बंद करन में विफल: {message}",
+    "savingSettings": "ऐप्लिकेशन सेटिंग्स सहेजी जा रह हैं…",
+    "saved": "{name} सहेजा गय है।",
+    "pickBaseAndName": "पहिले एक बेस ऐप्लिकेशन और ऐप नाम चुनें।",
+    "savingLaunching": "सहेजें और लॉन्च करत हैं…",
+    "createdLaunching": "{name} बनय गय — कस्टमाइज़ेशन सत्र लॉन्च हो रह है…",
+    "saveBeforeLaunchFailed": "लॉन्च से पहिले ऐप सेटिंग्स सहेजने में विफल।",
+    "closeSession": "सत्र बंद करें",
+    "sessionRunning": "कस्टमाइज़ेशन सत्र चलत है — होम निर्देशिका क बदलाव ऐप क टेम्पलेट में लिखे जात हैं।",
+    "pngOnly": "सिर्फ़ PNG आइकॉन सपोर्टेड हैं"
+  },
+  "modal": {
+    "areYouSure": "क्या आप पक्के हैं?",
+    "confirm": "पक्का करें",
+    "pleaseEnter": "दर्ज करें",
+    "value": "मान",
+    "ok": "ठीक है"
+  },
+  "homedirs": {
+    "title": "होम डायरेक्टरी",
+    "help": "अपनी स्थायी होम डायरेक्टरी बनाएँ या हटाएँ। नई लॉन्च विकल्पों और Files दृश्य में दिखती हैं।",
+    "namePlaceholder": "नाम (अक्षर, अंक, - या _)",
+    "none": "अभी कोई होम डायरेक्टरी नहिन — नीचे एक बनाएँ।",
+    "couldNotOpen": "'{name}' खोल न सकें: {message}",
+    "deleteConfirm": "होम डायरेक्टरी '{name}' हटाएँ? उसकी फ़ाइलें हट जाएँगी।",
+    "deleteTitle": "होम डायरेक्टरी हटाएँ",
+    "deleted": "'{name}' हटायी गयी।",
+    "deleteFailed": "हटाने में वीफल: {message}",
+    "loadFailed": "लोड करने में वीफल: {message}",
+    "enterName": "एक डायरेक्टरी नाम दर्ज करें।",
+    "invalidName": "केवल अक्षर, अंक, अंडरस्कोर या हाइफ़न उपयोग करें।",
+    "created": "'{name}' बनाई गयी।",
+    "createFailed": "बनाने में वीफल: {message}"
+  },
+  "pinned": {
+    "unknownApp": "अज्ञात ऐप",
+    "allUrls": "सब URL",
+    "manual": "मन्युअल",
+    "defaultBadgeTitle": "हर लॉगिन पर बहाल होकर सब ऐपों में उपयोग होत है",
+    "default": "डिफ़ॉल्ट",
+    "allApps": "सब ऐप",
+    "makeDefault": "डिफ़ॉल्ट बनाएँ",
+    "apply": "लागू करें",
+    "setDefaultFailed": "डिफ़ॉल्ट सेट न सकें: {message}",
+    "deleteConfirm": "प्रीसेट '{name}' हटाएँ?",
+    "deleteTitle": "प्रीसेट हटाएँ",
+    "deleted": "'{name}' हटायी गयी",
+    "deleteFailed": "हटाने में वीफल: {message}",
+    "applied": "प्रीसेट '{name}' लागू की गयी",
+    "installFirst": "प्रीसेट सहेजने के लिये पहलें एक ऐप इंस्टॉल करें।",
+    "saveTitle": "लॉन्च विकल्प सहेजें",
+    "saveHelp": "वर्तमान लॉन्च विकल्पों को एक ऐप से जुड़ा पुनः-उपयोग्य प्रीसेट के रूप में सहेजें। बाद में Pinned सूची से दोबारा लागू करें।",
+    "presetName": "प्रीसेट नाम",
+    "presetNamePlaceholder": "उदाहरण: मेरे सेटिंग के साथ Calibre",
+    "trigger": "ट्रिगर (सूचनात्मक)",
+    "triggerManual": "मन्युअल (Pinned सूची से लागू करें)",
+    "fileExtension": "फ़ाइल एक्सटेंशन",
+    "fileExtensionPlaceholder": "उदाहरण: epub",
+    "setAsDefault": "मेरा डिफ़ॉल्ट सेट करें",
+    "defaultHint": "आपका डिफ़ॉल्ट प्रीसेट हर लॉगिन पर बहाल होत है और उसकें लॉन्च विकल्प (GPU, होम डायरेक्टरी, भाषा, …) <strong>सब</strong> ऐपों में उपयोग होत हैं, न कि केवल उस ऐप के लिये जिसके लिये सहेजा गय था। केवल एक प्रीसेट आपका डिफ़ॉल्ट हो सकत है।",
+    "enterName": "एक प्रीसेट नाम दर्ज करें।",
+    "enterExtension": "एक फ़ाइल एक्सटेंशन दर्ज करें।",
+    "saved": "प्रीसेट '{name}' सहेजी गयी"
+  }
+}

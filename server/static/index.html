@@ -15,18 +15,18 @@
       <div class="login-brand">
         <img src="/img/icon128.png" alt="" class="brand-icon">
         <h1>Vreckan</h1>
-        <p class="muted">Sign in to launch containerized apps</p>
+        <p class="muted" data-i18n="login.tagline">Sign in to launch containerized apps</p>
       </div>
       <form id="login-form" autocomplete="on">
-        <label>Username
+        <label data-i18n="common.username">Username
           <input type="text" id="login-username" name="username" autocomplete="username" required>
         </label>
-        <label>Password
+        <label data-i18n="common.password">Password
           <input type="password" id="login-password" name="password" autocomplete="current-password" required>
         </label>
-        <button type="submit" class="btn btn-primary btn-block" id="login-submit">Sign in</button>
-        <div id="login-sso-divider" class="sso-divider" hidden><span>or</span></div>
-        <button type="button" class="btn btn-block" id="login-sso" hidden>Sign in with SSO</button>
+        <button type="submit" class="btn btn-primary btn-block" id="login-submit" data-i18n="login.signIn">Sign in</button>
+        <div id="login-sso-divider" class="sso-divider" hidden><span data-i18n="login.or">or</span></div>
+        <button type="button" class="btn btn-block" id="login-sso" hidden data-i18n="login.sso">Sign in with SSO</button>
         <p id="login-error" class="error" role="alert" hidden></p>
       </form>
     </div>
@@ -41,37 +41,41 @@
       </div>
       <nav class="sidebar-nav" id="sidebar-nav">
         <div class="nav-group">
-          <button id="tab-apps" class="nav-link active" data-view="main">Apps</button>
-          <button id="tab-files" class="nav-link" data-view="files" hidden>Files</button>
+          <button id="tab-apps" class="nav-link active" data-view="main" data-i18n="nav.apps">Apps</button>
+          <button id="tab-files" class="nav-link" data-view="files" hidden data-i18n="nav.files">Files</button>
         </div>
         <div class="nav-group admin-group" data-admin-group="access" hidden>
-          <div class="nav-group-label">Access</div>
-          <button class="nav-link admin-link" data-admin-section="overview" hidden>Overview</button>
-          <button class="nav-link admin-link" data-admin-section="accounts" hidden>Accounts</button>
-          <button class="nav-link admin-link" data-admin-section="groups" hidden>Groups</button>
-          <button class="nav-link admin-link" data-admin-section="roles" hidden>Roles</button>
-          <button class="nav-link admin-link" data-admin-section="global-settings" hidden>Global Settings</button>
-          <button class="nav-link admin-link" data-admin-section="sso" hidden>SSO</button>
+          <div class="nav-group-label" data-i18n="nav.access">Access</div>
+          <button class="nav-link admin-link" data-admin-section="overview" hidden data-i18n="nav.overview">Overview</button>
+          <button class="nav-link admin-link" data-admin-section="accounts" hidden data-i18n="nav.accounts">Accounts</button>
+          <button class="nav-link admin-link" data-admin-section="groups" hidden data-i18n="nav.groups">Groups</button>
+          <button class="nav-link admin-link" data-admin-section="roles" hidden data-i18n="nav.roles">Roles</button>
+          <button class="nav-link admin-link" data-admin-section="global-settings" hidden data-i18n="nav.globalSettings">Global Settings</button>
+          <button class="nav-link admin-link" data-admin-section="sso" hidden data-i18n="nav.sso">SSO</button>
         </div>
         <div class="nav-group admin-group" data-admin-group="apps" hidden>
-          <div class="nav-group-label">Apps</div>
-          <button class="nav-link admin-link" data-admin-section="apps" hidden>Installed Apps</button>
-          <button class="nav-link admin-link" data-admin-section="stores" hidden>App Stores</button>
-          <button class="nav-link admin-link" data-admin-section="templates" hidden>Templates</button>
-          <button class="nav-link admin-link" data-admin-section="laboratory" hidden>Laboratory</button>
+          <div class="nav-group-label" data-i18n="nav.apps">Apps</div>
+          <button class="nav-link admin-link" data-admin-section="apps" hidden data-i18n="nav.installedApps">Installed Apps</button>
+          <button class="nav-link admin-link" data-admin-section="stores" hidden data-i18n="nav.appStores">App Stores</button>
+          <button class="nav-link admin-link" data-admin-section="templates" hidden data-i18n="nav.templates">Templates</button>
+          <button class="nav-link admin-link" data-admin-section="laboratory" hidden data-i18n="nav.laboratory">Laboratory</button>
         </div>
         <div class="nav-group admin-group" data-admin-group="system" hidden>
-          <div class="nav-group-label">System</div>
-          <button class="nav-link admin-link" data-admin-section="mounts" hidden>Volume mounts</button>
-          <button class="nav-link admin-link" data-admin-section="backup" hidden>Backup</button>
-          <button class="nav-link admin-link" data-admin-section="sessions" hidden>Sessions</button>
+          <div class="nav-group-label" data-i18n="nav.system">System</div>
+          <button class="nav-link admin-link" data-admin-section="mounts" hidden data-i18n="nav.volumeMounts">Volume mounts</button>
+          <button class="nav-link admin-link" data-admin-section="backup" hidden data-i18n="nav.backup">Backup</button>
+          <button class="nav-link admin-link" data-admin-section="sessions" hidden data-i18n="nav.sessions">Sessions</button>
         </div>
       </nav>
       <div class="sidebar-footer">
         <span id="user-label" class="muted"></span>
         <div class="sidebar-footer-actions">
-          <button id="btn-change-password" class="btn btn-ghost btn-sm">Password</button>
-          <button id="btn-logout" class="btn btn-ghost btn-sm">Sign out</button>
+          <button id="btn-change-password" class="btn btn-ghost btn-sm" data-i18n="nav.password">Password</button>
+          <button id="btn-logout" class="btn btn-ghost btn-sm" data-i18n="nav.signOut">Sign out</button>
+        </div>
+        <div class="lang-select-wrap" id="lang-select-wrap" data-i18n-title="common.language" title="Language" hidden>
+          <select id="lang-select" class="lang-select" aria-label="Language"></select>
+          <button id="lang-apply" class="btn btn-ghost btn-sm" data-i18n="common.apply">Apply</button>
         </div>
       </div>
     </aside>
@@ -84,51 +88,51 @@
       <!-- Launch options -->
       <div class="launch-options card">
         <div class="field">
-          <label for="opt-home">Home directory</label>
+          <label for="opt-home" data-i18n="launch.homeDirectory">Home directory</label>
           <div class="field-inline">
             <select id="opt-home">
-              <option value="auto" selected>Auto</option>
-              <option value="cleanroom">Cleanroom</option>
+              <option value="auto" selected data-i18n="launch.auto">Auto</option>
+              <option value="cleanroom" data-i18n="launch.cleanroom">Cleanroom</option>
             </select>
-            <button id="btn-manage-homedirs" class="btn btn-ghost btn-sm" type="button" hidden>Manage</button>
+            <button id="btn-manage-homedirs" class="btn btn-ghost btn-sm" type="button" hidden data-i18n="common.manage">Manage</button>
           </div>
         </div>
         <div class="field">
-          <label for="opt-language">Language</label>
+          <label for="opt-language" data-i18n="common.language">Language</label>
           <select id="opt-language"></select>
         </div>
         <div class="field" id="field-gpu" hidden>
-          <label for="opt-gpu">GPU</label>
+          <label for="opt-gpu" data-i18n="common.gpu">GPU</label>
           <select id="opt-gpu"></select>
         </div>
         <div class="field field-row">
           <label class="check">
             <input type="checkbox" id="opt-room-mode">
-            <span>Launch in room mode</span>
+            <span data-i18n="launch.roomMode">Launch in room mode</span>
           </label>
         </div>
         <div class="field field-row">
           <label class="check">
             <input type="checkbox" id="opt-wayland" checked>
-            <span>Wayland</span>
+            <span data-i18n="launch.wayland">Wayland</span>
           </label>
         </div>
         <div class="field field-row">
-          <button type="button" class="btn btn-ghost btn-sm" id="btn-save-preset">Save these launch options as a preset</button>
+          <button type="button" class="btn btn-ghost btn-sm" id="btn-save-preset" data-i18n="launch.savePreset">Save these launch options as a preset</button>
         </div>
         <div class="field field-row">
-          <button type="button" class="btn btn-ghost btn-sm" id="btn-upload-storage" hidden>Upload a file to shared storage</button>
+          <button type="button" class="btn btn-ghost btn-sm" id="btn-upload-storage" hidden data-i18n="launch.uploadStorage">Upload a file to shared storage</button>
         </div>
       </div>
 
       <!-- Pinned launch options (Feat 7) -->
       <div id="pinned-section" hidden>
-        <h2 class="section-title">Pinned</h2>
+        <h2 class="section-title" data-i18n="launch.pinned">Pinned</h2>
         <div id="pinned-list" class="pinned-list"></div>
       </div>
 
       <!-- Launcher -->
-      <h2 class="section-title">Apps</h2>
+      <h2 class="section-title" data-i18n="nav.apps">Apps</h2>
       <div id="app-grid" class="app-grid">
         <div class="skeleton skeleton-app"></div>
         <div class="skeleton skeleton-app"></div>
@@ -136,9 +140,9 @@
       </div>
 
       <!-- Sessions -->
-      <h2 class="section-title">Active sessions</h2>
+      <h2 class="section-title" data-i18n="launch.activeSessions">Active sessions</h2>
       <div id="sessions-list" class="sessions-list">
-        <p class="muted">No active sessions.</p>
+        <p class="muted" data-i18n="launch.noSessions">No active sessions.</p>
       </div>
     </main>
   </section>
@@ -148,21 +152,21 @@
     <div class="content">
       <div class="fm-toolbar card">
         <label class="field">
-          <span class="label">Folder</span>
+          <span class="label" data-i18n="files.folder">Folder</span>
           <select id="fm-home"></select>
         </label>
         <div id="fm-breadcrumb" class="fm-crumbs"></div>
         <div class="fm-actions">
-          <button id="fm-up" class="btn btn-ghost" title="Up one level">Up</button>
-          <button id="fm-refresh" class="btn btn-ghost" title="Refresh">Refresh</button>
-          <button id="fm-new-folder" class="btn btn-ghost">New folder</button>
-          <button id="fm-upload" class="btn btn-ghost">Upload</button>
+          <button id="fm-up" class="btn btn-ghost" data-i18n="files.up" data-i18n-title="files.upOneLevel" title="Up one level">Up</button>
+          <button id="fm-refresh" class="btn btn-ghost" data-i18n-title="common.refresh" title="Refresh" data-i18n="common.refresh">Refresh</button>
+          <button id="fm-new-folder" class="btn btn-ghost" data-i18n="files.newFolder">New folder</button>
+          <button id="fm-upload" class="btn btn-ghost" data-i18n="common.upload">Upload</button>
           <input type="file" id="fm-upload-input" multiple hidden>
-          <button id="fm-download" class="btn btn-primary" disabled>Download</button>
-          <button id="fm-share" class="btn btn-primary" disabled>Share</button>
-          <button id="fm-open-in-app" class="btn btn-primary" disabled>Open in app</button>
-          <button id="fm-delete" class="btn btn-danger" disabled>Delete</button>
-          <button id="fm-shares-btn" class="btn btn-ghost">Shares</button>
+          <button id="fm-download" class="btn btn-primary" disabled data-i18n="common.download">Download</button>
+          <button id="fm-share" class="btn btn-primary" disabled data-i18n="common.share">Share</button>
+          <button id="fm-open-in-app" class="btn btn-primary" disabled data-i18n="files.openInApp">Open in app</button>
+          <button id="fm-delete" class="btn btn-danger" disabled data-i18n="common.delete">Delete</button>
+          <button id="fm-shares-btn" class="btn btn-ghost" data-i18n="files.shares">Shares</button>
         </div>
       </div>
 
@@ -173,25 +177,25 @@
           <thead>
             <tr>
               <th class="fm-col-sel"><input type="checkbox" id="fm-select-all"></th>
-              <th>Name</th>
-              <th>Size</th>
-              <th>Modified</th>
+              <th data-i18n="common.name">Name</th>
+              <th data-i18n="files.size">Size</th>
+              <th data-i18n="files.modified">Modified</th>
             </tr>
           </thead>
           <tbody id="fm-body"></tbody>
         </table>
-        <p id="fm-empty" class="empty-state" hidden>No files here.</p>
+        <p id="fm-empty" class="empty-state" hidden data-i18n="files.empty">No files here.</p>
       </div>
 
       <div class="fm-pager">
-        <button id="fm-prev" class="btn btn-ghost" disabled>Prev</button>
+        <button id="fm-prev" class="btn btn-ghost" disabled data-i18n="common.previous">Prev</button>
         <span id="fm-page-info" class="muted">Page 1</span>
-        <button id="fm-next" class="btn btn-ghost" disabled>Next</button>
+        <button id="fm-next" class="btn btn-ghost" disabled data-i18n="common.next">Next</button>
       </div>
 
       <!-- Shares panel -->
       <div id="fm-shares-panel" class="card" hidden>
-        <h2 class="section-title">Active shares</h2>
+        <h2 class="section-title" data-i18n="files.activeShares">Active shares</h2>
         <div id="fm-shares-list"></div>
       </div>
     </div>
@@ -212,21 +216,21 @@
 <!-- ===== Change password modal ===== -->
 <div id="modal-password" class="modal-backdrop" hidden>
   <div class="modal card">
-    <h3>Change password</h3>
+    <h3 data-i18n="password.title">Change password</h3>
     <form id="change-password-form">
-      <label>Current password
+      <label data-i18n="password.current">Current password
         <input type="password" id="cp-old" required autocomplete="current-password">
       </label>
-      <label>New password
+      <label data-i18n="password.new">New password
         <input type="password" id="cp-new" required autocomplete="new-password">
       </label>
-      <label>Confirm new password
+      <label data-i18n="password.confirm">Confirm new password
         <input type="password" id="cp-confirm" required autocomplete="new-password">
       </label>
       <p id="cp-error" class="error" role="alert" hidden></p>
       <div class="modal-actions">
-        <button type="button" class="btn btn-ghost" id="cp-cancel">Cancel</button>
-        <button type="submit" class="btn btn-primary">Save</button>
+        <button type="button" class="btn btn-ghost" id="cp-cancel" data-i18n="common.cancel">Cancel</button>
+        <button type="submit" class="btn btn-primary" data-i18n="common.save">Save</button>
       </div>
     </form>
   </div>
@@ -235,26 +239,26 @@
 <!-- ===== File share modal ===== -->
 <div id="modal-file-share" class="modal-backdrop" hidden>
   <div class="modal card">
-    <h3>Share file</h3>
+    <h3 data-i18n="share.title">Share file</h3>
     <p id="file-share-path" class="muted"></p>
     <form id="file-share-form">
-      <label>Password (optional)
+      <label data-i18n="share.passwordLabel">Password (optional)
         <input type="password" id="fs-password" autocomplete="off">
       </label>
-      <label>Expires in hours (optional)
+      <label data-i18n="share.expiryLabel">Expires in hours (optional)
         <input type="number" id="fs-expiry" min="1" placeholder="e.g. 72">
       </label>
       <p id="fs-error" class="error" role="alert" hidden></p>
       <div id="fs-result" hidden>
-        <p class="muted">Share link:</p>
+        <p class="muted" data-i18n="share.linkLabel">Share link:</p>
         <div class="fm-share-url">
           <code id="fs-url"></code>
-          <button type="button" class="btn btn-primary btn-sm" id="fs-copy">Copy</button>
+          <button type="button" class="btn btn-primary btn-sm" id="fs-copy" data-i18n="common.copy">Copy</button>
         </div>
       </div>
       <div class="modal-actions">
-        <button type="button" class="btn btn-ghost" id="fs-cancel">Close</button>
-        <button type="submit" class="btn btn-primary">Create</button>
+        <button type="button" class="btn btn-ghost" id="fs-cancel" data-i18n="common.close">Close</button>
+        <button type="submit" class="btn btn-primary" data-i18n="common.create">Create</button>
       </div>
     </form>
   </div>
@@ -263,15 +267,15 @@
 <!-- ===== Share modal ===== -->
 <div id="modal-share" class="modal-backdrop" hidden>
   <div class="modal card">
-    <h3>Share</h3>
+    <h3 data-i18n="common.share">Share</h3>
     <form id="share-form">
-      <label>Share with
+      <label data-i18n="share.withLabel">Share with
         <input type="text" id="sh-to" required>
       </label>
       <p id="sh-error" class="error" role="alert" hidden></p>
       <div class="modal-actions">
-        <button type="button" class="btn btn-ghost" id="sh-cancel">Cancel</button>
-        <button type="submit" class="btn btn-primary">Share</button>
+        <button type="button" class="btn btn-ghost" id="sh-cancel" data-i18n="common.cancel">Cancel</button>
+        <button type="submit" class="btn btn-primary" data-i18n="common.share">Share</button>
       </div>
     </form>
   </div>
@@ -280,35 +284,35 @@
 <!-- ===== Launch modal (file-backed apps — Feat 12) ===== -->
 <div id="modal-launch" class="modal-backdrop" hidden>
   <div class="modal card">
-    <h3 id="launch-title">Launch app</h3>
-    <p class="muted" id="launch-sub">The app will launch without opening a file. Check "Open file on launch" to pick one.</p>
+    <h3 id="launch-title" data-i18n="launch.title">Launch app</h3>
+    <p class="muted" id="launch-sub" data-i18n="launch.subtitle">The app will launch without opening a file. Check "Open file on launch" to pick one.</p>
     <form id="launch-form">
       <div class="field">
-        <label for="launch-name">Session name (optional)</label>
-        <input type="text" id="launch-name" placeholder="Appears in the window title and session list">
+        <label for="launch-name" data-i18n="launch.sessionName">Session name (optional)</label>
+        <input type="text" id="launch-name" data-i18n-placeholder="launch.sessionNamePlaceholder" placeholder="Appears in the window title and session list">
       </div>
       <div class="field field-row">
         <label class="check">
           <input type="checkbox" id="launch-open-on-launch">
-          <span>Open file on launch</span>
+          <span data-i18n="launch.openFileOnLaunch">Open file on launch</span>
         </label>
       </div>
       <div id="launch-file-fields" hidden>
         <div class="field">
-          <label for="launch-file">File to open (optional, from your computer)</label>
+          <label for="launch-file" data-i18n="launch.fileToOpen">File to open (optional, from your computer)</label>
           <input type="file" id="launch-file">
         </div>
         <p id="launch-upload-status" class="muted" hidden></p>
         <hr>
         <div class="field">
-          <label for="launch-server-file">Or open a file already in shared storage</label>
-          <input type="text" id="launch-server-file" placeholder="filename in shared storage">
+          <label for="launch-server-file" data-i18n="launch.serverFile">Or open a file already in shared storage</label>
+          <input type="text" id="launch-server-file" data-i18n-placeholder="launch.serverFilePlaceholder" placeholder="filename in shared storage">
         </div>
       </div>
       <p id="launch-error" class="error" role="alert" hidden></p>
       <div class="modal-actions">
-        <button type="button" class="btn btn-ghost" id="launch-cancel">Cancel</button>
-        <button type="submit" class="btn btn-primary" id="launch-submit">Launch</button>
+        <button type="button" class="btn btn-ghost" id="launch-cancel" data-i18n="common.cancel">Cancel</button>
+        <button type="submit" class="btn btn-primary" id="launch-submit" data-i18n="launch.launch">Launch</button>
       </div>
     </form>
   </div>
@@ -322,6 +326,6 @@
 <!-- ===== Toasts ===== -->
 <div id="toasts" class="toasts" aria-live="polite"></div>
 
-<script type="module" src="/js/app.js"></script>
+<script type="module" src="/js/entry.js"></script>
 </body>
 </html>

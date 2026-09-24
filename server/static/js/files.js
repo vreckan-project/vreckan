@@ -2,10 +2,11 @@
 // All data calls go through secureFetch (E2EE + X-Session-ID). Chunk indices are 0-BASED.
 
 import { secureFetch } from "./api.js";
-import { arrayBufferToBase64, base64ToArrayBuffer } from "./crypto.js";
+import { base64ToArrayBuffer } from "./crypto.js";
 import { openCustomModal, confirmModal, promptModal, escModal } from "./modal.js";
+import { $, toast, formatBytes, uploadFileChunks } from "./util.js";
+import { t } from "./i18n.js";
 
-const CHUNK_SIZE = 2 * 1024 * 1024; // must match server CHUNK_SIZE
 const PER_PAGE = 50;
 
 const state = {
@@ -21,31 +22,6 @@ let homeDirs = [];
 let persistentStorage = false;
 let currentSharePath = null;
 let sharesCache = [];
-
-function $(id) {
-  return document.getElementById(id);
-}
-
-function toast(message, kind) {
-  const el = document.createElement("div");
-  el.className = `toast ${kind || ""}`.trim();
-  el.textContent = message;
-  $("toasts").appendChild(el);
-  setTimeout(() => el.remove(), 4000);
-}
-
-function fmtSize(bytes) {
-  if (bytes === null || bytes === undefined || bytes === "") return "";
-  if (bytes < 1024) return `${bytes} B`;
-  const units = ["KB", "MB", "GB", "TB"];
-  let val = bytes;
-  let u = -1;
-  do {
-    val /= 1024;
-    u++;
-  } while (val >= 1024 && u < units.length - 1);
-  return `${val.toFixed(val >= 100 ? 0 : 1)} ${units[u]}`;
-}
 
 function fmtTime(mtime) {
   if (!mtime) return "";
@@ -194,7 +170,7 @@ function renderTable() {
     tr.appendChild(tdName);
 
     const tdSize = document.createElement("td");
-    tdSize.textContent = item.is_dir ? "" : fmtSize(item.size);
+    tdSize.textContent = item.is_dir ? "" : formatBytes(item.size);
     tr.appendChild(tdSize);
 
     const tdMod = document.createElement("td");
@@ -222,7 +198,7 @@ function renderTable() {
 
 function renderPager() {
   const totalPages = Math.max(1, Math.ceil(state.total / PER_PAGE));
-  $("fm-page-info").textContent = `Page ${state.page} of ${totalPages} · ${state.total} items`;
+  $("fm-page-info").textContent = t("files.pageInfo", { page: state.page, totalPages, total: state.total });
   $("fm-prev").disabled = state.page <= 1;
   $("fm-next").disabled = state.page >= totalPages;
 }
@@ -278,7 +254,7 @@ function progressItem(filename) {
     error() {
       this.item.classList.add("error");
       this.fill.style.width = "100%";
-      this.pct.textContent = "Failed";
+      this.pct.textContent = t("files.uploadFailed");
     },
   };
 }
@@ -286,27 +262,9 @@ function progressItem(filename) {
 async function uploadFile(file) {
   const prog = progressItem(file.name);
   try {
-    const init = await secureFetch("/api/upload/initiate", {
-      method: "POST",
-      body: { filename: file.name, total_size: file.size },
+    const { upload_id, total_chunks } = await uploadFileChunks(file, (done, total) => {
+      prog.set((done / total) * 100);
     });
-    const upload_id = init.upload_id;
-
-    const totalChunks = Math.max(1, Math.ceil(file.size / CHUNK_SIZE));
-    for (let i = 0; i < totalChunks; i++) {
-      const start = i * CHUNK_SIZE;
-      const end = Math.min(start + CHUNK_SIZE, file.size);
-      const buf = await file.slice(start, end).arrayBuffer();
-      await secureFetch("/api/upload/chunk", {
-        method: "POST",
-        body: {
-          upload_id,
-          chunk_index: i, // 0-based
-          chunk_data_b64: arrayBufferToBase64(buf),
-        },
-      });
-      prog.set(((i + 1) / totalChunks) * 100);
-    }
 
     await secureFetch(`/api/files/upload_to_dir/${encodeURIComponent(state.home)}`, {
       method: "POST",
@@ -314,14 +272,14 @@ async function uploadFile(file) {
         path: state.path,
         filename: file.name,
         upload_id,
-        total_chunks: totalChunks,
+        total_chunks,
       },
     });
     prog.done();
-    toast(`Uploaded ${file.name}`, "success");
+    toast(t("files.uploaded", { name: file.name }), "success");
   } catch (err) {
     prog.error();
-    toast(`Upload failed: ${file.name}`, "error");
+    toast(t("files.uploadFailedMsg", { name: file.name }), "error");
   }
 }
 
@@ -366,14 +324,14 @@ async function downloadFile(path, filename) {
 
 // ----- New folder -----
 async function newFolder() {
-  const name = await promptModal({ title: "New folder", label: "Name" });
+  const name = await promptModal({ title: t("files.newFolderTitle"), label: t("common.name") });
   if (!name) return;
   try {
     await secureFetch(`/api/files/create_folder/${encodeURIComponent(state.home)}`, {
       method: "POST",
       body: { path: state.path, folder_name: name },
     });
-    toast(`Created ${name}`, "success");
+    toast(t("files.created", { name }), "success");
     loadFiles();
   } catch (err) {
     toast(err.message, "error");
@@ -384,7 +342,7 @@ async function newFolder() {
 async function deleteSelected() {
   const paths = [...state.selected];
   if (!paths.length) return;
-  if (!(await confirmModal(`Delete ${paths.length} item(s)? This cannot be undone.`, { danger: true }))) return;
+  if (!(await confirmModal(t("files.deleteConfirm", { count: paths.length }), { danger: true }))) return;
   let task;
   try {
     task = await secureFetch(`/api/files/delete/${encodeURIComponent(state.home)}`, {
@@ -410,13 +368,13 @@ async function deleteSelected() {
     await new Promise((r) => setTimeout(r, 1200));
   }
   if (status && status.status === "completed") {
-    toast("Deleted", "success");
+    toast(t("files.deleted"), "success");
     state.selected.clear();
     loadFiles();
   } else if (status && status.status === "error") {
-    toast(status.message || "Delete failed", "error");
+    toast(status.message || t("files.deleteFailed"), "error");
   } else {
-    toast("Delete timed out — check later", "error");
+    toast(t("files.deleteTimeout"), "error");
   }
 }
 
@@ -428,7 +386,7 @@ async function openInAppModal() {
   const item = state.items.find((i) => i.path === path);
   if (!item) return;
   if (item.is_dir) {
-    toast("Only files can be opened in an application.", "error");
+    toast(t("files.onlyFilesOpenable"), "error");
     return;
   }
 
@@ -441,16 +399,16 @@ async function openInAppModal() {
     return;
   }
   if (!fileApps.length) {
-    toast("No file-backed apps installed.", "error");
+    toast(t("files.noFileApps"), "error");
     return;
   }
 
   const { box, close } = openCustomModal({
-    title: `Open "${item.name}"`,
+    title: t("files.openInAppTitle", { name: item.name }),
     body: `
-      <p class="muted">Launch an installed app with this file. The file is copied into the session's storage and opened in the app.</p>
+      <p class="muted">${t("files.openInAppHelp")}</p>
       <div class="field">
-        <label for="open-in-app-select">App</label>
+        <label for="open-in-app-select">${t("files.app")}</label>
         <select id="open-in-app-select">
           ${fileApps.map((a) => `<option value="${escModal(a.id)}">${escModal(a.name)}</option>`).join("")}
         </select>
@@ -458,13 +416,13 @@ async function openInAppModal() {
       <div class="field field-row">
         <label class="check">
           <input type="checkbox" id="open-in-app-onlaunch" checked>
-          <span>Open file on launch</span>
+          <span>${t("launch.openFileOnLaunch")}</span>
         </label>
       </div>
       <p id="open-in-app-error" class="error" role="alert" hidden></p>
       <div class="modal-actions">
-        <button type="button" class="btn btn-ghost" data-act="open-in-app-cancel">Cancel</button>
-        <button type="button" class="btn btn-primary" data-act="open-in-app-launch">Launch</button>
+        <button type="button" class="btn btn-ghost" data-act="open-in-app-cancel">${t("common.cancel")}</button>
+        <button type="button" class="btn btn-primary" data-act="open-in-app-launch">${t("launch.launch")}</button>
       </div>
     `,
   });
@@ -496,8 +454,8 @@ async function openInAppModal() {
         },
       });
       close();
-      const appName = fileApps.find((a) => a.id === appId)?.name || "app";
-      toast(`Launched ${appName}`);
+      const appName = fileApps.find((a) => a.id === appId)?.name || t("files.app");
+      toast(t("files.launched", { name: appName }));
       if (result && result.session_url) window.open(result.session_url, "_blank", "noopener");
       window.dispatchEvent(new CustomEvent("vreckan:sessions-changed"));
     } catch (err) {
@@ -550,15 +508,11 @@ async function createShare() {
   }
 }
 
-function fmtBytesShare(b) {
-  return fmtSize(b);
-}
-
 function renderShares() {
   const list = $("fm-shares-list");
   list.innerHTML = "";
   if (!sharesCache.length) {
-    list.innerHTML = '<p class="muted">No active shares.</p>';
+    list.innerHTML = `<p class="muted">${t("files.noShares")}</p>`;
     return;
   }
   for (const s of sharesCache) {
@@ -570,8 +524,8 @@ function renderShares() {
     meta.className = "share-meta";
     meta.innerHTML = `
       <span>${s.original_filename}</span>
-      <span class="muted">${fmtBytesShare(s.size_bytes)} · created ${new Date(s.created_at).toLocaleString()}${
-        s.expiry_timestamp ? " · expires " + new Date(s.expiry_timestamp * 1000).toLocaleString() : ""
+      <span class="muted">${formatBytes(s.size_bytes)} · ${t("files.createdWord")} ${new Date(s.created_at).toLocaleString()}${
+        s.expiry_timestamp ? " · " + t("files.expiresWord") + " " + new Date(s.expiry_timestamp * 1000).toLocaleString() : ""
       }${s.has_password ? " · 🔒" : ""}</span>`;
     row.appendChild(meta);
 
@@ -582,13 +536,13 @@ function renderShares() {
     urlWrap.appendChild(code);
     const copyBtn = document.createElement("button");
     copyBtn.className = "btn btn-ghost btn-sm";
-    copyBtn.textContent = "Copy";
+    copyBtn.textContent = t("common.copy");
     copyBtn.addEventListener("click", async () => {
       try {
         await navigator.clipboard.writeText(url);
-        toast("Copied", "success");
+        toast(t("files.copied"), "success");
       } catch (_) {
-        toast("Copy failed", "error");
+        toast(t("files.copyFailed"), "error");
       }
     });
     urlWrap.appendChild(copyBtn);
@@ -596,14 +550,14 @@ function renderShares() {
 
     const revokeBtn = document.createElement("button");
     revokeBtn.className = "btn btn-danger btn-sm";
-    revokeBtn.textContent = "Revoke";
+    revokeBtn.textContent = t("files.revoke");
     revokeBtn.addEventListener("click", async () => {
-      if (!(await confirmModal("Revoke this share?", { danger: true }))) return;
+      if (!(await confirmModal(t("files.revokeConfirm"), { danger: true }))) return;
       try {
         await secureFetch(`/api/files/share/${encodeURIComponent(s.share_id)}`, {
           method: "DELETE",
         });
-        toast("Share revoked", "success");
+        toast(t("files.shareRevoked"), "success");
         loadShares();
       } catch (err) {
         toast(err.message, "error");

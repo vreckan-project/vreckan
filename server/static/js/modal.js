@@ -11,6 +11,7 @@
 //
 // A single shared backdrop (#modal-root) is created on first use and reused
 // for every modal, so it does not need to exist in index.html.
+import { t } from "./i18n.js";
 
 function esc(value) {
   return String(value == null ? "" : value)
@@ -87,7 +88,7 @@ export function closeModal() {
 // Escape / backdrop click.
 export function confirmModal(
   message,
-  { title = "Are you sure?", confirmLabel = "Confirm", danger = false } = {}
+  { title = t("modal.areYouSure"), confirmLabel = t("modal.confirm"), danger = false } = {}
 ) {
   return new Promise((resolve) => {
     let settled = false;
@@ -105,7 +106,7 @@ export function confirmModal(
       `<h3>${esc(title)}</h3>
       <div class="modal-body"><p class="modal-message">${esc(message)}</p></div>
       <div class="modal-actions">
-        <button type="button" class="btn btn-ghost" data-act="cancel">Cancel</button>
+        <button type="button" class="btn btn-ghost" data-act="cancel">${t("common.cancel")}</button>
         <button type="button" class="btn ${danger ? "btn-danger" : "btn-primary"}" data-act="ok">${esc(confirmLabel)}</button>
       </div>`,
       { onDismiss: () => finish(false) }
@@ -120,8 +121,8 @@ export function confirmModal(
 // Promise-based prompt. Resolves the input value on OK / Enter, or null on
 // Cancel / Escape / backdrop click.
 export function promptModal({
-  title = "Please enter",
-  label = "Value",
+  title = t("modal.pleaseEnter"),
+  label = t("modal.value"),
   defaultValue = "",
   placeholder = "",
 } = {}) {
@@ -147,8 +148,8 @@ export function promptModal({
         </label>
       </div>
       <div class="modal-actions">
-        <button type="button" class="btn btn-ghost" data-act="cancel">Cancel</button>
-        <button type="button" class="btn btn-primary" data-act="ok">OK</button>
+        <button type="button" class="btn btn-ghost" data-act="cancel">${t("common.cancel")}</button>
+        <button type="button" class="btn btn-primary" data-act="ok">${t("modal.ok")}</button>
       </div>`,
       { onDismiss: () => finish(null) }
     );

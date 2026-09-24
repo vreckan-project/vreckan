@@ -35,6 +35,7 @@ from server.models import (
     RevokeOidcSessionResponse,
     RevokeOwnSessionsRequest,
     SetPasswordRequest,
+    UiPreferencesRequest,
     UserSettings,
 )
 from server.settings import settings
@@ -694,5 +695,31 @@ async def auth_set_password(
     except ValueError as e:
         raise HTTPException(status_code=400, detail=str(e))
     return {"message": f"Password set for '{username}'."}
+
+
+@auth_router.put("/preferences", response_model=MeResponse)
+async def auth_save_preferences(
+    req: UiPreferencesRequest, user: dict = Depends(api.verify_token)
+):
+    """Persist the caller's personal UI preferences (currently: UI language).
+
+    Stored in the user's ``settings`` JSON column so the preference follows the
+    account across browsers/devices and is reported back on ``/me``. Only the
+    provided fields are touched (read-modify-write), so other settings are
+    preserved.
+    """
+    username = user["username"]
+    current = user_manager.get_user(username)
+    if current is None:
+        raise HTTPException(status_code=404, detail="User not found.")
+    stored = dict(current.get("settings") or {})
+    if req.ui_language is not None:
+        stored["ui_language"] = req.ui_language
+    await user_manager.update_user_settings(username, stored)
+    # Drop the effective_settings cached on the token-resolved user dict so the
+    # response reflects the value we just saved (it would otherwise report the
+    # pre-update settings).
+    user.pop("effective_settings", None)
+    return _me_response(user_manager.get_user(username))
 
 

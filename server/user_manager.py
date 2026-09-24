@@ -76,6 +76,9 @@ DEFAULT_USER_SETTINGS = {
     "gpu": True,
     "storage_limit": -1,
     "session_limit": -1,
+    # Personal UI language preference (None = follow the browser). Not an
+    # admin-managed capability; set via the sidebar language selector.
+    "ui_language": None,
 }
 
 # The capability settings that are now driven by permissions. Each maps a
@@ -797,6 +800,16 @@ async def update_user_settings(username: str, new_settings: dict):
     user = get_user(username)
     if not user:
         raise ValueError(f"User or admin '{username}' not found.")
+    # ``ui_language`` is a personal preference set by the user's own language
+    # selector (PUT /api/auth/preferences), not an admin-managed capability.
+    # The admin roster form doesn't carry it, so preserve the existing value
+    # when a roster edit omits it — otherwise an admin saving the form would
+    # silently reset the user's language.
+    if "ui_language" not in new_settings:
+        old = user.get("settings") or {}
+        if old.get("ui_language") is not None:
+            new_settings = dict(new_settings)
+            new_settings["ui_language"] = old["ui_language"]
     user["settings"] = new_settings
     await _db_save_user_row(username, settings=new_settings)
     logger.info(f"Updated settings for '{username}'.")

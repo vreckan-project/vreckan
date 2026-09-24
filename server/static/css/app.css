@@ -115,12 +115,27 @@ a:hover {
 /* ===== Login ===== */
 #view-login {
   min-height: 100vh;
-  background: radial-gradient(640px 320px at 50% 0%, var(--accent-soft), transparent 70%);
+  /* Flex column establishes a block formatting context, so the card's top
+     margin no longer collapses out of the section (which used to push the
+     whole section — and its background — down by 12vh). The 12vh offset is
+     now the section's own padding, so the gradient starts at the very top. */
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  padding: 12vh 20px 48px;
+  /* Full-screen background. A linear top band (uniform across the whole
+     width) lights the top edge end-to-end; a radial glow on top of it adds
+     a brighter centre; a vertical base gradient fills the rest. */
+  background:
+    radial-gradient(120% 90% at 50% 0%, var(--accent-soft) 0%, transparent 65%),
+    linear-gradient(180deg, var(--accent-soft) 0%, transparent 55%),
+    linear-gradient(180deg, var(--bg-alt) 0%, var(--bg) 100%);
 }
 
 .login-card {
+  width: 100%;
   max-width: 400px;
-  margin: 12vh auto 48px;
+  margin: 0;
   display: flex;
   flex-direction: column;
   gap: 8px;
@@ -1733,4 +1748,39 @@ label:has(.src-badge) {
   white-space: nowrap;
   color: var(--text);
   cursor: pointer;
+}
+
+/* i18n language selector (sidebar footer, below the Password / Sign out row) */
+.lang-select-wrap {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+.lang-select-label {
+  font-size: 0.85rem;
+  color: var(--text-muted);
+  white-space: nowrap;
+}
+.lang-select {
+  flex: 1;
+  min-width: 0;
+  background: var(--surface);
+  color: var(--text);
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  padding: 0.3rem 0.5rem;
+  font-size: 0.85rem;
+  color-scheme: dark;
+  cursor: pointer;
+}
+.lang-select:focus {
+  outline: none;
+  border-color: var(--accent);
+}
+.lang-select option {
+  background: var(--surface);
+  color: var(--text);
+}
+#lang-apply {
+  flex: 0 0 auto;
 }

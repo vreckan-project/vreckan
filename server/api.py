@@ -3142,9 +3142,11 @@ async def read_root():
         with open(html_file_path, "r") as f:
             html = f.read()
         # Cache-bust the module entry point so browsers always load fresh JS.
+        # The entry is entry.js (a thin wrapper that imports app.js once); see
+        # entry.js for why app.js must not be the <script> target directly.
         html = html.replace(
-            'src="/js/app.js"',
-            f'src="/js/app.js?v={_client_js_version()}"',
+            'src="/js/entry.js"',
+            f'src="/js/entry.js?v={_client_js_version()}"',
         )
         # no-cache: always revalidate the document, so a new deploy (and its
         # new JS version string) is picked up on the user's next load.
