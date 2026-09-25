@@ -55,7 +55,7 @@ async function renderGroups() {
         : "";
       return `
         <div class="card" data-group-name="${esc(g.name)}">
-          <div style="display:flex;justify-content:space-between;align-items:center;gap:10px;flex-wrap:wrap;">
+           <div class="row row-between row-wrap gap-10" >
             <div>
               <strong>${esc(g.name)}</strong>
               ${ssoBadge}
@@ -65,7 +65,7 @@ async function renderGroups() {
               <button class="btn btn-sm btn-danger" data-act="delete" data-name="${esc(g.name)}">${t("common.delete")}</button>
             </div>
           </div>
-          <div style="margin-top:10px;display:flex;gap:6px;flex-wrap:wrap;">
+           <div class="mt-10 row gap-6 row-wrap" >
             <span class="badge ${s.active ? "badge-ok" : "badge-warn"}">${s.active ? t("accounts.chipActive") : t("accounts.chipInactive")}</span>
             <span class="badge">${s.persistent_storage ? t("accounts.chipStorage") : t("accounts.chipNoStorage")}</span>
             <span class="badge">${s.gpu ? t("accounts.chipGpu") : t("accounts.chipNoGpu")}</span>
@@ -80,13 +80,13 @@ async function renderGroups() {
   setPanel(`
     <div class="card">
       <h3>${t("groups.addTitle")}</h3>
-      <div class="admin-form-row" style="margin-bottom:12px;">
+      <div class="admin-form-row mb-12" >
         <div class="field"><label>${t("common.name")}</label><input type="text" id="group-new-name" placeholder="^[a-zA-Z0-9_-]+$"></div>
       </div>
-      ${settingsFormHtml(defaultSettings(lastGroups), lastGroups, "group-new-settings")}
-      <div class="field" style="margin-top:12px;"><label>${t("groups.rolesLabel")}</label><div id="group-new-roles">${roleCheckboxesHtml([], allRoles)}</div></div>
-      <div class="field" style="margin-top:12px;"><label>${t("groups.permsLabel")}</label><div id="group-new-perms">${permCheckboxesHtml([], "perm")}</div></div>
-      <div style="margin-top:12px;"><button class="btn btn-primary" id="group-create">${t("common.create")}</button></div>
+      ${settingsFormHtml(defaultSettings(lastGroups), lastGroups, "group-new-settings", false)}
+      <div class="field mt-12" ><label>${t("groups.rolesLabel")}</label><div id="group-new-roles">${roleCheckboxesHtml([], allRoles)}</div></div>
+      <div class="field mt-12" ><label>${t("groups.permsLabel")}</label><div id="group-new-perms">${permCheckboxesHtml([], "perm")}</div></div>
+       <div class="mt-12" ><button class="btn btn-primary" id="group-create">${t("common.create")}</button></div>
     </div>
     <div class="section-title">${t("groups.heading")}</div>
     <div id="group-cards">${cards || `<div class="card"><p class="muted">${t("groups.empty")}</p>`}</div>
@@ -131,11 +131,11 @@ async function renderGroups() {
       if (!card) return toast(t("accounts.toastNotFound"), "error");
       card.innerHTML = `
         <h3>${t("groups.editTitle", { name: esc(name) })}</h3>
-        ${settingsFormHtml(g.settings || defaultSettings(lastGroups), lastGroups, "group-edit-settings")}
-        <div class="field" style="margin-top:12px;"><label>${t("groups.rolesLabel")}</label><div id="group-edit-roles">${roleCheckboxesHtml(g.roles || [], allRoles)}</div></div>
-        <div class="field" style="margin-top:12px;"><label>${t("groups.permsLabel")}</label><div id="group-edit-perms">${permCheckboxesHtml(g.permissions || [], "perm")}</div></div>
+        ${settingsFormHtml(g.settings || defaultSettings(lastGroups), lastGroups, "group-edit-settings", false)}
+        <div class="field mt-12" ><label>${t("groups.rolesLabel")}</label><div id="group-edit-roles">${roleCheckboxesHtml(g.roles || [], allRoles)}</div></div>
+        <div class="field mt-12" ><label>${t("groups.permsLabel")}</label><div id="group-edit-perms">${permCheckboxesHtml(g.permissions || [], "perm")}</div></div>
         <div id="group-edit-result"></div>
-        <div style="margin-top:12px;">
+         <div class="mt-12" >
           <button class="btn btn-primary" id="group-save">${t("common.save")}</button>
           <button class="btn btn-ghost" id="group-close">${t("common.cancel")}</button>
         </div>`;
@@ -146,7 +146,7 @@ async function renderGroups() {
         const permissions = Array.from($("group-edit-perms").querySelectorAll('input[name="perm"]:checked')).map((el) => el.value);
         const r = await request(`/api/admin/groups/${encodeURIComponent(name)}`, "PUT", { settings, roles, permissions });
         if (r.error) {
-          $("group-edit-result").innerHTML = `<div class="error" style="margin-top:10px;">${esc(r.error.message)}</div>`;
+          $("group-edit-result").innerHTML = `<div class="error mt-10" >${esc(r.error.message)}</div>`;
           return;
         }
         toast(t("common.saved"));

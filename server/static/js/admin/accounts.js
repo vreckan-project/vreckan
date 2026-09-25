@@ -55,11 +55,11 @@ function userCard(user, homedirs, adminGroups = []) {
   // in this card's place.
   return `
     <div class="card" data-username="${esc(user.username)}">
-      <div style="display:flex;justify-content:space-between;align-items:center;gap:10px;flex-wrap:wrap;">
+       <div class="row row-between row-wrap gap-10" >
         <div>
           <strong>${esc(user.username)}</strong>
-          ${isAdmin ? `<span class="badge badge-ok" style="margin-left:8px;">${t("accounts.badgeAdmin")}</span>` : ""}
-          ${sso ? `<span class="badge" style="margin-left:8px;">${t("accounts.badgeSso")}</span>` : ""}
+          ${isAdmin ? `<span class="badge badge-ok ml-8" >${t("accounts.badgeAdmin")}</span>` : ""}
+          ${sso ? `<span class="badge ml-8" >${t("accounts.badgeSso")}</span>` : ""}
         </div>
         <div class="admin-actions">
           <button class="btn btn-sm btn-ghost" data-action="edit" data-username="${esc(user.username)}">${t("common.edit")}</button>
@@ -69,7 +69,7 @@ function userCard(user, homedirs, adminGroups = []) {
           <button class="btn btn-sm btn-danger" data-action="delete" data-username="${esc(user.username)}">${t("common.delete")}</button>
         </div>
       </div>
-      <div style="margin-top:10px;display:flex;gap:6px;flex-wrap:wrap;">
+       <div class="mt-10 row gap-6 row-wrap" >
         ${chip(g.active, g.active ? t("accounts.chipActive") : t("accounts.chipInactive"))}
         ${pwChip}
         ${chip(g.persistent_storage, g.persistent_storage ? t("accounts.chipStorage") : t("accounts.chipNoStorage"))}
@@ -81,7 +81,7 @@ function userCard(user, homedirs, adminGroups = []) {
         <span class="badge">${t("accounts.badgeSessions", { value: g.session_limit == null || g.session_limit < 0 ? "∞" : g.session_limit })}</span>
         ${ssoBadges}
       </div>
-      <div class="muted" style="margin-top:8px;font-size:0.85rem;">${t("accounts.badgeHomeDirs", { homeText })}</div>
+      <div class="muted mt-8 fs-sm" >${t("accounts.badgeHomeDirs", { homeText })}</div>
     </div>`;
 }
 
@@ -105,12 +105,12 @@ async function renderRoster() {
     <div class="card">
       <h3>${t("accounts.addTitle")}</h3>
       <p class="muted">${t("accounts.addHelp")}</p>
-      <div class="admin-form-row" style="margin-bottom:12px;">
+      <div class="admin-form-row mb-12" >
         <div class="field"><label>${t("common.username")}</label><input type="text" id="roster-new-username" autocomplete="off"></div>
         <div class="field"><label class="check"><input type="checkbox" id="roster-new-isadmin"><span>${t("accounts.labelAdmin")}</span></label></div>
       </div>
       ${settingsFormHtml(defaultSettings(lastGroups), lastGroups, "roster-new-settings")}
-      <div style="margin-top:12px;"><button class="btn btn-primary" id="roster-create">${t("common.create")}</button></div>
+       <div class="mt-12" ><button class="btn btn-primary" id="roster-create">${t("common.create")}</button></div>
       <div id="roster-result"></div>
     </div>
     <div class="section-title">${t("accounts.heading")}</div>
@@ -136,7 +136,7 @@ async function wireRoster() {
       const res = await request(basePath, "POST", payload);
       const result = $("roster-result");
       if (res.error) {
-        result.innerHTML = `<div class="error" style="margin-top:10px;">${esc(res.error.message)}</div>`;
+        result.innerHTML = `<div class="error mt-10" >${esc(res.error.message)}</div>`;
         return;
       }
       toast(t("accounts.toastCreated"));
@@ -177,10 +177,10 @@ async function wireRoster() {
               .join("")
           : `<p class="muted">${t("accounts.homedirsEmpty")}</p>`;
         $("roster-modal").innerHTML = `
-          <div class="card" style="margin-top:16px;">
+          <div class="card mt-16" >
             <h3>${t("accounts.homedirsTitle", { username: esc(username) })}</h3>
             <div id="home-list">${listHtml}</div>
-            <div class="admin-form-row" style="margin-top:10px;">
+            <div class="admin-form-row mt-10" >
               <div class="field"><label>${t("accounts.homedirsLabelNew")}</label><input type="text" id="new-home" placeholder="${t("accounts.homedirsPlaceholder")}"></div>
               <button class="btn btn-primary" id="add-home">${t("accounts.btnAdd")}</button>
               <button class="btn btn-ghost" id="close-modal">${t("common.close")}</button>
@@ -228,14 +228,14 @@ async function wireRoster() {
           )
           .join("") || `<p class="muted">${t("accounts.accessNoGroups")}</p>`;
         $("roster-modal").innerHTML = `
-          <div class="card" style="margin-top:16px;">
+          <div class="card mt-16" >
             <h3>${t("accounts.accessTitle", { username: esc(username) })}</h3>
             <p class="muted">${t("accounts.accessHelp")}</p>
-            <div class="field" style="margin-bottom:10px;"><label>${t("accounts.accessLabelRoles")}</label>${roleChecks}</div>
-            <div class="field" style="margin-bottom:10px;"><label>${t("accounts.accessLabelPerms")}</label><div id="access-perms">${permCheckboxesHtml(perms)}</div></div>
-            <div class="field" style="margin-bottom:10px;"><label>${t("accounts.accessLabelGroups")}</label>${groupChecks}</div>
+            <div class="field mb-10" ><label>${t("accounts.accessLabelRoles")}</label>${roleChecks}</div>
+            <div class="field mb-10" ><label>${t("accounts.accessLabelPerms")}</label><div id="access-perms">${permCheckboxesHtml(perms)}</div></div>
+            <div class="field mb-10" ><label>${t("accounts.accessLabelGroups")}</label>${groupChecks}</div>
             <div id="access-result"></div>
-            <div style="margin-top:12px;">
+             <div class="mt-12" >
               <button class="btn btn-primary" id="access-save">${t("common.save")}</button>
               <button class="btn btn-ghost" id="close-modal">${t("common.cancel")}</button>
             </div>
@@ -248,7 +248,7 @@ async function wireRoster() {
           const newGroups = Array.from(form.querySelectorAll('input[name="group"]:checked')).map((el) => el.value);
           const res = await request(`${basePath}/${encodeURIComponent(username)}/access`, "POST", { roles: newRoles, permissions: newPerms, groups: newGroups });
           if (res.error) {
-            $("access-result").innerHTML = `<div class="error" style="margin-top:10px;">${esc(res.error.message)}</div>`;
+            $("access-result").innerHTML = `<div class="error mt-10" >${esc(res.error.message)}</div>`;
             return;
           }
           toast(t("accounts.toastAccessSaved"));
@@ -263,7 +263,7 @@ async function wireRoster() {
         if (!target) return toast(t("accounts.toastNotFound"), "error");
         const hasPw = !!target.has_password;
         $("roster-modal").innerHTML = `
-          <div class="card" style="margin-top:16px;">
+          <div class="card mt-16" >
             <h3>${hasPw ? t("accounts.passwordResetTitle", { username: esc(username) }) : t("accounts.passwordSetTitle", { username: esc(username) })}</h3>
             <p class="muted">${t("accounts.passwordHelp", { username: esc(username) })}</p>
             <div class="admin-form-row">
@@ -271,7 +271,7 @@ async function wireRoster() {
               <div class="field"><label>${t("accounts.passwordLabelConfirm")}</label><input type="password" id="setpw-confirm" minlength="8" autocomplete="new-password"></div>
             </div>
             <div id="setpw-result"></div>
-            <div style="margin-top:12px;">
+             <div class="mt-12" >
               <button class="btn btn-primary" id="setpw-save">${t("accounts.btnSavePassword")}</button>
               <button class="btn btn-ghost" id="close-modal">${t("common.cancel")}</button>
             </div>
@@ -284,7 +284,7 @@ async function wireRoster() {
           try {
             await setUserPassword(username, pw);
           } catch (e) {
-            $("setpw-result").innerHTML = `<div class="error" style="margin-top:10px;">${esc(e.message)}</div>`;
+            $("setpw-result").innerHTML = `<div class="error mt-10" >${esc(e.message)}</div>`;
             return;
           }
           $("roster-modal").innerHTML = "";
@@ -312,13 +312,13 @@ async function wireRoster() {
           : `<label class="check"><input type="checkbox" id="edit-isadmin" ${target.is_admin ? "checked" : ""}> ${t("accounts.labelAdmin")}</label>`;
         card.innerHTML = `
           <h3>${t("accounts.editTitle", { username: esc(username) })}</h3>
-          <div class="admin-form-row" style="margin-bottom:12px;">
+          <div class="admin-form-row mb-12" >
             <div class="field"><label>${t("common.username")}</label><input type="text" value="${esc(username)}" disabled></div>
             <div class="field">${adminField}</div>
           </div>
           ${settingsFormHtml(target.settings || defaultSettings(lastGroups), lastGroups, "edit-settings")}
           <div id="edit-result"></div>
-          <div style="margin-top:12px;">
+           <div class="mt-12" >
             <button class="btn btn-primary" id="save-edit">${t("common.save")}</button>
             <button class="btn btn-ghost" id="cancel-edit">${t("common.cancel")}</button>
           </div>`;
@@ -331,10 +331,10 @@ async function wireRoster() {
           const wantAdmin = isRootAdmin ? true : !!$("edit-isadmin").checked;
           if (wantAdmin !== !!target.is_admin) {
             const r = await request(`${basePath}/${encodeURIComponent(username)}/admin-status`, "POST", { is_admin: wantAdmin });
-            if (r.error) { errEl.innerHTML = `<div class="error" style="margin-top:10px;">${esc(r.error.message)}</div>`; return; }
+            if (r.error) { errEl.innerHTML = `<div class="error mt-10" >${esc(r.error.message)}</div>`; return; }
           }
           const r = await request(`${basePath}/${encodeURIComponent(username)}`, "PUT", { settings });
-          if (r.error) { errEl.innerHTML = `<div class="error" style="margin-top:10px;">${esc(r.error.message)}</div>`; return; }
+          if (r.error) { errEl.innerHTML = `<div class="error mt-10" >${esc(r.error.message)}</div>`; return; }
           toast(t("common.saved"));
           render();
         });

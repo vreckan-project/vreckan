@@ -1229,7 +1229,6 @@
     "up": "Pataas"
   },
   "login": {
-    "tagline": "Mag-sign in upang ilunsad ang mga containerized na app",
     "signIn": "Mag-sign in",
     "or": "o",
     "sso": "Mag-sign in gamit ang SSO",
@@ -1245,8 +1244,8 @@
     "roles": "Mga Role",
     "globalSettings": "Pangkalahatang Settings",
     "sso": "SSO",
-    "installedApps": "Mga Naka-install na App",
-    "appStores": "Mga App Store",
+    "installedApps": "Kontrol",
+    "appStores": "Mga Store",
     "templates": "Mga Template",
     "laboratory": "Laboratory",
     "system": "Sistema",
@@ -1450,7 +1449,7 @@
   },
   "gs": {
     "heading": "Mga Global na Setting",
-    "help": "Mga setting ng buong server na hindi bahagi ng schema ng app-template. Ang mga default ng base-layer bawat setting (ang schema ng template) ay naa-edit sa pahina ng <strong>{templates}</strong>, at ang mga SSO admin group ay pinangangasiwaan sa pahina ng <strong>{groups}</strong>.",
+    "help": "Mga setting ng buong server. Ang mga default ng base-layer bawat setting (ang schema ng template) ay naa-edit sa ibaba sa pahinang ito, at ang mga SSO admin group ay pinangangasiwaan sa pahina ng <strong>{groups}</strong>.",
     "gpuTitle": "Global na default GPU",
     "gpuHelp": "Fallback GPU para sa mga launch na hindi pinipili ng user. Ang mga app na hindi sumusuporta sa uri ng GPU ay hindi naaapektuhan.",
     "gpuNone": "Wala (walang global na default)",
@@ -1601,7 +1600,6 @@
     "appTemplatesTitle": "Mga template ng app",
     "baseLayerHelp": "Ang schema ng template: ang mga environment variable na inaalok sa mga template ng app at ang kanilang default (base-layer) na value. Bawat launch ay nagsisimula mula sa mga default na ito; ang mga template bawat app at ang mga pagpili bawat launch ang nag-o-override. Ang mga setting na \"docker\" ay naging run-options ng container sa halip na environment variable. Ang walang value ay nagpapatupad ng built-in default ng image. Ang mga pagbabago ay tumutugon sa mga bagong launch.",
     "baseLayerSaved": "Naitag ang base layer.",
-    "baseLayerTitle": "Base layer — pangkalahatang default",
     "cannotDelete": "Hindi maiaalis ang template na ito.",
     "cannotDeleteDefault": "Hindi maiaalis ang default na template.",
     "catApp": "Mga setting ng app",
@@ -1648,7 +1646,10 @@
     "template": "Template",
     "uiPreviewTitle": "Preview ng UI",
     "useDefault": "gamitin ang default",
-    "webrtcHelp": "Sa default, ang mga session ay nag-a-stream sa pamamagitan ng WebSockets. Ang pag-set ng anumang halaga ng STUN, TURN, Cloudflare o public IP sa ibaba, o ang pagpili ng WebRTC mode, ay nagpapalit ng container sa WebRTC na may dual mode na aktibo upang manatiling makabalik sa WebSockets ang mga user."
+    "webrtcHelp": "Sa default, ang mga session ay nag-a-stream sa pamamagitan ng WebSockets. Ang pag-set ng anumang halaga ng STUN, TURN, Cloudflare o public IP sa ibaba, o ang pagpili ng WebRTC mode, ay nagpapalit ng container sa WebRTC na may dual mode na aktibo upang manatiling makabalik sa WebSockets ang mga user.",
+    "advancedTitle": "Mga advanced na setting",
+    "advancedWarning": "Ang mga pagbabago sa mga setting na ito ay maaaring sirain ang mga launch ng app, kaya inirerekomendang gumawa ng backup bago baguhin ang anumang bagay sa pahinang ito.",
+    "backupLink": "Pumunta sa pahina ng backup"
   },
   "sessions": {
     "heading": "Mga Sesyon",

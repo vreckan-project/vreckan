@@ -75,10 +75,10 @@ async function renderVolumeMounts() {
       <h3>${t("mounts.addTitle")}</h3>
       <p class="muted">${t("mounts.addHelp")}</p>
       ${mountFormHtml({}, "vm-new", true)}
-      <div style="margin-top:12px;"><button class="btn btn-primary" id="vm-create">${t("common.create")}</button></div>
+       <div class="mt-12" ><button class="btn btn-primary" id="vm-create">${t("common.create")}</button></div>
     </div>
     <div class="card">
-      <h3 style="margin-bottom:12px;">${t("mounts.heading")}</h3>
+       <h3 class="mb-12" >${t("mounts.heading")}</h3>
       <table class="admin-table">
         <thead><tr><th>${t("common.name")}</th><th>${t("mounts.hostPath")}</th><th>${t("mounts.containerPath")}</th><th>${t("mounts.mode")}</th><th>${t("mounts.assignedTo")}</th><th></th></tr></thead>
         <tbody id="vm-rows">${rows || `<tr><td colspan="6" class="muted">${t("mounts.empty")}</td></tr>`}</tbody>
@@ -133,10 +133,10 @@ async function renderVolumeMounts() {
       const m = (d.volumeMounts || []).find((x) => x.name === name);
       if (!m) return;
       $("vm-modal").innerHTML = `
-        <div class="card" style="margin-top:16px;">
+        <div class="card mt-16" >
           <h3>${t("mounts.editTitle", { name: esc(name) })}</h3>
           ${mountFormHtml(m, "vm-edit", false)}
-          <div style="margin-top:12px;">
+           <div class="mt-12" >
             <button class="btn btn-primary" id="vm-save">${t("common.save")}</button>
             <button class="btn btn-ghost" id="vm-close">${t("common.cancel")}</button>
           </div>

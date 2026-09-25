@@ -1579,6 +1579,100 @@ async def background_share_cleanup_job():
 api_app = FastAPI(title="Vreckan API", lifespan=lifespan)
 
 
+# --- Security response headers (DAST: clears ZAP Medium + Low findings) ----
+# Applied to every response via middleware. The default CSP is strict: no
+# 'unsafe-inline' anywhere. The main app (index.html) has no inline
+# <script>/<style> blocks and its former inline style="" attributes are now
+# CSS classes, so it needs no inline exceptions. The pages that DO need
+# them override this via their own Content-Security-Policy header:
+#   - the collaboration room + public password page: strict CSP with a
+#     per-response nonce (see _strict_csp);
+#   - the reverse-proxied session page (noVNC etc.): _SESSION_CSP, which
+#     keeps 'unsafe-inline' because app containers are third-party HTML.
+_SECURITY_HEADERS = {
+    "Content-Security-Policy": (
+        "default-src 'self'; "
+        # blob: in script-src covers AudioWorklet.addModule(); worker-src
+        # covers the collaboration room's blob: Web Workers (media/socket).
+        "script-src 'self' blob:; "
+        "worker-src 'self' blob:; "
+        "style-src 'self'; "
+        "img-src 'self' data: blob: https://raw.githubusercontent.com https://github.com; "
+        "frame-src 'self'; "
+        "connect-src 'self'; "
+        "frame-ancestors 'self'; "
+        "base-uri 'self'; "
+        "form-action 'self'"
+    ),
+    "Strict-Transport-Security": "max-age=63072000; includeSubDomains",
+    "X-Content-Type-Options": "nosniff",
+    # SAMEORIGIN (not DENY) because the main app iframes the session page.
+    "X-Frame-Options": "SAMEORIGIN",
+    "Permissions-Policy": "camera=(), microphone=(), geolocation=(), payment=()",
+    "Cross-Origin-Embedder-Policy": "require-corp",
+    "Cross-Origin-Opener-Policy": "same-origin",
+    "Cross-Origin-Resource-Policy": "same-origin",
+}
+
+
+@api_app.middleware("http")
+async def add_security_headers(request: Request, call_next):
+    response = await call_next(request)
+    for header, value in _SECURITY_HEADERS.items():
+        response.headers.setdefault(header, value)
+    return response
+
+
+# --- Strict CSP (Phase 2) -------------------------------------------------
+# The default CSP above keeps 'unsafe-inline' because the reverse-proxied
+# session page (noVNC etc.) can carry inline script/style we don't control.
+# The two pages we fully own — the collaboration room and the public
+# password page — have no such third-party content, so they get a strict
+# CSP that drops 'unsafe-inline' in favour of a per-response nonce. This
+# clears ZAP's "CSP: script-src/style-src unsafe-inline" Medium findings.
+def _csp_nonce() -> str:
+    """A fresh base64 CSP nonce for one response."""
+    return base64.b64encode(secrets.token_bytes(16)).decode()
+
+
+def _strict_csp(nonce: str) -> str:
+    return (
+        "default-src 'self'; "
+        f"script-src 'self' 'nonce-{nonce}' blob:; "
+        "worker-src 'self' blob:; "
+        # 'unsafe-inline' kept for style only: the room's Font Awesome
+        # stylesheet (cdnjs) and the password page's inline <style> are
+        # covered by the nonce, but inline style="" attributes in the
+        # room's JS-rendered UI still need it.
+        f"style-src 'self' 'nonce-{nonce}' 'unsafe-inline' "
+        "https://cdnjs.cloudflare.com; "
+        "img-src 'self' data: blob: https://raw.githubusercontent.com https://github.com; "
+        "frame-src 'self'; "
+        "connect-src 'self'; "
+        "frame-ancestors 'self'; "
+        "base-uri 'self'; "
+        "form-action 'self'"
+    )
+
+
+# CSP for the reverse-proxied session page (noVNC / app containers).
+# Those are third-party HTML we don't control, so they keep
+# 'unsafe-inline' for script and style. Set on the proxied response so
+# the middleware's setdefault() leaves it in place.
+_SESSION_CSP = (
+    "default-src 'self'; "
+    "script-src 'self' 'unsafe-inline' blob:; "
+    "worker-src 'self' blob:; "
+    "style-src 'self' 'unsafe-inline'; "
+    "img-src 'self' data: blob: https://raw.githubusercontent.com https://github.com; "
+    "frame-src 'self'; "
+    "connect-src 'self'; "
+    "frame-ancestors 'self'; "
+    "base-uri 'self'; "
+    "form-action 'self'"
+)
+
+
 async def get_decrypted_request_body(request: Request) -> dict:
     session_id = request.headers.get("X-Session-ID")
     if not session_id or session_id not in CRYPTO_SESSIONS:
@@ -2805,6 +2899,10 @@ async def _proxy_session_request(request: Request, session_id: str) -> Response:
         for key, value in upstream_response.headers.items()
         if key.lower() not in _PROXY_DROP_HEADERS and key.lower() != "content-length"
     }
+    # The session page is third-party HTML (noVNC, app containers) that may
+    # rely on inline script/style, so it gets the looser session CSP rather
+    # than the strict default. setdefault() in the middleware keeps it.
+    response_headers["Content-Security-Policy"] = _SESSION_CSP
 
     async def body_stream():
         # Stream the RAW (still content-encoded) bytes: the Content-Encoding
@@ -3060,13 +3158,18 @@ async def access_public_share_get(share_id: str):
             os.path.dirname(__file__), "static", "public_password.html"
         )
         if os.path.exists(password_page_path):
+            nonce = _csp_nonce()
             with open(password_page_path, "r") as f:
                 html_content = (
                     f.read()
                     .replace("{{SHARE_ID}}", share_id)
                     .replace("{{ERROR_MESSAGE}}", "")
+                    .replace("{{CSP_NONCE}}", nonce)
                 )
-            return HTMLResponse(content=html_content)
+            return HTMLResponse(
+                content=html_content,
+                headers={"Content-Security-Policy": _strict_csp(nonce)},
+            )
         return HTMLResponse(content="<h1>Password protected</h1>", status_code=500)
 
     file_path = os.path.join(settings.public_storage_path, share_id)
@@ -3103,6 +3206,7 @@ async def access_public_share_post(share_id: str, password: str = Form(...)):
             os.path.dirname(__file__), "static", "public_password.html"
         )
         if os.path.exists(password_page_path):
+            nonce = _csp_nonce()
             with open(password_page_path, "r") as f:
                 html_content = (
                     f.read()
@@ -3110,8 +3214,13 @@ async def access_public_share_post(share_id: str, password: str = Form(...)):
                     .replace(
                         "{{ERROR_MESSAGE}}", "Incorrect password. Please try again."
                     )
+                    .replace("{{CSP_NONCE}}", nonce)
                 )
-            return HTMLResponse(content=html_content, status_code=401)
+            return HTMLResponse(
+                content=html_content,
+                status_code=401,
+                headers={"Content-Security-Policy": _strict_csp(nonce)},
+            )
         return HTMLResponse(content="<h1>Incorrect Password</h1>", status_code=401)
 
 

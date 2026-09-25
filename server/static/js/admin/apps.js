@@ -155,8 +155,8 @@ async function openInstallModal(avail, storeName) {
       <label>${t("apps.appTemplate")}
         <select id="install-template">${tplOptions}</select>
       </label>
-      <div class="admin-form-row" style="margin-top:12px;">
-        <div class="field" style="flex:1;">
+      <div class="admin-form-row mt-12" >
+        <div class="field flex-1" >
           <label>${t("apps.accessLabel")}</label>
           ${accessCheckboxesHtml("install-access", ["*"], [], userNames, groupNames)}
         </div>
@@ -276,14 +276,14 @@ function accessCheckboxesHtml(prefix, selectedUsers, selectedGroups, userNames, 
   const sg = selectedGroups || [];
   const all = su.includes("*") || su.includes("all");
   const opt = (value, checked) =>
-    `<label style="display:inline-flex;align-items:center;gap:4px;margin:2px 12px 2px 0;"><input type="checkbox" value="${esc(value)}"${checked ? " checked" : ""}> ${esc(value)}</label>`;
+    ` <label class="chip" ><input type="checkbox" value="${esc(value)}"${checked ? " checked" : ""}> ${esc(value)}</label>`;
   const users = (userNames || []).map((u) => opt(u, !all && su.includes(u))).join("");
   const groups = (groupNames || []).map((g) => opt(g, !all && sg.includes(g))).join("");
   return `
-    <label style="display:flex;align-items:center;gap:6px;font-weight:600;"><input type="checkbox" id="${prefix}-all"${all ? " checked" : ""}> ${t("apps.allUsers")}</label>
-    <div id="${prefix}-users" style="margin-top:6px; display:flex; flex-wrap:wrap;">${users || `<span class="muted">${t("apps.noUsers")}</span>`}</div>
-    <div id="${prefix}-groups" style="margin-top:6px; display:flex; flex-wrap:wrap;">${groups || `<span class="muted">${t("apps.noGroups")}</span>`}</div>
-    <p class="error" id="${prefix}-warn" hidden style="margin-top:8px;">${t("apps.noOneSelected")}</p>`;
+     <label class="row row-center gap-6 fw-600" ><input type="checkbox" id="${prefix}-all"${all ? " checked" : ""}> ${t("apps.allUsers")}</label>
+     <div class="mt-6 row row-wrap" id="${prefix}-users" >${users || `<span class="muted">${t("apps.noUsers")}</span>`}</div>
+     <div class="mt-6 row row-wrap" id="${prefix}-groups" >${groups || `<span class="muted">${t("apps.noGroups")}</span>`}</div>
+    <p class="error mt-8" id="${prefix}-warn" hidden >${t("apps.noOneSelected")}</p>`;
 }
 
 // Wire up the "All users" master checkbox: when checked it disables (and
@@ -339,11 +339,11 @@ async function openAppEditModal(app) {
           <input type="text" id="edit-url-env-var" value="${esc((app.provider_config || {}).url_env_var || "")}" placeholder="e.g. CHROME_CLI">
         </div>
       </div>
-      <p class="muted" style="font-size:0.8rem; margin-top:10px; line-height:1.4;">
+      <p class="muted fs-xs mt-10 lh-14" >
         ${t("apps.urlEnvVarHelp")}
       </p>
-      <div class="admin-form-row" style="margin-top:12px;">
-        <div class="field" style="flex:1;">
+      <div class="admin-form-row mt-12" >
+        <div class="field flex-1" >
           <label>${t("apps.accessLabel")}</label>
           ${accessCheckboxesHtml("edit-access", app.users || [], app.groups || [], userNames, groupNames)}
         </div>
@@ -407,10 +407,10 @@ async function renderApps() {
         : `<span class="badge">${t("apps.unknown")}</span>`;
       // Always render the progress wrap (hidden unless pulling) so the
       // in-place progress updater can find it right after a re-render.
-      const progress = `<div class="row-progress" data-progress-for="${esc(a.id)}" ${pulling ? "" : "hidden"}><div class="progress-track"><div class="progress-fill" style="width:0%"></div></div><div class="progress-pct muted"></div></div>`;
+      const progress = `<div class="row-progress" data-progress-for="${esc(a.id)}" ${pulling ? "" : "hidden"}><div class="progress-track"><div class="progress-fill" ></div></div><div class="progress-pct muted"></div></div>`;
       return `
       <tr>
-        <td><strong>${esc(a.name)}</strong><div class="muted" style="font-size:0.78rem;">${esc(a.id)}</div></td>
+        <td><strong>${esc(a.name)}</strong><div class="muted fs-xs" >${esc(a.id)}</div></td>
         <td>${esc(a.source || "")} / ${esc(a.source_app_id || "")}</td>
         <td>${a.home_directories ? t("apps.yes") : t("apps.no")}</td>
         <td>${a.users ? a.users.join(", ") : ""}</td>
@@ -428,22 +428,22 @@ async function renderApps() {
 
   setPanel(`
     <div class="card">
+       <h3 class="mb-12" >${t("apps.installedTitle")}</h3>
+      <table class="admin-table">
+        <thead><tr><th>${t("apps.app")}</th><th>${t("apps.source")}</th><th>${t("apps.homeDirs")}</th><th>${t("apps.users")}</th><th>${t("apps.groups")}</th><th>${t("apps.image")}</th><th></th></tr></thead>
+        <tbody id="app-rows">${rows || `<tr><td colspan="7" class="muted">${t("apps.noAppsInstalled")}</td></tr>`}</tbody>
+      </table>
+    </div>
+
+    <div class="card">
       <h3>${t("apps.installFromStoreTitle")}</h3>
       <p class="muted">${t("apps.installFromStoreHelp")}</p>
-      <div class="admin-form-row" style="margin-bottom:10px;">
+      <div class="admin-form-row mb-10" >
         <div class="field"><label>${t("apps.store")}</label><select id="avail-store">${storeOpts || `<option value="">${t("apps.noStoresConfigured")}</option>`}</select></div>
         <div class="field"><label>${t("apps.search")}</label><input id="avail-search" type="search" placeholder="${t("apps.searchPlaceholder")}" autocomplete="off"></div>
         <button class="btn btn-ghost" id="avail-load">${t("apps.load")}</button>
       </div>
       <div id="avail-list"></div>
-    </div>
-
-    <div class="card">
-      <h3 style="margin-bottom:12px;">${t("apps.installedTitle")}</h3>
-      <table class="admin-table">
-        <thead><tr><th>${t("apps.app")}</th><th>${t("apps.source")}</th><th>${t("apps.homeDirs")}</th><th>${t("apps.users")}</th><th>${t("apps.groups")}</th><th>${t("apps.image")}</th><th></th></tr></thead>
-        <tbody id="app-rows">${rows || `<tr><td colspan="7" class="muted">${t("apps.noAppsInstalled")}</td></tr>`}</tbody>
-      </table>
     </div>
   `);
 

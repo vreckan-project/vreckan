@@ -104,10 +104,10 @@ async function renderBackup() {
       <h3>${t("backup.createTitle")}</h3>
       <p class="muted">${t("backup.createHelp")}</p>
       <label class="checkbox"><input type="checkbox" id="bk-include-data"> ${t("backup.includeUserData")}</label>
-      <div style="margin-top:12px;"><button class="btn btn-primary" id="bk-create">${t("backup.create")}</button></div>
+       <div class="mt-12" ><button class="btn btn-primary" id="bk-create">${t("backup.create")}</button></div>
     </div>
     <div class="card">
-      <h3 style="margin-bottom:12px;">${t("backup.listTitle")}</h3>
+       <h3 class="mb-12" >${t("backup.listTitle")}</h3>
       <table class="admin-table">
         <thead><tr><th>${t("common.name")}</th><th>${t("backup.size")}</th><th>${t("backup.created")}</th><th>${t("backup.userData")}</th><th></th></tr></thead>
         <tbody id="bk-rows">${rows || `<tr><td colspan="5" class="muted">${t("backup.noBackups")}</td></tr>`}</tbody>
@@ -117,7 +117,7 @@ async function renderBackup() {
       <h3>${t("backup.restoreFromFileTitle")}</h3>
       <p class="muted">${t("backup.restoreFromFileHelp")}</p>
       <input type="file" id="bk-file" accept=".tar.gz,.tgz,application/gzip">
-      <div style="margin-top:12px;"><button class="btn btn-primary" id="bk-restore-file">${t("backup.restoreFileButton")}</button></div>
+       <div class="mt-12" ><button class="btn btn-primary" id="bk-restore-file">${t("backup.restoreFileButton")}</button></div>
     </div>
   `);
 

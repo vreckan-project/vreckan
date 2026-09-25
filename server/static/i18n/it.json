@@ -1229,7 +1229,6 @@
     "up": "Su"
   },
   "login": {
-    "tagline": "Accedi per avviare app containerizzate",
     "signIn": "Accedi",
     "or": "o",
     "sso": "Accedi con SSO",
@@ -1245,8 +1244,8 @@
     "roles": "Ruoli",
     "globalSettings": "Impostazioni globali",
     "sso": "SSO",
-    "installedApps": "App installate",
-    "appStores": "Store di app",
+    "installedApps": "Controllo",
+    "appStores": "Store",
     "templates": "Modelli",
     "laboratory": "Laboratorio",
     "system": "Sistema",
@@ -1450,7 +1449,7 @@
   },
   "gs": {
     "heading": "Impostazioni globali",
-    "help": "Impostazioni a livello di server che non fanno parte dello schema del modello di app. I valori predefiniti del layer di base per ogni impostazione (lo schema del modello) vengono modificati nella pagina <strong>{templates}</strong>, e i gruppi di amministratori SSO vengono gestiti nella pagina <strong>{groups}</strong>.",
+    "help": "Impostazioni a livello di server. I valori predefiniti del layer di base per ogni impostazione (lo schema del modello) vengono modificati più in basso in questa pagina, e i gruppi di amministratori SSO vengono gestiti nella pagina <strong>{groups}</strong>.",
     "gpuTitle": "GPU predefinita globale",
     "gpuHelp": "GPU di riserva per gli avvio in cui l'utente non ne sceglie una. Le app che non supportano il tipo di GPU non sono interessate.",
     "gpuNone": "Nessuna (nessun predefinito globale)",
@@ -1601,7 +1600,6 @@
     "appTemplatesTitle": "Modelli app",
     "baseLayerHelp": "Lo schema del modello: le variabili d'ambiente offerte ai modelli app e i loro valori predefiniti (layer di base). Ogni avvio parte da questi valori predefiniti; i modelli per app e le scelte per avvio li sovrascrivono. Le impostazioni \"docker\" diventano opzioni di esecuzione del container invece di variabili d'ambiente. Un valore vuoto fa applicare il valore predefinito integrato dell'immagine. Le modifiche si applicano ai nuovi avvi.",
     "baseLayerSaved": "Layer di base salvato.",
-    "baseLayerTitle": "Layer di base — valori predefiniti globali",
     "cannotDelete": "Questo modello non può essere eliminato.",
     "cannotDeleteDefault": "Non è possibile eliminare il modello predefinito.",
     "catApp": "Impostazioni app",
@@ -1648,7 +1646,10 @@
     "template": "Modello",
     "uiPreviewTitle": "Anteprima interfaccia",
     "useDefault": "usa predefinito",
-    "webrtcHelp": "Le sessioni vengono trasmesse via WebSockets in modo predefinito. Impostando uno qualsiasi dei valori STUN, TURN, Cloudflare o IP pubblico qui sotto, oppure scegliendo la modalità WebRTC, il container passa a WebRTC con la modalità dual abilitata, in modo che gli utenti possano comunque tornare ai WebSockets."
+    "webrtcHelp": "Le sessioni vengono trasmesse via WebSockets in modo predefinito. Impostando uno qualsiasi dei valori STUN, TURN, Cloudflare o IP pubblico qui sotto, oppure scegliendo la modalità WebRTC, il container passa a WebRTC con la modalità dual abilitata, in modo che gli utenti possano comunque tornare ai WebSockets.",
+    "advancedTitle": "Impostazioni avanzate",
+    "advancedWarning": "Le modifiche a queste impostazioni possono rompere gli avvi delle app, quindi è consigliato fare un backup prima di cambiare qualcosa in questa pagina.",
+    "backupLink": "Vai alla pagina Backup"
   },
   "sessions": {
     "heading": "Sessioni",

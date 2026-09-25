@@ -1,11 +1,11 @@
-// Global Settings section: the truly global (non-template) settings — just
-// the global default GPU. The template schema (the base-layer default for
-// every setting) is the "template settings" and is edited on the Templates
-// page, not here.
+// Global Settings section: the global default GPU plus the base-layer
+// (template schema) editor — the per-setting defaults every app template
+// and launch starts from.
 //
 // The small DOM helpers ($, esc, toast, request) come from util.js.
 import { $, esc, toast, request } from "../util.js";
 import { t } from "../i18n.js";
+import { mountBaseLayer } from "./templates.js";
 
 function setPanel(html) {
   const panel = $("admin-section");
@@ -14,7 +14,10 @@ function setPanel(html) {
 
 // --- Global settings -------------------------------------------------------
 async function renderGlobalSettings() {
-  const res = await request("/api/admin/global-settings", "GET");
+  const [res, schemaRes] = await Promise.all([
+    request("/api/admin/global-settings", "GET"),
+    request("/api/admin/apps/templates/schema", "GET"),
+  ]);
   if (res.error) {
     setPanel(`<div class="card"><h3>${t("gs.heading")}</h3><div class="error">${esc(res.error.message)}</div></div>`);
     return;
@@ -45,7 +48,7 @@ async function renderGlobalSettings() {
         <select id="gs-gpu-select">${gpuOptions}</select>
       </div>
       <p id="gs-gpu-error" class="error" role="alert" hidden></p>
-      <div style="margin-top:10px;display:flex;gap:8px;flex-wrap:wrap;">
+       <div class="mt-10 row gap-8 row-wrap" >
         <button class="btn btn-primary" id="gs-save" type="button">${t("gs.save")}</button>
       </div>
     </div>
@@ -53,6 +56,11 @@ async function renderGlobalSettings() {
 
   const saveBtn = $("gs-save");
   if (saveBtn) saveBtn.addEventListener("click", onGlobalSettingsSave);
+
+  // The base-layer (template schema) editor lives on this page, below the
+  // GPU card. A schema fetch failure just hides the card; the GPU settings
+  // above still work.
+  if (!schemaRes.error) mountBaseLayer(schemaRes.data);
 }
 
 // Save the global (non-template) settings — just the global default GPU.

@@ -1229,7 +1229,6 @@
     "up": "위로"
   },
   "login": {
-    "tagline": "컨테이너화 된 앱을 시작하려면 로그인하세요",
     "signIn": "로그인",
     "or": "또는",
     "sso": "SSO로 로그인",
@@ -1245,8 +1244,8 @@
     "roles": "역할",
     "globalSettings": "전역 설정",
     "sso": "SSO",
-    "installedApps": "설치된 앱",
-    "appStores": "앱 스토어",
+    "installedApps": "제어",
+    "appStores": "스토어",
     "templates": "템플릿",
     "laboratory": "실험실",
     "system": "시스템",
@@ -1450,7 +1449,7 @@
   },
   "gs": {
     "heading": "전역 설정",
-    "help": "앱 템플릿 스키마에 속하지 않는 서버 전체 설정입니다. 설정별 기본 계층의 기본값(템플릿 스키마)은 <strong>{templates}</strong> 페이지에서 편집하며, SSO 관리자 그룹은 <strong>{groups}</strong> 페이지에서 관리합니다.",
+    "help": "서버 전체 설정입니다. 설정별 기본 계층의 기본값(템플릿 스키마)은 이 페이지 아래에서 편집하며, SSO 관리자 그룹은 <strong>{groups}</strong> 페이지에서 관리합니다.",
     "gpuTitle": "전역 기본 GPU",
     "gpuHelp": "사용자가 GPU를 선택하지 않는 경우의 대체 GPU입니다. GPU 유형을 지원하지 않는 앱에는 영향을 주지 않습니다.",
     "gpuNone": "없음(전역 기본 없음)",
@@ -1601,7 +1600,6 @@
     "appTemplatesTitle": "앱 템플릿",
     "baseLayerHelp": "템플릿 스키마: 앱 템플릿에 제공되는 환경 변수와 그 기본(기본 계층) 값입니다. 모든 시작은 이 기본값에서 시작되며, 앱별 템플릿과 시작 시 선택 사항이 이를 덮어씁니다. \"docker\" 설정은 환경 변수 대신 컨테이너 실행 옵션이 됩니다. 값이 비어 있으면 이미지의 내장 기본값이 적용됩니다. 변경 사항은 새로운 시작에 적용됩니다.",
     "baseLayerSaved": "기본 계층이 저장되었습니다.",
-    "baseLayerTitle": "기본 계층 — 전역 기본값",
     "cannotDelete": "이 템플릿은 삭제할 수 없습니다.",
     "cannotDeleteDefault": "기본 템플릿은 삭제할 수 없습니다.",
     "catApp": "앱 설정",
@@ -1648,7 +1646,10 @@
     "template": "템플릿",
     "uiPreviewTitle": "UI 미리보기",
     "useDefault": "기본값 사용",
-    "webrtcHelp": "세션은 기본적으로 WebSockets를 통해 스트리밍됩니다. 아래 STUN, TURN, Cloudflare 또는 공용 IP 값 중 하나를 설정하거나 WebRTC 모드를 선택하면, 컨테이너는 듀얼 모드가 활성화된 WebRTC로 전환되어 사용자가 여전히 WebSockets로 폴백할 수 있습니다."
+    "webrtcHelp": "세션은 기본적으로 WebSockets를 통해 스트리밍됩니다. 아래 STUN, TURN, Cloudflare 또는 공용 IP 값 중 하나를 설정하거나 WebRTC 모드를 선택하면, 컨테이너는 듀얼 모드가 활성화된 WebRTC로 전환되어 사용자가 여전히 WebSockets로 폴백할 수 있습니다.",
+    "advancedTitle": "고급 설정",
+    "advancedWarning": "이 설정을 변경하면 앱 시작이 깨질 수 있으므로, 이 페이지에서 무언가를 변경하기 전에 백업을 만드는 것이 좋습니다.",
+    "backupLink": "백업 페이지로 이동"
   },
   "sessions": {
     "heading": "세션",

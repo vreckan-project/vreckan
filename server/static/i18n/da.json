@@ -1229,7 +1229,6 @@
     "up": "Op"
   },
   "login": {
-    "tagline": "Log ind for at starte containeriserede apps",
     "signIn": "Log ind",
     "or": "eller",
     "sso": "Log ind med SSO",
@@ -1245,8 +1244,8 @@
     "roles": "Roller",
     "globalSettings": "Globale indstillinger",
     "sso": "SSO",
-    "installedApps": "Installerede apps",
-    "appStores": "Appbutikker",
+    "installedApps": "Kontrol",
+    "appStores": "Butikker",
     "templates": "Skabeloner",
     "laboratory": "Laboratorium",
     "system": "System",
@@ -1450,7 +1449,7 @@
   },
   "gs": {
     "heading": "Globale indstillinger",
-    "help": "Serveromfattende indstillinger, der ikke er en del af skemaet for app-skabeloner. Standardværdierne i basislaget for hver indstilling (skabelonens skema) redigeres på siden <strong>{templates}</strong>, og SSO-administratorgrupperne administreres på siden <strong>{groups}</strong>.",
+    "help": "Serveromfattende indstillinger. Standardværdierne i basislaget for hver indstilling (skabelonens skema) redigeres nedenfor på denne side, og SSO-administratorgrupperne administreres på siden <strong>{groups}</strong>.",
     "gpuTitle": "Global standard-GPU",
     "gpuHelp": "Reserve-GPU til start, hvor brugeren ikke vælger en. Apps, der ikke understøtter GPU-typen, påvirkes ikke.",
     "gpuNone": "Ingen (ingen global standard)",
@@ -1601,7 +1600,6 @@
     "appTemplatesTitle": "App-skabeloner",
     "baseLayerHelp": "Skabelonens skema: de miljøvariabler, der tilbydes app-skabeloner, og deres standardværdier (basislag). Hver start kører fra disse standardværdier; skabeloner pr. app og valg pr. start overskriver dem. \"docker\"-indstillinger bliver til container-køringstilvalg i stedet for miljøvariabler. En tom værdi lader billedets indbyggede standardværdi gælde. Ændringer gælder for nye starts.",
     "baseLayerSaved": "Basislag gemt.",
-    "baseLayerTitle": "Basislag — globale standardværdier",
     "cannotDelete": "Denne skabelon kan ikke slettes.",
     "cannotDeleteDefault": "Standard-skabelonen kan ikke slettes.",
     "catApp": "App-indstillinger",
@@ -1648,7 +1646,10 @@
     "template": "Skabelon",
     "uiPreviewTitle": "UI-forhåndsvisning",
     "useDefault": "brug standard",
-    "webrtcHelp": "Sessions streames over WebSockets som standard. Hvis du angiver en STUN-, TURN-, Cloudflare- eller offentlig IP-værdi nedenfor, eller vælger WebRTC-tilstand, skifter containeren til WebRTC med dual mode aktiveret, så brugere stadig kan falde tilbage til WebSockets."
+    "webrtcHelp": "Sessions streames over WebSockets som standard. Hvis du angiver en STUN-, TURN-, Cloudflare- eller offentlig IP-værdi nedenfor, eller vælger WebRTC-tilstand, skifter containeren til WebRTC med dual mode aktiveret, så brugere stadig kan falde tilbage til WebSockets.",
+    "advancedTitle": "Avancerede indstillinger",
+    "advancedWarning": "Ændringer af disse indstillinger kan ødelægge app-starts, så det anbefales at lave en backup, før du ændrer noget på denne side.",
+    "backupLink": "Gå til Backup-siden"
   },
   "sessions": {
     "heading": "Sessioner",

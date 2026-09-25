@@ -1229,7 +1229,6 @@
     "up": "上へ"
   },
   "login": {
-    "tagline": "コンテナ化されたアプリを起動するにはログインしてください",
     "signIn": "ログイン",
     "or": "または",
     "sso": "SSOでログイン",
@@ -1245,8 +1244,8 @@
     "roles": "ロール",
     "globalSettings": "グローバル設定",
     "sso": "SSO",
-    "installedApps": "インストール済みアプリ",
-    "appStores": "アプリストア",
+    "installedApps": "制御",
+    "appStores": "ストア",
     "templates": "テンプレート",
     "laboratory": "ラボ",
     "system": "システム",
@@ -1450,7 +1449,7 @@
   },
   "gs": {
     "heading": "グローバル設定",
-    "help": "アプリテンプレートスキーマに属さないサーバー全体の設定です。設定ごとのベースレイヤーのデフォルト値（テンプレートスキーマ）は <strong>{templates}</strong> ページで編集し、SSO 管理者グループは <strong>{groups}</strong> ページで管理します。",
+    "help": "サーバー全体の設定です。設定ごとのベースレイヤーのデフォルト値（テンプレートスキーマ）は、このページの下方で編集し、SSO 管理者グループは <strong>{groups}</strong> ページで管理します。",
     "gpuTitle": "グローバル既定の GPU",
     "gpuHelp": "ユーザーが GPU を選択しない場合のフォールバック用 GPU です。GPU タイプに対応していないアプリには影響しません。",
     "gpuNone": "なし（グローバル既定なし）",
@@ -1601,7 +1600,6 @@
     "appTemplatesTitle": "アプリテンプレート",
     "baseLayerHelp": "テンプレートスキーマ: アプリテンプレートに提供される環境変数と、そのデフォルト(ベースレイヤー)値です。すべての起動はこれらのデフォルト値から始まり、アプリごとのテンプレートや起動ごとの選択で上書きされます。\"docker\" の設定は環境変数の代わりにコンテナの起動オプションになります。空の値にするとイメージの組み込みデフォルトが適用されます。変更は新しい起動に適用されます。",
     "baseLayerSaved": "ベースレイヤーを保存しました。",
-    "baseLayerTitle": "ベースレイヤー — グローバルなデフォルト",
     "cannotDelete": "このテンプレートは削除できません。",
     "cannotDeleteDefault": "デフォルトのテンプレートは削除できません。",
     "catApp": "アプリ設定",
@@ -1648,7 +1646,10 @@
     "template": "テンプレート",
     "uiPreviewTitle": "UI プレビュー",
     "useDefault": "デフォルトを使用",
-    "webrtcHelp": "セッションはデフォルトで WebSockets 経由でストリーミングされます。以下の STUN、TURN、Cloudflare、パブリック IP のいずれかの値を設定するか、WebRTC モードを選択すると、コンテナはデュアルモード有効の WebRTC に切り替わり、ユーザーは引き続き WebSockets にフォールバックできます。"
+    "webrtcHelp": "セッションはデフォルトで WebSockets 経由でストリーミングされます。以下の STUN、TURN、Cloudflare、パブリック IP のいずれかの値を設定するか、WebRTC モードを選択すると、コンテナはデュアルモード有効の WebRTC に切り替わり、ユーザーは引き続き WebSockets にフォールバックできます。",
+    "advancedTitle": "詳細設定",
+    "advancedWarning": "これらの設定の変更はアプリの起動を壊す可能性があるため、このページで変更する前にバックアップを取っておくことをお勧めします。",
+    "backupLink": "バックアップページへ"
   },
   "sessions": {
     "heading": "セッション",

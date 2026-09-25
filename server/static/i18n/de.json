@@ -1229,7 +1229,6 @@
     "up": "Hoch"
   },
   "login": {
-    "tagline": "Melden Sie sich an, um containerisierte Apps zu starten",
     "signIn": "Anmelden",
     "or": "oder",
     "sso": "Mit SSO anmelden",
@@ -1245,8 +1244,8 @@
     "roles": "Rollen",
     "globalSettings": "Globale Einstellungen",
     "sso": "SSO",
-    "installedApps": "Installierte Apps",
-    "appStores": "App-Stores",
+    "installedApps": "Steuerung",
+    "appStores": "Stores",
     "templates": "Vorlagen",
     "laboratory": "Labor",
     "system": "System",
@@ -1450,7 +1449,7 @@
   },
   "gs": {
     "heading": "Globale Einstellungen",
-    "help": "Serverweite Einstellungen, die nicht Teil des App-Vorlagen-Schemas sind. Die Basis-Standardwerte pro Einstellung (das Vorlagen-Schema) werden auf der Seite <strong>{templates}</strong> bearbeitet, und die SSO-Administrationsgruppen werden auf der Seite <strong>{groups}</strong> verwaltet.",
+    "help": "Serverweite Einstellungen. Die Basis-Standardwerte pro Einstellung (das Vorlagen-Schema) werden unten auf dieser Seite bearbeitet, und die SSO-Administrationsgruppen werden auf der Seite <strong>{groups}</strong> verwaltet.",
     "gpuTitle": "Globale Standard-GPU",
     "gpuHelp": "Zurückfall-GPU für Starts, bei denen der Benutzer keine auswählt. Apps, die den GPU-Typ nicht unterstützen, sind nicht betroffen.",
     "gpuNone": "Keine (kein globaler Standard)",
@@ -1601,7 +1600,6 @@
     "appTemplatesTitle": "App-Vorlagen",
     "baseLayerHelp": "Das Vorlagen-Schema: die Umgebungsvariablen, die App-Vorlagen angeboten werden, und ihre Standardwerte (Basis-Ebene). Jeder Start beginnt von diesen Standardwerten; Vorlagen pro App und Starteinstellungen überschreiben sie. \"docker\"-Einstellungen werden zu Container-Startoptionen statt zu Umgebungsvariablen. Ein leerer Wert lässt den eingebauten Standardwert des Images gelten. Änderungen gelten für neue Starts.",
     "baseLayerSaved": "Basis-Ebene gespeichert.",
-    "baseLayerTitle": "Basis-Ebene — globale Standardwerte",
     "cannotDelete": "Diese Vorlage kann nicht gelöscht werden.",
     "cannotDeleteDefault": "Die Standard-Vorlage kann nicht gelöscht werden.",
     "catApp": "App-Einstellungen",
@@ -1648,7 +1646,10 @@
     "template": "Vorlage",
     "uiPreviewTitle": "UI-Vorschau",
     "useDefault": "Standard verwenden",
-    "webrtcHelp": "Sessions werden standardmäßig über WebSockets gestreamt. Wenn Sie unten einen STUN-, TURN-, Cloudflare- oder öffentlichen IP-Wert festlegen oder den WebRTC-Modus wählen, wechselt der Container zu WebRTC mit aktiviertem Dual-Modus, sodass Benutzer weiterhin auf WebSockets zurückgreifen können."
+    "webrtcHelp": "Sessions werden standardmäßig über WebSockets gestreamt. Wenn Sie unten einen STUN-, TURN-, Cloudflare- oder öffentlichen IP-Wert festlegen oder den WebRTC-Modus wählen, wechselt der Container zu WebRTC mit aktiviertem Dual-Modus, sodass Benutzer weiterhin auf WebSockets zurückgreifen können.",
+    "advancedTitle": "Erweiterte Einstellungen",
+    "advancedWarning": "Änderungen an diesen Einstellungen können App-Starts beschädigen. Es wird empfohlen, vor Änderungen auf dieser Seite ein Backup zu erstellen.",
+    "backupLink": "Zur Backup-Seite"
   },
   "sessions": {
     "heading": "Sitzungen",

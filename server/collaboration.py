@@ -191,12 +191,20 @@ async def collaborative_room(
             )
         )
 
+    # Strict CSP (Phase 2): the room's only inline script is the injected
+    # COLLAB_DATA block below, so it gets a nonce and the CSP drops
+    # 'unsafe-inline' from script-src. The nonce is injected into the
+    # script tag and mirrored in the response's CSP header.
+    nonce = api._csp_nonce()
     html_content = html_content.replace("{{IFRAME_SRC}}", iframe_src)
     html_content = html_content.replace(
         "<!-- CLIENT_DATA -->",
-        f"<script>window.COLLAB_DATA = {json.dumps(client_data)};</script>",
+        f'<script nonce="{nonce}">window.COLLAB_DATA = {json.dumps(client_data)};</script>',
     )
-    response = HTMLResponse(content=html_content)
+    response = HTMLResponse(
+        content=html_content,
+        headers={"Content-Security-Policy": api._strict_csp(nonce)},
+    )
 
     initial_auth_token = request.query_params.get("access_token")
     current_collab_token = user_token

@@ -1229,7 +1229,6 @@
     "up": "Subir"
   },
   "login": {
-    "tagline": "Inicie sesión para lanzar apps contenerizadas",
     "signIn": "Iniciar sesión",
     "or": "o",
     "sso": "Iniciar sesión con SSO",
@@ -1245,8 +1244,8 @@
     "roles": "Roles",
     "globalSettings": "Ajustes globales",
     "sso": "SSO",
-    "installedApps": "Apps instaladas",
-    "appStores": "Tiendas de apps",
+    "installedApps": "Control",
+    "appStores": "Tiendas",
     "templates": "Plantillas",
     "laboratory": "Laboratorio",
     "system": "Sistema",
@@ -1450,7 +1449,7 @@
   },
   "gs": {
     "heading": "Configuración global",
-    "help": "Configuración a nivel de servidor que no forma parte del esquema de la plantilla de aplicaciones. Los valores predeterminados de la capa base de cada configuración (el esquema de la plantilla) se editan en la página <strong>{templates}</strong>, y los grupos de administradores de SSO se gestionan en la página <strong>{groups}</strong>.",
+    "help": "Configuración a nivel de servidor. Los valores predeterminados de la capa base de cada configuración (el esquema de la plantilla) se editan más abajo en esta página, y los grupos de administradores de SSO se gestionan en la página <strong>{groups}</strong>.",
     "gpuTitle": "GPU predeterminada global",
     "gpuHelp": "GPU de respaldo para las iniciaciones en las que el usuario no elige una. Las aplicaciones que no admiten el tipo de GPU no se ven afectadas.",
     "gpuNone": "Ninguna (sin predeterminada global)",
@@ -1601,7 +1600,6 @@
     "appTemplatesTitle": "Plantillas de apps",
     "baseLayerHelp": "El esquema de la plantilla: las variables de entorno ofrecidas a las plantillas de apps y sus valores predeterminados (capa base). Cada inicio parte de estos valores predeterminados; las plantillas por app y las opciones por inicio los sobrescriben. Las configuraciones \"docker\" se convierten en opciones de ejecución del contenedor en lugar de variables de entorno. Un valor vacío permite aplicar el valor predeterminado integrado de la imagen. Los cambios se aplican a los nuevos inicios.",
     "baseLayerSaved": "Capa base guardada.",
-    "baseLayerTitle": "Capa base — valores predeterminados globales",
     "cannotDelete": "Esta plantilla no se puede eliminar.",
     "cannotDeleteDefault": "No se puede eliminar la plantilla predeterminada.",
     "catApp": "Configuración de apps",
@@ -1648,7 +1646,10 @@
     "template": "Plantilla",
     "uiPreviewTitle": "Vista previa de la interfaz",
     "useDefault": "usar predeterminado",
-    "webrtcHelp": "Las sesiones se transmiten por WebSockets de forma predeterminada. Si configura cualquier valor de STUN, TURN, Cloudflare o IP pública a continuación, o elige el modo WebRTC, el contenedor cambia a WebRTC con el modo dual habilitado para que los usuarios puedan volver a WebSockets."
+    "webrtcHelp": "Las sesiones se transmiten por WebSockets de forma predeterminada. Si configura cualquier valor de STUN, TURN, Cloudflare o IP pública a continuación, o elige el modo WebRTC, el contenedor cambia a WebRTC con el modo dual habilitado para que los usuarios puedan volver a WebSockets.",
+    "advancedTitle": "Configuración avanzada",
+    "advancedWarning": "Los cambios en estas configuraciones pueden romper las iniciaciones de apps, así que se recomienda hacer una copia de seguridad antes de cambiar nada en esta página.",
+    "backupLink": "Ir a la página de copia de seguridad"
   },
   "sessions": {
     "heading": "Sesiones",

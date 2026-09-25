@@ -1229,7 +1229,6 @@
     "up": "Omhoog"
   },
   "login": {
-    "tagline": "Log in om gecontaineriseerde apps te starten",
     "signIn": "Inloggen",
     "or": "of",
     "sso": "Inloggen met SSO",
@@ -1245,8 +1244,8 @@
     "roles": "Rollen",
     "globalSettings": "Globale instellingen",
     "sso": "SSO",
-    "installedApps": "Geïnstalleerde apps",
-    "appStores": "Appstores",
+    "installedApps": "Beheer",
+    "appStores": "Stores",
     "templates": "Sjablonen",
     "laboratory": "Laboratorium",
     "system": "Systeem",
@@ -1450,7 +1449,7 @@
   },
   "gs": {
     "heading": "Globale instellingen",
-    "help": "Serverbrede instellingen die niet deel uitmaken van het sjabloonschema van de app. De basislaag-standaardwaarden per instelling (het sjabloonschema) worden bewerkt op de pagina <strong>{templates}</strong>, en de SSO-beheerdersgroepen worden beheerd op de pagina <strong>{groups}</strong>.",
+    "help": "Serverbrede instellingen. De basislaag-standaardwaarden per instelling (het sjabloonschema) worden hieronder op deze pagina bewerkt, en de SSO-beheerdersgroepen worden beheerd op de pagina <strong>{groups}</strong>.",
     "gpuTitle": "Standaard GPU (globaal)",
     "gpuHelp": "Terugval-GPU voor starts waarbij de gebruiker er geen kiest. Apps die het GPU-type niet ondersteunen, worden niet beïnvloed.",
     "gpuNone": "Geen (geen globale standaard)",
@@ -1601,7 +1600,6 @@
     "appTemplatesTitle": "App-sjablonen",
     "baseLayerHelp": "Het sjabloon-schema: de omgevingsvariabelen die aan appsjablonen worden aangeboden en hun standaard (baselaag)-waarden. Elke start begint bij deze standaardwaarden; per-app sjablonen en per-start keuzes overschrijven ze. \"docker\"-instellingen worden container-opstartopties in plaats van omgevingsvariabelen. Een lege waarde laat de ingebouwde standaard van de image gelden. Wijzigingen gelden voor nieuwe starts.",
     "baseLayerSaved": "Baselaag opgeslagen.",
-    "baseLayerTitle": "Baselaag — globale standaardwaarden",
     "cannotDelete": "Dit sjabloon kan niet worden verwijderd.",
     "cannotDeleteDefault": "Het standaardsjabloon kan niet worden verwijderd.",
     "catApp": "App-instellingen",
@@ -1648,7 +1646,10 @@
     "template": "Sjabloon",
     "uiPreviewTitle": "UI-voorbeeld",
     "useDefault": "standaard gebruiken",
-    "webrtcHelp": "Sessies streamen standaard via WebSockets. Een STUN-, TURN-, Cloudflare- of openbaar IP-waarde hieronder instellen, of WebRTC-modus kiezen, schakelt de container over op WebRTC met dubbele modus ingeschakeld, zodat gebruikers nog steeds terug kunnen vallen op WebSockets."
+    "webrtcHelp": "Sessies streamen standaard via WebSockets. Een STUN-, TURN-, Cloudflare- of openbaar IP-waarde hieronder instellen, of WebRTC-modus kiezen, schakelt de container over op WebRTC met dubbele modus ingeschakeld, zodat gebruikers nog steeds terug kunnen vallen op WebSockets.",
+    "advancedTitle": "Geavanceerde instellingen",
+    "advancedWarning": "Wijzigingen aan deze instellingen kunnen app-starts breken, dus het is aan te raden eerst een backup te maken voordat je iets op deze pagina wijzigt.",
+    "backupLink": "Naar de Backup-pagina"
   },
   "sessions": {
     "heading": "Sessies",

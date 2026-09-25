@@ -80,51 +80,51 @@ async function renderSso() {
       <h3>${t("sso.heading")}</h3>
       <p class="muted">${t("sso.help")}</p>
 
-      <div class="field" style="margin-top:12px;">
+      <div class="field mt-12" >
         <label>${t("sso.enableLabel")} ${badge("oidc_enabled")}</label>
         <label class="check"><input type="checkbox" id="sso-enabled" ${v.oidc_enabled ? "checked" : ""}> ${t("sso.enabled")}</label>
       </div>
 
-      <div class="field" style="margin-top:12px;">
+      <div class="field mt-12" >
         <label>${t("sso.issuerLabel")} ${badge("oidc_issuer")}</label>
         <input type="text" id="sso-issuer" value="${esc(v.oidc_issuer || "")}">
-        <p class="muted" style="margin-top:4px;">${t("sso.issuerHelp")}</p>
+        <p class="muted mt-4" >${t("sso.issuerHelp")}</p>
       </div>
 
-      <div class="admin-form-row" style="margin-top:12px;">
-        <div class="field" style="flex:1;min-width:220px;">
+      <div class="admin-form-row mt-12" >
+        <div class="field flex-1 min-w-220" >
           <label>${t("sso.clientIdLabel")} ${badge("oidc_client_id")}</label>
           <input type="text" id="sso-client-id" value="${esc(v.oidc_client_id || "")}">
         </div>
-        <div class="field" style="flex:1;min-width:220px;">
+        <div class="field flex-1 min-w-220" >
           <label>${t("sso.clientSecretLabel")} ${badge("oidc_client_secret")}</label>
           <input type="password" id="sso-client-secret" value="" placeholder="${v.secret_set ? t("sso.secretSet", { length: v.secret_length }) : t("sso.secretOptional")}">
         </div>
       </div>
 
-      <div class="admin-form-row" style="margin-top:12px;">
-        <div class="field" style="flex:1;min-width:220px;">
+      <div class="admin-form-row mt-12" >
+        <div class="field flex-1 min-w-220" >
           <label>${t("sso.redirectUriLabel")} ${badge("oidc_redirect_uri")}</label>
           <input type="text" id="sso-redirect-uri" value="${esc(v.oidc_redirect_uri || "")}" placeholder="${t("sso.redirectUriPlaceholder")}">
         </div>
-        <div class="field" style="flex:1;min-width:220px;">
+        <div class="field flex-1 min-w-220" >
           <label>${t("sso.scopesLabel")} ${badge("oidc_scopes")}</label>
           <input type="text" id="sso-scopes" value="${esc(v.oidc_scopes || "")}">
         </div>
       </div>
 
-      <div class="admin-form-row" style="margin-top:12px;">
-        <div class="field" style="flex:1;min-width:220px;">
+      <div class="admin-form-row mt-12" >
+        <div class="field flex-1 min-w-220" >
           <label>${t("sso.allowSignupLabel")} ${badge("oidc_allow_signup")}</label>
           <label class="check"><input type="checkbox" id="sso-allow-signup" ${v.oidc_allow_signup ? "checked" : ""}> ${t("sso.allowSignupHelp")}</label>
         </div>
-        <div class="field" style="flex:1;min-width:220px;">
+        <div class="field flex-1 min-w-220" >
           <label>${t("sso.stateTtlLabel")} ${badge("oidc_state_ttl_seconds")}</label>
           <input type="number" id="sso-state-ttl" value="${v.oidc_state_ttl_seconds ?? 600}">
         </div>
       </div>
 
-      <div style="margin-top:14px;display:flex;gap:8px;flex-wrap:wrap;align-items:center;">
+       <div class="mt-14 row gap-8 row-wrap row-center" >
         <button class="btn btn-ghost" id="sso-test" type="button">${t("sso.testButton")}</button>
         <span class="test-result" id="sso-test-result"></span>
       </div>
@@ -134,20 +134,20 @@ async function renderSso() {
       <h3>${t("sso.groupMappingTitle")}</h3>
       <p class="muted">${t("sso.groupMappingHelp", { groups: t("nav.groups") })}</p>
 
-      <div class="field" style="margin-top:12px;">
+      <div class="field mt-12" >
         <label>${t("sso.adminGroupsLabel")} ${badge("oidc_admin_groups")}</label>
         ${tagInputHtml("sso-admin-groups", v.oidc_admin_groups || [])}
-        <p class="muted" style="margin-top:4px;">${t("sso.adminGroupsHelp")}</p>
+        <p class="muted mt-4" >${t("sso.adminGroupsHelp")}</p>
       </div>
 
-      <div class="field" style="margin-top:12px;">
+      <div class="field mt-12" >
         <label>${t("sso.userGroupsLabel")} ${badge("oidc_user_groups")}</label>
         ${tagInputHtml("sso-user-groups", v.oidc_user_groups || [])}
-        <p class="muted" style="margin-top:4px;">${t("sso.userGroupsHelp")}</p>
+        <p class="muted mt-4" >${t("sso.userGroupsHelp")}</p>
       </div>
     </div>
 
-    <div style="margin-top:14px;display:flex;gap:8px;justify-content:flex-end;">
+     <div class="mt-14 row gap-8 row-end" >
       <button class="btn btn-primary" id="sso-save" type="button">${t("sso.save")}</button>
     </div>
   `);

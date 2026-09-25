@@ -13,6 +13,6 @@ docker
 PyYAML
 python-multipart
 argon2-cffi
-sqlalchemy
+sqlalchemy[asyncio]
 aiosqlite
 pytest

@@ -50,16 +50,16 @@ async function renderRoles() {
   setPanel(`
     <div class="card">
       <h3>${t("roles.createTitle")}</h3>
-      <div class="admin-form-row" style="margin-bottom:12px;">
+      <div class="admin-form-row mb-12" >
         <div class="field"><label>${t("common.name")}</label><input type="text" id="role-new-name" placeholder="^[a-zA-Z0-9_-]+$"></div>
-        <div class="field" style="flex:2;"><label>${t("roles.description")}</label><input type="text" id="role-new-desc"></div>
+        <div class="field flex-2" ><label>${t("roles.description")}</label><input type="text" id="role-new-desc"></div>
       </div>
       <div id="role-new-perms">${permCheckboxesHtml()}</div>
-      <div style="margin-top:12px;"><button class="btn btn-primary" id="role-create">${t("common.create")}</button></div>
+       <div class="mt-12" ><button class="btn btn-primary" id="role-create">${t("common.create")}</button></div>
       <div id="role-result"></div>
     </div>
     <div class="card">
-      <h3 style="margin-bottom:12px;">${t("roles.heading")}</h3>
+       <h3 class="mb-12" >${t("roles.heading")}</h3>
       <table class="admin-table">
         <thead><tr><th>${t("common.name")}</th><th>${t("roles.description")}</th><th>${t("roles.permissions")}</th><th></th></tr></thead>
         <tbody id="role-rows">${rows || `<tr><td colspan="4" class="muted">${t("roles.empty")}</td></tr>`}</tbody>
@@ -75,7 +75,7 @@ async function renderRoles() {
     const permissions = readPermCheckboxes($("role-new-perms"));
     const res = await request("/api/admin/roles", "POST", { name, description, permissions });
     if (res.error) {
-      $("role-result").innerHTML = `<div class="error" style="margin-top:10px;">${esc(res.error.message)}</div>`;
+      $("role-result").innerHTML = `<div class="error mt-10" >${esc(res.error.message)}</div>`;
       return;
     }
     toast(t("roles.created"));
@@ -99,12 +99,12 @@ async function renderRoles() {
       const role = (d.data || []).find((r) => r.name === name);
       if (!role) return toast(t("accounts.toastNotFound"), "error");
       $("role-modal").innerHTML = `
-        <div class="card" style="margin-top:16px;">
+        <div class="card mt-16" >
           <h3>${t("roles.editTitle", { name: esc(name) })}</h3>
-          <div class="field" style="margin-bottom:12px;"><label>${t("roles.description")}</label><input type="text" id="role-edit-desc" value="${esc(role.description || "")}"></div>
+          <div class="field mb-12" ><label>${t("roles.description")}</label><input type="text" id="role-edit-desc" value="${esc(role.description || "")}"></div>
           <div id="role-edit-perms">${permCheckboxesHtml(role.permissions || [])}</div>
           <div id="role-edit-result"></div>
-          <div style="margin-top:12px;">
+           <div class="mt-12" >
             <button class="btn btn-primary" id="role-save">${t("common.save")}</button>
             <button class="btn btn-ghost" id="role-close">${t("common.cancel")}</button>
           </div>
@@ -115,7 +115,7 @@ async function renderRoles() {
         const permissions = readPermCheckboxes($("role-edit-perms"));
         const res = await request(`/api/admin/roles/${encodeURIComponent(name)}`, "PUT", { description, permissions });
         if (res.error) {
-          $("role-edit-result").innerHTML = `<div class="error" style="margin-top:10px;">${esc(res.error.message)}</div>`;
+          $("role-edit-result").innerHTML = `<div class="error mt-10" >${esc(res.error.message)}</div>`;
           return;
         }
         toast(t("roles.saved"));

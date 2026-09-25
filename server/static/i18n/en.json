@@ -1254,7 +1254,6 @@
     }
   },
   "login": {
-    "tagline": "Sign in to launch containerized apps",
     "signIn": "Sign in",
     "or": "or",
     "sso": "Sign in with SSO",
@@ -1270,8 +1269,8 @@
     "roles": "Roles",
     "globalSettings": "Global Settings",
     "sso": "SSO",
-    "installedApps": "Installed Apps",
-    "appStores": "App Stores",
+    "installedApps": "Control",
+    "appStores": "Stores",
     "templates": "Templates",
     "laboratory": "Laboratory",
     "system": "System",
@@ -1475,7 +1474,7 @@
   },
   "gs": {
     "heading": "Global Settings",
-    "help": "Server-wide settings that are not part of the app-template schema. The per-setting base-layer defaults (the template schema) are edited on the <strong>{templates}</strong> page, and the SSO admin groups are managed on the <strong>{groups}</strong> page.",
+    "help": "Server-wide settings. The per-setting base-layer defaults (the template schema) are edited below on this page, and the SSO admin groups are managed on the <strong>{groups}</strong> page.",
     "gpuTitle": "Global default GPU",
     "gpuHelp": "Fallback GPU for launches where the user doesn't pick one. Apps that don't support the GPU type are unaffected.",
     "gpuNone": "None (no global default)",
@@ -1626,7 +1625,6 @@
     "appTemplatesTitle": "App templates",
     "baseLayerHelp": "The template schema: the environment variables offered to app templates and their default (base-layer) values. Every launch starts from these defaults; per-app templates and per-launch choices override them. \"docker\" settings become container run-options instead of environment variables. An empty value lets the image's built-in default apply. Changes apply to new launches.",
     "baseLayerSaved": "Base layer saved.",
-    "baseLayerTitle": "Base layer — global defaults",
     "cannotDelete": "This template cannot be deleted.",
     "cannotDeleteDefault": "Cannot delete the default template.",
     "catApp": "App settings",
@@ -1673,7 +1671,10 @@
     "template": "Template",
     "uiPreviewTitle": "UI preview",
     "useDefault": "use default",
-    "webrtcHelp": "Sessions stream over WebSockets by default. Setting any STUN, TURN, Cloudflare or public IP value below, or choosing WebRTC mode, switches the container to WebRTC with dual mode enabled so users can still fall back to WebSockets."
+    "webrtcHelp": "Sessions stream over WebSockets by default. Setting any STUN, TURN, Cloudflare or public IP value below, or choosing WebRTC mode, switches the container to WebRTC with dual mode enabled so users can still fall back to WebSockets.",
+    "advancedTitle": "Advanced settings",
+    "advancedWarning": "Changes to these settings can break app launches, so it is recommended to make a backup before changing anything on this page.",
+    "backupLink": "Go to the Backup page"
   },
   "sessions": {
     "heading": "Sessions",

@@ -13,9 +13,7 @@
   <section id="view-login" class="view" hidden>
     <div class="login-card card">
       <div class="login-brand">
-        <img src="/img/icon128.png" alt="" class="brand-icon">
-        <h1>Vreckan</h1>
-        <p class="muted" data-i18n="login.tagline">Sign in to launch containerized apps</p>
+        <img src="/img/vreckan-wordmark.svg" alt="Vreckan" class="brand-wordmark">
       </div>
       <form id="login-form" autocomplete="on">
         <label data-i18n="common.username">Username
@@ -36,8 +34,7 @@
   <div id="shell" class="shell" hidden>
     <aside class="sidebar">
       <div class="sidebar-header" id="brand-home">
-        <img src="/img/icon128.png" alt="" class="brand-icon-sm">
-        <span class="brand-name">Vreckan</span>
+        <img src="/img/vreckan-wordmark.svg" alt="Vreckan" class="brand-wordmark">
       </div>
       <nav class="sidebar-nav" id="sidebar-nav">
         <div class="nav-group">
@@ -50,18 +47,18 @@
           <button class="nav-link admin-link" data-admin-section="accounts" hidden data-i18n="nav.accounts">Accounts</button>
           <button class="nav-link admin-link" data-admin-section="groups" hidden data-i18n="nav.groups">Groups</button>
           <button class="nav-link admin-link" data-admin-section="roles" hidden data-i18n="nav.roles">Roles</button>
-          <button class="nav-link admin-link" data-admin-section="global-settings" hidden data-i18n="nav.globalSettings">Global Settings</button>
           <button class="nav-link admin-link" data-admin-section="sso" hidden data-i18n="nav.sso">SSO</button>
         </div>
         <div class="nav-group admin-group" data-admin-group="apps" hidden>
           <div class="nav-group-label" data-i18n="nav.apps">Apps</div>
-          <button class="nav-link admin-link" data-admin-section="apps" hidden data-i18n="nav.installedApps">Installed Apps</button>
-          <button class="nav-link admin-link" data-admin-section="stores" hidden data-i18n="nav.appStores">App Stores</button>
-          <button class="nav-link admin-link" data-admin-section="templates" hidden data-i18n="nav.templates">Templates</button>
-          <button class="nav-link admin-link" data-admin-section="laboratory" hidden data-i18n="nav.laboratory">Laboratory</button>
+          <button class="nav-link admin-link" data-admin-section="apps" hidden data-i18n="nav.installedApps">Control</button>
+          <button class="nav-link admin-link" data-admin-section="stores" hidden data-i18n="nav.appStores">Stores</button>
+          <button class="nav-link admin-link" data-admin-section="templates" hidden data-i18n="nav.templates">Templates<span class="nav-beta">BETA</span></button>
+          <button class="nav-link admin-link" data-admin-section="laboratory" hidden data-i18n="nav.laboratory">Laboratory<span class="nav-beta">BETA</span></button>
         </div>
         <div class="nav-group admin-group" data-admin-group="system" hidden>
           <div class="nav-group-label" data-i18n="nav.system">System</div>
+          <button class="nav-link admin-link" data-admin-section="global-settings" hidden data-i18n="nav.globalSettings">Global Settings</button>
           <button class="nav-link admin-link" data-admin-section="mounts" hidden data-i18n="nav.volumeMounts">Volume mounts</button>
           <button class="nav-link admin-link" data-admin-section="backup" hidden data-i18n="nav.backup">Backup</button>
           <button class="nav-link admin-link" data-admin-section="sessions" hidden data-i18n="nav.sessions">Sessions</button>

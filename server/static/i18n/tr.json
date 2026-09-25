@@ -1229,7 +1229,6 @@
     "up": "Yukarı"
   },
   "login": {
-    "tagline": "Konteynerize edilmiş uygulamaları başlatmak için giriş yapın",
     "signIn": "Giriş yap",
     "or": "veya",
     "sso": "SSO ile giriş yap",
@@ -1245,8 +1244,8 @@
     "roles": "Roller",
     "globalSettings": "Küresel ayarlar",
     "sso": "SSO",
-    "installedApps": "Yüklü uygulamalar",
-    "appStores": "Uygulama mağazaları",
+    "installedApps": "Kontrol",
+    "appStores": "Mağazalar",
     "templates": "Şablonlar",
     "laboratory": "Laboratuvar",
     "system": "Sistem",
@@ -1450,7 +1449,7 @@
   },
   "gs": {
     "heading": "Genel Ayarlar",
-    "help": "Uygulama şablonu şemasının parçası olmayan sunucu genelinde ayarlar. Ayar başına taban katman varsayılanları (şablon şeması) <strong>{templates}</strong> sayfasında düzenlenir, SSO yönetici grupları ise <strong>{groups}</strong> sayfasında yönetilir.",
+    "help": "Sunucu genelinde ayarlar. Ayar başına taban katman varsayılanları (şablon şeması) bu sayfanın altında düzenlenir, SSO yönetici grupları ise <strong>{groups}</strong> sayfasında yönetilir.",
     "gpuTitle": "Genel varsayılan GPU",
     "gpuHelp": "Kullanıcının GPU seçmediği başlatmalarda yedek GPU. GPU türünü desteklemeyen uygulamalar etkilenmez.",
     "gpuNone": "Yok (genel varsayılan yok)",
@@ -1601,7 +1600,6 @@
     "appTemplatesTitle": "Uygulama Şablonları",
     "baseLayerHelp": "Şablon şeması: uygulama şablonlarına sunulan ortam değişkenleri ve varsayılan (taban katman) değerleri. Her başlatma bu varsayılanlardan başlar; uygulama başına şablonlar ve başlatma başına seçimler bunları ezer. \"docker\" ayarları ortam değişkeni yerine konteyner çalıştırma seçenekleri olur. Boş bir değer, imajın yerleşik varsayılanının uygulanmasına izin verir. Değişiklikler yeni başlatmalara uygulanır.",
     "baseLayerSaved": "Taban katman kaydedildi.",
-    "baseLayerTitle": "Taban katman — genel varsayılanlar",
     "cannotDelete": "Bu şablon silinemez.",
     "cannotDeleteDefault": "Varsayılan şablon silinemez.",
     "catApp": "Uygulama ayarları",
@@ -1648,7 +1646,10 @@
     "template": "Şablon",
     "uiPreviewTitle": "Arayüz önizlemesi",
     "useDefault": "varsayılanı kullan",
-    "webrtcHelp": "Oturumlar varsayılan olarak WebSockets üzerinden akar. Aşağıdaki STUN, TURN, Cloudflare veya herkese açık IP değerlerinden herhangi birini ayarlamak veya WebRTC modunu seçmek, kullanıcıların hâlâ WebSockets'e dönebilmesi için konteyneri çift mod etkinleştirilmiş WebRTC'ye geçirir."
+    "webrtcHelp": "Oturumlar varsayılan olarak WebSockets üzerinden akar. Aşağıdaki STUN, TURN, Cloudflare veya herkese açık IP değerlerinden herhangi birini ayarlamak veya WebRTC modunu seçmek, kullanıcıların hâlâ WebSockets'e dönebilmesi için konteyneri çift mod etkinleştirilmiş WebRTC'ye geçirir.",
+    "advancedTitle": "Gelişmiş ayarlar",
+    "advancedWarning": "Bu ayarlardaki değişiklikler uygulama başlatmalarını bozabilir, bu yüzden bu sayfada herhangi bir şey değiştirmeden önce yedek almanız önerilir.",
+    "backupLink": "Yedekleme sayfasına git"
   },
   "sessions": {
     "heading": "Oturumlar",

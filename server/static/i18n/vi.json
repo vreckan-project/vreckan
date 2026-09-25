@@ -1229,7 +1229,6 @@
     "up": "Lên"
   },
   "login": {
-    "tagline": "Đăng nhập để khởi chạy ứng dụng đóng gói",
     "signIn": "Đăng nhập",
     "or": "hoặc",
     "sso": "Đăng nhập bằng SSO",
@@ -1245,8 +1244,8 @@
     "roles": "Vai trò",
     "globalSettings": "Cài đặt toàn cục",
     "sso": "SSO",
-    "installedApps": "Ứng dụng đã cài",
-    "appStores": "Cửa hàng ứng dụng",
+    "installedApps": "Kiểm soát",
+    "appStores": "Cửa hàng",
     "templates": "Mẫu",
     "laboratory": "Phòng thí nghiệm",
     "system": "Hệ thống",
@@ -1450,7 +1449,7 @@
   },
   "gs": {
     "heading": "Cài đặt chung",
-    "help": "Các cài đặt trên toàn máy chủ không thuộc schema mẫu ứng dụng. Giá trị mặc định của lớp cơ sở cho từng cài đặt (schema mẫu) được chỉnh sửa trên trang <strong>{templates}</strong>, và các nhóm quản trị SSO được quản lý trên trang <strong>{groups}</strong>.",
+    "help": "Các cài đặt trên toàn máy chủ. Giá trị mặc định của lớp cơ sở cho từng cài đặt (schema mẫu) được chỉnh sửa ở phía dưới trang này, và các nhóm quản trị SSO được quản lý trên trang <strong>{groups}</strong>.",
     "gpuTitle": "GPU mặc định toàn cục",
     "gpuHelp": "GPU dự phòng cho các lần khởi chạy mà người dùng không chọn GPU. Các ứng dụng không hỗ trợ loại GPU sẽ không bị ảnh hưởng.",
     "gpuNone": "Không có (không có mặc định toàn cục)",
@@ -1601,7 +1600,6 @@
     "appTemplatesTitle": "Mẫu ứng dụng",
     "baseLayerHelp": "Schema mẫu: các biến môi trường được cung cấp cho các mẫu ứng dụng và giá trị mặc định (lớp cơ sở) của chúng. Mỗi lần khởi chạy bắt đầu từ các giá trị mặc định này; mẫu theo ứng dụng và lựa chọn theo lần khởi chạy sẽ ghi đè lên chúng. Cài đặt \"docker\" trở thành tùy chọn chạy container thay vì biến môi trường. Giá trị trống để mặc định có sẵn của image được áp dụng. Các thay đổi áp dụng cho các lần khởi chạy mới.",
     "baseLayerSaved": "Đã lưu lớp cơ sở.",
-    "baseLayerTitle": "Lớp cơ sở — giá trị mặc định toàn cục",
     "cannotDelete": "Mẫu này không thể bị xóa.",
     "cannotDeleteDefault": "Không thể xóa mẫu mặc định.",
     "catApp": "Cài đặt ứng dụng",
@@ -1648,7 +1646,10 @@
     "template": "Mẫu",
     "uiPreviewTitle": "Xem trước giao diện",
     "useDefault": "dùng mặc định",
-    "webrtcHelp": "Mặc định, các phiên được phát trực tiếp qua WebSockets. Đặt bất kỳ giá trị STUN, TURN, Cloudflare hoặc IP công khai nào bên dưới, hoặc chọn chế độ WebRTC, sẽ chuyển container sang WebRTC với chế độ kép được bật để người dùng vẫn có thể quay lại WebSockets."
+    "webrtcHelp": "Mặc định, các phiên được phát trực tiếp qua WebSockets. Đặt bất kỳ giá trị STUN, TURN, Cloudflare hoặc IP công khai nào bên dưới, hoặc chọn chế độ WebRTC, sẽ chuyển container sang WebRTC với chế độ kép được bật để người dùng vẫn có thể quay lại WebSockets.",
+    "advancedTitle": "Cài đặt nâng cao",
+    "advancedWarning": "Việc thay đổi các cài đặt này có thể làm hỏng việc khởi chạy ứng dụng, vì vậy nên tạo bản sao lưu trước khi thay đổi bất cứ điều gì trên trang này.",
+    "backupLink": "Đến trang Sao lưu"
   },
   "sessions": {
     "heading": "Phiên hoạt động",

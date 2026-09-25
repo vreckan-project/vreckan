@@ -1229,7 +1229,6 @@
     "up": "Haut"
   },
   "login": {
-    "tagline": "Connectez-vous pour lancer des apps conteneurisées",
     "signIn": "Se connecter",
     "or": "ou",
     "sso": "Se connecter via SSO",
@@ -1245,8 +1244,8 @@
     "roles": "Rôles",
     "globalSettings": "Réglages globaux",
     "sso": "SSO",
-    "installedApps": "Apps installées",
-    "appStores": "Boutiques d'apps",
+    "installedApps": "Contrôle",
+    "appStores": "Boutiques",
     "templates": "Modèles",
     "laboratory": "Laboratoire",
     "system": "Système",
@@ -1450,7 +1449,7 @@
   },
   "gs": {
     "heading": "Paramètres globaux",
-    "help": "Paramètres au niveau du serveur qui ne font pas partie du schéma du modèle d'application. Les valeurs par défaut de la couche de base pour chaque paramètre (le schéma du modèle) sont modifiées sur la page <strong>{templates}</strong>, et les groupes d'administrateurs SSO sont gérés sur la page <strong>{groups}</strong>.",
+    "help": "Paramètres au niveau du serveur. Les valeurs par défaut de la couche de base pour chaque paramètre (le schéma du modèle) sont modifiées plus bas sur cette page, et les groupes d'administrateurs SSO sont gérés sur la page <strong>{groups}</strong>.",
     "gpuTitle": "GPU par défaut global",
     "gpuHelp": "GPU de secours pour les démarrages où l'utilisateur n'en choisit pas. Les applications qui ne prennent pas en charge le type de GPU ne sont pas affectées.",
     "gpuNone": "Aucune (pas de valeur par défaut globale)",
@@ -1601,7 +1600,6 @@
     "appTemplatesTitle": "Modèles d'applications",
     "baseLayerHelp": "Le schéma du modèle : les variables d'environnement offertes aux modèles d'applications et leurs valeurs par défaut (couche de base). Chaque lancement démarre à partir de ces valeurs par défaut ; les modèles par application et les choix par lancement les remplacent. Les paramètres « docker » deviennent des options d'exécution du conteneur au lieu de variables d'environnement. Une valeur vide laisse s'appliquer la valeur par défaut intégrée de l'image. Les modifications s'appliquent aux nouveaux lancements.",
     "baseLayerSaved": "Couche de base enregistrée.",
-    "baseLayerTitle": "Couche de base — valeurs par défaut globales",
     "cannotDelete": "Ce modèle ne peut pas être supprimé.",
     "cannotDeleteDefault": "Impossible de supprimer le modèle par défaut.",
     "catApp": "Paramètres de l'application",
@@ -1648,7 +1646,10 @@
     "template": "Modèle",
     "uiPreviewTitle": "Aperçu de l'interface",
     "useDefault": "utiliser la valeur par défaut",
-    "webrtcHelp": "Par défaut, les sessions sont diffusées via WebSockets. Définir une valeur STUN, TURN, Cloudflare ou une IP publique ci-dessous, ou choisir le mode WebRTC, bascule le conteneur en WebRTC avec le mode dual activé, afin que les utilisateurs puissent toujours revenir aux WebSockets."
+    "webrtcHelp": "Par défaut, les sessions sont diffusées via WebSockets. Définir une valeur STUN, TURN, Cloudflare ou une IP publique ci-dessous, ou choisir le mode WebRTC, bascule le conteneur en WebRTC avec le mode dual activé, afin que les utilisateurs puissent toujours revenir aux WebSockets.",
+    "advancedTitle": "Paramètres avancés",
+    "advancedWarning": "Les modifications de ces paramètres peuvent casser les lancements d'applications ; il est recommandé de faire une sauvegarde avant de changer quoi que ce soit sur cette page.",
+    "backupLink": "Aller à la page Sauvegarde"
   },
   "sessions": {
     "heading": "Sessions",

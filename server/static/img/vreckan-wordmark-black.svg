@@ -1,0 +1,19 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 680 224">
+  <defs>
+    <linearGradient id="g" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0" stop-color="#00ffff"/>
+      <stop offset="1" stop-color="#008b99"/>
+    </linearGradient>
+  </defs>
+  <rect width="680" height="224" rx="40" fill="#0d0f14"/>
+  <g transform="translate(42,58) scale(0.21)">
+    <g fill="none" stroke="url(#g)" stroke-linecap="round">
+      <circle cx="256" cy="256" r="176" stroke-width="18" stroke-dasharray="780 326" transform="rotate(-30 256 256)"/>
+      <circle cx="256" cy="256" r="128" stroke-width="15" stroke-dasharray="540 262" transform="rotate(30 256 256)"/>
+      <circle cx="256" cy="256" r="84" stroke-width="12" stroke-dasharray="340 190" transform="rotate(90 256 256)"/>
+      <circle cx="256" cy="256" r="44" stroke-width="10" stroke-dasharray="170 108" transform="rotate(150 256 256)"/>
+    </g>
+  </g>
+  <text x="178" y="128" font-family="'Liberation Sans', system-ui, -apple-system, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif" font-size="84" font-weight="800" fill="#e6e9ef" letter-spacing="2"><tspan fill="#00ffff">V</tspan>RECKAN</text>
+  <text x="178" y="156" font-family="'Liberation Sans', system-ui, -apple-system, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif" font-size="21" font-weight="600" fill="#9aa3b2" letter-spacing="5.6">SAFE HARBOR FOR SELKIES</text>
+</svg>

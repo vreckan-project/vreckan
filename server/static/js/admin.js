@@ -41,22 +41,30 @@ export function defaultSettings(groupOptions = []) {
   };
 }
 
-export function settingsFormHtml(settings, groupOptions, formId) {
+export function settingsFormHtml(settings, groupOptions, formId, includeGroup = true) {
   // Merge over the defaults so a partial (or empty) settings object still
   // renders every field with a sensible value instead of `undefined`.
   const g = { ...defaultSettings(groupOptions), ...(settings || {}) };
-  const groupOpts = [`<option value="none">${t("settings.none")}</option>`];
-  (groupOptions || []).forEach((name) => {
-    const sel = g.group === name ? " selected" : "";
-    groupOpts.push(`<option value="${esc(name)}"${sel}>${esc(name)}</option>`);
-  });
-  if (g.group && g.group !== "none" && !(groupOptions || []).includes(g.group)) {
-    groupOpts.push(`<option value="${esc(g.group)}" selected>${esc(g.group)}</option>`);
+  // The "group" field is a user's primary group — meaningful on the account
+  // and overview forms, but vestigial on a group form (a group's own
+  // settings.group is never read by the server), so the group editor passes
+  // includeGroup=false to drop it.
+  let groupField = "";
+  if (includeGroup) {
+    const groupOpts = [`<option value="none">${t("settings.none")}</option>`];
+    (groupOptions || []).forEach((name) => {
+      const sel = g.group === name ? " selected" : "";
+      groupOpts.push(`<option value="${esc(name)}"${sel}>${esc(name)}</option>`);
+    });
+    if (g.group && g.group !== "none" && !(groupOptions || []).includes(g.group)) {
+      groupOpts.push(`<option value="${esc(g.group)}" selected>${esc(g.group)}</option>`);
+    }
+    groupField = `<div class="field"><label>${t("settings.group")}</label><select name="group">${groupOpts.join("")}</select></div>`;
   }
   return `
     <div class="admin-settings-form" id="${formId}">
       <label class="check"><input type="checkbox" name="active" ${g.active ? "checked" : ""}> ${t("settings.active")}</label>
-      <div class="field"><label>${t("settings.group")}</label><select name="group">${groupOpts.join("")}</select></div>
+      ${groupField}
       <label class="check"><input type="checkbox" name="persistent_storage" ${g.persistent_storage ? "checked" : ""}> ${t("settings.persistentStorage")}</label>
       <label class="check"><input type="checkbox" name="public_sharing" ${g.public_sharing ? "checked" : ""}> ${t("settings.publicSharing")}</label>
       <label class="check"><input type="checkbox" name="harden_container" ${g.harden_container ? "checked" : ""}> ${t("settings.hardenContainer")}</label>
@@ -72,6 +80,9 @@ export function readSettingsForm(formId) {
   const out = {};
   SETTING_FIELDS.forEach((f) => {
     const el = form.querySelector(`[name="${f}"]`);
+    // A field may be intentionally omitted from a form (e.g. the group
+    // editor drops the "group" field) — skip it rather than reading it.
+    if (!el) return;
     if (el.type === "checkbox") out[f] = el.checked;
     else if (el.tagName === "SELECT") out[f] = el.value;
     else if (f === "storage_limit" || f === "session_limit") {

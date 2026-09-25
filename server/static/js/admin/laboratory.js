@@ -60,7 +60,7 @@ function setLabStatus(message, kind) {
 function labPanelHtml() {
   return `
   <div class="card">
-    <h3>${t("lab.heading")}</h3>
+    <h3>${t("lab.heading")}<span class="nav-beta">BETA</span></h3>
     <p class="muted">${t("lab.help")}</p>
     <div id="lab-status" class="lab-status" hidden></div>
     <form id="lab-form">
@@ -113,16 +113,16 @@ function labPanelHtml() {
           </label>
         </div>
       </div>
-      <div class="admin-form-row" style="margin-top:12px;">
+      <div class="admin-form-row mt-12" >
         <button type="button" class="btn btn-ghost" id="lab-update-btn" disabled>${t("lab.saveChanges")}</button>
-        <button type="button" class="btn btn-primary" id="lab-launch-btn" style="flex-grow:1;">
+        <button type="button" class="btn btn-primary flex-grow" id="lab-launch-btn" >
           <span id="lab-launch-btn-text">${t("lab.launchModify")}</span>
         </button>
       </div>
     </form>
   </div>
 
-  <div class="card" style="margin-top:14px;">
+  <div class="card mt-14" >
     <h3>${t("lab.customizationSession")}</h3>
     <p id="lab-main-placeholder" class="muted">${t("lab.sessionPlaceholder")}</p>
     <iframe id="lab-session-frame" class="lab-session-frame" hidden></iframe>

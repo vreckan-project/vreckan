@@ -1229,7 +1229,6 @@
     "up": "向上"
   },
   "login": {
-    "tagline": "登录以启动容器化应用",
     "signIn": "登录",
     "or": "或",
     "sso": "使用 SSO 登录",
@@ -1245,8 +1244,8 @@
     "roles": "角色",
     "globalSettings": "全局设置",
     "sso": "SSO",
-    "installedApps": "已安装应用",
-    "appStores": "应用商店",
+    "installedApps": "控制",
+    "appStores": "商店",
     "templates": "模板",
     "laboratory": "实验室",
     "system": "系统",
@@ -1450,7 +1449,7 @@
   },
   "gs": {
     "heading": "全局设置",
-    "help": "不属于应用模板架构的服务器级设置。每项设置的基础层默认值（模板架构）在<strong>{templates}</strong>页面编辑，SSO 管理员组在<strong>{groups}</strong>页面管理。",
+    "help": "服务器级设置。每项设置的基础层默认值（模板架构）在本页下方编辑，SSO 管理员组在<strong>{groups}</strong>页面管理。",
     "gpuTitle": "全局默认 GPU",
     "gpuHelp": "当用户未选择 GPU 时启动所用的备用 GPU。不支持该 GPU 类型的应用不受影响。",
     "gpuNone": "无（无全局默认值）",
@@ -1601,7 +1600,6 @@
     "appTemplatesTitle": "应用模板",
     "baseLayerHelp": "模板架构：提供给应用模板的环境变量及其默认（基础层）值。每次启动都从这些默认值开始；按应用的模板和按启动的选择会覆盖它们。\"docker\" 设置会成为容器运行选项而非环境变量。空值让镜像内置的默认值生效。更改对新启动生效。",
     "baseLayerSaved": "基础层已保存。",
-    "baseLayerTitle": "基础层 — 全局默认值",
     "cannotDelete": "此模板无法删除。",
     "cannotDeleteDefault": "无法删除默认模板。",
     "catApp": "应用设置",
@@ -1648,7 +1646,10 @@
     "template": "模板",
     "uiPreviewTitle": "界面预览",
     "useDefault": "使用默认值",
-    "webrtcHelp": "会话默认通过 WebSockets 流式传输。设置下方任何 STUN、TURN、Cloudflare 或公网 IP 值，或选择 WebRTC 模式，都会将容器切换为启用双模式的 WebRTC，以便用户仍可回退到 WebSockets。"
+    "webrtcHelp": "会话默认通过 WebSockets 流式传输。设置下方任何 STUN、TURN、Cloudflare 或公网 IP 值，或选择 WebRTC 模式，都会将容器切换为启用双模式的 WebRTC，以便用户仍可回退到 WebSockets。",
+    "advancedTitle": "高级设置",
+    "advancedWarning": "更改这些设置可能会破坏应用启动，因此建议在本页更改任何内容前先创建备份。",
+    "backupLink": "前往备份页面"
   },
   "sessions": {
     "heading": "会话",

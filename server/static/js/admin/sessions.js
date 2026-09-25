@@ -36,7 +36,7 @@ async function renderSessions() {
             .map(
               (s) => `
               <tr>
-                <td><strong>${esc(s.name ? `${s.app_name || s.app_id} - ${s.name}` : (s.app_name || s.app_id))}</strong><div class="muted" style="font-size:0.78rem;">${esc(s.session_id)}</div></td>
+                <td><strong>${esc(s.name ? `${s.app_name || s.app_id} - ${s.name}` : (s.app_name || s.app_id))}</strong><div class="muted fs-xs" >${esc(s.session_id)}</div></td>
                 <td>${s.created_at ? new Date(s.created_at * 1000).toLocaleString() : "—"}</td>
                 <td>${s.is_collaboration ? t("common.yes") : t("common.no")}</td>
                 <td class="admin-actions">
@@ -49,7 +49,7 @@ async function renderSessions() {
           return `
             <div class="card">
               <h3>${esc(g.username)}</h3>
-              <table class="admin-table" style="margin-top:8px;">
+              <table class="admin-table mt-8" >
                 <thead><tr><th>${t("sessions.session")}</th><th>${t("sessions.started")}</th><th>${t("sessions.roomMode")}</th><th></th></tr></thead>
                 <tbody>${rows || `<tr><td colspan="4" class="muted">${t("sessions.noActive")}</td></tr>`}</tbody>
               </table>

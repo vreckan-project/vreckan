@@ -3171,7 +3171,7 @@ document.addEventListener('DOMContentLoaded', () => {
         if (COLLAB_DATA.userRole === 'controller') {
             mkIcon.classList.add('draggable');
         }
-        mkIcon.innerHTML = `<i class="fas fa-keyboard"></i><i class="fas fa-mouse" style="margin-left: 3px; font-size: 0.8em;"></i>`;
+        mkIcon.innerHTML = `<i class="fas fa-keyboard"></i><i class="fas fa-mouse mk-icon-sub" ></i>`;
 
         if (COLLAB_DATA.userRole === 'controller') {
             localContainer.appendChild(mkIcon);

@@ -81,13 +81,13 @@ async function renderOverview() {
 
   setPanel(`
     <div class="card">
-      <div style="display:flex;justify-content:space-between;align-items:center;gap:10px;flex-wrap:wrap;">
+       <div class="row row-between row-wrap gap-10" >
         <h3>${t("overview.title")}</h3>
         <button class="btn btn-ghost" id="howto-btn" type="button">${t("overview.howToBtn")}</button>
       </div>
       <p class="muted">${t("overview.description")}</p>
       ${errorHtml}
-      <div class="kv-grid" style="margin-top:14px;">${kvHtml}</div>
+      <div class="kv-grid mt-14" >${kvHtml}</div>
     </div>
     <div class="card">
       <h3>${t("overview.mySettings")}</h3>

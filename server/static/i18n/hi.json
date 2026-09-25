@@ -1229,7 +1229,6 @@
     "up": "ऊपर"
   },
   "login": {
-    "tagline": "कंटेनराइज़्ड ऐप्स शुरू करने के लिए साइन इन करें",
     "signIn": "साइन इन",
     "or": "या",
     "sso": "SSO से साइन इन",
@@ -1245,8 +1244,8 @@
     "roles": "भूमिकाएँ",
     "globalSettings": "वैश्विक सेटिंग्स",
     "sso": "SSO",
-    "installedApps": "इंस्टॉल किए गए ऐप्स",
-    "appStores": "ऐप स्टोर",
+    "installedApps": "नियंत्रण",
+    "appStores": "स्टोर",
     "templates": "टेम्पलेट",
     "laboratory": "प्रयोगशाला",
     "system": "सिस्टम",
@@ -1450,7 +1449,7 @@
   },
   "gs": {
     "heading": "वैश्विक सेटिंग्स",
-    "help": "सर्वर-स्तरीय सेटिंग्स जो ऐप-टेम्पलेट स्कीमा का हिस्सा नहीं हैं। प्रत्येक सेटिंग की बेस-लेयर डिफ़ॉल्ट्स (टेम्पलेट स्कीमा) <strong>{templates}</strong> पेज पर संपादित होती हैं, और SSO एडमिन समूह <strong>{groups}</strong> पेज पर प्रबंधित होते हैं।",
+    "help": "सरवर-स्तरिय सेटिंग्स। प्रत्येक सेटिंंग की बेस-लेयर डिफ़ॉल्ट्स (टेम्पलेट स्कीमा) इस पेज पर नीचे संपादित होती हैं, और SSO एडमिन समूह <strong>{groups}</strong> पेज पर प्रबंधित होते हैं।",
     "gpuTitle": "वैश्विक डिफ़ॉल्ट GPU",
     "gpuHelp": "उन लॉन्च के लिए बैकअप GPU जहाँ उपयोगकर्ता कोई GPU नहीं चुनता। GPU प्रकार का समर्थन न करने वाले ऐप प्रभावित नहीं होते।",
     "gpuNone": "कोई नहीं (कोई वैश्विक डिफ़ॉल्ट नहीं)",
@@ -1601,7 +1600,6 @@
     "appTemplatesTitle": "ऐप टेम्पलेट",
     "baseLayerHelp": "टेम्पलेट स्कीमा: ऐप टेम्पलेटों को प्रस्तावित किए जाने वाले environment variables और उनके डिफ़ॉल्ट (base-layer) मान। हर लॉन्च इन डिफ़ॉल्ट से शुरू होता है; per-app टेम्पलेट और per-launch विकल्प उन्हें override करते हैं। \"docker\" सेटिंग environment variables के बजाय container run-options बन जाती हैं। खाली मान image के built-in डिफ़ॉल्ट को लागू होने देता है। परिवर्तन नए लॉन्च पर लागू होते हैं।",
     "baseLayerSaved": "Base layer सहेजा गया।",
-    "baseLayerTitle": "Base layer — वैश्विक डिफ़ॉल्ट",
     "cannotDelete": "यह टेम्पलेट हटाया नहीं जा सकता।",
     "cannotDeleteDefault": "डिफ़ॉल्ट टेम्पलेट हटाया नहीं जा सकता।",
     "catApp": "ऐप सेटिंग",
@@ -1648,7 +1646,10 @@
     "template": "टेम्पलेट",
     "uiPreviewTitle": "UI पूर्वावलोकन",
     "useDefault": "डिफ़ॉल्ट उपयोग करें",
-    "webrtcHelp": "सेशन डिफ़ॉल्ट रूप से WebSockets के माध्यम से stream होते हैं। नीचे कोई भी STUN, TURN, Cloudflare या public IP मान सेट करना, या WebRTC mode चुनना, container को dual mode सक्षम WebRTC में बदल देता है ताकि उपयोगकर्ता WebSockets पर वापस गिर सकें।"
+    "webrtcHelp": "सेशन डिफ़ॉल्ट रूप से WebSockets के माध्यम से stream होते हैं। नीचे कोई भी STUN, TURN, Cloudflare या public IP मान सेट करना, या WebRTC mode चुनना, container को dual mode सक्षम WebRTC में बदल देता है ताकि उपयोगकर्ता WebSockets पर वापस गिर सकें।",
+    "advancedTitle": "उन्नत सेटिंग",
+    "advancedWarning": "इन सेटिंग में बदलन से app लॉन्च टूट सकतें हैं, अतः इस पेज पर कुछ भी बदलने से पहले backup बनाना सलाह दी जात है।",
+    "backupLink": "Backup पेज पर जाएं"
   },
   "sessions": {
     "heading": "सत्र",

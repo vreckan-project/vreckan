@@ -1229,7 +1229,6 @@
     "up": "Acima"
   },
   "login": {
-    "tagline": "Entre para iniciar apps containerizadas",
     "signIn": "Entrar",
     "or": "ou",
     "sso": "Entrar com SSO",
@@ -1245,8 +1244,8 @@
     "roles": "Papéis",
     "globalSettings": "Configurações globais",
     "sso": "SSO",
-    "installedApps": "Apps instaladas",
-    "appStores": "Lojas de apps",
+    "installedApps": "Controle",
+    "appStores": "Lojas",
     "templates": "Modelos",
     "laboratory": "Laboratório",
     "system": "Sistema",
@@ -1450,7 +1449,7 @@
   },
   "gs": {
     "heading": "Configurações globais",
-    "help": "Configurações de todo o servidor que não fazem parte do esquema do modelo de aplicativo. Os valores padrão da camada base de cada configuração (o esquema do modelo) são editados na página <strong>{templates}</strong>, e os grupos de administradores SSO são gerenciados na página <strong>{groups}</strong>.",
+    "help": "Configurações de todo o servidor. Os valores padrão da camada base de cada configuração (o esquema do modelo) são editados mais abaixo nesta página, e os grupos de administradores SSO são gerenciados na página <strong>{groups}</strong>.",
     "gpuTitle": "GPU padrão global",
     "gpuHelp": "GPU de reserva para lançamentos em que o usuário não seleciona uma. Aplicativos que não suportam o tipo de GPU não são afetados.",
     "gpuNone": "Nenhuma (sem padrão global)",
@@ -1601,7 +1600,6 @@
     "appTemplatesTitle": "Modelos de app",
     "baseLayerHelp": "O esquema do modelo: as variáveis de ambiente oferecidas aos modelos de app e seus valores padrão (camada base). Cada lançamento parte desses padrões; modelos por app e escolhas por lançamento os sobrescrevem. Configurações \"docker\" tornam-se opções de execução do contêiner em vez de variáveis de ambiente. Um valor vazio deixa o padrão embutido da imagem aplicar. As alterações valem para novos lançamentos.",
     "baseLayerSaved": "Camada base salva.",
-    "baseLayerTitle": "Camada base — padrões globais",
     "cannotDelete": "Este modelo não pode ser excluído.",
     "cannotDeleteDefault": "Não é possível excluir o modelo padrão.",
     "catApp": "Configurações do app",
@@ -1648,7 +1646,10 @@
     "template": "Modelo",
     "uiPreviewTitle": "Pré-visualização da UI",
     "useDefault": "usar padrão",
-    "webrtcHelp": "As sessões transmitem via WebSockets por padrão. Definir qualquer valor STUN, TURN, Cloudflare ou IP público abaixo, ou escolher o modo WebRTC, alterna o contêiner para WebRTC com modo duplo habilitado, para que os usuários ainda possam voltar aos WebSockets."
+    "webrtcHelp": "As sessões transmitem via WebSockets por padrão. Definir qualquer valor STUN, TURN, Cloudflare ou IP público abaixo, ou escolher o modo WebRTC, alterna o contêiner para WebRTC com modo duplo habilitado, para que os usuários ainda possam voltar aos WebSockets.",
+    "advancedTitle": "Configurações avançadas",
+    "advancedWarning": "Alterações nestas configurações podem quebrar os lançamentos de apps, então é recomendado fazer um backup antes de alterar qualquer coisa nesta página.",
+    "backupLink": "Ir para a página de backup"
   },
   "sessions": {
     "heading": "Sessões",

@@ -34,14 +34,14 @@ async function renderStores() {
   setPanel(`
     <div class="card">
       <h3>${t("stores.addTitle")}</h3>
-      <div class="admin-form-row" style="margin-bottom:12px;">
+      <div class="admin-form-row mb-12" >
         <div class="field"><label>${t("common.name")}</label><input type="text" id="store-name"></div>
-        <div class="field" style="flex:2;"><label>${t("stores.urlLabel")}</label><input type="text" id="store-url" placeholder="${t("stores.urlPlaceholder")}"></div>
+        <div class="field flex-2" ><label>${t("stores.urlLabel")}</label><input type="text" id="store-url" placeholder="${t("stores.urlPlaceholder")}"></div>
       </div>
       <button class="btn btn-primary" id="store-create">${t("stores.add")}</button>
     </div>
     <div class="card">
-      <h3 style="margin-bottom:12px;">${t("stores.configuredTitle")}</h3>
+       <h3 class="mb-12" >${t("stores.configuredTitle")}</h3>
       <table class="admin-table">
         <thead><tr><th>${t("common.name")}</th><th>${t("stores.url")}</th><th></th></tr></thead>
         <tbody id="store-rows">${rows || `<tr><td colspan="3" class="muted">${t("stores.empty")}</td></tr>`}</tbody>

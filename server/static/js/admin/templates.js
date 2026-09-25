@@ -7,6 +7,7 @@ import { $, esc, toast, request } from "../util.js";
 import { confirmModal } from "../modal.js";
 import { t } from "../i18n.js";
 import { render } from "../admin.js";
+import { activateView } from "../app/nav.js";
 
 function setPanel(html) {
   const panel = $("admin-section");
@@ -54,7 +55,7 @@ function gsRowHtml(s, isNew) {
     <div class="gs-row-fields">
       <input class="gs-label" type="text" value="${esc(s.label || "")}" placeholder="${t("tpl.label")}">
       <input class="gs-description" type="text" value="${esc(s.description || "")}" placeholder="${t("tpl.description")}">
-      <input class="gs-category" type="text" value="${esc(s.category || "")}" placeholder="${t("tpl.category")}" style="max-width:130px;">
+      <input class="gs-category max-w-130" type="text" value="${esc(s.category || "")}" placeholder="${t("tpl.category")}" >
       <select class="gs-type">
         <option value="text" ${type === "text" ? "selected" : ""}>text</option>
         <option value="boolean" ${type === "boolean" ? "selected" : ""}>boolean</option>
@@ -436,25 +437,6 @@ function wireTemplates() {
     });
     form.addEventListener("submit", (e) => e.preventDefault());
   }
-  // Base-layer (template schema) editor buttons.
-  const schemaAdd = $("tpl-schema-add");
-  if (schemaAdd) {
-    schemaAdd.addEventListener("click", () => {
-      const wrap = $("tpl-schema-settings");
-      if (!wrap) return;
-      const holder = document.createElement("div");
-      holder.innerHTML = gsRowHtml(
-        { name: "", label: "", description: "", category: "general", type: "text", default: "", current: "", docker: false, options: [] },
-        true
-      );
-      wrap.appendChild(holder.firstElementChild);
-      wireGsRow(holder.firstElementChild);
-      const nameInput = holder.firstElementChild.querySelector(".gs-name");
-      if (nameInput) nameInput.focus();
-    });
-  }
-  const schemaSave = $("tpl-schema-save");
-  if (schemaSave) schemaSave.addEventListener("click", onSchemaSave);
 }
 
 // Populate (or re-populate) the base-layer schema editor with the given
@@ -544,6 +526,67 @@ async function onSchemaSave() {
   }
 }
 
+// The base-layer (template schema) editor card. It lives on the Global
+// Settings page (below the GPU card), not on the Templates page.
+function baseLayerCardHtml() {
+  return `
+  <div class="card">
+    <h3>${t("tpl.advancedTitle")}<span class="nav-beta nav-beta-advanced">ADVANCED</span></h3>
+    <p class="muted">${t("tpl.baseLayerHelp")}</p>
+    <p class="advanced-warning">
+      <span class="advanced-warning-icon" aria-hidden="true">⚠</span>
+      <span>${t("tpl.advancedWarning")} <a href="#" class="advanced-backup-link" id="tpl-backup-link">${t("tpl.backupLink")}</a></span>
+    </p>
+    <div id="tpl-schema-settings"></div>
+     <div class="mt-10 row gap-8 row-wrap" >
+      <button class="btn btn-ghost" id="tpl-schema-add" type="button">${t("tpl.addSetting")}</button>
+      <button class="btn btn-primary" id="tpl-schema-save" type="button">${t("tpl.saveBaseLayer")}</button>
+    </div>
+    <p id="tpl-schema-error" class="error" role="alert" hidden></p>
+  </div>`;
+}
+
+// Wire the base-layer card's Add/Save buttons.
+function wireBaseLayer() {
+  const schemaAdd = $("tpl-schema-add");
+  if (schemaAdd) {
+    schemaAdd.addEventListener("click", () => {
+      const wrap = $("tpl-schema-settings");
+      if (!wrap) return;
+      const holder = document.createElement("div");
+      holder.innerHTML = gsRowHtml(
+        { name: "", label: "", description: "", category: "general", type: "text", default: "", current: "", docker: false, options: [] },
+        true
+      );
+      wrap.appendChild(holder.firstElementChild);
+      wireGsRow(holder.firstElementChild);
+      const nameInput = holder.firstElementChild.querySelector(".gs-name");
+      if (nameInput) nameInput.focus();
+    });
+  }
+  const schemaSave = $("tpl-schema-save");
+  if (schemaSave) schemaSave.addEventListener("click", onSchemaSave);
+  // The warning's link jumps to the Backup page so the admin can snapshot
+  // state before touching these (potentially breaking) settings.
+  const backupLink = $("tpl-backup-link");
+  if (backupLink) {
+    backupLink.addEventListener("click", (e) => {
+      e.preventDefault();
+      activateView("admin", "backup");
+    });
+  }
+}
+
+// Append the base-layer card to the current panel, wire it, and populate it
+// with the given schema. Called by the Global Settings page.
+function mountBaseLayer(schemaData) {
+  const panel = $("admin-section");
+  if (!panel) return;
+  panel.insertAdjacentHTML("beforeend", baseLayerCardHtml());
+  wireBaseLayer();
+  populateSchemaEditor(schemaData);
+}
+
 function tplPanelHtml() {
   const cats = TPL_CATEGORIES.map(([key, titleKey]) => {
     const desc =
@@ -556,17 +599,7 @@ function tplPanelHtml() {
   }).join("");
   return `
   <div class="card">
-    <h3>${t("tpl.baseLayerTitle")}</h3>
-    <p class="muted">${t("tpl.baseLayerHelp")}</p>
-    <div id="tpl-schema-settings"></div>
-    <div style="margin-top:10px;display:flex;gap:8px;flex-wrap:wrap;">
-      <button class="btn btn-ghost" id="tpl-schema-add" type="button">${t("tpl.addSetting")}</button>
-      <button class="btn btn-primary" id="tpl-schema-save" type="button">${t("tpl.saveBaseLayer")}</button>
-    </div>
-    <p id="tpl-schema-error" class="error" role="alert" hidden></p>
-  </div>
-  <div class="card">
-    <h3>${t("tpl.appTemplatesTitle")}</h3>
+    <h3>${t("tpl.appTemplatesTitle")}<span class="nav-beta">BETA</span></h3>
     <p class="muted">${t("tpl.appTemplatesHelp")}</p>
     <div id="tpl-status" class="lab-status" hidden></div>
     <div class="admin-form-row">
@@ -644,7 +677,7 @@ async function renderTemplates() {
   setPanel(tplPanelHtml());
   wireTemplates();
   buildTplForm();
-  populateSchemaEditor(schemaRes.data);
+
   // Restore the in-progress edit (the panel was wiped on section switch).
   const desired = tplState.selected || "new";
   const dirty = tplState.values;
@@ -669,4 +702,4 @@ async function renderTemplates() {
   if (nameInput && tplState.name) nameInput.value = tplState.name;
 }
 
-export { renderTemplates };
+export { renderTemplates, mountBaseLayer };
