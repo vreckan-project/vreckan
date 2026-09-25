@@ -225,6 +225,9 @@ function restoreLastView() {
   // The unified roster was renamed from "people" to "accounts"; remap any
   // stored value from the old name so a refresh still lands on the right page.
   if (stored.adminSection === "people") stored.adminSection = "accounts";
+  // The Stores page was folded into the Control (apps) page; remap any stored
+  // value from the old name the same way.
+  if (stored.adminSection === "stores") stored.adminSection = "apps";
   const hasAnyAdmin = showAdminTab.hasAnyAdminPermission(
     currentUser?.permissions
   );

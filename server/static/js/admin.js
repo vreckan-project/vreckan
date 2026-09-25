@@ -7,7 +7,6 @@ import { renderRoles } from "./admin/roles.js";
 import { renderGlobalSettings } from "./admin/global-settings.js";
 import { renderSso } from "./admin/sso.js";
 import { renderVolumeMounts } from "./admin/mounts.js";
-import { renderStores } from "./admin/stores.js";
 import { renderApps } from "./admin/apps.js";
 import { renderTemplates } from "./admin/templates.js";
 import { renderSessions } from "./admin/sessions.js";
@@ -203,7 +202,6 @@ const SECTION_RENDERERS = {
   backup: renderBackup,
   apps: renderApps,
   laboratory: renderLaboratory,
-  stores: renderStores,
   templates: renderTemplates,
   sessions: renderSessions,
 };
@@ -223,7 +221,6 @@ const SECTION_PERMS = {
   backup: "admin.backup",
   apps: "admin.apps",
   laboratory: "admin.laboratory",
-  stores: "admin.stores",
   templates: "admin.templates",
   sessions: "admin.sessions",
 };

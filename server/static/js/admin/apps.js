@@ -7,6 +7,7 @@ import { $, esc, toast, request } from "../util.js";
 import { confirmModal, openCustomModal } from "../modal.js";
 import { t } from "../i18n.js";
 import { render } from "../admin.js";
+import { renderStores } from "./stores.js";
 
 function setPanel(html) {
   const panel = $("admin-section");
@@ -446,6 +447,12 @@ async function renderApps() {
       <div id="avail-list"></div>
     </div>
   `);
+
+  // The store-management cards ("Add app store" + "Configured stores") used
+  // to live on a separate Stores page; they now follow the install-from-store
+  // card on this page. renderStores() appends them to the panel and wires
+  // their add/delete handlers.
+  await renderStores();
 
   const availStore = $("avail-store");
   const availSearch = $("avail-search");

@@ -1,23 +1,20 @@
-// App Stores section: configure the YAML app stores the "Install app from
-// store" flow browses.
+// App store management: configure the YAML app stores the "Install app from
+// store" flow browses. Rendered on the Control (apps) page, below the
+// install-from-store card.
 //
-// The small DOM helpers ($, esc, toast, request, setPanel) are local copies so
-// this file is self-contained; `render` comes from admin.js.
+// The small DOM helpers ($, esc, toast, request) are local copies so this file
+// is self-contained; `render` comes from admin.js.
 import { $, esc, toast, request } from "../util.js";
 import { confirmModal } from "../modal.js";
 import { t } from "../i18n.js";
 import { render } from "../admin.js";
 
-function setPanel(html) {
-  const panel = $("admin-section");
-  if (panel) panel.innerHTML = html;
-}
-
 // --- App stores -----------------------------------------------------------
 async function renderStores() {
   const res = await request("/api/admin/apps/stores", "GET");
   if (res.error) {
-    setPanel(`<div class="card"><h3>${t("stores.heading")}</h3><div class="error">${esc(res.error.message)}</div></div>`);
+    const panel = $("admin-section");
+    if (panel) panel.insertAdjacentHTML("beforeend", `<div class="card"><h3>${t("stores.heading")}</h3><div class="error">${esc(res.error.message)}</div></div>`);
     return;
   }
   const stores = res.data || [];
@@ -31,7 +28,11 @@ async function renderStores() {
       </tr>`
     )
     .join("");
-  setPanel(`
+  const panel = $("admin-section");
+  if (panel)
+    panel.insertAdjacentHTML(
+      "beforeend",
+      `
     <div class="card">
       <h3>${t("stores.addTitle")}</h3>
       <div class="admin-form-row mb-12" >
@@ -46,8 +47,8 @@ async function renderStores() {
         <thead><tr><th>${t("common.name")}</th><th>${t("stores.url")}</th><th></th></tr></thead>
         <tbody id="store-rows">${rows || `<tr><td colspan="3" class="muted">${t("stores.empty")}</td></tr>`}</tbody>
       </table>
-    </div>
-  `);
+    </div>`
+    );
   $("store-create").addEventListener("click", async () => {
     const name = $("store-name").value.trim();
     const url = $("store-url").value.trim();
