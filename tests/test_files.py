@@ -9,7 +9,6 @@ to its pre-launch checks (unknown app / access denied), which raise
 before any container work.
 """
 import base64
-import sqlite3
 import time
 from pathlib import Path
 
@@ -18,6 +17,7 @@ import pytest
 import server.api as api_module
 from server import user_manager
 from server.models import InstalledApp, PublicShareMetadata
+from conftest import db_conn
 from server.settings import settings
 from conftest import STORE_APP
 
@@ -84,7 +84,7 @@ def wait_for_task(secure_client, task_id, timeout=10.0):
 
 
 def share_rows(db_path):
-    con = sqlite3.connect(str(db_path))
+    con = db_conn(str(db_path))
     try:
         return [r[0] for r in con.execute("SELECT share_id FROM public_shares")]
     finally:

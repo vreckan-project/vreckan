@@ -74,6 +74,9 @@ services:
       - VRECKAN_LOG_LEVEL=${VRECKAN_LOG_LEVEL:-INFO}
       - VRECKAN_API_PORT=8443
       - VRECKAN_SESSION_PORT=8443
+      # --- optional PostgreSQL (uncomment + enable the postgres service) ---
+      # Defaults to a SQLite file in /data when left unset.
+      # - VRECKAN_DATABASE_URL=postgresql+asyncpg://vreckan:vreckan@postgres:5432/vreckan
       # --- optional OIDC / SSO (uncomment + fill in to enable) ---
       # - VRECKAN_OIDC_ENABLED=${VRECKAN_OIDC_ENABLED:-false}
       # - VRECKAN_OIDC_ISSUER=${VRECKAN_OIDC_ISSUER:-}
@@ -109,8 +112,33 @@ services:
       retries: 12
       start_period: 10s
 
+  # --- Optional PostgreSQL configuration database -------------------------
+  # Uncomment this service, the matching `volumes:` entry below, and the
+  # VRECKAN_DATABASE_URL line in vreckan-api's environment to run the API
+  # against PostgreSQL instead of the default SQLite file. Both containers
+  # share the `vreckan` network, so the API reaches Postgres by service name.
+  # postgres:
+  #   image: postgres:16
+  #   container_name: vreckan-postgres
+  #   restart: unless-stopped
+  #   environment:
+  #     POSTGRES_USER: vreckan
+  #     POSTGRES_PASSWORD: vreckan   # change for a real deployment
+  #     POSTGRES_DB: vreckan
+  #   volumes:
+  #     - vreckan-postgres-data:/var/lib/postgresql/data
+  #   networks:
+  #     - vreckan
+  #   healthcheck:
+  #     test: ["CMD-SHELL", "pg_isready -U vreckan -d vreckan"]
+  #     interval: 5s
+  #     timeout: 5s
+  #     retries: 12
+  #     start_period: 10s
+
 volumes:
   vreckan-data:
+  # vreckan-postgres-data:   # uncomment with the postgres service above
 
 networks:
   vreckan:

@@ -12,11 +12,10 @@ fixture uses to wipe it.
 """
 from __future__ import annotations
 
-import sqlite3
-
 import pytest
 
 from server import volume_mount_manager
+from conftest import db_conn
 
 MOUNT_BODY = {
     "name": "media",
@@ -222,7 +221,7 @@ def test_mount_persists_to_database(secure_client, db_path):
     status, _ = secure_client.call("POST", "/api/admin/volume_mounts", body=MOUNT_BODY)
     assert status == 201
     # The row is committed and visible from an independent connection.
-    conn = sqlite3.connect(db_path)
+    conn = db_conn(db_path)
     try:
         rows = conn.execute(
             "SELECT name, host_path, container_path, scope, target FROM volume_mounts"
@@ -234,7 +233,7 @@ def test_mount_persists_to_database(secure_client, db_path):
     # Deleting removes the row as well.
     status, _ = secure_client.call("DELETE", "/api/admin/volume_mounts/media")
     assert status == 204
-    conn = sqlite3.connect(db_path)
+    conn = db_conn(db_path)
     try:
         rows = conn.execute("SELECT name FROM volume_mounts").fetchall()
     finally:

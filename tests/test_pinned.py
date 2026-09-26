@@ -3,11 +3,11 @@ presets. Rows live in the pinned_behaviors table (no in-memory cache),
 so "other user" rows can be seeded with a direct sqlite insert.
 """
 import json
-import sqlite3
 
 import pytest
 
 import server.api as api_module
+from conftest import db_conn
 
 PINNED_BODY = {"name": "Work Firefox", "application_id": "app-1"}
 
@@ -16,7 +16,7 @@ def seed_pinned_row(db_path, username, pin_id, created_at, **data_overrides):
     """Insert a pinned_behaviors row directly (e.g. for another user)."""
     data = {"name": "Ghost Pin", "application_id": "app-1"}
     data.update(data_overrides)
-    conn = sqlite3.connect(db_path)
+    conn = db_conn(db_path)
     try:
         conn.execute(
             "INSERT INTO pinned_behaviors (id, username, created_at, data) "
@@ -107,7 +107,7 @@ def test_delete_pinned_other_user(secure_client, db_path):
     assert status == 404
     assert data["detail"] == "Pinned behaviour not found."
     # The other user's row is untouched.
-    conn = sqlite3.connect(db_path)
+    conn = db_conn(db_path)
     try:
         count = conn.execute(
             "SELECT COUNT(*) FROM pinned_behaviors WHERE id = 'pin-ghost'"

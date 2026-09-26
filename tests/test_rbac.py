@@ -8,7 +8,6 @@ permissions, SSO group-join + admin promotion, and the bootstrap-admin
 guard.
 """
 import asyncio
-import sqlite3
 
 import pytest
 
@@ -22,7 +21,7 @@ from server.permissions import (
     union_permissions,
 )
 from server.settings import settings
-from conftest import DB_PATH, SecureClient
+from conftest import DB_PATH, SecureClient, db_conn
 
 
 # --- helpers ----------------------------------------------------------------
@@ -545,7 +544,7 @@ def test_bootstrap_admin_configurable(client, monkeypatch):
     monkeypatch.setattr(settings, "bootstrap_admin_password", "s3cret")
     # The lifespan already seeded the default 'admin'; wipe the users table so
     # _generate_default_admin runs its create path with the custom values.
-    conn = sqlite3.connect(str(DB_PATH))
+    conn = db_conn(str(DB_PATH))
     conn.execute("DELETE FROM users")
     conn.commit()
     conn.close()

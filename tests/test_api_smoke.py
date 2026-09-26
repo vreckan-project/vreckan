@@ -5,7 +5,8 @@ handshake proves the server's RSA keypair, then every admin call travels
 through the AES-GCM encrypted router exactly as the browser client does.
 """
 import json
-import sqlite3
+
+from conftest import db_conn
 
 
 def test_template_schema_served_to_admin(secure_client):
@@ -59,7 +60,7 @@ def test_status_install_patch_flow(secure_client, store_with_firefox, db_path):
     assert patched["users"] == ["admin"]
 
     # The database row reflects the update.
-    conn = sqlite3.connect(db_path)
+    conn = db_conn(db_path)
     row = conn.execute("SELECT id, data FROM installed_apps WHERE id = 'inst-1'").fetchone()
     conn.close()
     assert row is not None

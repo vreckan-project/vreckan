@@ -15,4 +15,8 @@ python-multipart
 argon2-cffi
 sqlalchemy[asyncio]
 aiosqlite
+# asyncpg: the PostgreSQL driver, used when VRECKAN_DATABASE_URL points at a
+# postgresql+asyncpg:// URL (e.g. the docker-compose.postgres.yml service).
+# SQLite deployments (the default) never import it.
+asyncpg
 pytest

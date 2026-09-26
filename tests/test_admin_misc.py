@@ -8,7 +8,6 @@ NOT installed, so the stop-session cleanup path has no containers to
 talk to (no Docker daemon needed).
 """
 import copy
-import sqlite3
 import time
 import uuid
 
@@ -18,7 +17,7 @@ import server.api as api_module
 from server import user_manager
 from server.models import InstalledApp
 from server.settings import settings
-from conftest import STORE_APP
+from conftest import STORE_APP, db_conn
 
 GPU = {"device": "/dev/dri/renderD128", "driver": "amdgpu", "type": "dri3"}
 
@@ -115,7 +114,7 @@ def test_global_settings_set_and_persist(secure_client, db_path):
     assert status == 200
     assert data["global_default_gpu"] == device
     # The choice is persisted to the app_settings shadow table.
-    conn = sqlite3.connect(db_path)
+    conn = db_conn(db_path)
     try:
         row = conn.execute(
             "SELECT value FROM app_settings WHERE key = 'global_default_gpu'"
@@ -138,7 +137,7 @@ def test_global_settings_clear(secure_client, db_path):
     assert data == {"ok": True}
     status, data = secure_client.call("GET", "/api/admin/global-settings")
     assert data["global_default_gpu"] is None
-    conn = sqlite3.connect(db_path)
+    conn = db_conn(db_path)
     try:
         count = conn.execute(
             "SELECT COUNT(*) FROM app_settings WHERE key = 'global_default_gpu'"

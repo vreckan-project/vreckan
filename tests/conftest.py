@@ -25,10 +25,12 @@ import asyncio
 import base64
 import json
 import os
+import re
 import sqlite3
 import sys
 import tempfile
 from pathlib import Path
+from sqlalchemy import inspect, text
 
 import pytest
 import yaml
@@ -68,9 +70,16 @@ def _generate_server_key() -> Path:
 
 _KEY_PATH = _generate_server_key()
 
+# The database backend is selected by VRECKAN_DATABASE_URL. By default the
+# suite runs against a throwaway SQLite file (the development backend); set
+# the variable to a postgresql+asyncpg:// URL to run the identical suite
+# against PostgreSQL. The URL must be fixed before the app is imported
+# because the engine is created at import time.
+if not os.environ.get("VRECKAN_DATABASE_URL"):
+    os.environ["VRECKAN_DATABASE_URL"] = f"sqlite+aiosqlite:///{DB_PATH}"
+
 os.environ.update(
     {
-        "VRECKAN_DATABASE_URL": f"sqlite+aiosqlite:///{DB_PATH}",
         "VRECKAN_SERVER_PRIVATE_KEY_PATH": str(_KEY_PATH),
         "VRECKAN_APP_RESOURCE_PATH": DEAD_URL + "apps.yml",
         "VRECKAN_AUTO_UPDATE_APPS": "false",
@@ -106,18 +115,155 @@ LOCK_NAMES = ["SESSIONS_LOCK", "METADATA_LOCK", "AUTH_TOKENS_LOCK", "OIDC_STATES
 
 
 def _wipe_db() -> None:
-    """Delete every row from every table (synchronous; runs between tests)."""
-    if not DB_PATH.exists():
-        return
-    conn = sqlite3.connect(str(DB_PATH))
-    try:
-        tables = {r[0] for r in conn.execute("SELECT name FROM sqlite_master WHERE type='table'")}
-        for table in db.TABLE_ORDER:
-            if table in tables:
-                conn.execute(f"DELETE FROM {table}")
-        conn.commit()
-    finally:
-        conn.close()
+    """Delete every row from every table (synchronous; runs between tests).
+
+    Drives the app's own engine so it works identically on SQLite and
+    PostgreSQL. Tables that do not exist yet (before the first lifespan has
+    run ``init_db``) are skipped, mirroring the previous sqlite_master guard.
+    """
+    async def _wipe():
+        async with db.engine.begin() as conn:
+            def _wipe_sync(sync_conn):
+                inspector = inspect(sync_conn)
+                for table in db.TABLE_ORDER:
+                    if inspector.has_table(table):
+                        sync_conn.execute(text(f"DELETE FROM {table}"))
+            await conn.run_sync(_wipe_sync)
+
+    asyncio.run(_wipe())
+
+
+# --- Direct-DB access shim (sqlite3-compatible) ----------------------------
+# Several tests assert on the database by opening it directly (the way a DBA
+# would) rather than through the API. That used to mean ``sqlite3.connect``;
+# the shim below gives the same tiny API surface on whichever backend the
+# suite is pointed at, so those tests run unchanged on SQLite and PostgreSQL.
+
+def _convert_params(sql, params):
+    """Translate sqlite3 ``?`` placeholders to SQLAlchemy named parameters."""
+    if not params:
+        return sql, {}
+    names = []
+
+    def _repl(_match):
+        name = f"p{len(names)}"
+        names.append(name)
+        return f":{name}"
+
+    return re.sub(r"\?", _repl, sql), {n: v for n, v in zip(names, params)}
+
+
+def _normalize_row(row):
+    """Re-serialize JSONB values (dict/list) back to JSON text.
+
+    On PostgreSQL a JSONB column is returned as an already-parsed Python
+    object; on SQLite the same column is stored as TEXT and comes back as a
+    JSON string. Re-serializing keeps ``json.loads(...)`` in the tests
+    behaving identically on both backends.
+    """
+    return tuple(json.dumps(v) if isinstance(v, (dict, list)) else v for v in row)
+
+
+class _PgCursor:
+    """A minimal stand-in for ``sqlite3.Cursor`` over already-fetched rows."""
+
+    def __init__(self, rows):
+        self._rows = list(rows)
+
+    def fetchone(self):
+        if not self._rows:
+            return None
+        return self._rows.pop(0)
+
+    def fetchall(self):
+        rows, self._rows = self._rows, []
+        return rows
+
+    def __iter__(self):
+        return iter(self._rows)
+
+
+class DbConn:
+    """A ``sqlite3.Connection``-compatible handle for the active backend.
+
+    Implements only the surface the tests use: ``execute()``, ``commit()``,
+    ``close()``, ``upsert()``, and the cursor's ``fetchone()``/``fetchall()``/
+    iteration. On PostgreSQL each ``execute()`` drives the app's async engine
+    in its own transaction (the engine uses a NullPool, so a fresh connection
+    per call is cheap and safe across the per-test event loops).
+    """
+
+    def __init__(self, db_path=None):
+        self._is_pg = db.engine.dialect.name == "postgresql"
+        self._sqlite = None
+        if not self._is_pg:
+            self._sqlite = sqlite3.connect(db_path)
+
+    def execute(self, sql, params=None):
+        if self._is_pg:
+            return self._pg_execute(sql, params)
+        return self._sqlite.execute(sql, params or ())
+
+    def commit(self):
+        if self._is_pg:
+            return  # each execute() already committed in its own transaction
+        self._sqlite.commit()
+
+    def close(self):
+        if self._is_pg:
+            return
+        self._sqlite.close()
+
+    def upsert(self, table, values, conflict_cols):
+        """Insert-or-update a row (SQLite ``INSERT OR REPLACE``)."""
+        cols = list(values)
+        col_list = ", ".join(cols)
+        if self._is_pg:
+            placeholders = ", ".join(f":{c}" for c in cols)
+            non_conflict = [c for c in cols if c not in conflict_cols]
+            sql = f"INSERT INTO {table} ({col_list}) VALUES ({placeholders})"
+            if non_conflict:
+                updates = ", ".join(f"{c} = EXCLUDED.{c}" for c in non_conflict)
+                sql += f" ON CONFLICT ({', '.join(conflict_cols)}) DO UPDATE SET {updates}"
+            else:
+                sql += f" ON CONFLICT ({', '.join(conflict_cols)}) DO NOTHING"
+            self._pg_execute(sql, values)
+        else:
+            placeholders = ", ".join("?" for _ in cols)
+            self._sqlite.execute(
+                f"INSERT OR REPLACE INTO {table} ({col_list}) VALUES ({placeholders})",
+                tuple(values.values()),
+            )
+
+    def _pg_execute(self, sql, params=None):
+        if isinstance(params, dict):
+            # Named placeholders (e.g. the upsert helper) pass a mapping
+            # straight through; only positional ``?`` params need translating.
+            bind = params
+        else:
+            sql, bind = _convert_params(sql, params)
+        if "sqlite_master" in sql:
+            sql = (
+                "SELECT table_name FROM information_schema.tables "
+                "WHERE table_schema = 'public'"
+            )
+
+        async def _run():
+            async with db.engine.begin() as conn:
+                result = await conn.execute(text(sql), bind)
+                # DML (INSERT/UPDATE/DELETE) results carry no rows; asyncpg
+                # closes them eagerly, so only fetch when rows are expected.
+                if result.returns_rows:
+                    return [tuple(row) for row in result.fetchall()]
+                return []
+
+        rows = asyncio.run(_run())
+        return _PgCursor([_normalize_row(r) for r in rows])
+
+
+def db_conn(db_path=None):
+    """Open a ``DbConn`` for the active backend (see :class:`DbConn`)."""
+    return DbConn(db_path)
 
 
 def _clear_inmemory() -> None:
@@ -210,7 +356,7 @@ def client(isolate):
     from fastapi.testclient import TestClient
 
     with TestClient(api_module.api_app, follow_redirects=False) as http:
-        conn = sqlite3.connect(str(DB_PATH))
+        conn = db_conn(str(DB_PATH))
         conn.execute("DELETE FROM app_settings WHERE key LIKE 'VRECKAN_OIDC_%'")
         conn.commit()
         conn.close()
@@ -330,15 +476,98 @@ def store_with_firefox(isolate):
     )
     # Persist the store so a lifespan (re)load keeps it. Ensure the table
     # exists in case this fixture runs before the TestClient lifespan.
-    conn = sqlite3.connect(str(DB_PATH))
+    conn = db_conn(str(DB_PATH))
     conn.execute(
         "CREATE TABLE IF NOT EXISTS app_stores (name VARCHAR(255) PRIMARY KEY, url TEXT)"
     )
-    conn.execute(
-        "INSERT OR REPLACE INTO app_stores (name, url) VALUES (?, ?)",
-        ("Test Store", DEAD_URL + "apps.yml"),
-    )
+    conn.upsert("app_stores", {"name": "Test Store", "url": DEAD_URL + "apps.yml"}, ["name"])
     conn.commit()
     conn.close()
     api_module.APP_STORES.append(AppStore(name="Test Store", url=DEAD_URL + "apps.yml"))
     return STORE_APP
+
+
+# --- Dedicated PostgreSQL backend (for tests/test_postgres.py) --------------
+# The Postgres-specific tests need a live PostgreSQL server. Resolution order:
+#   1. VRECKAN_TEST_POSTGRES_URL — use an externally provided URL as-is.
+#   2. VRECKAN_DATABASE_URL — if the whole suite is already running against
+#      PostgreSQL, reuse that server (no extra container).
+#   3. Otherwise spin up a throwaway postgres:16 container on the same Docker
+#      network as the test process and tear it down at session end.
+def _wait_for_postgres(url: str, timeout: int = 60) -> None:
+    """Block until PostgreSQL accepts connections at ``url``."""
+    import asyncio
+    import time
+
+    import asyncpg
+
+    async def _probe():
+        dsn = url.replace("postgresql+asyncpg://", "postgresql://")
+        conn = await asyncpg.connect(dsn)
+        await conn.close()
+
+    deadline = time.time() + timeout
+    last_err = None
+    while time.time() < deadline:
+        try:
+            asyncio.run(_probe())
+            return
+        except Exception as err:  # noqa: BLE001 - any connection error means "not yet"
+            last_err = err
+            time.sleep(1)
+    raise RuntimeError(f"PostgreSQL did not become ready at {url}: {last_err}")
+
+
+@pytest.fixture(scope="session")
+def postgres_url():
+    """A ``postgresql+asyncpg://`` URL for the dedicated Postgres tests."""
+    url = os.environ.get("VRECKAN_TEST_POSTGRES_URL")
+    if url:
+        yield url
+        return
+    if os.environ.get("VRECKAN_DATABASE_URL", "").startswith("postgresql"):
+        yield os.environ["VRECKAN_DATABASE_URL"]
+        return
+
+    import time
+
+    import docker
+
+    client = docker.from_env()
+    network_name = os.environ.get("VRECKAN_TEST_POSTGRES_NETWORK", "vreckan_default")
+    try:
+        client.networks.get(network_name)
+    except Exception:
+        client.networks.create(network_name)
+
+    name = f"vreckan-test-pg-{os.getpid()}"
+    container = client.containers.run(
+        "postgres:16",
+        detach=True,
+        name=name,
+        environment={
+            "POSTGRES_USER": "vreckan",
+            "POSTGRES_PASSWORD": "vreckan",
+            "POSTGRES_DB": "vreckan",
+        },
+    )
+    try:
+        client.networks.get(network_name).connect(container)
+        ip = None
+        for _ in range(60):
+            container.reload()
+            nets = container.attrs["NetworkSettings"]["Networks"]
+            if network_name in nets and nets[network_name].get("IPAddress"):
+                ip = nets[network_name]["IPAddress"]
+                break
+            time.sleep(1)
+        assert ip, f"postgres container did not join network {network_name}"
+        url = f"postgresql+asyncpg://vreckan:vreckan@{ip}:5432/vreckan"
+        _wait_for_postgres(url)
+        yield url
+    finally:
+        try:
+            container.stop(timeout=5)
+            container.remove(force=True)
+        except Exception:
+            pass

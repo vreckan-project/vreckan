@@ -1,0 +1,43 @@
+# Vreckan — standalone PostgreSQL service.
+#
+# Brings up a PostgreSQL 16 database for Vreckan to use as its configuration
+# database (the alternative to the default SQLite file). Point the API at it
+# with:
+#
+#     VRECKAN_DATABASE_URL=postgresql+asyncpg://vreckan:vreckan@postgres:5432/vreckan
+#
+# (When the API and this service share a compose project/network, the host is
+# the service name ``postgres``. From a separate network, use the container's
+# IP or a published port.)
+#
+#   docker compose -f docker-compose.postgres.yml up -d
+#   docker compose -f docker-compose.postgres.yml down -v   # -v drops the data
+#
+# The data lives in the ``vreckan-postgres-data`` named volume, so it survives
+# ``docker compose down`` (without ``-v``). For a throwaway local instance,
+# change the POSTGRES_* values below to taste.
+
+name: vreckan-postgres
+
+services:
+  postgres:
+    image: postgres:16
+    container_name: vreckan-postgres
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: vreckan
+      POSTGRES_PASSWORD: vreckan
+      POSTGRES_DB: vreckan
+    ports:
+      - "5432:5432"
+    volumes:
+      - vreckan-postgres-data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U vreckan -d vreckan"]
+      interval: 5s
+      timeout: 5s
+      retries: 12
+      start_period: 10s
+
+volumes:
+  vreckan-postgres-data:

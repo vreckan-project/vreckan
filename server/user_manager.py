@@ -206,6 +206,11 @@ async def _generate_default_admin() -> None:
         )
         await session.commit()
 
+    # Record the actual bootstrap username so the protection guards (see
+    # ``_bootstrap_username``) can identify it deterministically, regardless of
+    # database row ordering or later environment changes.
+    await db.set_app_setting("VRECKAN_BOOTSTRAP_ADMIN_USERNAME", admin_username)
+
     logger.warning(
         "No admin users found. Created default '%s' admin with bootstrap "
         "password '%s' — change it after first login.",
@@ -219,20 +224,16 @@ async def _bootstrap_username() -> str:
 
     The bootstrap account is the one created on first run; its name is
     configurable via ``VRECKAN_BOOTSTRAP_ADMIN_USERNAME``. The protection
-    guards (delete / demote / role-strip) compare against this value. The
-    database is consulted first so that, once the account exists, its actual
-    name wins over the environment (which may have changed since first run);
-    the env value is the fallback for the not-yet-seeded case.
+    guards (delete / demote / role-strip) compare against this value.
+
+    ``_generate_default_admin`` records the actual username it created in the
+    ``app_settings`` table, so once the account exists that value wins over
+    the environment (which may have changed since first run). ``get_setting``
+    resolves the precedence (stored value → environment → default), so this
+    is deterministic across database backends — unlike picking "an admin"
+    from the users table, whose row order is database-dependent.
     """
-    async with db.async_session_factory() as session:
-        row = (
-            await session.execute(
-                select(db.User.username).where(db.User.is_admin.is_(True)).limit(1)
-            )
-        ).first()
-    if row is not None:
-        return row[0]
-    return str(settings.bootstrap_admin_username or "admin")
+    return str(await settings.get_setting("bootstrap_admin_username") or "admin")
 
 
 async def _migrate_admin_settings() -> None:

@@ -1,14 +1,13 @@
 """Configuration database: init/migrate, dump/restore, persistence round-trips."""
 import asyncio
 import json
-import sqlite3
 import time
 
 import pytest
 
 import server.api as api_module
 from server import db, user_manager
-from conftest import DB_PATH, _wipe_db
+from conftest import DB_PATH, _wipe_db, db_conn
 
 
 def test_init_and_migrate_are_idempotent(db_path):
@@ -16,7 +15,7 @@ def test_init_and_migrate_are_idempotent(db_path):
     asyncio.run(db.init_db())
     asyncio.run(db.migrate_db())
     asyncio.run(db.migrate_db())
-    conn = sqlite3.connect(db_path)
+    conn = db_conn(db_path)
     tables = {r[0] for r in conn.execute("SELECT name FROM sqlite_master WHERE type='table'")}
     conn.close()
     for table in db.TABLE_ORDER:
@@ -36,7 +35,7 @@ def test_dump_restore_roundtrip(db_path, tmp_path):
     # Wipe everything, then restore from the dump.
     _wipe_db()
     asyncio.run(db.db_restore(dump_path))
-    conn = sqlite3.connect(db_path)
+    conn = db_conn(db_path)
     users = {r[0]: r[1] for r in conn.execute("SELECT username, is_admin FROM users")}
     alice_hash = conn.execute(
         "SELECT password_hash FROM users WHERE username = 'alice'"
