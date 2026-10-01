@@ -22,4 +22,8 @@ screenshots/
 # Security-scan output (trivy/grype JSON reports + the parse helper).
 _scan_out/
 
+# Jekyll build output for the project site (regenerated from site/*.md via
+# `jekyll build`; the sources in site/ are what's tracked).
+site/_site/
+
 codeto*
