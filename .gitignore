@@ -23,7 +23,9 @@ screenshots/
 _scan_out/
 
 # Jekyll build output for the project site (regenerated from site/*.md via
-# `jekyll build`; the sources in site/ are what's tracked).
+# `jekyll build`; the sources in site/ are what's tracked). The build runs in
+# the official jekyll/jekyll Docker image, so the lock file isn't needed.
 site/_site/
+site/Gemfile.lock
 
 codeto*
