@@ -3,14 +3,15 @@
 
 Intended to run inside Docker with the real authentik OIDC env (VRECKAN_OIDC_*).
 It will:
-  1. Pick the TLS cert: the Let's Encrypt cert for vreckan.antitux.net
-     (mounted read-only at /etc/letsencrypt, see docker-compose.yml) when
-     present, otherwise a generated self-signed cert (CN=localhost) into
-     $WORK/ssl for environments without the mount.
+  1. Pick the TLS cert. When Let's Encrypt is enabled (VRECKAN_LE_* env or the
+     admin Certificates page), a real cert is issued/renewed via a transient
+     certbot container (server/le_certbot.py) and read from the shared
+     vreckan-le volume (/data/le) or a host-mounted /etc/letsencrypt.
+     Otherwise a generated self-signed cert (CN=localhost) is used from
+     $WORK/ssl.
   2. Generate the required server RSA key (api.py import requirement).
   3. uvicorn-serve server.api:api_app on 0.0.0.0:$VRECKAN_API_PORT with TLS.
 
-The primary access path is https://vreckan.antitux.net/ (Let's Encrypt).
 The OIDC redirect URI is derived per-request from the Host header, so SSO
 works on any access path the provider has registered.
 """
@@ -58,13 +59,12 @@ selfsigned_cert = os.path.join(ssl_dir, "vreckan_dev.crt")
 selfsigned_key = os.path.join(ssl_dir, "vreckan_dev.key")
 server_key_path = os.environ["VRECKAN_SERVER_PRIVATE_KEY_PATH"]
 
-# --- 1) TLS cert: Let's Encrypt (vreckan.antitux.net) or self-signed fallback ----
-# The Let's Encrypt tree is mounted read-only at /etc/letsencrypt (see
-# docker-compose.yml). live/antitux.net is a symlink into ../archive, so the
-# whole tree must be mounted — mounting just the live dir would break it.
-LE_CERT_DIR = os.environ.get("VRECKAN_LE_CERT_DIR", "/etc/letsencrypt/live/antitux.net")
-LE_CERT = os.path.join(LE_CERT_DIR, "fullchain.pem")
-LE_KEY = os.path.join(LE_CERT_DIR, "privkey.pem")
+# --- 1) TLS cert: Let's Encrypt (via certbot) or self-signed fallback ----------
+# When Let's Encrypt is enabled (VRECKAN_LE_* env or the admin Certificates
+# page), a real cert is issued/renewed via a transient certbot container (see
+# server/le_certbot.py). The cert lives in the shared vreckan-le volume
+# (/data/le) or a host-mounted /etc/letsencrypt. Otherwise a self-signed cert
+# is used. The selection happens in _select_cert() below.
 
 def _ensure_cert():
     if os.path.exists(selfsigned_cert) and os.path.exists(selfsigned_key):
@@ -127,14 +127,44 @@ def _ensure_server_key():
             encryption_algorithm=serialization.NoEncryption()))
     print(f"[key] wrote {server_key_path}", flush=True)
 
-if os.path.exists(LE_CERT) and os.path.exists(LE_KEY):
-    cert_path, key_path = LE_CERT, LE_KEY
-    print(f"[cert] using Let's Encrypt cert {LE_CERT}", flush=True)
-else:
-    cert_path, key_path = selfsigned_cert, selfsigned_key
-    print("[cert] Let's Encrypt cert not mounted; using self-signed fallback", flush=True)
-    _ensure_cert()
+def _select_cert():
+    """Pick the TLS cert: a Let's Encrypt cert (issued via certbot when LE is
+    enabled, or a host-mounted one) when available, else a self-signed cert.
+    Returns (cert_path, key_path)."""
+    import asyncio
+    from server import db
+    from server import le_certbot
 
+    # Make sure the configuration DB is up so effective (DB-overridden) LE
+    # settings can be read. Idempotent; a failure just means we fall back to
+    # the env/default values.
+    try:
+        asyncio.run(db.init_db())
+    except Exception as e:  # noqa: BLE001
+        print(f"[cert] DB init for LE settings failed ({e}); using env defaults", flush=True)
+
+    cfg = asyncio.run(le_certbot.effective_le_config())
+    if cfg.le_enabled:
+        status = asyncio.run(le_certbot.ensure_le_cert(cfg))
+        if status.get("present") and status.get("valid"):
+            print(
+                f"[cert] using Let's Encrypt cert {status['cert']} "
+                f"(source={status['source']}, {status['days_remaining']}d left)",
+                flush=True,
+            )
+            return status["cert"], status["key"]
+        print(
+            f"[cert] LE enabled but no valid cert yet (issued={status.get('issued')}); "
+            "using self-signed until one is available",
+            flush=True,
+        )
+    else:
+        print("[cert] LE not enabled; using self-signed certificate", flush=True)
+    _ensure_cert()
+    return selfsigned_cert, selfsigned_key
+
+
+cert_path, key_path = _select_cert()
 _ensure_server_key()
 
 # --- 3) uvicorn TLS on 0.0.0.0:$VRECKAN_API_PORT --------------------------------

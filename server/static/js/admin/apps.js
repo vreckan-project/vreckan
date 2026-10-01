@@ -429,7 +429,13 @@ async function renderApps() {
 
   setPanel(`
     <div class="card">
-       <h3 class="mb-12" >${t("apps.installedTitle")}</h3>
+      <div class="row row-between mb-12">
+        <h3 class="mb-0">${t("apps.installedTitle")}</h3>
+        <div class="row gap-8">
+          <button class="btn btn-sm btn-ghost" id="apps-check-all" type="button">${t("apps.checkAll")}</button>
+          <button class="btn btn-sm btn-ghost" id="apps-update-all" type="button">${t("apps.updateAll")}</button>
+        </div>
+      </div>
       <table class="admin-table">
         <thead><tr><th>${t("apps.app")}</th><th>${t("apps.source")}</th><th>${t("apps.homeDirs")}</th><th>${t("apps.users")}</th><th>${t("apps.groups")}</th><th>${t("apps.image")}</th><th></th></tr></thead>
         <tbody id="app-rows">${rows || `<tr><td colspan="7" class="muted">${t("apps.noAppsInstalled")}</td></tr>`}</tbody>
@@ -553,6 +559,67 @@ async function renderApps() {
       trackPullInRow(id);
     }
   });
+
+  // "Check all": query every installed app's registry for a newer image and
+  // report how many have an update available (no pulls are started).
+  const checkAllBtn = $("apps-check-all");
+  if (checkAllBtn) {
+    checkAllBtn.addEventListener("click", async () => {
+      checkAllBtn.disabled = true;
+      const orig = checkAllBtn.textContent;
+      checkAllBtn.textContent = t("apps.checkingAll");
+      const r = await request("/api/admin/apps/installed/check_all_updates", "POST", {});
+      checkAllBtn.disabled = false;
+      checkAllBtn.textContent = orig;
+      if (r.error) return toast(r.error.message, "error");
+      const n = r.data && r.data.updates_available;
+      toast(n ? t("apps.updatesAvailable", { count: n }) : t("apps.allUpToDate"), n ? "error" : "success");
+    });
+  }
+
+  // "Update all": start a background pull of the latest image for every
+  // installed app, then follow the aggregate progress in the table.
+  const updateAllBtn = $("apps-update-all");
+  if (updateAllBtn) {
+    updateAllBtn.addEventListener("click", async () => {
+      updateAllBtn.disabled = true;
+      const orig = updateAllBtn.textContent;
+      updateAllBtn.textContent = t("apps.updatingAll");
+      const r = await request("/api/admin/apps/installed/pull_all_latest", "POST", {});
+      updateAllBtn.disabled = false;
+      updateAllBtn.textContent = orig;
+      if (r.error) return toast(r.error.message, "error");
+      const started = r.data && r.data.started;
+      toast(started ? t("apps.updatesStarted", { count: started }) : t("apps.allUpToDate"), "success");
+      render(); // show the rows with their pulling badges + progress bars
+      trackAllPulls();
+    });
+  }
+}
+
+// Follow the aggregate "update all" pull: poll the installed-apps list until
+// no app is still pulling/queued, then report the outcome.
+async function trackAllPulls() {
+  const deadline = Date.now() + 30 * 60 * 1000;
+  let anyFailed = false;
+  while (Date.now() < deadline) {
+    await new Promise((r) => setTimeout(r, 1500));
+    let list;
+    try {
+      const r = await request("/api/admin/apps/installed", "GET");
+      if (r.error) continue;
+      list = r.data || [];
+    } catch (_) {
+      continue;
+    }
+    const inFlight = list.filter((a) => a.pull_status === "pulling" || a.pull_status === "queued");
+    if (inFlight.length) continue;
+    anyFailed = list.some((a) => a.pull_status === "pull_failed" || (typeof a.pull_status === "string" && a.pull_status.startsWith("error")));
+    toast(anyFailed ? t("apps.somePullsFailed") : t("apps.allPullsComplete"), anyFailed ? "error" : "success");
+    render();
+    return;
+  }
+  toast(t("apps.pullTimedOut"), "error");
 }
 
 // Follow a user-triggered pull in the background, updating the table row's

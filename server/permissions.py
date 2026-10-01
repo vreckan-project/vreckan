@@ -40,6 +40,7 @@ ADMIN_PERMISSIONS = [
     "admin.laboratory",
     "admin.global_settings",
     "admin.sso",
+    "admin.certificates",
 ]
 
 # User permissions gate the features a user can use in the app. These map onto

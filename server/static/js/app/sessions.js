@@ -35,6 +35,7 @@ function renderSessions(sessions) {
     const when = new Date(s.created_at * 1000);
     metaLine.textContent = when.toLocaleString();
     if (s.is_collaboration) metaLine.textContent += ` · ${t("sessions.roomMode")}`;
+    if (s.out_of_date) metaLine.textContent += ` · ${t("sessions.outOfDate")}`;
     info.appendChild(metaLine);
     item.appendChild(info);
 
@@ -48,6 +49,27 @@ function renderSessions(sessions) {
     open.rel = "noopener";
     open.textContent = t("common.open");
     actions.appendChild(open);
+
+    if (s.out_of_date) {
+      const recreate = document.createElement("button");
+      recreate.className = "btn btn-ghost btn-sm";
+      recreate.textContent = t("sessions.recreate");
+      recreate.title = t("sessions.recreateTitle");
+      recreate.addEventListener("click", async () => {
+        recreate.disabled = true;
+        recreate.textContent = t("sessions.recreating");
+        try {
+          await secureFetch(`/api/sessions/${s.session_id}/recreate`, { method: "POST" });
+          toast(t("sessions.recreated"));
+          loadSessions();
+        } catch (e) {
+          recreate.disabled = false;
+          recreate.textContent = t("sessions.recreate");
+          toast(e.message, "error");
+        }
+      });
+      actions.appendChild(recreate);
+    }
 
     const sendFile = document.createElement("button");
     sendFile.className = "btn btn-ghost btn-sm";

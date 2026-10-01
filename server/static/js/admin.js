@@ -6,6 +6,7 @@ import { renderGroups } from "./admin/groups.js";
 import { renderRoles } from "./admin/roles.js";
 import { renderGlobalSettings } from "./admin/global-settings.js";
 import { renderSso } from "./admin/sso.js";
+import { renderCertificates } from "./admin/certificates.js";
 import { renderVolumeMounts } from "./admin/mounts.js";
 import { renderApps } from "./admin/apps.js";
 import { renderTemplates } from "./admin/templates.js";
@@ -198,6 +199,7 @@ const SECTION_RENDERERS = {
   groups: renderGroups,
   roles: renderRoles,
   sso: renderSso,
+  certificates: renderCertificates,
   mounts: renderVolumeMounts,
   backup: renderBackup,
   apps: renderApps,
@@ -217,6 +219,7 @@ const SECTION_PERMS = {
   groups: "admin.groups",
   roles: "admin.roles",
   sso: "admin.sso",
+  certificates: "admin.certificates",
   mounts: "admin.mounts",
   backup: "admin.backup",
   apps: "admin.apps",

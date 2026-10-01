@@ -21,6 +21,7 @@ from server import api
 from server.models import (
     ActiveSessionInfo,
     SendFileToSessionRequest,
+    SessionRecreateResponse,
     SessionStatusResponse,
 )
 from server.settings import settings
@@ -36,24 +37,30 @@ session_router = APIRouter(
 async def get_my_sessions(user: dict = Depends(api.verify_token)):
     user_sessions = []
     for sid, s_data in api.SESSIONS_DB.items():
-        if s_data.get("username") == user["username"]:
-            user_sessions.append(
-                ActiveSessionInfo(
-                    session_id=sid,
-                    app_id=s_data["provider_app_id"],
-                    app_name=s_data["app_name"],
-                    app_logo=s_data["app_logo"],
-                    created_at=s_data["created_at"],
-                    session_url=(
-                        f"/room/{sid}?token={s_data['controller_token']}"
-                        if s_data.get("is_collaboration")
-                        else f"/api/apps/session/{sid}/?access_token={s_data['access_token']}"
-                    ),
-                    launch_context=s_data.get("launch_context"),
-                    is_collaboration=s_data.get("is_collaboration", False),
-                    name=s_data.get("name"),
-                )
+        if s_data.get("username") != user["username"]:
+            continue
+        try:
+            out_of_date = await api._session_out_of_date(s_data)
+        except Exception:  # noqa: BLE001 - a probe failure shouldn't hide the list
+            out_of_date = False
+        user_sessions.append(
+            ActiveSessionInfo(
+                session_id=sid,
+                app_id=s_data["provider_app_id"],
+                app_name=s_data["app_name"],
+                app_logo=s_data["app_logo"],
+                created_at=s_data["created_at"],
+                session_url=(
+                    f"/room/{sid}?token={s_data['controller_token']}"
+                    if s_data.get("is_collaboration")
+                    else f"/api/apps/session/{sid}/?access_token={s_data['access_token']}"
+                ),
+                launch_context=s_data.get("launch_context"),
+                is_collaboration=s_data.get("is_collaboration", False),
+                name=s_data.get("name"),
+                out_of_date=out_of_date,
             )
+        )
     return sorted(user_sessions, key=lambda s: s.created_at, reverse=True)
 
 
@@ -91,6 +98,30 @@ async def stop_my_session(session_id: str, user: dict = Depends(api.verify_token
         )
     await api._stop_session(session_id)
     return Response(status_code=204)
+
+
+@session_router.post(
+    "/{session_id}/recreate", response_model=SessionRecreateResponse
+)
+async def recreate_my_session(session_id: str, user: dict = Depends(api.verify_token)):
+    """Recreate the session's container(s) from the current image, so an
+    out-of-date session picks up a newer image without losing its ID, URL or
+    access token. The app briefly goes offline while the container is
+    replaced."""
+    session_data = api.SESSIONS_DB.get(session_id)
+    if not session_data or session_data.get("username") != user["username"]:
+        raise HTTPException(
+            status_code=404, detail="Session not found or permission denied."
+        )
+    session_data = await api.recreate_session(session_id)
+    return SessionRecreateResponse(
+        session_id=session_id,
+        session_url=(
+            f"/room/{session_id}?token={session_data['controller_token']}"
+            if session_data.get("is_collaboration")
+            else f"/api/apps/session/{session_id}/?access_token={session_data['access_token']}"
+        ),
+    )
 
 
 @session_router.post("/{session_id}/send_file")

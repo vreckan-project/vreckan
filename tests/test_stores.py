@@ -22,6 +22,8 @@ from urllib.parse import quote
 import pytest
 import yaml
 
+import server.api as api_module
+import server.routers.admin as admin_router_module
 from conftest import DEAD_URL, STORE_APP
 
 # Dead local port: any fetch against this URL fails with an instant
@@ -336,6 +338,95 @@ def test_check_app_update_no_remote(secure_client):
     )
     assert status == 502
     assert image in body["detail"]
+
+
+# ---------------------------------------------------------------------------
+# Check-all / update-all (bulk) endpoints
+# ---------------------------------------------------------------------------
+class FakeProvider:
+    """Stands in for DockerProvider so the bulk endpoints never touch the
+    Docker daemon. The fake reports a remote digest that matches the local
+    image for app-1 (up to date) and a different one for every other image
+    (update available)."""
+
+    def __init__(self, app_config):
+        self.image = app_config["provider_config"]["image"]
+
+    async def get_local_image_info(self, image_name):
+        return {
+            "id": "sha256:local",
+            "short_id": "local123",
+            "digests": ["sha256:local"],
+        }
+
+    async def get_remote_image_digest(self, image_name):
+        return "sha256:local" if image_name == "lscr.io/linuxserver/firefox:latest" else "sha256:remote"
+
+
+def test_check_all_updates(secure_client, monkeypatch):
+    monkeypatch.setattr(admin_router_module, "DockerProvider", FakeProvider)
+    monkeypatch.setattr(
+        api_module, "_do_pull_and_cache_image", lambda *a, **k: _async_noop()
+    )
+    secure_client.call("POST", "/api/admin/apps/installed", body=install_body())
+    body2 = install_body(app_id="app-2", name="Jellyfin", image="lscr.io/linuxserver/jellyfin:latest")
+    secure_client.call("POST", "/api/admin/apps/installed", body=body2)
+
+    status, data = secure_client.call("POST", "/api/admin/apps/installed/check_all_updates")
+    assert status == 200, data
+    assert data["updates_available"] == 1
+    by_id = {r["app_id"]: r for r in data["results"]}
+    assert set(by_id) == {"app-1", "app-2"}
+    assert by_id["app-1"]["update_available"] is False
+    assert by_id["app-2"]["update_available"] is True
+    assert by_id["app-1"]["current_sha"] == "local123"
+
+
+def test_check_all_updates_empty(secure_client, monkeypatch):
+    monkeypatch.setattr(admin_router_module, "DockerProvider", FakeProvider)
+    status, data = secure_client.call("POST", "/api/admin/apps/installed/check_all_updates")
+    assert status == 200
+    assert data == {"results": [], "updates_available": 0}
+
+
+def test_pull_all_latest(secure_client, monkeypatch):
+    monkeypatch.setattr(admin_router_module, "DockerProvider", FakeProvider)
+    started = []
+
+    async def _fake_pull(image_name, app=None):
+        started.append(image_name)
+
+    monkeypatch.setattr(api_module, "_do_pull_and_cache_image", _fake_pull)
+    secure_client.call("POST", "/api/admin/apps/installed", body=install_body())
+    body2 = install_body(app_id="app-2", name="Jellyfin", image="lscr.io/linuxserver/jellyfin:latest")
+    secure_client.call("POST", "/api/admin/apps/installed", body=body2)
+
+    status, data = secure_client.call("POST", "/api/admin/apps/installed/pull_all_latest")
+    assert status == 200, data
+    assert data["started"] == 2
+    assert {r["app_id"] for r in data["results"]} == {"app-1", "app-2"}
+    assert all(r["status"] == "pulling" for r in data["results"])
+    # Every image was claimed for a background pull.
+    assert api_module.PULL_STATUS["lscr.io/linuxserver/firefox:latest"] == "queued"
+    assert api_module.PULL_STATUS["lscr.io/linuxserver/jellyfin:latest"] == "queued"
+
+
+def test_pull_all_latest_already_queued(secure_client, monkeypatch):
+    monkeypatch.setattr(admin_router_module, "DockerProvider", FakeProvider)
+    monkeypatch.setattr(
+        api_module, "_do_pull_and_cache_image", lambda *a, **k: _async_noop()
+    )
+    secure_client.call("POST", "/api/admin/apps/installed", body=install_body())
+    # A pull for this image is already in flight.
+    api_module.PULL_STATUS["lscr.io/linuxserver/firefox:latest"] = "pulling"
+    status, data = secure_client.call("POST", "/api/admin/apps/installed/pull_all_latest")
+    assert status == 200
+    assert data["started"] == 1
+    assert data["results"][0]["status"] == "pulling"
+
+
+async def _async_noop():
+    return None
 
 
 # ---------------------------------------------------------------------------

@@ -1155,6 +1155,31 @@ async def background_update_job():
             logger.error(f"Failed to prune dangling images: {e}")
 
 
+async def background_le_renewal_job():
+    """Periodically check the Let's Encrypt certificate and renew it when it
+    is within the configured renewal window. The interval and window are read
+    fresh on each iteration (admin-editable), so changes take effect without a
+    restart. No-op when LE is disabled or auto-renew is off."""
+    from server import le_certbot
+
+    while True:
+        cfg = await le_certbot.effective_le_config()
+        if not (cfg.le_enabled and cfg.le_auto_renew):
+            await asyncio.sleep(300)
+            continue
+        try:
+            result = await le_certbot.renew_le_cert(cfg)
+            if result.get("due"):
+                logger.info(
+                    "LE certificate renewal "
+                    f"{'succeeded' if result.get('renewed') else 'failed'} "
+                    f"({result.get('days_remaining')}d remaining)."
+                )
+        except Exception as e:  # noqa: BLE001
+            logger.error(f"LE renewal check failed: {e}")
+        await asyncio.sleep(cfg.le_renew_check_hours * 3600)
+
+
 async def _relaunch_stale_session(session_id: str):
     """Re-launch a session whose container(s) are missing (e.g. after a reboot).
 
@@ -1231,6 +1256,118 @@ async def _relaunch_stale_session(session_id: str):
     await save_sessions_to_disk()
 
 
+async def _session_out_of_date(session_data: dict) -> bool:
+    """True when the session's container was launched from an older image than
+    the one currently pulled locally.
+
+    The session recorded the remote image digest at launch time
+    (``launch_image_digest``). If that digest is no longer among the local
+    image's digests, a newer image has been pulled since and the running
+    container is out of date. Sessions without a recorded digest (e.g.
+    launched before this field existed) are never flagged.
+    """
+    launch_digest = session_data.get("launch_image_digest")
+    if not launch_digest:
+        return False
+    app_id = session_data.get("provider_app_id")
+    app_config = INSTALLED_APPS.get(app_id)
+    if not app_config:
+        return False
+    image_name = app_config.provider_config.image
+    provider = DockerProvider(app_config.model_dump())
+    local_info = await provider.get_local_image_info(image_name)
+    if not local_info:
+        return False
+    local_digests = local_info.get("digests", [])
+    return not any(launch_digest in d for d in local_digests)
+
+
+async def recreate_session(session_id: str) -> dict:
+    """Recreate a session's container(s) from the current (newest) image.
+
+    Used to pick up an image update: the old container(s) are stopped and
+    removed, then re-launched with the same stored launch parameters (env,
+    volumes, GPU, network) — so the session keeps its ID, URL, access token
+    and any collaboration tokens. The recorded launch digest is refreshed so
+    the session is no longer flagged out of date.
+    """
+    session_data = SESSIONS_DB.get(session_id)
+    if not session_data:
+        raise HTTPException(status_code=404, detail="Session not found.")
+    registry = session_data.get("container_registry", {})
+    if not registry and "provider_app_id" in session_data:
+        registry = {
+            session_data["provider_app_id"]: {
+                "instance_id": session_data["instance_id"],
+            }
+        }
+    if not registry:
+        raise HTTPException(status_code=400, detail="Session has no containers to recreate.")
+
+    try:
+        docker_client = await asyncio.to_thread(docker.from_env)
+    except DockerException as e:
+        raise HTTPException(status_code=500, detail=f"Cannot connect to Docker: {e}")
+
+    primary_app_id = session_data.get("provider_app_id")
+    primary_restored = False
+    for app_id, container_info in registry.items():
+        instance_id = container_info.get("instance_id")
+        app_config = container_info.get("app_config")
+        launch_kwargs = container_info.get("launch_kwargs")
+        if not app_config or not launch_kwargs:
+            logger.warning(
+                f"[{session_id}] No stored launch parameters for app '{app_id}'; "
+                "cannot recreate."
+            )
+            continue
+        # Stop + remove the old container first.
+        if instance_id:
+            try:
+                provider = DockerProvider(app_config)
+                await provider.stop(instance_id)
+            except Exception as e:  # noqa: BLE001
+                logger.warning(f"[{session_id}] Could not stop old container for '{app_id}': {e}")
+        # Re-launch from the current image with the original parameters.
+        try:
+            provider = DockerProvider(app_config)
+            kwargs = dict(launch_kwargs)
+            kwargs["session_id"] = session_id
+            details = await provider.launch(**kwargs)
+        except Exception as e:  # noqa: BLE001
+            logger.error(f"[{session_id}] Failed to recreate container for app '{app_id}': {e}")
+            continue
+        container_info["instance_id"] = details["instance_id"]
+        container_info["ip"] = details["ip"]
+        container_info["port"] = details["port"]
+        if app_id == primary_app_id:
+            session_data["instance_id"] = details["instance_id"]
+            session_data["ip"] = details["ip"]
+            session_data["port"] = details["port"]
+            primary_restored = True
+        logger.info(
+            f"[{session_id}] Recreated container for app '{app_id}' "
+            f"({details['instance_id']})."
+        )
+    if not primary_restored:
+        raise HTTPException(
+            status_code=500, detail="Could not recreate the session's primary container."
+        )
+
+    # Refresh the recorded digest so the session is no longer out of date.
+    app_config = INSTALLED_APPS.get(primary_app_id)
+    if app_config:
+        try:
+            provider = DockerProvider(app_config.model_dump())
+            session_data["launch_image_digest"] = await provider.get_remote_image_digest(
+                app_config.provider_config.image
+            )
+        except Exception as e:  # noqa: BLE001
+            logger.warning(f"[{session_id}] Could not refresh launch digest: {e}")
+    await save_sessions_to_disk()
+    return session_data
+
+
 async def sync_app_settings_from_env():
     """Keep the ``app_settings`` table in sync with the live environment.
 
@@ -1240,15 +1377,17 @@ async def sync_app_settings_from_env():
     deleted, so the table is a monotonic record of the environment the server
     has run with (and a recovery source if the .env file is lost).
 
-    Exception: the OIDC/SSO settings are editable from the admin UI's SSO
-    page, where a stored value *overrides* the environment. For those keys a
-    pre-existing row is left untouched (the UI value wins); the env value is
-    only written when no row exists yet, so a first-ever boot still records
-    the env baseline.
+    Exception: the OIDC/SSO and Let's Encrypt settings are editable from the
+    admin UI (SSO and Certificates pages), where a stored value *overrides*
+    the environment. For those keys a pre-existing row is left untouched (the
+    UI value wins); the env value is only written when no row exists yet, so
+    a first-ever boot still records the env baseline.
     """
-    from server.settings import OIDC_SETTING_NAMES
+    from server.settings import OIDC_SETTING_NAMES, LE_SETTING_NAMES
 
-    oidc_env_names = {f"VRECKAN_{n.upper()}" for n in OIDC_SETTING_NAMES}
+    ui_editable_env_names = {
+        f"VRECKAN_{n.upper()}" for n in OIDC_SETTING_NAMES + LE_SETTING_NAMES
+    }
     try:
         changed = []
         async with db.async_session_factory() as session:
@@ -1265,8 +1404,8 @@ async def sync_app_settings_from_env():
                     if row is None:
                         session.add(db.AppSetting(key=name, value=value))
                         changed.append(f"{name} (added)")
-                    elif row.value != value and name not in oidc_env_names:
-                        # Non-SSO keys track the environment; SSO keys keep
+                    elif row.value != value and name not in ui_editable_env_names:
+                        # Non-UI keys track the environment; SSO/LE keys keep
                         # their UI-edited value (see docstring).
                         row.value = value
                         changed.append(f"{name} (updated)")
@@ -1495,21 +1634,21 @@ async def lifespan(app: FastAPI):
 
     update_task = None
     cleanup_task = None
+    le_task = None
     if settings.auto_update_apps:
         update_task = asyncio.create_task(background_update_job())
     cleanup_task = asyncio.create_task(background_share_cleanup_job())
+    # Let's Encrypt renewal: started unconditionally; the job no-ops (sleeps)
+    # when LE is disabled or auto-renew is off, and re-reads the effective
+    # (DB-overridable) settings each cycle.
+    le_task = asyncio.create_task(background_le_renewal_job())
     yield
     logger.info("API server shutting down...")
-    if update_task:
-        update_task.cancel()
-    if cleanup_task:
-        cleanup_task.cancel()
+    for t in (update_task, cleanup_task, le_task):
+        if t:
+            t.cancel()
     try:
-        tasks_to_await = []
-        if update_task:
-            tasks_to_await.append(update_task)
-        if cleanup_task:
-            tasks_to_await.append(cleanup_task)
+        tasks_to_await = [t for t in (update_task, cleanup_task, le_task) if t]
         if tasks_to_await:
             await asyncio.gather(*tasks_to_await)
     except asyncio.CancelledError:
@@ -2694,6 +2833,17 @@ async def _launch_common(
             )
 
         instance_details = await provider.launch(**provider_launch_kwargs)
+        # Record the image digest the container was launched from, so the
+        # session can later be flagged out-of-date when a newer image is
+        # pulled (see _session_out_of_date). Best-effort: a failure just means
+        # the session is never flagged.
+        launch_digest = None
+        try:
+            launch_digest = await provider.get_remote_image_digest(
+                app_config.provider_config.image
+            )
+        except Exception as e:  # noqa: BLE001
+            logger.warning(f"[{session_id}] Could not record launch digest: {e}")
         SESSIONS_DB[session_id] = {
             "instance_id": instance_details["instance_id"],
             "ip": instance_details["ip"],
@@ -2712,6 +2862,7 @@ async def _launch_common(
             "password": password,
             "gpu_config": gpu_config,
             "wayland_mode": wayland_mode,
+            "launch_image_digest": launch_digest,
             "container_registry": {
                 application_id: {
                     "instance_id": instance_details["instance_id"],

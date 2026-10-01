@@ -67,6 +67,12 @@ services:
       - ./:/app
       # Persistent app state (DB, storage, ssl, caches) — survives docker rm.
       - ./vreckan-data:/data
+      # Let's Encrypt / certbot: a named volume shared with the transient
+      # certbot container (which mounts the same volume at its default
+      # /etc/letsencrypt). Mounted at /data/le (a sub-path of the /data bind
+      # above, so it overrides that sub-path) — the app reads issued certs
+      # from here (see server/le_certbot.py).
+      - vreckan-le:/data/le
       # Let's Encrypt cert for vreckan.antitux.net (read-only). The whole
       # /etc/letsencrypt tree is mounted — not just live/antitux.net — because
       # the live dir is a symlink into ../archive.
@@ -81,3 +87,7 @@ services:
     # host, so this compose file is the primary dev deployment. Use
     # ./dev-container.sh (a thin wrapper around `docker compose`) for the
     # up / stop / remove workflow.
+
+volumes:
+  # Let's Encrypt / certbot shared volume (see the vreckan-http volumes above).
+  vreckan-le:

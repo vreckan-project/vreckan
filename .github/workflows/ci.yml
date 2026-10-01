@@ -1,0 +1,99 @@
+# Vreckan CI — runs on every push to main and every pull request.
+#
+#   build  — builds the API image (via the reusable image-build workflow) and
+#            pushes it to GHCR so the smoke test can pull it.
+#   test   — runs the full pytest suite against each database backend
+#            (SQLite and PostgreSQL) in a matrix. The Postgres leg points the
+#            suite at a postgres:16 service container; the suite's own
+#            test_postgres.py reuses that same server.
+#   smoke  — runs the built image and verifies the API answers over HTTPS.
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  build:
+    uses: ./.github/workflows/image-build.yml
+    with:
+      image-name: ghcr.io/${{ github.repository }}
+    secrets: inherit
+    outputs:
+      image: ${{ job.outputs.image }}
+
+  test:
+    needs: build
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - backend: sqlite
+            database-url: ""
+          - backend: postgres
+            database-url: postgresql+asyncpg://vreckan:vreckan@localhost:5432/vreckan
+    services:
+      postgres:
+        image: postgres:16
+        env:
+          POSTGRES_USER: vreckan
+          POSTGRES_PASSWORD: vreckan
+          POSTGRES_DB: vreckan
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U vreckan -d vreckan"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 12
+    env:
+      VRECKAN_DATABASE_URL: ${{ matrix.database-url }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: pip
+          cache-dependency-path: requirements.txt
+
+      - name: Install dependencies
+        run: pip install -r requirements.txt
+
+      - name: Run test suite (${{ matrix.backend }})
+        run: python -m pytest tests/ -q
+
+  smoke:
+    needs: build
+    runs-on: ubuntu-latest
+    steps:
+      - name: Pull built image
+        run: docker pull "${{ needs.build.outputs.image }}"
+
+      - name: Run image and wait for the API
+        run: |
+          docker run -d --name vreckan-smoke \
+            -p 8443:8443 \
+            -e VRECKAN_API_PORT=8443 \
+            -e VRECKAN_SESSION_PORT=8443 \
+            "${{ needs.build.outputs.image }}"
+          # The entrypoint generates a self-signed cert and boots uvicorn;
+          # poll until the API answers over TLS (any HTTP status means up).
+          for i in $(seq 1 30); do
+            code=$(curl -sk -o /dev/null -w '%{http_code}' https://localhost:8443/ || true)
+            if [ -n "$code" ] && [ "$code" != "000" ]; then
+              echo "API responded with HTTP $code"
+              exit 0
+            fi
+            sleep 2
+          done
+          docker logs vreckan-smoke || true
+          echo "API did not come up in time" >&2
+          exit 1

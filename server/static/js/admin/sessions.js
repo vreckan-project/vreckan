@@ -39,8 +39,10 @@ async function renderSessions() {
                 <td><strong>${esc(s.name ? `${s.app_name || s.app_id} - ${s.name}` : (s.app_name || s.app_id))}</strong><div class="muted fs-xs" >${esc(s.session_id)}</div></td>
                 <td>${s.created_at ? new Date(s.created_at * 1000).toLocaleString() : "—"}</td>
                 <td>${s.is_collaboration ? t("common.yes") : t("common.no")}</td>
+                <td>${s.out_of_date ? `<span class="badge badge-warn">${t("sessions.outOfDate")}</span>` : ""}</td>
                 <td class="admin-actions">
                   <button class="btn btn-sm btn-ghost" data-connect="${esc(s.session_id)}">${t("common.connect")}</button>
+                  ${s.out_of_date ? `<button class="btn btn-sm btn-ghost" data-recreate="${esc(s.session_id)}">${t("sessions.recreate")}</button>` : ""}
                   <button class="btn btn-sm btn-danger" data-kill="${esc(s.session_id)}">${t("sessions.kill")}</button>
                 </td>
               </tr>`
@@ -50,8 +52,8 @@ async function renderSessions() {
             <div class="card">
               <h3>${esc(g.username)}</h3>
               <table class="admin-table mt-8" >
-                <thead><tr><th>${t("sessions.session")}</th><th>${t("sessions.started")}</th><th>${t("sessions.roomMode")}</th><th></th></tr></thead>
-                <tbody>${rows || `<tr><td colspan="4" class="muted">${t("sessions.noActive")}</td></tr>`}</tbody>
+                <thead><tr><th>${t("sessions.session")}</th><th>${t("sessions.started")}</th><th>${t("sessions.roomMode")}</th><th>${t("sessions.image")}</th><th></th></tr></thead>
+                <tbody>${rows || `<tr><td colspan="5" class="muted">${t("sessions.noActive")}</td></tr>`}</tbody>
               </table>
             </div>`;
         })
@@ -64,6 +66,21 @@ async function renderSessions() {
     if (connectBtn) {
       const url = urlMap[connectBtn.dataset.connect];
       if (url) window.open(new URL(url, window.location.origin).href, "_blank");
+      return;
+    }
+    const recreateBtn = e.target.closest("button[data-recreate]");
+    if (recreateBtn) {
+      recreateBtn.disabled = true;
+      const orig = recreateBtn.textContent;
+      recreateBtn.textContent = t("sessions.recreating");
+      const r = await request(`/api/admin/sessions/${encodeURIComponent(recreateBtn.dataset.recreate)}/recreate`, "POST");
+      if (r.error) {
+        recreateBtn.disabled = false;
+        recreateBtn.textContent = orig;
+        return toast(r.error.message, "error");
+      }
+      toast(t("sessions.recreated"));
+      render();
       return;
     }
     const btn = e.target.closest("button[data-kill]");

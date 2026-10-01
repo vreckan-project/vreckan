@@ -88,6 +88,10 @@ services:
     volumes:
       # Persistent application state.
       - vreckan-data:/data
+      # Let's Encrypt / certbot: shared with the transient certbot container
+      # (which mounts the same named volume at its default /etc/letsencrypt).
+      # The app reads issued certificates from /data/le (see server/le_certbot.py).
+      - vreckan-le:/data/le
       # Required so the API can spawn/manage app containers on the host.
       - /var/run/docker.sock:/var/run/docker.sock
       # Intel GPU device nodes (see GPU passthrough note above).
@@ -138,6 +142,8 @@ services:
 
 volumes:
   vreckan-data:
+  # Let's Encrypt / certbot shared volume (see the vreckan-api volumes above).
+  vreckan-le:
   # vreckan-postgres-data:   # uncomment with the postgres service above
 
 networks:

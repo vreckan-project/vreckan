@@ -143,6 +143,28 @@ class ImageUpdateCheckResponse(BaseModel):
     current_sha: Optional[str]
     update_available: bool
 
+class AppUpdateCheckResult(BaseModel):
+    app_id: str
+    name: str
+    image: str
+    current_sha: Optional[str] = None
+    update_available: bool
+
+class CheckAllUpdatesResponse(BaseModel):
+    results: List[AppUpdateCheckResult]
+    updates_available: int
+
+class AppImagePullResult(BaseModel):
+    app_id: str
+    name: str
+    image: str
+    status: str
+    new_sha: Optional[str] = None
+
+class PullAllImagesResponse(BaseModel):
+    results: List[AppImagePullResult]
+    started: int
+
 class ImagePullResponse(BaseModel):
     status: str
     new_sha: Optional[str]
@@ -437,6 +459,14 @@ class ActiveSessionInfo(BaseModel):
     launch_context: Optional[dict] = None
     is_collaboration: bool = False
     name: Optional[str] = None
+    # True when the session's container was launched from an older image than
+    # the one currently pulled locally (a newer image is available); the user
+    # can "Recreate" the session to pick it up.
+    out_of_date: bool = False
+
+class SessionRecreateResponse(BaseModel):
+    session_id: str
+    session_url: str
 
 class SendFileToSessionRequest(BaseModel):
     filename: str

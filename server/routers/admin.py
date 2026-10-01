@@ -49,12 +49,16 @@ from server.models import (
     CreateUserResponse,
     CreateRoleRequest,
     CreateVolumeMountRequest,
+    AppImagePullResult,
+    AppUpdateCheckResult,
+    CheckAllUpdatesResponse,
     GPUInfo,
     Group,
     HomeDirectoryCreate,
     HomeDirectoryList,
     ImagePullResponse,
     ImageUpdateCheckResponse,
+    PullAllImagesResponse,
     InstalledApp,
     InstalledAppWithStatus,
     LaunchMetaCustomizeRequest,
@@ -64,6 +68,7 @@ from server.models import (
     RevokeOidcSessionResponse,
     RestoreResult,
     Role,
+    SessionRecreateResponse,
     SetAdminStatusRequest,
     SetUserAccessRequest,
     UpdateGroupRequest,
@@ -104,6 +109,7 @@ _PERMISSION_DESCRIPTIONS = {
     "admin.laboratory": "Use the laboratory (live session console).",
     "admin.global_settings": "Edit the global server settings.",
     "admin.sso": "Configure SSO / OIDC (provider connection and group mapping).",
+    "admin.certificates": "Manage TLS certificates (Let's Encrypt issuance and renewal).",
     "user.storage": "Use persistent storage (home directories, uploads).",
     "user.sharing": "Create public file shares.",
     "user.gpu": "Use GPUs when launching apps.",
@@ -381,6 +387,125 @@ async def test_sso_connection(request: Request):
         "jwks_uri": doc.get("jwks_uri"),
         "redirect_uri": await _oidc_redirect_uri(request),
     }
+
+
+# --- Certificates (Let's Encrypt / certbot) ----------------------------------
+# The LE settings are editable from this page (stored in app_settings,
+# overriding the environment), mirroring the SSO page. See server/le_certbot.py
+# for the certbot orchestration.
+LE_SETTING_FIELDS = [
+    "le_enabled",
+    "le_domains",
+    "le_auth",
+    "le_cloudflare_email",
+    "le_cloudflare_token",
+    "le_staging",
+    "le_auto_renew",
+    "le_renew_check_hours",
+    "le_renew_before_days",
+]
+
+
+class CertificateConfigRequest(BaseModel):
+    """The Certificates page's save payload. ``le_domains`` is sent as an
+    array (the UI uses a tag input); it is stored comma-joined, matching the
+    env format. The Cloudflare token is only overwritten when a non-empty
+    value is posted, so the UI can leave it blank to keep the existing token."""
+
+    le_enabled: bool
+    le_domains: List[str] = []
+    le_auth: str = "dns-cloudflare"
+    le_cloudflare_email: str = ""
+    le_cloudflare_token: str = ""
+    le_staging: bool = False
+    le_auto_renew: bool = True
+    le_renew_check_hours: int = 6
+    le_renew_before_days: int = 30
+
+
+@admin_router.get(
+    "/certificates", dependencies=[Depends(api.require_permission("admin.certificates"))]
+)
+async def get_certificates():
+    """The effective Let's Encrypt configuration, the source of each field,
+    and the current certificate status (present/source/expiry/days remaining).
+    The Cloudflare token is masked (``token_set`` + ``token_length``)."""
+    from server import le_certbot
+    from server.settings import setting_source
+
+    cfg = await le_certbot.effective_le_config()
+    domains = [d.strip() for d in str(cfg.le_domains).split(",") if d.strip()]
+    token = cfg.le_cloudflare_token or ""
+    values = {
+        "le_enabled": bool(cfg.le_enabled),
+        "le_domains": domains,
+        "le_auth": cfg.le_auth,
+        "le_cloudflare_email": cfg.le_cloudflare_email or "",
+        "le_cloudflare_token": "",
+        "token_set": bool(token),
+        "token_length": len(token),
+        "le_staging": bool(cfg.le_staging),
+        "le_auto_renew": bool(cfg.le_auto_renew),
+        "le_renew_check_hours": int(cfg.le_renew_check_hours),
+        "le_renew_before_days": int(cfg.le_renew_before_days),
+    }
+    sources = {name: await setting_source(name) for name in LE_SETTING_FIELDS}
+    status = le_certbot.cert_status(domains)
+    return {"values": values, "sources": sources, "status": status}
+
+
+@admin_router.put(
+    "/certificates", dependencies=[Depends(api.require_permission("admin.certificates"))]
+)
+async def save_certificates(decrypted_body: dict = Depends(api.get_decrypted_request_body)):
+    """Save the Let's Encrypt configuration to the app_settings table
+    (overriding the environment). Domains are stored comma-joined. The
+    Cloudflare token is only overwritten when a non-empty value is posted."""
+    try:
+        req = CertificateConfigRequest(**decrypted_body)
+    except ValidationError as e:
+        raise HTTPException(status_code=422, detail=f"Invalid request body: {e}")
+    payload = {
+        "le_enabled": "true" if req.le_enabled else "false",
+        "le_domains": ",".join(d.strip() for d in req.le_domains if d.strip()),
+        "le_auth": req.le_auth.strip() or "dns-cloudflare",
+        "le_cloudflare_email": req.le_cloudflare_email.strip(),
+        "le_cloudflare_token": req.le_cloudflare_token,
+        "le_staging": "true" if req.le_staging else "false",
+        "le_auto_renew": "true" if req.le_auto_renew else "false",
+        "le_renew_check_hours": str(int(req.le_renew_check_hours)),
+        "le_renew_before_days": str(int(req.le_renew_before_days)),
+    }
+    for name in LE_SETTING_FIELDS:
+        value = payload[name]
+        if name == "le_cloudflare_token" and value == "":
+            # Blank token = "leave the existing one"; skip the write.
+            continue
+        await db.set_app_setting(f"VRECKAN_{name.upper()}", value)
+    return {"ok": True}
+
+
+@admin_router.post(
+    "/certificates/renew", dependencies=[Depends(api.require_permission("admin.certificates"))]
+)
+async def renew_certificates():
+    """Issue (if no valid cert exists) or renew the Let's Encrypt certificate
+    now, using the currently effective configuration. Returns the resulting
+    certificate status plus ``issued``/``renewed`` flags."""
+    from server import le_certbot
+
+    cfg = await le_certbot.effective_le_config()
+    if not cfg.le_enabled:
+        raise HTTPException(status_code=400, detail="Let's Encrypt is not enabled.")
+    domains = [d.strip() for d in str(cfg.le_domains).split(",") if d.strip()]
+    if not domains:
+        raise HTTPException(status_code=400, detail="No domains configured.")
+    status = le_certbot.cert_status(domains)
+    if status["valid"]:
+        # Already valid: a "renew now" is a no-op (certbot renew would skip it).
+        return {**status, "issued": False, "renewed": False}
+    result = await le_certbot.ensure_le_cert(cfg)
+    return {**result, "renewed": result.get("issued", False)}
 
 
 @admin_router.get(
@@ -832,6 +957,72 @@ async def check_app_update(app_id: str):
 
 
 @admin_router.post(
+    "/apps/installed/check_all_updates",
+    response_model=CheckAllUpdatesResponse,
+    dependencies=[Depends(api.require_permission("admin.apps"))],
+)
+async def check_all_app_updates():
+    """Check every installed app's image against its registry and report which
+    ones have a newer version available. Runs the same digest comparison as
+    the per-app check, in parallel, and never pulls anything."""
+    apps = list(api.INSTALLED_APPS.values())
+
+    async def check_one(app) -> AppUpdateCheckResult:
+        image_name = app.provider_config.image
+        provider = DockerProvider(app.model_dump())
+        local_info = await provider.get_local_image_info(image_name)
+        remote_digest = await provider.get_remote_image_digest(image_name)
+        local_digests = local_info.get("digests", []) if local_info else []
+        update_available = bool(
+            remote_digest
+            and not any(remote_digest in d for d in local_digests)
+        )
+        return AppUpdateCheckResult(
+            app_id=app.id,
+            name=app.name,
+            image=image_name,
+            current_sha=local_info["short_id"] if local_info else None,
+            update_available=update_available,
+        )
+
+    results = await asyncio.gather(*(check_one(app) for app in apps))
+    return CheckAllUpdatesResponse(
+        results=list(results),
+        updates_available=sum(1 for r in results if r.update_available),
+    )
+
+
+@admin_router.post(
+    "/apps/installed/pull_all_latest",
+    response_model=PullAllImagesResponse,
+    dependencies=[Depends(api.require_permission("admin.apps"))],
+)
+async def pull_all_app_images():
+    """Kick off a background pull of the latest image for every installed app
+    and return immediately. Images already being pulled are reported as such
+    rather than queued twice; the client follows progress via the
+    installed-apps list (pull_status + pull_progress)."""
+    results: List[AppImagePullResult] = []
+    for app in api.INSTALLED_APPS.values():
+        image_name = app.provider_config.image
+        if api.PULL_STATUS.get(image_name) in ("queued", "pulling"):
+            results.append(
+                AppImagePullResult(
+                    app_id=app.id, name=app.name, image=image_name, status="pulling"
+                )
+            )
+            continue
+        api.PULL_STATUS[image_name] = "queued"
+        asyncio.create_task(api._do_pull_and_cache_image(image_name, app))
+        results.append(
+            AppImagePullResult(
+                app_id=app.id, name=app.name, image=image_name, status="pulling"
+            )
+        )
+    return PullAllImagesResponse(results=results, started=len(results))
+
+
+@admin_router.post(
     "/apps/installed/{app_id}/pull_latest",
     response_model=ImagePullResponse,
     dependencies=[Depends(api.require_permission("admin.apps"))],
@@ -1066,6 +1257,10 @@ async def get_all_sessions():
     sessions_by_user = defaultdict(list)
     for sid, s_data in api.SESSIONS_DB.items():
         username = s_data.get("username", "unknown")
+        try:
+            out_of_date = await api._session_out_of_date(s_data)
+        except Exception:  # noqa: BLE001 - a probe failure shouldn't hide the list
+            out_of_date = False
         sessions_by_user[username].append(
             ActiveSessionInfo(
                 session_id=sid,
@@ -1077,6 +1272,7 @@ async def get_all_sessions():
                 launch_context=s_data.get("launch_context"),
                 is_collaboration=s_data.get("is_collaboration", False),
                 name=s_data.get("name"),
+                out_of_date=out_of_date,
             )
         )
 
@@ -1100,6 +1296,27 @@ async def stop_any_session(session_id: str):
         raise HTTPException(status_code=404, detail="Session not found.")
     await api._stop_session(session_id)
     return Response(status_code=204)
+
+
+@admin_router.post(
+    "/sessions/{session_id}/recreate",
+    response_model=SessionRecreateResponse,
+    dependencies=[Depends(api.require_permission("admin.sessions"))],
+)
+async def recreate_any_session(session_id: str):
+    """Recreate any user's session from the current image (see the user-facing
+    ``/api/sessions/{id}/recreate``)."""
+    if session_id not in api.SESSIONS_DB:
+        raise HTTPException(status_code=404, detail="Session not found.")
+    session_data = await api.recreate_session(session_id)
+    return SessionRecreateResponse(
+        session_id=session_id,
+        session_url=(
+            f"/room/{session_id}?token={session_data['controller_token']}"
+            if session_data.get("is_collaboration")
+            else f"/api/apps/session/{session_id}/?access_token={session_data['access_token']}"
+        ),
+    )
 
 
 @admin_router.post(

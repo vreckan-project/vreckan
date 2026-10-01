@@ -18,6 +18,23 @@ OIDC_SETTING_NAMES = [
     "oidc_user_groups",
 ]
 
+# The Let's Encrypt / certbot settings are editable from the admin UI's
+# Certificates page. Like the OIDC settings, they are stored in the
+# ``app_settings`` table (key = the VRECKAN_ env name) and override the
+# environment when present. See ``get_setting`` / the ``/api/admin/certificates``
+# endpoints.
+LE_SETTING_NAMES = [
+    "le_enabled",
+    "le_domains",
+    "le_auth",
+    "le_cloudflare_email",
+    "le_cloudflare_token",
+    "le_staging",
+    "le_auto_renew",
+    "le_renew_check_hours",
+    "le_renew_before_days",
+]
+
 SETTING_DEFINITIONS = [
     {
         "name": "log_level",
@@ -248,6 +265,61 @@ SETTING_DEFINITIONS = [
         "type": "str",
         "default": "admin1234",
         "help": "Initial password for the bootstrap admin account; change it after first login.",
+    },
+    # --- Let's Encrypt (certbot) ---------------------------------------------
+    {
+        "name": "le_enabled",
+        "type": "bool",
+        "default": False,
+        "help": "Issue Let's Encrypt certificates via certbot. When off, the server uses a self-signed certificate.",
+    },
+    {
+        "name": "le_domains",
+        "type": "str",
+        "default": "",
+        "help": "Comma-separated domain(s) to issue certificates for (e.g. example.com,www.example.com).",
+    },
+    {
+        "name": "le_auth",
+        "type": "str",
+        "default": "dns-cloudflare",
+        "help": "ACME challenge method: 'dns-cloudflare' (Cloudflare DNS-01) or 'http-01'.",
+    },
+    {
+        "name": "le_cloudflare_email",
+        "type": "str",
+        "default": "",
+        "help": "Account email for Let's Encrypt (used with Cloudflare DNS auth).",
+    },
+    {
+        "name": "le_cloudflare_token",
+        "type": "str",
+        "default": "",
+        "help": "Cloudflare API token with Zone.DNS edit permission for the domain's zone.",
+    },
+    {
+        "name": "le_staging",
+        "type": "bool",
+        "default": False,
+        "help": "Use the Let's Encrypt staging server (test certificates, no production rate limits).",
+    },
+    {
+        "name": "le_auto_renew",
+        "type": "bool",
+        "default": True,
+        "help": "Automatically renew Let's Encrypt certificates in the background.",
+    },
+    {
+        "name": "le_renew_check_hours",
+        "type": "int",
+        "default": 6,
+        "help": "How often to check for certificate renewal (in hours).",
+    },
+    {
+        "name": "le_renew_before_days",
+        "type": "int",
+        "default": 30,
+        "help": "Renew the certificate when it expires within this many days.",
     },
 ]
 
