@@ -18,6 +18,17 @@ ENV PYTHONDONTWRITEBYTECODE=1 \
 
 WORKDIR /app
 
+# Patch the base image's OS packages. python:3.12-slim is cut at a point in
+# time, so any Debian security fix released after that is missing until we
+# upgrade. dist-upgrade brings the OS packages (bsdutils, libmount1,
+# libsystemd0, util-linux, ncurses, perl-base, ...) current, which keeps the
+# Trivy HIGH/CRITICAL scan clean without needing to ignore unfixed CVEs. The
+# apt lists and cache are removed afterwards to keep the image thin.
+RUN apt-get update -y && \
+    DEBIAN_FRONTEND=noninteractive apt-get dist-upgrade -y && \
+    apt-get clean && \
+    rm -rf /var/lib/apt/lists/*
+
 # Install dependencies first (separate layer) so the image only rebuilds its
 # dependency layer when requirements.txt changes. (JWT handling comes from
 # python-jose in requirements.txt — no separate PyJWT package is needed.)
