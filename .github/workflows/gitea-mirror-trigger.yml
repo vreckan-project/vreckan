@@ -38,8 +38,13 @@ jobs:
         run: |
           if [ "${{ github.event_name }}" = "pull_request" ]; then
             echo "target_branch=pr/${{ github.event.number }}" >> "$GITHUB_OUTPUT"
+            # For a PR, github.sha is the MERGE commit (head merged onto base),
+            # which does not exist in the mirror. The mirror only has the PR
+            # head commit, so build + post status against that instead.
+            echo "target_sha=${{ github.event.pull_request.head.sha }}" >> "$GITHUB_OUTPUT"
           else
             echo "target_branch=main" >> "$GITHUB_OUTPUT"
+            echo "target_sha=${{ github.sha }}" >> "$GITHUB_OUTPUT"
           fi
 
       - name: Mirror to Gitea
@@ -59,8 +64,14 @@ jobs:
           GITEA_TOKEN: ${{ secrets.GITEA_TOKEN }}
           GITEA_WORKFLOW_REPO: vreckan/vreckan-workflow
           GITEA_WORKFLOW: build-test.yml
-          GITEA_REF: "refs/heads/${{ steps.target.outputs.target_branch }}"
-          GITEA_INPUTS: '{"branch":"${{ steps.target.outputs.target_branch }}","sha":"${{ github.sha }}"}'
+          # The dispatch ref must name a branch in the WORKFLOW repo (where
+          # build-test.yml lives) so Gitea can read the workflow file — that's
+          # always main. The branch to actually BUILD is passed as the `branch`
+          # input (a mirror branch like pr/<n>), which the workflow's fetch
+          # step clones from the mirror. Using pr/<n> as the ref would fail,
+          # since that branch only exists in the mirror, not the workflow repo.
+          GITEA_REF: "refs/heads/main"
+          GITEA_INPUTS: '{"branch":"${{ steps.target.outputs.target_branch }}","sha":"${{ steps.target.outputs.target_sha }}"}'
         run: |
           chmod +x scripts/trigger-gitea.sh
           ./scripts/trigger-gitea.sh
