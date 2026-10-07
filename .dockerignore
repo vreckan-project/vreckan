@@ -3,7 +3,6 @@
 data/
 vreckan-data/
 screenshots/
-tests/
 .pytest_cache/
 codeto*
 __pycache__/

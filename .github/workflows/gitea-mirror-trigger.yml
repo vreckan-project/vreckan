@@ -1,0 +1,62 @@
+# Gitea Mirror + Trigger — the "vLLM pattern" leg that lives on GitHub.
+#
+# On every push to main (and every PR), this lightweight workflow:
+#   1. Mirrors the current branch to the Gitea mirror repo (vreckan/vreckan).
+#      For PRs, the code is mirrored to a `pr/<number>` branch.
+#   2. Dispatches the Gitea build workflow in the vreckan/vreckan-workflow
+#      repo so the heavy build + test + scan runs on Gitea's own runner.
+#
+# This keeps GitHub Actions costs near zero: ~10 seconds of curl + git push,
+# then the real work happens on Gitea.
+#
+# Secrets needed (GitHub):
+#   GITEA_URL    — e.g. https://repo.vreckanproject.com
+#   GITEA_REPO   — e.g. vreckan/vreckan (the mirror repo)
+#   GITEA_TOKEN  — a Gitea PAT with write access to the mirror repo
+name: Gitea Mirror + Trigger
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+jobs:
+  mirror-and-trigger:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Determine target branch
+        id: target
+        run: |
+          if [ "${{ github.event_name }}" = "pull_request" ]; then
+            echo "target_branch=pr/${{ github.event.number }}" >> "$GITHUB_OUTPUT"
+          else
+            echo "target_branch=main" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Mirror to Gitea
+        env:
+          GITEA_URL: ${{ secrets.GITEA_URL }}
+          GITEA_REPO: ${{ secrets.GITEA_REPO }}
+          GITEA_TOKEN: ${{ secrets.GITEA_TOKEN }}
+          GITEA_TARGET_BRANCH: ${{ steps.target.outputs.target_branch }}
+        run: |
+          chmod +x scripts/mirror-to-gitea.sh
+          ./scripts/mirror-to-gitea.sh
+
+      - name: Trigger Gitea build
+        env:
+          GITEA_URL: ${{ secrets.GITEA_URL }}
+          GITEA_REPO: ${{ secrets.GITEA_REPO }}
+          GITEA_TOKEN: ${{ secrets.GITEA_TOKEN }}
+          GITEA_WORKFLOW_REPO: vreckan/vreckan-workflow
+          GITEA_WORKFLOW: build-test.yml
+          GITEA_REF: "refs/heads/${{ steps.target.outputs.target_branch }}"
+          GITEA_INPUTS: '{"branch":"${{ steps.target.outputs.target_branch }}","sha":"${{ github.sha }}"}'
+        run: |
+          chmod +x scripts/trigger-gitea.sh
+          ./scripts/trigger-gitea.sh
