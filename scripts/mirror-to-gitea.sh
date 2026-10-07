@@ -25,10 +25,13 @@ set -euo pipefail
 
 # Use GITEA_TARGET_BRANCH if set (e.g. "pr/42"), otherwise the current branch.
 BRANCH="${GITEA_TARGET_BRANCH:-${GITHUB_REF_NAME:-$(git rev-parse --abbrev-ref HEAD)}}"
-REMOTE="${GITEA_URL}/$(echo "$GITEA_REPO" | sed 's#^/###').git"
 
-# Embed the token in the URL for a non-interactive push.
-AUTH_REMOTE="${REMOTE/https:\/\/\//https://x-access-token:${GITEA_TOKEN}@}"
+# Build the plain remote URL and an auth URL with the token embedded.
+# Strip the scheme to get the host, then rebuild with credentials so the
+# substitution is robust (a pattern-replace on the full URL is fragile).
+HOST="${GITEA_URL#https://}"
+REMOTE="https://${HOST}/$(echo "$GITEA_REPO" | sed 's#^/###').git"
+AUTH_REMOTE="https://x-access-token:${GITEA_TOKEN}@${HOST}/$(echo "$GITEA_REPO" | sed 's#^/###').git"
 
 git remote remove gitea 2>/dev/null || true
 git remote add gitea "$AUTH_REMOTE"
