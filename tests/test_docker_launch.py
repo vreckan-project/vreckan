@@ -16,6 +16,8 @@ support, so no device passthrough is attempted and the tests run on any host.
 These tests are skipped (not failed) when no Docker daemon is reachable, so
 the suite remains runnable on machines without Docker.
 """
+import asyncio
+
 import pytest
 
 try:
@@ -31,6 +33,7 @@ requires_docker = pytest.mark.skipif(
 
 import server.api as api_module  # noqa: E402
 from server.models import InstalledApp, InstalledAppProviderConfig  # noqa: E402
+from conftest import _REAL_FROM_ENV  # noqa: E402
 
 APP_ID = "app-docker-probe"
 
@@ -106,13 +109,34 @@ def _force_cleanup(instance_ids):
 
 
 @pytest.fixture
+def real_docker(isolate, monkeypatch):
+    """Restore the real ``docker.from_env`` for the duration of a test.
+
+    The autouse ``isolate`` fixture patches ``docker.from_env`` to a hermetic
+    fake so the rest of the suite never touches the daemon; this tier needs the
+    real client to launch and inspect actual containers.
+
+    The lifespan's self-inspection (which discovers ``DISCOVERED_NETWORK``) ran
+    while ``docker.from_env`` was still the fake, so it found no self-container
+    and left ``DISCOVERED_NETWORK`` as ``None``. Re-run it now that the real
+    client is restored so launched containers land on the same network as the
+    test container (and are therefore reachable by the readiness probe).
+    """
+    monkeypatch.setattr(docker, "from_env", _REAL_FROM_ENV)
+    try:
+        asyncio.run(api_module._inspect_self_container())
+    except Exception:
+        pass
+
+
+@pytest.fixture
 def probe_app(secure_client):
     """Seed the probe app *after* the lifespan ran (so it is not wiped)."""
     yield _seed_probe_app()
 
 
 @requires_docker
-def test_launch_stop_lifecycle(secure_client, probe_app):
+def test_launch_stop_lifecycle(secure_client, probe_app, real_docker):
     """Launch a real container, confirm it is running + ready, then stop it."""
     launched = []
     try:
@@ -159,7 +183,7 @@ def test_launch_stop_lifecycle(secure_client, probe_app):
 
 
 @requires_docker
-def test_no_gpu_app_gets_no_device_passthrough(secure_client, probe_app):
+def test_no_gpu_app_gets_no_device_passthrough(secure_client, probe_app, real_docker):
     """A no-GPU app must launch without any /dev device passthrough."""
     launched = []
     try:

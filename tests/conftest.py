@@ -34,6 +34,7 @@ from sqlalchemy import inspect, text
 
 import pytest
 import yaml
+import docker as _docker
 from cryptography.hazmat.primitives import hashes, serialization
 from cryptography.hazmat.primitives.asymmetric import padding, rsa
 from cryptography.hazmat.primitives.ciphers.aead import AESGCM
@@ -97,6 +98,93 @@ import server.api as api_module  # noqa: E402  (env must be set first)
 from server import db, user_manager, volume_mount_manager  # noqa: E402
 from server.models import AppStore  # noqa: E402
 from server.settings import settings  # noqa: E402
+
+# --- Hermetic Docker client --------------------------------------------------
+# The app opens *real* Docker-daemon connections in several places: the
+# lifespan self-container inspection, the request-time ``_session_out_of_date``
+# probe, session re-creation, the background update job, and every
+# ``DockerProvider``. Those connections are never explicitly closed, and during
+# ``TestClient`` teardown the anyio portal thread's event loop hangs in
+# ``_cancel_all_tasks`` waiting on them (the main thread blocks in ``join`` on
+# the portal thread). Patching ``docker.from_env`` to a fake that never touches
+# a socket makes every one of those paths hermetic.
+#
+# The real ``from_env`` is captured here — at import time, before any
+# monkeypatching — so the tests that genuinely need the daemon
+# (``test_docker_launch.py``) and the session-scoped Postgres fixture below can
+# restore it.
+_REAL_FROM_ENV = _docker.from_env
+
+
+class _FakeDockerImage:
+    id = "sha256:" + "0" * 64
+    short_id = "0" * 12
+    attrs = {"RepoDigests": []}
+
+
+class _FakeDockerContainer:
+    id = "ctr-fake"
+    short_id = "fake"
+    status = "running"
+    attrs = {}
+
+    def stop(self, timeout=None):
+        pass
+
+    def remove(self, force=False):
+        pass
+
+
+class _FakeDockerImages:
+    def get(self, name):
+        # No image is ever "present" locally in the hermetic suite: this makes
+        # ``get_local_image_info`` return ``None`` (so ``_session_out_of_date``
+        # is False) and forces ``launch`` down the pull path if it is reached.
+        raise _docker.errors.ImageNotFound(name)
+
+    def pull(self, name, **kwargs):
+        return _FakeDockerImage()
+
+    def prune(self, **kwargs):
+        return {}
+
+
+class _FakeDockerAPI:
+    def inspect_distribution(self, name):
+        # ``get_remote_image_digest`` inspects ``e.response.status_code`` on
+        # an ``APIError``, so the fake must carry a response-like object.
+        err = _docker.errors.APIError("no remote registry in tests")
+        err.response = type(
+            "FakeResponse", (), {"status_code": 404, "text": "not found"}
+        )()
+        raise err
+
+    def pull(self, name, stream=True, decode=True):
+        return []
+
+
+class _FakeDockerContainers:
+    def run(self, **kwargs):
+        return _FakeDockerContainer()
+
+    def get(self, instance_id):
+        raise _docker.errors.NotFound(instance_id)
+
+    def list(self, **kwargs):
+        return []
+
+
+class _FakeDockerClient:
+    """A stand-in for ``docker.from_env()`` that never opens a socket."""
+
+    def __init__(self):
+        self.images = _FakeDockerImages()
+        self.api = _FakeDockerAPI()
+        self.containers = _FakeDockerContainers()
+
+    def ping(self):
+        return True
+
 
 # Path settings re-pointed per test (see ``isolate``).
 PATH_SETTINGS = [
@@ -322,6 +410,27 @@ def isolate(tmp_path, monkeypatch):
     monkeypatch.setattr(api_module, "_get_and_cache_image_metadata", _noop)
     monkeypatch.setattr(api_module, "_do_pull_and_cache_image", _noop)
 
+    # Hermetic Docker: every ``docker.from_env()`` call site (the lifespan
+    # self-container inspection, the request-time ``_session_out_of_date``
+    # probe, session re-creation, the background update job, and every
+    # ``DockerProvider``) gets a fake client that never opens a socket. Without
+    # this, a real daemon connection opened mid-test is never closed and the
+    # portal thread's event loop hangs in ``_cancel_all_tasks`` during
+    # ``TestClient`` teardown. Tests that genuinely need the daemon
+    # (``test_docker_launch.py``) restore the real client via the
+    # ``real_docker`` fixture.
+    monkeypatch.setattr(_docker, "from_env", lambda *a, **k: _FakeDockerClient())
+
+    # Background tasks: the lifespan spawns infinite-loop background jobs
+    # (share cleanup, LE renewal, optional app updates). They are cancelled
+    # during lifespan shutdown, but a pending ``asyncio.sleep`` or I/O
+    # operation left on the event loop can cause the *next* TestClient's
+    # ``_cancel_all_tasks`` to hang in ``select()``. No-op them so the
+    # lifespan creates tasks that return immediately.
+    monkeypatch.setattr(api_module, "background_share_cleanup_job", _noop)
+    monkeypatch.setattr(api_module, "background_le_renewal_job", _noop)
+    monkeypatch.setattr(api_module, "background_update_job", _noop)
+
     # Fresh locks: asyncio primitives bind to the first loop that uses them.
     for lock_name in LOCK_NAMES:
         monkeypatch.setattr(api_module, lock_name, asyncio.Lock())
@@ -531,9 +640,9 @@ def postgres_url():
 
     import time
 
-    import docker
-
-    client = docker.from_env()
+    # The autouse ``isolate`` fixture patches ``docker.from_env`` to a fake, so
+    # use the real client captured at import time to reach the daemon.
+    client = _REAL_FROM_ENV()
     network_name = os.environ.get("VRECKAN_TEST_POSTGRES_NETWORK", "vreckan_default")
     try:
         client.networks.get(network_name)
@@ -541,6 +650,13 @@ def postgres_url():
         client.networks.create(network_name)
 
     name = f"vreckan-test-pg-{os.getpid()}"
+    # Remove a stale container with the same name (e.g. from a previous
+    # crashed run) to avoid a 409 Conflict on create.
+    try:
+        stale = client.containers.get(name)
+        stale.remove(force=True)
+    except Exception:
+        pass
     container = client.containers.run(
         "postgres:16",
         detach=True,
