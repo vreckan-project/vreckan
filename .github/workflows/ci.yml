@@ -24,8 +24,11 @@ jobs:
     with:
       image-name: ghcr.io/${{ github.repository }}
     secrets: inherit
-    outputs:
-      image: ${{ job.outputs.image }}
+    # No job-level `outputs:` here — a job that calls a reusable workflow via
+    # `uses:` can't declare its own outputs (GitHub rejects it as "Unexpected
+    # value 'outputs'"). The called workflow's `image` output is exposed at the
+    # workflow level (image-build.yml's on.workflow_call.outputs), so downstream
+    # jobs read it via `needs.build.outputs.image`.
 
   test:
     needs: build
