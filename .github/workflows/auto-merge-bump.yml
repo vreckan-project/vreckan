@@ -62,15 +62,16 @@ jobs:
 
       - name: Create tag + push to GitHub
         if: steps.exists.outputs.exists == 'false'
-        env:
-          GH_TOKEN: ${{ secrets.GH_TOKEN }}
         run: |
           set -euo pipefail
           TAG="${{ steps.version.outputs.tag }}"
           git config user.name "vreckan-release[bot]"
           git config user.email "release@vreckanproject.com"
           git tag -a "$TAG" -m "Release ${TAG}"
-          git push "https://x-access-token:${GH_TOKEN}@github.com/${{ github.repository }}.git" "$TAG"
+          # Use GITHUB_TOKEN (not the PAT): on a push event it's granted write
+          # access to the current repo, which is exactly what we need to push
+          # the tag. The PAT 403s on the git push in CI (works for API reads).
+          git push "https://x-access-token:${{ github.token }}@github.com/${{ github.repository }}.git" "$TAG"
           echo "Pushed tag ${TAG} to GitHub"
 
       - name: Mirror tag to Gitea
