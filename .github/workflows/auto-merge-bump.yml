@@ -70,13 +70,14 @@ jobs:
           git config user.name "vreckan-release[bot]"
           git config user.email "release@vreckanproject.com"
           git tag -a "$TAG" -m "Release ${TAG}"
-          # actions/checkout sets a global git extraheader that authenticates
-          # every github.com request with the (read-only) GITHUB_TOKEN. That
-          # overrides the PAT embedded in the push URL and causes a 403
-          # ("Write access to repository not granted"). Unset it first so the
-          # PAT (which has write access) is actually used.
-          git config --global --unset-all http.https://github.com/.extraheader || true
-          git push "https://x-access-token:${GH_TOKEN}@github.com/${{ github.repository }}.git" "$TAG"
+          # actions/checkout writes a git extraheader (into a temp credentials
+          # file pulled in via includeIf) that authenticates every github.com
+          # request with the (read-only) GITHUB_TOKEN. That overrides the PAT
+          # embedded in the push URL and causes a 403 ("Write access to
+          # repository not granted"). Override the extraheader inline for this
+          # one command so the PAT (which has write access) is actually used.
+          git -c http.https://github.com/.extraheader= push \
+            "https://x-access-token:${GH_TOKEN}@github.com/${{ github.repository }}.git" "$TAG"
           echo "Pushed tag ${TAG} to GitHub"
 
       - name: Mirror tag to Gitea
