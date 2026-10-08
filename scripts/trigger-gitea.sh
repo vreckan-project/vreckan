@@ -32,16 +32,18 @@ WORKFLOW="${GITEA_WORKFLOW:-build-test.yml}"
 WORKFLOW_REPO="${GITEA_WORKFLOW_REPO:-${GITEA_REPO}}"
 BRANCH="${GITHUB_REF_NAME:-$(git rev-parse --abbrev-ref HEAD)}"
 REF="${GITEA_REF:-refs/heads/${BRANCH}}"
-INPUTS="${GITEA_INPUTS:-{}}"
+# Prefer an explicit GITEA_INPUTS JSON object; otherwise build it here from the
+# scalar TARGET_BRANCH / TARGET_SHA env vars. Building the JSON in one place,
+# from plain scalars, avoids a stray '}' that leaked in when the JSON was
+# assembled in the workflow YAML and passed across the process boundary.
+if [ -n "${GITEA_INPUTS:-}" ]; then
+  INPUTS="$GITEA_INPUTS"
+else
+  INPUTS="$(printf '{"branch":"%s","sha":"%s"}' "${TARGET_BRANCH:-main}" "${TARGET_SHA:-}")"
+fi
 
 # Build the JSON body. GITEA_INPUTS is a JSON object; merge it with the ref.
 BODY="$(printf '{"ref":"%s","inputs":%s}' "$REF" "$INPUTS")"
-
-# DEBUG: exact bytes of what we send (od -c reveals any stray brace/whitespace)
-echo "DEBUG INPUTS len=${#INPUTS} value=[$INPUTS]"
-echo "DEBUG BODY   len=${#BODY} value=[$BODY]"
-echo "DEBUG BODY od -c:"
-printf '%s' "$BODY" | od -c
 
 URL="${GITEA_URL}/api/v1/repos/${WORKFLOW_REPO}/actions/workflows/${WORKFLOW}/dispatches"
 

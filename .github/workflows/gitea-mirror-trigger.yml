@@ -78,8 +78,5 @@ jobs:
           TARGET_SHA: ${{ steps.target.outputs.target_sha }}
         run: |
           chmod +x scripts/trigger-gitea.sh
-          GITEA_INPUTS="$(printf '{"branch":"%s","sha":"%s"}' "$TARGET_BRANCH" "$TARGET_SHA")"
-          echo "WORKFLOW GITEA_INPUTS len=${#GITEA_INPUTS}"
-          printf '%s' "$GITEA_INPUTS" | od -c
-          GITEA_INPUTS="$GITEA_INPUTS" ./scripts/trigger-gitea.sh
+          ./scripts/trigger-gitea.sh
 # ci-test
