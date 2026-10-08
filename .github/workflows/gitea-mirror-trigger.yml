@@ -75,3 +75,4 @@ jobs:
         run: |
           chmod +x scripts/trigger-gitea.sh
           ./scripts/trigger-gitea.sh
+ci test 1791498521
