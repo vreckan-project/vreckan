@@ -45,7 +45,7 @@ jobs:
   create-release:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
         with:
           # Full history so we can diff against the previous tag for notes.
           fetch-depth: 0
