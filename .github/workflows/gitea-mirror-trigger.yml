@@ -27,7 +27,10 @@
 #   GITEA_URL    — e.g. https://repo.vreckanproject.com
 #   GITEA_REPO   — e.g. vreckan/vreckan (the mirror repo)
 #   GITEA_TOKEN  — a Gitea PAT with write access to the mirror repo
-#   GH_TOKEN     — a GitHub token with write access (for pushing the tag)
+#   GH_APP_ID    — the vreckan-ci GitHub App ID
+#   GH_APP_KEY   — the vreckan-ci GitHub App private key (PEM)
+#   (The bump-and-tag job mints a short-lived app installation token from
+#    GH_APP_ID + GH_APP_KEY, so the tag is pushed by the app, not a human PAT.)
 name: Gitea Mirror + Trigger
 
 on:
@@ -116,10 +119,41 @@ jobs:
           echo "tag=${TAG}" >> "$GITHUB_OUTPUT"
           echo "Current VERSION: ${VERSION} (tag ${TAG})"
 
+      - name: Mint vreckan-ci app token
+        id: apptoken
+        env:
+          GH_APP_ID: ${{ secrets.GH_APP_ID }}
+          GH_APP_KEY: ${{ secrets.GH_APP_KEY }}
+        run: |
+          set -euo pipefail
+          if ! command -v openssl &>/dev/null; then
+            apt-get update -qq && apt-get install -y -qq openssl
+          fi
+          # Build a short-lived JWT signed with the app's private key, then
+          # exchange it for an installation access token. The token acts as the
+          # vreckan-ci app (not a personal account) and carries the app's
+          # permissions (Contents: write), so the tag push is attributed to the
+          # app instead of a human PAT.
+          NOW=$(date +%s)
+          HEADER=$(echo -n '{"alg":"RS256","typ":"JWT"}' | base64 -w0 | sed 's/=//g; s/+/-/g; s/\//_/g')
+          PAYLOAD=$(printf '{"iat":%d,"exp":%d,"iss":%s}' "$((NOW-60))" "$((NOW+60))" "$GH_APP_ID" | base64 -w0 | sed 's/=//g; s/+/-/g; s/\//_/g')
+          echo "$GH_APP_KEY" > /tmp/gh_app_key.pem
+          SIG=$(printf '%s.%s' "$HEADER" "$PAYLOAD" | openssl dgst -sha256 -sign /tmp/gh_app_key.pem | base64 -w0 | sed 's/=//g; s/+/-/g; s/\//_/g')
+          JWT="${HEADER}.${PAYLOAD}.${SIG}"
+          INSTALL_ID=$(curl -sS -H "Authorization: Bearer $JWT" -H "Accept: application/vnd.github+json" \
+            "https://api.github.com/repos/${{ github.repository }}/installation" | jq -r '.id')
+          ITOKEN=$(curl -sS -X POST -H "Authorization: Bearer $JWT" -H "Accept: application/vnd.github+json" \
+            "https://api.github.com/app/installations/${INSTALL_ID}/access_tokens" | jq -r '.token')
+          if [ -z "$ITOKEN" ] || [ "$ITOKEN" = "null" ]; then
+            echo "Failed to mint app installation token" >&2; exit 1
+          fi
+          echo "token=$ITOKEN" >> "$GITHUB_OUTPUT"
+          echo "Minted vreckan-ci app installation token"
+
       - name: Check if tag already exists
         id: exists
         env:
-          GH_TOKEN: ${{ secrets.GH_TOKEN }}
+          GH_TOKEN: ${{ steps.apptoken.outputs.token }}
         run: |
           set -euo pipefail
           TAG="${{ steps.version.outputs.tag }}"
@@ -137,19 +171,19 @@ jobs:
       - name: Create tag + push to GitHub
         if: steps.exists.outputs.exists == 'false'
         env:
-          GH_TOKEN: ${{ secrets.GH_TOKEN }}
+          GH_TOKEN: ${{ steps.apptoken.outputs.token }}
         run: |
           set -euo pipefail
           TAG="${{ steps.version.outputs.tag }}"
-          git config user.name "vreckan-release[bot]"
-          git config user.email "release@vreckanproject.com"
+          git config user.name "vreckan-ci[bot]"
+          git config user.email "bot@vreckanproject.com"
           git tag -a "$TAG" -m "Release ${TAG}"
           # actions/checkout writes a git extraheader (into a temp credentials
           # file pulled in via includeIf) that authenticates every github.com
-          # request with the (read-only) GITHUB_TOKEN. That overrides the PAT
+          # request with the (read-only) GITHUB_TOKEN. That overrides the token
           # embedded in the push URL and causes a 403 ("Write access to
           # repository not granted"). Override the extraheader inline for this
-          # one command so the PAT (which has write access) is actually used.
+          # one command so the app token (which has write access) is actually used.
           git -c http.https://github.com/.extraheader= push \
             "https://x-access-token:${GH_TOKEN}@github.com/${{ github.repository }}.git" "$TAG"
           echo "Pushed tag ${TAG} to GitHub"
