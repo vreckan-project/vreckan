@@ -37,6 +37,10 @@ INPUTS="${GITEA_INPUTS:-{}}"
 # Build the JSON body. GITEA_INPUTS is a JSON object; merge it with the ref.
 BODY="$(printf '{"ref":"%s","inputs":%s}' "$REF" "$INPUTS")"
 
+# DEBUG: show exactly what we send (brackets make stray whitespace/braces visible)
+echo "DEBUG INPUTS [${INPUTS}] (len ${#INPUTS})"
+echo "DEBUG BODY   [${BODY}] (len ${#BODY})"
+
 URL="${GITEA_URL}/api/v1/repos/${WORKFLOW_REPO}/actions/workflows/${WORKFLOW}/dispatches"
 
 echo "Dispatching Gitea workflow '$WORKFLOW' in ${WORKFLOW_REPO} on $REF"
