@@ -1,6 +1,6 @@
 # Privacy Policy for Vreckan
 
-**Last Updated: 11-02-25**
+**Last Updated: 09-10-26**
 
 ## Introduction
 
