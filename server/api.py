@@ -9,7 +9,6 @@ import secrets
 import yaml
 import logging
 import pathlib
-import subprocess
 import tempfile
 import re
 import mimetypes
@@ -44,9 +43,8 @@ from fastapi.responses import (
 )
 from fastapi.routing import APIRoute
 from starlette.websockets import WebSocket, WebSocketState
-from jose import JWTError, jwt
 from pydantic import ValidationError
-from sqlalchemy import delete, func, select, update
+from sqlalchemy import delete, select, update
 
 from .settings import settings
 from .models import *
@@ -61,7 +59,14 @@ logger = logging.getLogger(__name__)
 
 SESSIONS_LOCK = asyncio.Lock()
 SESSIONS_DB: Dict[str, Dict] = {}
-CRYPTO_SESSIONS: Dict[str, bytes] = {}
+# Maps session_id -> (aes_key, last_seen_timestamp). The key is the per-session
+# AES-GCM key from the E2EE handshake; the timestamp lets a background sweeper
+# reap idle sessions so the dict cannot grow without bound.
+CRYPTO_SESSIONS: Dict[str, tuple] = {}
+# Idle crypto sessions are reaped after this many seconds. Generous on purpose:
+# a session is only dropped if its tab has made no E2EE request for a full day,
+# and the client transparently re-handshakes on the resulting 400.
+CRYPTO_SESSION_TTL_SECONDS = 86400
 INSTALLED_APPS: Dict[str, InstalledApp] = {}
 APP_STORES: List[AppStore] = []
 APP_TEMPLATES: Dict[str, Dict] = {}
@@ -80,7 +85,6 @@ try:
 except Exception as _e:  # pragma: no cover - schema is bundled with the image
     logger.warning(f"Could not load template schema ({_e}); editor will be limited.")
     TEMPLATE_SCHEMA = {"settings": []}
-PROVIDER_CACHE: Dict[str, DockerProvider] = {}
 AVAILABLE_GPUS: List[Dict] = []
 # Global default GPU (a device path from AVAILABLE_GPUS): the fallback
 # gpu_config applied to launches that have no personal GPU pick. Persisted
@@ -803,29 +807,27 @@ def _get_system_stats() -> Dict:
 def detect_gpus():
     global AVAILABLE_GPUS
     AVAILABLE_GPUS.clear()
-    cmd = "ls -la /sys/class/drm/renderD*/device/driver 2>/dev/null | awk '{print $11}' | awk -F/ '{print $NF}'"
+    # Read each render node's driver directly from sysfs instead of shelling out
+    # to ``ls``/``awk`` (which required shell=True). The driver is the basename
+    # of the ``device/driver`` symlink target, e.g. ``.../drivers/drm/i915`` ->
+    # ``i915``.
     try:
-        result = subprocess.run(
-            cmd, shell=True, check=True, capture_output=True, text=True
-        )
-        drivers = result.stdout.strip().split("\n")
-
         render_devices = sorted(
             [f for f in os.listdir("/sys/class/drm") if f.startswith("renderD")],
             key=lambda x: int(x.replace("renderD", "")),
         )
-
-        if len(drivers) != len(render_devices):
-            logger.warning(
-                f"Mismatch between detected drivers ({len(drivers)}) and render devices ({len(render_devices)}). GPU detection might be inaccurate."
-            )
-            return
+        drivers = []
+        for device in render_devices:
+            try:
+                target = os.readlink(f"/sys/class/drm/{device}/device/driver")
+            except OSError:
+                target = ""
+            drivers.append(os.path.basename(target))
 
         nvidia_index = 0
-        for i, driver in enumerate(drivers):
+        for device_name, driver in zip(render_devices, drivers):
             if not driver:
                 continue
-            device_name = render_devices[i]
             device_path = f"/dev/dri/{device_name}"
             gpu_info = {"device": device_path, "driver": driver}
             if driver == "nvidia":
@@ -839,9 +841,9 @@ def detect_gpus():
 
         logger.info(f"Detected {len(AVAILABLE_GPUS)} GPU(s): {AVAILABLE_GPUS}")
 
-    except (subprocess.CalledProcessError, FileNotFoundError) as e:
+    except (OSError, FileNotFoundError) as e:
         logger.info(
-            f"GPU detection command failed or could not be run: {e}. No GPUs will be available."
+            f"GPU detection failed or could not be run: {e}. No GPUs will be available."
         )
     except Exception as e:
         logger.error(f"An unexpected error occurred during GPU detection: {e}")
@@ -1541,6 +1543,30 @@ async def _load_template_schema() -> None:
     )
 
 
+async def background_crypto_session_sweeper() -> None:
+    """Periodically reap idle E2EE crypto sessions so ``CRYPTO_SESSIONS``
+    cannot grow without bound. A session is dropped once it has been idle for
+    longer than ``CRYPTO_SESSION_TTL_SECONDS``; the client transparently
+    re-handshakes on the resulting 400."""
+    while True:
+        try:
+            await asyncio.sleep(3600)
+            now = time.time()
+            stale = [
+                sid
+                for sid, (_key, last_seen) in CRYPTO_SESSIONS.items()
+                if now - last_seen > CRYPTO_SESSION_TTL_SECONDS
+            ]
+            for sid in stale:
+                CRYPTO_SESSIONS.pop(sid, None)
+            if stale:
+                logger.info(f"Reaped {len(stale)} idle E2EE crypto session(s).")
+        except asyncio.CancelledError:
+            raise
+        except Exception as e:  # noqa: BLE001
+            logger.error(f"Crypto session sweeper error: {e}")
+
+
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     logger.info("API server starting up...")
@@ -1635,20 +1661,22 @@ async def lifespan(app: FastAPI):
     update_task = None
     cleanup_task = None
     le_task = None
+    crypto_sweep_task = None
     if settings.auto_update_apps:
         update_task = asyncio.create_task(background_update_job())
     cleanup_task = asyncio.create_task(background_share_cleanup_job())
+    crypto_sweep_task = asyncio.create_task(background_crypto_session_sweeper())
     # Let's Encrypt renewal: started unconditionally; the job no-ops (sleeps)
     # when LE is disabled or auto-renew is off, and re-reads the effective
     # (DB-overridable) settings each cycle.
     le_task = asyncio.create_task(background_le_renewal_job())
     yield
     logger.info("API server shutting down...")
-    for t in (update_task, cleanup_task, le_task):
+    for t in (update_task, cleanup_task, le_task, crypto_sweep_task):
         if t:
             t.cancel()
     try:
-        tasks_to_await = [t for t in (update_task, cleanup_task, le_task) if t]
+        tasks_to_await = [t for t in (update_task, cleanup_task, le_task, crypto_sweep_task) if t]
         if tasks_to_await:
             await asyncio.gather(*tasks_to_await)
     except asyncio.CancelledError:
@@ -1816,12 +1844,18 @@ async def get_decrypted_request_body(request: Request) -> dict:
     session_id = request.headers.get("X-Session-ID")
     if not session_id or session_id not in CRYPTO_SESSIONS:
         raise HTTPException(status_code=400, detail="Invalid or missing session ID")
-    aesgcm = AESGCM(CRYPTO_SESSIONS[session_id])
+    aes_key, _ = CRYPTO_SESSIONS[session_id]
+    CRYPTO_SESSIONS[session_id] = (aes_key, time.time())
+    aesgcm = AESGCM(aes_key)
     try:
         encrypted_body = await request.json()
         payload = EncryptedPayload(**encrypted_body)
+        # Bind the ciphertext to this session via AAD so it cannot be replayed
+        # against a different session's key.
         decrypted_bytes = aesgcm.decrypt(
-            base64.b64decode(payload.iv), base64.b64decode(payload.ciphertext), None
+            base64.b64decode(payload.iv),
+            base64.b64decode(payload.ciphertext),
+            session_id.encode("utf-8"),
         )
         return json.loads(decrypted_bytes)
     except Exception as e:
@@ -1846,9 +1880,11 @@ class EncryptedRoute(APIRoute):
                 session_id = request.headers.get("X-Session-ID")
                 if session_id and session_id in CRYPTO_SESSIONS:
                     try:
-                        aesgcm = AESGCM(CRYPTO_SESSIONS[session_id])
+                        aes_key, _ = CRYPTO_SESSIONS[session_id]
+                        CRYPTO_SESSIONS[session_id] = (aes_key, time.time())
+                        aesgcm = AESGCM(aes_key)
                         iv = os.urandom(12)
-                        ciphertext = aesgcm.encrypt(iv, response.body, None)
+                        ciphertext = aesgcm.encrypt(iv, response.body, session_id.encode("utf-8"))
                         encrypted_payload = EncryptedPayload(
                             iv=base64.b64encode(iv).decode("utf-8"),
                             ciphertext=base64.b64encode(ciphertext).decode("utf-8"),
@@ -1999,7 +2035,7 @@ async def handshake_exchange(request: HandshakeExchangeRequest):
             ),
         )
         session_id = str(uuid.uuid4())
-        CRYPTO_SESSIONS[session_id] = aes_key
+        CRYPTO_SESSIONS[session_id] = (aes_key, time.time())
         logger.info(
             f"E2EE handshake successful. New crypto session: {session_id[:8]}..."
         )
@@ -2566,7 +2602,6 @@ async def _launch_common(
     volumes = {}
     host_mount_path = None
     shared_files_path = None
-    is_ephemeral_storage = False
 
     is_persistent_launch = effective_settings.get("persistent_storage", False) and (
         home_name is None or home_name.lower() != "cleanroom"
@@ -2600,7 +2635,6 @@ async def _launch_common(
                 )
             shared_files_path = os.path.join(settings.storage_path, username, "_vreckan_shared_files")
         else:
-            is_ephemeral_storage = True
             host_mount_path = os.path.join(
                 settings.storage_path, "vreckan_ephemeral", str(uuid.uuid4())
             )
@@ -2632,7 +2666,6 @@ async def _launch_common(
                 os.path.join(settings.storage_path, username, "_vreckan_shared_files")
             )
         else:
-            is_ephemeral_storage = True
             host_mount_path = os.path.join(
                 settings.storage_path, "vreckan_ephemeral", str(uuid.uuid4())
             )
@@ -3347,8 +3380,7 @@ async def access_public_share_post(share_id: str, password: str = Form(...)):
             status_code=400, detail="This share is not password protected."
         )
 
-    submitted_hash = hashlib.sha256(password.encode()).hexdigest()
-    if secrets.compare_digest(submitted_hash, metadata.password_hash):
+    if user_manager.verify_share_password(metadata.password_hash, password):
         token = secrets.token_urlsafe(32)
         DOWNLOAD_TOKENS[token] = {"share_id": share_id, "expires_at": time.time() + 60}
         return RedirectResponse(url=f"/public/download/{token}", status_code=303)

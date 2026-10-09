@@ -1,7 +1,7 @@
 fastapi
 uvicorn[standard]
 uvloop
-python-jose[cryptography]
+PyJWT[crypto]
 pydantic
 cryptography
 # httpx2: the app's HTTP client (OIDC/SSO, app-store fetches, proxy, health

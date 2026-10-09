@@ -525,7 +525,9 @@ class SecureClient:
         content = None
         if body is not None:
             iv = os.urandom(12)
-            ct = AESGCM(self.aes_key).encrypt(iv, json.dumps(body).encode(), None)
+            # Bind the ciphertext to the session via AAD, mirroring the server.
+            aad = self.session_id.encode("utf-8") if self.session_id else None
+            ct = AESGCM(self.aes_key).encrypt(iv, json.dumps(body).encode(), aad)
             content = json.dumps(
                 {
                     "iv": base64.b64encode(iv).decode(),
@@ -538,8 +540,9 @@ class SecureClient:
             return resp.status_code, None
         payload = resp.json()
         if isinstance(payload, dict) and "ciphertext" in payload:
+            aad = self.session_id.encode("utf-8") if self.session_id else None
             plain = AESGCM(self.aes_key).decrypt(
-                base64.b64decode(payload["iv"]), base64.b64decode(payload["ciphertext"]), None
+                base64.b64decode(payload["iv"]), base64.b64decode(payload["ciphertext"]), aad
             )
             return resp.status_code, json.loads(plain)
         return resp.status_code, payload

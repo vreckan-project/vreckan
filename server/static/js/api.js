@@ -21,7 +21,9 @@ export async function secureFetch(path, options = {}) {
       const headers = { "X-Session-ID": sess.id };
       let payload;
       if (body !== undefined && body !== null) {
-        const encrypted = await encryptAesGcm(sess.key, JSON.stringify(body));
+        // Bind the ciphertext to the session via AAD (the session id), matching
+        // the server, so it cannot be replayed against another session's key.
+        const encrypted = await encryptAesGcm(sess.key, JSON.stringify(body), sess.id);
         headers["Content-Type"] = "application/json";
         payload = JSON.stringify(encrypted);
       }
@@ -43,7 +45,7 @@ export async function secureFetch(path, options = {}) {
 
       const parsed = JSON.parse(text);
       if (parsed && typeof parsed === "object" && parsed.iv && parsed.ciphertext) {
-        const decrypted = await decryptAesGcm(sess.key, parsed.iv, parsed.ciphertext);
+        const decrypted = await decryptAesGcm(sess.key, parsed.iv, parsed.ciphertext, sess.id);
         return JSON.parse(decrypted);
       }
       return parsed;

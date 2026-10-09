@@ -22,6 +22,9 @@ screenshots/
 # Security-scan output (trivy/grype JSON reports + the parse helper).
 _scan_out/
 
+# Local security-audit writeup (kept out of the repo on purpose).
+SECURITY_FINDINGS.md
+
 # Jekyll build output for the project site (regenerated from site/*.md via
 # `jekyll build`; the sources in site/ are what's tracked). The build runs in
 # the official jekyll/jekyll Docker image, so the lock file isn't needed.
