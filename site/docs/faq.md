@@ -25,8 +25,8 @@ description: Answers to the most common questions about running and using Vrecka
   </div>
 
   <div class="faq-item">
-    <h3>Why are there two ports?</h3>
-    <p>Vreckan uses a dual-port architecture. The <strong>control plane</strong> (API) handles authentication and orchestration over the encrypted channel, while the <strong>data plane</strong> (session proxy) is a secure reverse proxy for live application traffic. Keeping them separate means the internal app containers are never directly exposed to the internet.</p>
+    <h3>How does the session proxy work?</h3>
+    <p>The server serves both the encrypted API and a reverse proxy for live application traffic on the same HTTPS endpoint. When you launch an app, the server returns a unique, single-use URL; after a one-time token exchange, all subsequent traffic (HTTP and WebSockets) is proxied through the server to the app container. The internal containers are never directly exposed to the internet.</p>
   </div>
 
   <div class="faq-item">

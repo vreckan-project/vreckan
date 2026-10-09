@@ -169,6 +169,13 @@ its own self-contained `translation.js`.
 | `dev-container.sh` | 50 | Dev container up/stop/remove wrapper. |
 | `.dockerignore`, `.env.example` | 40 | Image hygiene + documented env vars. |
 
+> **Post-fork (2026-10):** the `Dockerfile` was simplified (44 → 26 lines — the
+> starlette patch and the `ecdsa` uninstall moved into a single layer, and the
+> entrypoint is now just `python run_https.py`), and the three compose files were
+> consolidated into a single `docker-compose.yml` (image-based, TLS on 443, with
+> a bundled `postgres` service). `docker-compose.prod.yml` and
+> `docker-compose.test.yml` no longer exist.
+
 ---
 
 > **Note (2026-09-23 reorg, see CHANGELOG.md):** the deploy files above now

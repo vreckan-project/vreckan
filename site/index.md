@@ -56,7 +56,7 @@ description: Vreckan streams powerful, containerized desktop applications to any
     <div class="arch-node">
       <div class="role">Server</div>
       <h3>Vreckan Server</h3>
-      <p>The central hub for management, orchestration, and traffic proxying. A dual-port design separates the <strong>control plane</strong> (encrypted API) from the <strong>data plane</strong> (a secure reverse proxy for live app traffic), so app containers are never directly exposed.</p>
+      <p>The central hub for management, orchestration, and traffic proxying. A single HTTPS endpoint serves both the <strong>encrypted API</strong> (control plane) and a <strong>secure reverse proxy</strong> for live app traffic (data plane), so app containers are never directly exposed.</p>
     </div>
   </div>
 </section>
@@ -81,8 +81,8 @@ description: Vreckan streams powerful, containerized desktop applications to any
     <div class="feature">
       <span class="check">✓</span>
       <div class="feature-body">
-        <strong>Dual-port architecture</strong>
-        <span>A strict separation between the management control plane and the application data plane enhances security and stability.</span>
+        <strong>Session proxy</strong>
+        <span>Live application traffic is reverse-proxied by the server, so app containers are never directly exposed to the internet.</span>
       </div>
     </div>
     <div class="feature">

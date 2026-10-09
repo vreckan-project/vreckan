@@ -7,6 +7,105 @@ development *after* the fork, newest first. Full detail lives in
 `~/work/memory.md` (§13.x); the git history was squashed into a single
 "initial commit" (2026-09-23), so this log is the authoritative record.
 
+Since **v0.4.0** the project ships tagged container releases (published to the
+Gitea registry and GHCR). The release entries below summarize what each tag
+contains; the date-based entries that follow give the finer-grained
+development history.
+
+## 2026-10-09 — v0.4.4 — Deployment consolidation
+- **One compose file.** The three compose variants (dev / prod / test) were
+  consolidated into a single `docker-compose.yml`: image-based
+  (`ghcr.io/vreckan-project/vreckan:latest`), TLS on 443, a persistent
+  `vreckan-data` volume, Docker-socket + `/dev/dri` passthrough, and a bundled
+  `postgres:16` service. Removed `docker-compose.prod.yml`,
+  `docker-compose.postgres.yml`, `docker-compose.test.yml`, and
+  `dev-container.sh`.
+- **Docs pass.** README, the project site (index / setup / FAQ), HISTORY, and
+  PRIVACY were updated to match the current single-endpoint architecture, the
+  consolidated compose file, and the real bootstrap-admin and port defaults.
+
+## 2026-10-09 — v0.4.3 — Base-image bump (nightly)
+- The nightly scan detected a newer `python:3.12-slim` base and opened a PR;
+  merged and tagged. The image re-patches its OS packages via `apt dist-upgrade`
+  at build time, so the bump keeps the Trivy scan clean.
+
+## 2026-10-08 — v0.4.2 — Dockerfile simplification
+- Rewrote the `Dockerfile` (74 → 26 lines): the starlette `BlockingPortal`
+  patch and the `ecdsa` uninstall now live in a single `RUN` layer, and the
+  entrypoint is just `python run_https.py`. Dropped the verbose per-layer
+  comments.
+
+## 2026-10-08 — v0.4.1 — CI/CD consolidation onto Gitea
+- **Retired the GitHub build workflows** (`ci.yml`, `release.yml`,
+  `image-build.yml`, `auto-merge-bump.yml`); the build / test / scan / release
+  pipeline now runs on the Gitea runner (see the `vreckan-workflow` repo).
+- **Merged the auto-merge-bump job into `gitea-mirror-trigger.yml`** — one run,
+  two jobs: mirror GitHub → Gitea, then trigger the build.
+- **App-token attribution.** The bump-and-tag step mints a short-lived
+  `vreckan-ci` GitHub App token (JWT → installation token) instead of using a
+  personal `GH_TOKEN`, so version bumps and tags are attributed to the app bot.
+- **Hardened the Gitea dispatch.** The `GITEA_INPUTS` JSON is now built
+  in-script from scalar env vars (a stray `}` in inline YAML had broken the
+  dispatch), and the auth URL is constructed by scheme-split rather than fragile
+  string substitution.
+
+## 2026-10-08 — v0.4.0 — First container release
+The first tagged release. It bundles the work that landed since the fork
+(detailed in the 2026-09-25 and 2026-10-01 entries below):
+- **Let's Encrypt / certbot** — `server/le_certbot.py` issues and renews certs
+  via a transient certbot container on a shared `vreckan-le` volume (Cloudflare
+  DNS-01 or HTTP-01); self-signed by default; a new admin **Certificates** page
+  and `admin.certificates` permission; configurable auto-renew.
+- **Project site** — the Jekyll site for vreckanproject.com (overview +
+  setup / usage / FAQ), styled on the app's design tokens.
+- **Bulk app updates** — check-all / update-all endpoints and a session
+  "older image" flag, in the admin and user UIs.
+- **PostgreSQL validation** — the test suite is now dialect-aware (runs
+  identically against SQLite or PostgreSQL); new `test_postgres.py` covers the
+  JSONB / migration / dump-restore paths.
+- **Gitea mirror + container build/push** — the `gitea-mirror-trigger.yml`
+  workflow mirrors GitHub → Gitea and triggers the build; the Gitea runner
+  builds, tests, scans (Trivy), and pushes images to the Gitea registry and
+  GHCR with versioned + timestamped + `latest` tags.
+- **Base-image hardening** — `apt dist-upgrade` at build time keeps the OS
+  packages patched (Trivy-clean).
+
+## 2026-10-01 — Let's Encrypt, project site, bulk app updates
+- **Let's Encrypt / certbot** — new `server/le_certbot.py`: issue and renew
+  certs via a transient certbot/dns-cloudflare container on a shared
+  `vreckan-le` volume; Cloudflare DNS-01 and HTTP-01; cert status/expiry
+  helpers. Self-signed by default; LE enabled via env (`VRECKAN_LE_*`) or the
+  new admin **Certificates** page (UI edits override env, like SSO).
+  Configurable auto-renew (check every N hours, renew within N days of expiry);
+  background renewal job in `api.py`; `run_https.py` picks the LE cert at
+  startup when enabled, else falls back to self-signed. New
+  `admin.certificates` permission, Certificates page (`js/admin/certificates.js`),
+  sidebar entry, i18n, and GET/PUT/renew endpoints. `vreckan-le` volume added to
+  the compose files; `VRECKAN_LE_*` block in `.env.example`.
+- **Project site (`site/`)** — Jekyll site for vreckanproject.com: overview +
+  setup / usage / FAQ docs, styled on the app's design tokens and using the
+  project logos. The setup guide is Docker-image-first (pull
+  `ghcr.io/vreckan-project/vreckan`).
+- **Bulk app updates** — `models.py`: `AppUpdateCheckResult` /
+  `CheckAllUpdatesResponse` / `AppImagePullResult` / `PullAllImagesResponse`;
+  session "older image" flag. Bulk check-all / update-all endpoints and session
+  recreate in the admin + user UIs; tests in `test_stores.py`.
+- **Tests** — new `test_le_certbot.py` (29 tests); full suite green on SQLite
+  and Postgres.
+
+## 2026-09-25 — PostgreSQL validation; dialect-aware test suite
+- The configuration database is selected by `VRECKAN_DATABASE_URL` and the
+  schema/queries are backend-agnostic, but the test suite was hardwired to
+  SQLite. It now runs identically against either backend so PostgreSQL is
+  actually exercised: `asyncpg` added to requirements; `tests/conftest.py`
+  honors an externally-set `VRECKAN_DATABASE_URL`, drives the per-test DB wipe
+  through the app's engine, and adds a `sqlite3`-compatible `db_conn` shim
+  (placeholder translation, `information_schema` for `sqlite_master`, JSONB →
+  JSON-text normalization, upsert); the seven direct-DB test files point at the
+  shim; new `test_postgres.py` covers the dialect-specific paths (JSONB column
+  types, legacy-schema migration ALTERs, JSONB round-trips, db_dump/db_restore,
+  session persistence).
+
 ## 2026-09-24 / 2026-09-25 — Branding, UI polish, DAST hardening
 - **Vreckan wordmark** in the sidebar and on the login page (replaces the
   icon + name); the login tagline is gone; the "or" divider between the
