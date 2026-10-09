@@ -1,6 +1,7 @@
 import os
 import logging
 import re
+import secrets
 import shutil
 from typing import Dict, Optional, List
 from sqlalchemy import delete, select, update
@@ -998,6 +999,44 @@ def verify_password(username: str, password: str) -> bool:
     except Exception as e:
         logger.error(f"Failed to verify password for '{username}': {e}")
         return False
+
+
+def hash_share_password(password: str) -> str:
+    """Hash a public-share password for storage. Uses argon2id when available
+    (memory-hard, resists offline brute force); falls back to a SHA-256 hex
+    digest if the argon2 dependency is missing. The verifier selects the
+    comparison based on the stored value's format."""
+    if _HAS_ARGON2:
+        return _password_hasher.hash(password)
+    import hashlib
+
+    return hashlib.sha256(password.encode()).hexdigest()
+
+
+def verify_share_password(stored_hash: str, password: str) -> bool:
+    """Verify a public-share password against its stored hash.
+
+    New shares are stored as an argon2id hash; shares created before the
+    switch are a bare SHA-256 hex digest. The stored value's format selects
+    the comparison, so existing shares keep working without a migration.
+    """
+    if not stored_hash:
+        return False
+    if stored_hash.startswith("$argon2"):
+        if not _HAS_ARGON2:
+            return False
+        try:
+            return _password_hasher.verify(stored_hash, password)
+        except (VerifyMismatchError, InvalidHashError):
+            return False
+        except Exception as e:
+            logger.error(f"Failed to verify share password: {e}")
+            return False
+    # Legacy SHA-256 hex digest.
+    import hashlib
+
+    submitted = hashlib.sha256(password.encode()).hexdigest()
+    return secrets.compare_digest(submitted, stored_hash)
 
 
 async def delete_password(username: str) -> None:

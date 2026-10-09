@@ -1,6 +1,5 @@
 """Security: argon2 passwords, upload-id validation, path traversal, share passwords."""
 import base64
-import hashlib
 import uuid
 from pathlib import Path
 
@@ -88,10 +87,9 @@ def test_share_password_flow(secure_client):
     assert status == 200, info
     share_id = info["share_id"]
     assert info["has_password"] is True
-    # The stored hash is a plain sha256 hex digest.
-    assert api_module.PUBLIC_SHARES_METADATA[share_id].password_hash == hashlib.sha256(
-        b"hunter2"
-    ).hexdigest()
+    # New shares are stored as an argon2id hash (memory-hard); the verifier
+    # still accepts legacy SHA-256 digests for pre-existing shares.
+    assert api_module.PUBLIC_SHARES_METADATA[share_id].password_hash.startswith("$argon2")
 
     # Wrong password -> 401.
     assert secure_client.http.post(f"/public/{share_id}", data={"password": "wrong"}).status_code == 401

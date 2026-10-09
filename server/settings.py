@@ -253,6 +253,12 @@ SETTING_DEFINITIONS = [
         "default": "",
         "help": "Comma/space-separated group names that map to regular (non-admin) Vreckan groups; an SSO user not in an admin group is assigned to their first group in this list.",
     },
+    {
+        "name": "oidc_require_signature",
+        "type": "bool",
+        "default": True,
+        "help": "Require a verified id_token signature for OIDC login. When true (default), login fails closed if the provider's JWKS is unreachable; when false, a claims-only (unsigned) fallback is used for providers that omit a JWKS.",
+    },
     # --- Bootstrap admin -----------------------------------------------------
     {
         "name": "bootstrap_admin_username",

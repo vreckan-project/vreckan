@@ -24,7 +24,8 @@ from typing import Dict, Optional
 import httpx2
 from fastapi import APIRouter, Depends, HTTPException, Query, Request, Response
 from fastapi.responses import RedirectResponse
-from jose import JWTError, jwt
+import jwt
+from jwt import PyJWTError as JWTError
 from pydantic import ValidationError
 
 from server import api
@@ -299,7 +300,16 @@ def _rsa_jwk_to_pem(jwk: Dict) -> Optional[str]:
 async def _oidc_verify_id_token(id_token: str, issuer: str, client_id: str) -> Dict:
     """Verify the id_token signature (via the provider's JWKS) and standard
     claims (iss/aud/exp), then return its claims. Raises HTTPException(502)
-    on any verification failure."""
+    on any verification failure.
+
+    The signature algorithm is pinned to RS256 (the de-facto OIDC standard)
+    rather than trusted from the token header, which defeats the
+    algorithm-confusion class of attacks (e.g. python-jose CVE-2026-85394).
+    When the provider's JWKS is unreachable the behaviour is governed by the
+    ``oidc_require_signature`` setting: by default the login fails closed
+    (a signature is mandatory); setting it to false restores the legacy
+    claims-only fallback for providers that omit a JWKS.
+    """
     try:
         header = jwt.get_unverified_header(id_token)
     except JWTError as e:
@@ -319,7 +329,6 @@ async def _oidc_verify_id_token(id_token: str, issuer: str, client_id: str) -> D
         jwks_uri = discovery["jwks_uri"]
     if jwks_uri:
         try:
-            import jose
             async with httpx2.AsyncClient(timeout=10.0) as client:
                 jwks_resp = await client.get(jwks_uri)
             if jwks_resp.status_code == 200:
@@ -331,18 +340,20 @@ async def _oidc_verify_id_token(id_token: str, issuer: str, client_id: str) -> D
                         jwk_dict = k
                         break
                 if jwk_dict:
+                    # RSA is the de-facto OIDC signing algorithm; build the
+                    # PEM directly from the JWK (n/e) without a JWK library.
                     if jwk_dict.get("kty") == "RSA" and jwk_dict.get("n") and jwk_dict.get("e"):
                         key_pem = _rsa_jwk_to_pem(jwk_dict)
                     else:
-                        try:
-                            key_obj = jose.jwk.construct(jwk_dict)
-                            key_pem = key_obj.as_pem().decode("utf-8")
-                        except Exception:  # noqa: BLE001
-                            key_pem = None
-        except (httpx2.HTTPError, JWTError, Exception) as e:  # noqa: BLE001
+                        api.logger.warning(
+                            "OIDC JWKS: unsupported key type %r (expected RSA).",
+                            jwk_dict.get("kty"),
+                        )
+        except Exception as e:  # noqa: BLE001
             api.logger.warning("OIDC JWKS fetch/parse failed: %s", e)
 
-    alg = header.get("alg", "RS256")
+    # Pin the algorithm to RS256 rather than trusting the token header.
+    alg = "RS256"
     if key_pem is not None:
         try:
             claims = jwt.decode(
@@ -359,7 +370,16 @@ async def _oidc_verify_id_token(id_token: str, issuer: str, client_id: str) -> D
         if str(claims.get("iss", "")).rstrip("/") != issuer.rstrip("/"):
             raise HTTPException(status_code=502, detail="id_token issuer mismatch.")
         return claims
-    # Fallback (no JWKS available): verify claims only and warn loudly.
+
+    # No JWKS was available, so no signature could be checked.
+    require_signature = await settings.get_setting("oidc_require_signature")
+    if require_signature:
+        api.logger.warning("OIDC id_token: no JWKS available; failing closed.")
+        raise HTTPException(
+            status_code=502,
+            detail="OIDC provider JWKS unavailable; could not verify the id_token signature.",
+        )
+    # Legacy behaviour: verify claims only and warn loudly.
     api.logger.warning("OIDC id_token: no JWKS available; verifying claims only.")
     try:
         claims = jwt.decode(

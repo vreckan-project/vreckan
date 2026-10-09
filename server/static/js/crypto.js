@@ -116,17 +116,22 @@ export async function ensureSession() {
   return session;
 }
 
-export async function encryptAesGcm(key, plaintext) {
+export async function encryptAesGcm(key, plaintext, aad) {
   const iv = crypto.getRandomValues(new Uint8Array(12));
   const encoder = new TextEncoder();
   const data = encoder.encode(plaintext);
-  const ciphertext = await crypto.subtle.encrypt({ name: "AES-GCM", iv }, key, data);
+  const params = { name: "AES-GCM", iv };
+  if (aad) params.additionalData = encoder.encode(aad);
+  const ciphertext = await crypto.subtle.encrypt(params, key, data);
   return { iv: arrayBufferToBase64(iv.buffer), ciphertext: arrayBufferToBase64(ciphertext) };
 }
 
-export async function decryptAesGcm(key, ivB64, ciphertextB64) {
+export async function decryptAesGcm(key, ivB64, ciphertextB64, aad) {
   const iv = new Uint8Array(base64ToArrayBuffer(ivB64));
   const ct = base64ToArrayBuffer(ciphertextB64);
-  const plaintext = await crypto.subtle.decrypt({ name: "AES-GCM", iv }, key, ct);
+  const encoder = new TextEncoder();
+  const params = { name: "AES-GCM", iv };
+  if (aad) params.additionalData = encoder.encode(aad);
+  const plaintext = await crypto.subtle.decrypt(params, key, ct);
   return new TextDecoder().decode(plaintext);
 }
