@@ -1,93 +1,41 @@
-# Vreckan — development container (recreates the old `vreckan-http` setup).
-#
-#   docker compose up -d        # start (pulls python:3.12-slim on first run)
-#   docker compose logs -f      # watch startup
-#   docker compose down         # stop (data persists in ./vreckan-data)
-#
-# The container's environment lives in .env (next to this file) — including
-# the OIDC client id/secret. On every boot the API mirrors the live
-# VRECKAN_* environment into the app_settings table in the database, so the
-# configured values can be recovered from the DB if .env is ever lost.
-#
-# The production-oriented variant (built image, named volume) is kept in
-# docker-compose.prod.yml.
-
 name: vreckan
-
 services:
   vreckan-http:
-    image: python:3.12-slim
+    image: ghcr.io/vreckan-project/vreckan:latest
     container_name: vreckan-http
     restart: unless-stopped
-    # CRITICAL: without /app as the working dir the entrypoint's relative
-    # paths resolve against / and the server crash-loops.
     working_dir: /app
-    # The dev container runs the raw base image (no Dockerfile), so it does
-    # NOT get the two post-install tweaks the production Dockerfile applies.
-    # Re-apply both at every boot:
-    #   (1) starlette 1.6.0 (the latest release) still references the
-    #       deprecated anyio.abc.BlockingPortal alias inside its TestClient
-    #       (imported by the test suite); repoint the alias at its canonical
-    #       anyio.from_thread home to keep the suite warning-free. (No effect
-    #       on the production server.)
-    #   (2) `pip uninstall ecdsa` — ecdsa is a declared python-jose dependency
-    #       but is NEVER imported at runtime (jose 3.5.0 uses the cryptography
-    #       backend for EC ops whenever cryptography is installed, and the live
-    #       IdP signs RS256/RSA — see memory.md §13.19). It only exists to
-    #       carry the "Minerva" timing-attack finding, so drop it to keep the
-    #       scanners quiet. Safe: cryptography is a hard requirement here.
-    # The site-packages path is stable across python:3.12-slim point releases.
-    command:
-      - bash
-      - -lc
-      # List form (not the short string form) so the sed expression's
-      # backslashes survive compose's word-splitter verbatim — a YAML
-      # single-quoted scalar keeps backslashes literal (only '' escapes a
-      # quote). This keeps the dev patch byte-identical to the Dockerfile's.
-      - 'pip install -q -r requirements.txt; pip uninstall -y ecdsa; sed -i ''s/anyio\.abc\.BlockingPortal/anyio.from_thread.BlockingPortal/g'' /usr/local/lib/python3.12/site-packages/starlette/testclient.py; python run_https.py'
     ports:
       - "443:443"
     env_file:
       - .env
-    # GPU passthrough (Intel): the API detects GPUs via /sys/class/drm and
-    # passes the matching /dev/dri/renderD* device into each spawned app
-    # container. The flags below also expose /dev/dri to the API container
-    # itself and join the host render (990) + video (44) groups so the device
-    # nodes are accessible.
     privileged: true
     ipc: host
     devices:
       - /dev/dri:/dev/dri
     group_add:
-      - "990"   # render
-      - "44"    # video
+      - "990"
+      - "44"
     volumes:
-      # Live code (bind mount): Python edits need a container restart,
-      # static file (HTML/CSS/JS) edits are picked up on browser reload.
-      - ./:/app
-      # Persistent app state (DB, storage, ssl, caches) — survives docker rm.
       - ./vreckan-data:/data
-      # Let's Encrypt / certbot: a named volume shared with the transient
-      # certbot container (which mounts the same volume at its default
-      # /etc/letsencrypt). Mounted at /data/le (a sub-path of the /data bind
-      # above, so it overrides that sub-path) — the app reads issued certs
-      # from here (see server/le_certbot.py).
-      - vreckan-le:/data/le
-      # Let's Encrypt cert for vreckan.antitux.net (read-only). The whole
-      # /etc/letsencrypt tree is mounted — not just live/antitux.net — because
-      # the live dir is a symlink into ../archive.
-      - /etc/letsencrypt:/etc/letsencrypt:ro
-      # The API spawns/manages the app containers through the host daemon.
       - /var/run/docker.sock:/var/run/docker.sock
-      # Intel GPU device nodes (see GPU passthrough note above).
       - /dev/dri:/dev/dri
-    # NOTE (Linux host): `docker compose up -d` works fine here. The WSL2
-    # embedded-DNS issue that previously forced the dev container onto the
-    # default bridge (via dev-container.ps1) does NOT apply on a normal Linux
-    # host, so this compose file is the primary dev deployment. Use
-    # ./dev-container.sh (a thin wrapper around `docker compose`) for the
-    # up / stop / remove workflow.
+  postgres:
+    image: postgres:16
+    container_name: vreckan-postgres
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: vreckan
+      POSTGRES_PASSWORD: vreckan
+      POSTGRES_DB: vreckan
+    ports:
+      - "5432:5432"
+    volumes:
+      - ./vreckan-postgres-data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U vreckan -d vreckan"]
+      interval: 5s
+      timeout: 5s
+      retries: 12
+      start_period: 10s
 
-volumes:
-  # Let's Encrypt / certbot shared volume (see the vreckan-http volumes above).
-  vreckan-le:
