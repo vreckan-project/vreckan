@@ -24,7 +24,6 @@ from typing import Optional
 
 from sqlalchemy import JSON, Boolean, Float, Integer, String, Text, inspect, select, text
 from sqlalchemy.ext.asyncio import (
-    AsyncSession,
     async_sessionmaker,
     create_async_engine,
 )

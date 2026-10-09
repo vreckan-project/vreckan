@@ -12,6 +12,32 @@ Gitea registry and GHCR). The release entries below summarize what each tag
 contains; the date-based entries that follow give the finer-grained
 development history.
 
+## 2026-10-09 — v0.4.5 — Security hardening
+A focused pass over the codebase and its dependencies (see
+[`SECURITY_FINDINGS.md`](./SECURITY_FINDINGS.md) for the full evaluation).
+- **OIDC: `python-jose` → `PyJWT`.** `python-jose` 3.5.0 is affected by
+  CVE-2026-85394 (Critical, algorithm-confusion guard bypass) with no patched
+  release yet. The app now verifies `id_token`s with PyJWT, **pins the
+  signature algorithm to RS256** (instead of trusting the token header), and
+  **fails closed** when the provider's JWKS is unreachable. A new
+  `VRECKAN_OIDC_REQUIRE_SIGNATURE` setting (default `true`) restores the
+  legacy claims-only fallback for providers that omit a JWKS.
+- **E2EE: AES-GCM now binds the session id as AAD** on both the server and the
+  web client, so a captured ciphertext can't be replayed against a different
+  session's key. `CRYPTO_SESSIONS` also stores a last-seen timestamp and a
+  background sweeper reaps sessions idle for more than 24 h, fixing the
+  unbounded in-memory growth.
+- **GPU detection no longer shells out.** `detect_gpus()` reads the sysfs
+  `device/driver` symlinks directly instead of a `shell=True` `ls`/`awk`
+  pipeline.
+- **Public-share passwords use argon2id** (matching account passwords) instead
+  of bare SHA-256. Existing SHA-256 shares keep working — the verifier selects
+  the comparison from the stored hash's format, so no migration is needed.
+- **Deferred (documented, not changed):** the admin-triggered app-store fetch
+  SSRF surface, self-hosting Font Awesome (served behind Cloudflare), and
+  making `SELKIES_ALLOWED_ORIGINS` configurable (a previous attempt broke the
+  Selkies iframes).
+
 ## 2026-10-09 — v0.4.4 — Deployment consolidation
 - **One compose file.** The three compose variants (dev / prod / test) were
   consolidated into a single `docker-compose.yml`: image-based

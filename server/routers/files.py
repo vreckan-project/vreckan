@@ -323,7 +323,9 @@ async def create_public_share(
 
         password_hash = None
         if req.password:
-            password_hash = hashlib.sha256(req.password.encode()).hexdigest()
+            # argon2id for new shares (memory-hard, resists offline brute
+            # force); legacy SHA-256 shares are still verified on read.
+            password_hash = user_manager.hash_share_password(req.password)
 
         expiry_timestamp = None
         if req.expiry_hours is not None and req.expiry_hours > 0:

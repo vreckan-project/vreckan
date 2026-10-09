@@ -30,7 +30,7 @@ from urllib.parse import parse_qs, urlparse
 import pytest
 from cryptography.hazmat.primitives import serialization
 from cryptography.hazmat.primitives.asymmetric import rsa
-from jose import jwt
+import jwt
 
 import server.api as api_module
 from server import user_manager
@@ -400,8 +400,21 @@ def test_callback_bad_signature_rejected(oidc, client):
     assert "verification failed" in resp.json()["detail"]
 
 
-def test_callback_no_jwks_fallback(oidc, client):
-    # Without a JWKS the server verifies claims only (iss/aud/exp) and warns.
+def test_callback_no_jwks_fails_closed(oidc, client):
+    # Default: a signature is required, so an unreachable JWKS fails the
+    # login (502) rather than accepting an unsigned token.
+    oidc.disable_jwks()
+    state = _state_from_authorize(client)
+    code = oidc.issue_code({"preferred_username": "sstest", "sub": "x"})
+    resp = client.get(f"/api/auth/oidc/callback?code={code}&state={state}")
+    assert resp.status_code == 502, resp.text
+    assert "JWKS" in resp.json()["detail"]
+
+
+def test_callback_no_jwks_claims_only_when_disabled(oidc, client, monkeypatch):
+    # With oidc_require_signature off, the legacy claims-only fallback is
+    # used when the JWKS is unavailable.
+    monkeypatch.setattr(settings, "oidc_require_signature", False)
     oidc.disable_jwks()
     state = _state_from_authorize(client)
     code = oidc.issue_code({"preferred_username": "sstest", "sub": "x"})
