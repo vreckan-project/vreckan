@@ -12,9 +12,8 @@ Gitea registry and GHCR). The release entries below summarize what each tag
 contains; the date-based entries that follow give the finer-grained
 development history.
 
-## 2026-10-09 — v0.4.5 — Security hardening
-A focused pass over the codebase and its dependencies (see
-[`SECURITY_FINDINGS.md`](./SECURITY_FINDINGS.md) for the full evaluation).
+## 2026-10-09 — v0.4.6 — Security hardening
+A focused pass over the codebase and its dependencies.
 - **OIDC: `python-jose` → `PyJWT`.** `python-jose` 3.5.0 is affected by
   CVE-2026-85394 (Critical, algorithm-confusion guard bypass) with no patched
   release yet. The app now verifies `id_token`s with PyJWT, **pins the
