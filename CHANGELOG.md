@@ -248,3 +248,5 @@ The first tagged release. It bundles the work that landed since the fork
 - **Admin/user unification** — a single people API; an admin is a user with
   `is_admin=true`. Added the `users.is_sso` column (SSO users have no local
   web password); the two SSO test accounts were flagged manually.
+
+# Re-trigger CI (Gitea workflow run_id fix)
