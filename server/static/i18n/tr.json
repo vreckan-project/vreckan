@@ -1333,6 +1333,7 @@
     "item5Body": "Yönetici sekmesinde kullanıcıları, yöneticileri, grupları, uygulamaları, şablonları, hacimleri ve yedekleri yönetebilirsiniz."
   },
   "settings": {
+    "settingsSection": "Ayarlar",
     "active": "Etkin",
     "group": "Grup",
     "persistentStorage": "Kalıcı depolama",

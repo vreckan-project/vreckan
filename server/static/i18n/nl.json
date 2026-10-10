@@ -1333,6 +1333,7 @@
     "item5Body": "In het tabblad Admin kun je gebruikers, admins, groepen, apps, sjablonen, volumes en back-ups beheren."
   },
   "settings": {
+    "settingsSection": "Instellingen",
     "active": "Actief",
     "group": "Groep",
     "persistentStorage": "Persistente opslag",

@@ -1333,6 +1333,7 @@
     "item5Body": "관리자 탭에서 사용자, 관리자, 그룹, 앱, 템플릿, 볼륨, 백업을 관리할 수 있습니다."
   },
   "settings": {
+    "settingsSection": "설정",
     "active": "활성",
     "group": "그룹",
     "persistentStorage": "영구 저장소",

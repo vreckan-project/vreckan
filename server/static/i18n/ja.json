@@ -1333,6 +1333,7 @@
     "item5Body": "管理者タブで、ユーザー、管理者、グループ、アプリ、テンプレート、ボリューム、バックアップを管理できます。"
   },
   "settings": {
+    "settingsSection": "設定",
     "active": "有効",
     "group": "グループ",
     "persistentStorage": "永続ストレージ",

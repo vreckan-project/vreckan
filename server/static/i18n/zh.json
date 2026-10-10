@@ -1333,6 +1333,7 @@
     "item5Body": "在管理员标签页中，您可以管理用户、管理员、群组、应用、模板、卷和备份。"
   },
   "settings": {
+    "settingsSection": "设置",
     "active": "启用",
     "group": "群组",
     "persistentStorage": "持久存储",

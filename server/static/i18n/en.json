@@ -1359,6 +1359,7 @@
     "item5Body": "In the Admin tab you can manage users, admins, groups, apps, templates, volume mounts and backups."
   },
   "settings": {
+    "settingsSection": "Settings",
     "active": "Active",
     "group": "Group",
     "persistentStorage": "Persistent storage",

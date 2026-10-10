@@ -9,7 +9,7 @@ import { openCustomModal, closeModal } from "../modal.js";
 import { t } from "../i18n.js";
 // Shared with the rest of the admin UI (defined in admin.js). Referenced only
 // inside renderOverview, so the admin.js <-> overview.js import cycle is safe.
-import { settingsFormHtml, lastGroups } from "../admin.js";
+import { settingsFormHtml, lastGroups, wirePickSections } from "../admin.js";
 
 function setPanel(html) {
   const panel = $("admin-section");
@@ -95,6 +95,7 @@ async function renderOverview() {
     </div>
   `);
 
+  wirePickSections($("admin-section"));
   const howtoBtn = $("howto-btn");
   if (howtoBtn) howtoBtn.addEventListener("click", () => openHowToGuide());
 }

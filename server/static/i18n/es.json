@@ -1333,6 +1333,7 @@
     "item5Body": "En la pestaña Admin puede gestionar usuarios, admins, grupos, apps, plantillas, volúmenes y copias de seguridad."
   },
   "settings": {
+    "settingsSection": "Configuración",
     "active": "Activo",
     "group": "Grupo",
     "persistentStorage": "Almacenamiento persistente",

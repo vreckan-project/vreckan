@@ -1890,13 +1890,12 @@ label:has(.src-badge) {
   color: var(--text);
 }
 .access-all input { width: 16px; height: 16px; margin: 0; flex-shrink: 0; }
-.access-list {
-  margin-top: 6px;
-  max-height: 280px;
-  overflow-y: auto;
-}
-.access-section { margin-top: 6px; }
-.access-section-header {
+/* --- Shared collapsible "pick" sections --------------------------------- */
+/* Used by the permission, role, settings, and app-access pickers. A section
+   is a header (arrow + title + count + optional select-all) over a body of
+   one-item-per-line rows. Sections start collapsed. */
+.pick-section { margin-top: 6px; }
+.pick-section-header {
   display: flex;
   align-items: center;
   gap: 8px;
@@ -1907,16 +1906,16 @@ label:has(.src-badge) {
   cursor: pointer;
   user-select: none;
 }
-.access-section-header:hover { background: var(--surface-2); }
-.access-section-arrow {
+.pick-section-header:hover { background: var(--surface-2); }
+.pick-section-arrow {
   font-size: 0.7rem;
   color: var(--text-dim);
   transition: transform 0.15s;
 }
-.access-section-header.collapsed .access-section-arrow { transform: rotate(-90deg); }
-.access-section-title { flex: 1; font-weight: 600; }
-.access-section-count { font-weight: 400; font-size: 0.8rem; color: var(--text-muted); }
-.access-select-all {
+.pick-section-header.collapsed .pick-section-arrow { transform: rotate(-90deg); }
+.pick-section-title { flex: 1; font-weight: 600; }
+.pick-section-count { font-weight: 400; font-size: 0.8rem; color: var(--text-muted); }
+.pick-select-all {
   background: none;
   border: none;
   color: var(--accent);
@@ -1925,12 +1924,14 @@ label:has(.src-badge) {
   padding: 2px 6px;
   border-radius: 4px;
 }
-.access-select-all:hover { background: var(--accent-soft); }
-.access-section-body { padding: 2px 10px 6px; }
-.access-section-body.collapsed { display: none; }
-/* Override the global `label` rule (flex-direction: column, margin: 10px 0)
-   so each row lays out horizontally: [checkbox] name … tag. */
-.access-item {
+.pick-select-all:hover { background: var(--accent-soft); }
+.pick-select-all:disabled { color: var(--text-dim); cursor: default; }
+.pick-select-all:disabled:hover { background: none; }
+.pick-section-body { padding: 2px 10px 6px; }
+.pick-section-body.collapsed { display: none; }
+/* One item per line, laid out horizontally: [checkbox] name … tag.
+   Overrides the global `label` rule (flex-direction: column, margin: 10px 0). */
+.pick-item {
   display: flex;
   flex-direction: row;
   align-items: center;
@@ -1941,10 +1942,10 @@ label:has(.src-badge) {
   font-size: 0.85rem;
   color: var(--text);
 }
-.access-item:last-child { border-bottom: none; }
-.access-item input { width: 15px; height: 15px; flex-shrink: 0; margin: 0; }
-.access-item-name { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.access-item-tag {
+.pick-item:last-child { border-bottom: none; }
+.pick-item input { width: 15px; height: 15px; flex-shrink: 0; margin: 0; }
+.pick-item-name { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.pick-item-tag {
   flex-shrink: 0;
   font-size: 0.62rem;
   font-weight: 600;
@@ -1953,10 +1954,10 @@ label:has(.src-badge) {
   text-transform: uppercase;
   letter-spacing: 0.04em;
 }
-.access-item-tag-user { background: rgba(76, 175, 80, 0.15); color: #81c784; }
-.access-item-tag-group { background: rgba(33, 150, 243, 0.15); color: #64b5f6; }
-.access-empty { display: block; padding: 4px; }
-.access-disabled { opacity: 0.4; pointer-events: none; }
+.pick-item-tag-user { background: rgba(76, 175, 80, 0.15); color: #81c784; }
+.pick-item-tag-group { background: rgba(33, 150, 243, 0.15); color: #64b5f6; }
+.pick-empty { display: block; padding: 4px; }
+.pick-disabled { opacity: 0.4; pointer-events: none; }
 .mk-icon-sub {
   margin-left: 3px;
   font-size: 0.8em;

@@ -1333,6 +1333,7 @@
     "item5Body": "Dans l'onglet Admin, vous pouvez gérer les utilisateurs, les admins, les groupes, les apps, les modèles, les volumes et les sauvegardes."
   },
   "settings": {
+    "settingsSection": "Paramètres",
     "active": "Actif",
     "group": "Groupe",
     "persistentStorage": "Stockage persistant",

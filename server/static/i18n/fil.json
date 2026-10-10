@@ -1333,6 +1333,7 @@
     "item5Body": "Sa Admin tab, maaari mong pamahalaan ang mga user, admin, grupo, app, template, volume, at backup."
   },
   "settings": {
+    "settingsSection": "Mga Setting",
     "active": "Aktibo",
     "group": "Grupo",
     "persistentStorage": "Persistent storage",

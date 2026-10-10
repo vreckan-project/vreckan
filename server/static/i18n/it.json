@@ -1333,6 +1333,7 @@
     "item5Body": "Nella scheda Admin puoi gestire utenti, admin, gruppi, app, modelli, volumi e backup."
   },
   "settings": {
+    "settingsSection": "Impostazioni",
     "active": "Attivo",
     "group": "Gruppo",
     "persistentStorage": "Archiviazione persistente",

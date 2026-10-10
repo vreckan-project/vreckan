@@ -1333,6 +1333,7 @@
     "item5Body": "Trong tab Quản trị, bạn có thể quản lý người dùng, quản trị viên, nhóm, ứng dụng, mẫu, ổ đĩa và bản sao lưu."
   },
   "settings": {
+    "settingsSection": "Cài đặt",
     "active": "Đang hoạt động",
     "group": "Nhóm",
     "persistentStorage": "Lưu trữ bền vững",

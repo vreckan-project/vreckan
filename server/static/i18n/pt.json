@@ -1333,6 +1333,7 @@
     "item5Body": "Na aba Admin, você pode gerenciar usuários, admins, grupos, apps, modelos, volumes e backups."
   },
   "settings": {
+    "settingsSection": "Configurações",
     "active": "Ativo",
     "group": "Grupo",
     "persistentStorage": "Armazenamento persistente",
