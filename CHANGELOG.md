@@ -12,13 +12,23 @@ Gitea registry and GHCR). The release entries below summarize what each tag
 contains; the date-based entries that follow give the finer-grained
 development history.
 
-## 2026-10-09 — v0.4.7 — Access picker cleanup
-Tidied the per-app "who can use this app" picker in the install and edit
-modals: single column of one item per line (sorted A–Z), collapsible
-Users/Groups sections (closed by default) with a per-section select-all
-toggle, horizontal `[checkbox] name … tag` rows, and a horizontally laid-out
-"All users" master box checked by default. Spacing tightened so the picker
-fits inside the modal.
+## 2026-10-09 — v0.4.7 — Collapsible pick sections
+A consistent, tidy pattern for every multi-item picker in the admin UI.
+The app access picker's collapsible section became a shared component
+(`pickSectionHtml` / `wirePickSections`) and is now used everywhere:
+
+- **App access picker** (install/edit modals): single column of one item per
+  line (sorted A–Z), collapsible Users/Groups sections (closed by default)
+  with a per-section select-all, horizontal `[checkbox] name … tag` rows, and
+  a horizontally laid-out "All users" master box checked by default.
+- **Permissions** (roles create/edit, groups create/edit, account access):
+  Admin permissions and User permissions are collapsible sections with a
+  per-section select-all.
+- **Roles** (account access, groups create/edit) and **Groups** (account
+  access): single collapsible sections with select-all.
+- **Settings** (account add/edit, group add/edit, overview): the six on/off
+  toggles move into a collapsible Settings section; the group and limit
+  fields stay visible up top.
 
 ## 2026-10-09 — v0.4.6 — Security hardening
 A focused pass over the codebase and its dependencies.
