@@ -276,38 +276,84 @@ function accessCheckboxesHtml(prefix, selectedUsers, selectedGroups, userNames, 
   const su = selectedUsers || [];
   const sg = selectedGroups || [];
   const all = su.includes("*") || su.includes("all");
-  const opt = (value, checked) =>
-    ` <label class="chip" ><input type="checkbox" value="${esc(value)}"${checked ? " checked" : ""}> ${esc(value)}</label>`;
-  const users = (userNames || []).map((u) => opt(u, !all && su.includes(u))).join("");
-  const groups = (groupNames || []).map((g) => opt(g, !all && sg.includes(g))).join("");
+  // One item per line, sorted A→Z: [checkbox] name … tag. The tag is a small
+  // right-aligned marker so users and groups stay distinguishable even when
+  // the two sections are collapsed into one view. Sections are collapsible
+  // (see wireAccessChecks).
+  const item = (value, checked, kind) =>
+    ` <label class="access-item" ><input type="checkbox" value="${esc(value)}"${checked ? " checked" : ""}> <span class="access-item-name">${esc(value)}</span> <span class="access-item-tag access-item-tag-${kind}">${kind}</span></label>`;
+  const users = [...(userNames || [])].sort((a, b) => a.localeCompare(b)).map((u) => item(u, !all && su.includes(u), "user")).join("");
+  const groups = [...(groupNames || [])].sort((a, b) => a.localeCompare(b)).map((g) => item(g, !all && sg.includes(g), "group")).join("");
+  const section = (id, title, count, body) => `
+     <div class="access-section" >
+       <div class="access-section-header collapsed" id="${prefix}-${id}-header" role="button" tabindex="0" aria-expanded="false" >
+         <span class="access-section-arrow" aria-hidden="true">▾</span>
+         <span class="access-section-title">${title} <span class="access-section-count">${count}</span></span>
+         <button type="button" class="access-select-all" id="${prefix}-${id}-selectall" >${t("apps.accessSelectAll")}</button>
+       </div>
+       <div class="access-section-body collapsed" id="${prefix}-${id}" >${body || `<span class="muted access-empty">${id === "users" ? t("apps.noUsers") : t("apps.noGroups")}</span>`}</div>
+     </div>`;
   return `
-     <label class="row row-center gap-6 fw-600" ><input type="checkbox" id="${prefix}-all"${all ? " checked" : ""}> ${t("apps.allUsers")}</label>
-     <div class="mt-6 row row-wrap" id="${prefix}-users" >${users || `<span class="muted">${t("apps.noUsers")}</span>`}</div>
-     <div class="mt-6 row row-wrap" id="${prefix}-groups" >${groups || `<span class="muted">${t("apps.noGroups")}</span>`}</div>
+     <label class="access-all" ><input type="checkbox" id="${prefix}-all"${all ? " checked" : ""}> ${t("apps.allUsers")}</label>
+     <div class="access-list" id="${prefix}-list" >
+       ${section("users", t("apps.accessUsersSection"), (userNames || []).length, users)}
+       ${section("groups", t("apps.accessGroupsSection"), (groupNames || []).length, groups)}
+     </div>
     <p class="error mt-8" id="${prefix}-warn" hidden >${t("apps.noOneSelected")}</p>`;
 }
 
-// Wire up the "All users" master checkbox: when checked it disables (and
-// unchecks) the individual user/group boxes. collect() returns the
-// {users, groups} arrays to persist — ["*"] / [] when "All users" is set.
+// Wire up the access picker: the "All users" master checkbox (disables and
+// unchecks both sections when checked), the collapsible section headers, and
+// the per-section "select all" buttons. collect() returns the {users, groups}
+// arrays to persist — ["*"] / [] when "All users" is set.
 function wireAccessChecks(box, prefix) {
   const all = box.querySelector(`#${prefix}-all`);
+  const list = box.querySelector(`#${prefix}-list`);
   const usersBox = box.querySelector(`#${prefix}-users`);
   const groupsBox = box.querySelector(`#${prefix}-groups`);
   const warn = box.querySelector(`#${prefix}-warn`);
+  const sections = [
+    { box: usersBox, header: box.querySelector(`#${prefix}-users-header`), selectAll: box.querySelector(`#${prefix}-users-selectall`) },
+    { box: groupsBox, header: box.querySelector(`#${prefix}-groups-header`), selectAll: box.querySelector(`#${prefix}-groups-selectall`) },
+  ];
   const sync = () => {
     const off = all.checked;
-    for (const el of [usersBox, groupsBox]) {
-      el.style.opacity = off ? "0.4" : "";
-      el.style.pointerEvents = off ? "none" : "";
-    }
+    if (list) list.classList.toggle("access-disabled", off);
     if (off) {
-      usersBox.querySelectorAll("input").forEach((i) => (i.checked = false));
-      groupsBox.querySelectorAll("input").forEach((i) => (i.checked = false));
+      for (const s of sections) s.box.querySelectorAll("input").forEach((i) => (i.checked = false));
     }
-    const any = usersBox.querySelector("input:checked") || groupsBox.querySelector("input:checked");
+    const any = usersBox.querySelector("input:checked") || groupsBox.querySelectorAll("input:checked").length > 0;
     if (warn) warn.hidden = off || !!any;
   };
+  // Collapse/expand: the header toggles its body; the arrow rotates via CSS.
+  for (const s of sections) {
+    if (!s.header) continue;
+    const toggle = () => {
+      const collapsed = s.header.classList.toggle("collapsed");
+      s.header.setAttribute("aria-expanded", String(!collapsed));
+      s.box.classList.toggle("collapsed", collapsed);
+    };
+    s.header.addEventListener("click", (e) => {
+      if (e.target.closest(".access-select-all")) return; // let the button handle it
+      toggle();
+    });
+    s.header.addEventListener("keydown", (e) => {
+      if (e.key === "Enter" || e.key === " ") {
+        e.preventDefault();
+        toggle();
+      }
+    });
+    // "select all" flips every box in the section and relabels itself.
+    if (s.selectAll) {
+      s.selectAll.addEventListener("click", () => {
+        const boxes = [...s.box.querySelectorAll("input[type=checkbox]")];
+        const allChecked = boxes.length > 0 && boxes.every((b) => b.checked);
+        boxes.forEach((b) => (b.checked = !allChecked));
+        s.selectAll.textContent = allChecked ? t("apps.accessSelectAll") : t("apps.accessDeselectAll");
+        sync();
+      });
+    }
+  }
   all.addEventListener("change", sync);
   [...usersBox.querySelectorAll("input"), ...groupsBox.querySelectorAll("input")].forEach((i) =>
     i.addEventListener("change", sync)

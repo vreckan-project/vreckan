@@ -12,6 +12,14 @@ Gitea registry and GHCR). The release entries below summarize what each tag
 contains; the date-based entries that follow give the finer-grained
 development history.
 
+## 2026-10-09 — v0.4.7 — Access picker cleanup
+Tidied the per-app "who can use this app" picker in the install and edit
+modals: single column of one item per line (sorted A–Z), collapsible
+Users/Groups sections (closed by default) with a per-section select-all
+toggle, horizontal `[checkbox] name … tag` rows, and a horizontally laid-out
+"All users" master box checked by default. Spacing tightened so the picker
+fits inside the modal.
+
 ## 2026-10-09 — v0.4.6 — Security hardening
 A focused pass over the codebase and its dependencies.
 - **OIDC: `python-jose` → `PyJWT`.** `python-jose` 3.5.0 is affected by
