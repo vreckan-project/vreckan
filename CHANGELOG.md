@@ -12,10 +12,14 @@ Gitea registry and GHCR). The release entries below summarize what each tag
 contains; the date-based entries that follow give the finer-grained
 development history.
 
-## 2026-10-09 — v0.4.7 — Collapsible pick sections
-A consistent, tidy pattern for every multi-item picker in the admin UI.
-The app access picker's collapsible section became a shared component
-(`pickSectionHtml` / `wirePickSections`) and is now used everywhere:
+## 2026-10-09 — v0.4.7 — Admin UI tidy-up
+A pass over the admin UI to make the busy forms calmer and the i18n
+catalog leaner.
+
+**Collapsible pick sections.** A consistent, tidy pattern for every
+multi-item picker. The app access picker's collapsible section became a
+shared component (`pickSectionHtml` / `wirePickSections`) and is now used
+everywhere:
 
 - **App access picker** (install/edit modals): single column of one item per
   line (sorted A–Z), collapsible Users/Groups sections (closed by default)
@@ -29,6 +33,16 @@ The app access picker's collapsible section became a shared component
 - **Settings** (account add/edit, group add/edit, overview): the six on/off
   toggles move into a collapsible Settings section; the group and limit
   fields stay visible up top.
+
+**SSO page.** The Enable and Auto-provision fields each had a field label
+plus a checkbox repeating the same thing; the label is now merged into the
+checkbox (source badge kept).
+
+**i18n pruning.** The catalog carried ~55% dead weight from the SealSkin
+browser-extension port. Removed the five legacy extension namespaces
+(`options`, `popup`, `shell`, `background`, `upload`) plus 101 other unused
+keys. `en.json` drops from 1420 to 631 keys; every remaining key is
+referenced by the app.
 
 ## 2026-10-09 — v0.4.6 — Security hardening
 A focused pass over the codebase and its dependencies.
