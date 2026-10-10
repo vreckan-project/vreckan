@@ -92,7 +92,7 @@ function statusHtml(status) {
 async function renderCertificates() {
   const res = await request("/api/admin/certificates", "GET");
   if (res.error) {
-    setPanel(`<div class="card"><h3>${t("certificates.heading")}</h3><div class="error">${esc(res.error.message)}</div></div>`);
+    setPanel(`<div class="card"><h3>${t("nav.certificates")}</h3><div class="error">${esc(res.error.message)}</div></div>`);
     return;
   }
   const v = res.data.values || {};
@@ -104,7 +104,7 @@ async function renderCertificates() {
     ${statusHtml(status)}
 
     <div class="card">
-      <h3>${t("certificates.heading")}</h3>
+      <h3>${t("nav.certificates")}</h3>
       <p class="muted">${t("certificates.help")}</p>
 
       <div class="field mt-12">

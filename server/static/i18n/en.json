@@ -1,70 +1,26 @@
 {
-  "background": {
-    "contextMenu": {
-      "openUrl": "Open Link in SealSkin",
-      "openFile": "Open Link Target as File in SealSkin",
-      "sendMedia": "Send Media to SealSkin",
-      "searchText": "Search for \"%s\" in SealSkin",
-      "sendDownload": "Send Next Download to SealSkin"
-    }
-  },
   "common": {
-    "actions": "Actions",
-    "active": "Active",
     "cancel": "Cancel",
     "manage": "Manage",
     "delete": "Delete",
     "edit": "Edit",
     "save": "Save",
     "none": "none",
-    "error": "Error",
-    "na": "N/A",
-    "of": "of",
-    "status": "Status",
     "username": "Username",
-    "group": "Group",
-    "groups": "Groups",
-    "publicKey": "Public Key",
     "name": "Name",
-    "source": "Source",
-    "imageVersion": "Image Version",
     "language": "Language",
-    "storage": "Storage",
     "gpu": "GPU",
-    "version": "Version",
-    "checked": "Checked",
-    "never": "Never",
-    "stop": "Stop",
-    "reopen": "Re-open",
     "sendFile": "Send File",
     "share": "Share",
-    "search": "Search",
     "refresh": "Refresh",
     "close": "Close",
     "copy": "Copy",
     "open": "Open",
-    "copyUrl": "Copy URL",
     "download": "Download",
     "next": "Next",
     "previous": "Previous",
-    "page": "Page",
-    "home": "Home",
-    "homes": "Homes",
-    "sessions": "Sessions",
-    "users": "Users",
-    "admins": "Admins",
     "yes": "Yes",
     "no": "No",
-    "daysAgo": "{count, plural, one {1 day ago} other {{count} days ago}}",
-    "hoursAgo": "{count, plural, one {1 hour ago} other {{count} hours ago}}",
-    "minutesAgo": "{count, plural, one {1 minute ago} other {{count} minutes ago}}",
-    "justNow": "just now",
-    "bytes": "Bytes",
-    "kb": "KB",
-    "mb": "MB",
-    "gb": "GB",
-    "tb": "TB",
-    "pb": "PB",
     "password": "Password",
     "upload": "Upload",
     "create": "Create",
@@ -74,1137 +30,10 @@
     "remove": "Remove",
     "connect": "Connect"
   },
-  "options": {
-    "sidebar": {
-      "config": "Configuration",
-      "home": "Home Directories",
-      "sessions": "Active Sessions",
-      "pinned": "Pinned Behavior",
-      "appStore": "App Store",
-      "appTemplates": "App Templates",
-      "appLaboratory": "App Laboratory",
-      "installedApps": "Installed Apps",
-      "users": "Users",
-      "groups": "Groups",
-      "admins": "Admins"
-    },
-    "dashboard": {
-      "title": "Dashboard",
-      "clientSettings": "Client Settings",
-      "exportConfig": "Export Config",
-      "userStatus": "User Status",
-      "loggedInAs": "Logged in as:",
-      "role": "Role",
-      "roleAdmin": "Administrator",
-      "roleUser": "Standard User",
-      "serverInfo": "Server Info",
-      "server": "Server:",
-      "cpuModel": "CPU Model:",
-      "storageUsage": "Storage Usage:",
-      "detectedGpus": "Detected GPUs:",
-      "logout": "Logout & Clear Config",
-      "howTo": "How to Use SealSkin",
-      "howToDescription": "This section contains basic documentation on how to use the extension.",
-      "howToList": [
-        "<strong>To open content in isolation:</strong> Right-click on any link, image, or selected text and choose an option from the \"SealSkin Isolation\" context menu.",
-        "<strong>To send a download to isolation:</strong> Right-click on the page and select \"Send Next Download to Isolation\". The next file you download will be intercepted and sent to a secure session.",
-        "<strong>To launch a clean application:</strong> Click the SealSkin icon in your browser's toolbar.",
-        "<strong>To manage persistent storage:</strong> Use the \"Home Directories\" tab on this page to create and delete storage volumes that can be used across multiple sessions.",
-        "<strong>To save launch options:</strong> Check the \"Save these launch options\" box in the popup before launching an application for a specific file type (e.g., .pdf) or for all URLs. Manage these saved preferences in the \"Pinned Behavior\" tab."
-      ],
-      "confirmLogout": "Are you sure you want to logout? This will clear your saved configuration from this browser.",
-      "changeConnection": "Change connection",
-      "certExpired": "The server TLS certificate has expired. HTTPS connections will fail until it is renewed.",
-      "certExpiring": "The server TLS certificate expires in {days} day(s). Renew it to avoid connection failures."
-    },
-    "config": {
-      "quickSetup": "Quick Setup",
-      "quickSetupDescription": "Upload the configuration file (.json) provided by your administrator, or paste its contents below to automatically set up the extension.",
-      "uploadLabel": "Upload Config File",
-      "pasteLabel": "Or Paste Config Text",
-      "pastePlaceholder": "Paste your JSON configuration here...",
-      "applyButton": "Apply Configuration",
-      "manualLink": "Manual Configuration",
-      "advancedTitle": "Client Configuration (Advanced)",
-      "serverIpLabel": "Server IP or Domain",
-      "serverIpPlaceholder": "e.g., 192.168.1.100",
-      "apiPortLabel": "API Port",
-      "apiPortPlaceholder": "e.g., 8000",
-      "sessionPortLabel": "Session Port",
-      "sessionPortPlaceholder": "e.g., 8443",
-      "usernameLabel": "Username",
-      "usernamePlaceholder": "Your username",
-      "privateKeyLabel": "Your Private Key (PEM Format)",
-      "privateKeyPlaceholder": "Paste your private key content here",
-      "serverKeyLabel": "Server Public Key (PEM Format)",
-      "serverKeyPlaceholder": "Paste the server_public.pem content here",
-      "searchEngineLabel": "Default Search Engine for Selected Text",
-      "saveButton": "Save Configuration",
-      "loginButton": "Login & Test",
-      "automaticLink": "Automatic Configuration",
-      "chooseFile": "Choose File",
-      "keyGeneration": "Key Generation",
-      "keyGenDescription": "If you don't have a key pair, you can generate one here. The private key will be filled in above. Provide the public key to your administrator.",
-      "generateKeyButton": "Generate New Key Pair",
-      "publicKeyForAdminLabel": "Your Public Key (for admin)"
-    },
-    "home": {
-      "title": "Your Home Directories",
-      "description": "Create persistent storage directories to use across sessions. These will be mounted into your applications as your configuration directory.",
-      "newTitle": "Create New Home Directory",
-      "nameLabel": "Directory Name:",
-      "namePlaceholder": "e.g., my-project-files",
-      "nameTitle": "Use only letters, numbers, underscore, or hyphen.",
-      "createButton": "Create Directory",
-      "confirmDelete": "Are you sure you want to delete the home directory '{homeName}'? All data within it will be permanently lost."
-    },
-    "sessions": {
-      "title": "Active Sessions",
-      "application": "Application",
-      "started": "Started",
-      "noSessionsUser": "No active sessions found.",
-      "noSessionsAdmin": "No active sessions found for any user.",
-      "sessionsFor": "Sessions for {username} ({count})",
-      "confirmStop": "Are you sure you want to stop this session? The container will be destroyed."
-    },
-    "pinned": {
-      "title": "Pinned Extension Behavior",
-      "description": "This table shows the launch options you have saved for specific file types or for all URLs. You can remove a pinned behavior to be prompted for launch options again.",
-      "trigger": "Trigger",
-      "savedApp": "Saved Application",
-      "triggerSimple": "Simple Launch (Toolbar Button)",
-      "triggerUrl": "All URLs (from context menu)",
-      "triggerFile": "File Type: <strong>{fileType}</strong>",
-      "unknownApp": "Unknown App ({appId}...)"
-    },
-    "admins": {
-      "serverKeyTitle": "Server Public Key",
-      "serverKeyDescription": "This is the public key that user configuration files will need to connect to this server.",
-      "title": "Admin Management",
-      "searchPlaceholder": "Search admins...",
-      "newTitle": "Create New Admin",
-      "publicKeyOptionalLabel": "Public Key (Optional):",
-      "publicKeyPlaceholder": "Paste public key here, or leave blank to generate one.",
-      "createButton": "Create Admin",
-      "confirmDelete": "Are you sure you want to delete admin '{username}'? This will also delete all their persistent storage and cannot be undone."
-    },
-    "users": {
-      "title": "User Management",
-      "searchPlaceholder": "Search users by name or group...",
-      "newTitle": "Create New User",
-      "publicKeyOptionalLabel": "Public Key (Optional):",
-      "publicKeyPlaceholder": "Paste user's public key here, or leave blank to generate one.",
-      "settingsTitle": "User Settings",
-      "sessionLimitLabel": "Sessions limit",
-      "sessionLimitTitle": "Number of active sessions a user can have. -1 for unlimited.",
-      "permissionsTitle": "Permissions & Hardening",
-      "activeAccount": "Active Account",
-      "allowStorage": "Allow Persistent Storage",
-      "allowGpu": "Allow GPU Access",
-      "hardenContainer": "Harden Container",
-      "hardenWm": "Harden Window Manager",
-      "createButton": "Create User",
-      "homesDisabledTooltip": "Persistent storage disabled for this user",
-      "confirmDelete": "Are you sure you want to delete user '{username}'? This will also delete all their persistent storage and cannot be undone.",
-      "allowPublicSharing": "Allow Public File Sharing"
-    },
-    "groups": {
-      "title": "Group Management",
-      "searchPlaceholder": "Search groups...",
-      "newTitle": "Create New Group",
-      "nameLabel": "Group Name:",
-      "overrideTitle": "Group Override Settings",
-      "permissionsTitle": "Permissions & Hardening Overrides",
-      "createButton": "Create Group",
-      "confirmDelete": "Are you sure you want to delete group '{groupName}'? Users in this group will revert to their individual settings."
-    },
-    "installedApps": {
-      "title": "Installed Applications",
-      "searchPlaceholder": "Search installed apps...",
-      "noAppsFound": "No installed apps found.",
-      "pulling": "Pulling new image...",
-      "notLocal": "Image not found locally",
-      "isLaboratory": "This is a Laboratory app, built from a base image with custom settings.",
-      "laboratory": "Laboratory",
-      "confirmDelete": "Are you sure you want to delete the installed app '{appName}'?"
-    },
-    "appStore": {
-      "title": "App Stores",
-      "refreshTitle": "Refresh selected store",
-      "selectLabel": "Select App Store",
-      "addLabel": "Add New App Store",
-      "namePlaceholder": "Store Name",
-      "urlPlaceholder": "Store YAML URL",
-      "availableTitle": "Available Apps",
-      "addManual": "Add Manual App",
-      "searchPlaceholder": "Search available apps...",
-      "noAppsFound": "No applications found.",
-      "availableFrom": "Available Apps from {storeName}",
-      "couldNotLoad": "Could not load apps from this store."
-    },
-    "appTemplates": {
-      "title": "Application Template Editor",
-      "loadLabel": "Load Template",
-      "createOption": "Create New Template",
-      "nameLabel": "Template Name",
-      "namePlaceholder": "Enter a name for the new template",
-      "saveButton": "Save Profile",
-      "deleteButton": "Delete",
-      "previewTitle": "UI Preview",
-      "contentArea": "Application Content Area",
-      "confirmDelete": "Are you sure you want to delete the template '{templateName}'? This action cannot be undone.",
-      "deleteDisabled": "This template cannot be deleted.",
-      "enterName": "Please enter a name for the new template.",
-      "settings": {
-        "TITLE": {
-          "label": "Page Title",
-          "description": "The page title displayed on the web browser."
-        },
-        "SELKIES_UI_TITLE": {
-          "label": "Sidebar Title",
-          "description": "Title in top left corner of sidebar."
-        },
-        "SELKIES_UI_SHOW_SIDEBAR": {
-          "label": "Show Sidebar",
-          "description": "Show the main sidebar UI."
-        },
-        "SELKIES_UI_SHOW_LOGO": {
-          "label": "Show Logo",
-          "description": "Show the Selkies logo in the sidebar."
-        },
-        "SELKIES_UI_SHOW_CORE_BUTTONS": {
-          "label": "Show Core Buttons",
-          "description": "Show the core components buttons (display, audio, etc)."
-        },
-        "SELKIES_UI_SIDEBAR_SHOW_VIDEO_SETTINGS": {
-          "label": "Show Video Settings",
-          "description": "Show the video settings section in the sidebar."
-        },
-        "SELKIES_UI_SIDEBAR_SHOW_SCREEN_SETTINGS": {
-          "label": "Show Screen Settings",
-          "description": "Show the screen settings section in the sidebar."
-        },
-        "SELKIES_UI_SIDEBAR_SHOW_AUDIO_SETTINGS": {
-          "label": "Show Audio Settings",
-          "description": "Show the audio settings section in the sidebar."
-        },
-        "SELKIES_UI_SIDEBAR_SHOW_STATS": {
-          "label": "Show Stats",
-          "description": "Show the stats section in the sidebar."
-        },
-        "SELKIES_UI_SIDEBAR_SHOW_SHORTCUTS": {
-          "label": "Show Keyboard Shortcuts Section",
-          "description": "Show the keyboard shortcuts section in the sidebar."
-        },
-        "SELKIES_UI_SIDEBAR_SHOW_CLIPBOARD": {
-          "label": "Show Clipboard",
-          "description": "Show the clipboard section in the sidebar."
-        },
-        "SELKIES_UI_SIDEBAR_SHOW_FILES": {
-          "label": "Show Files Section",
-          "description": "Show the file transfer section in the sidebar."
-        },
-        "SELKIES_UI_SIDEBAR_SHOW_APPS": {
-          "label": "Show Apps Section",
-          "description": "Show the applications section in the sidebar."
-        },
-        "SELKIES_UI_SIDEBAR_SHOW_SHARING": {
-          "label": "Show Sharing Section",
-          "description": "Show the sharing section in the sidebar."
-        },
-        "SELKIES_UI_SIDEBAR_SHOW_GAMEPADS": {
-          "label": "Show Gamepads Section",
-          "description": "Show the gamepads section in the sidebar."
-        },
-        "SELKIES_UI_SIDEBAR_SHOW_FULLSCREEN": {
-          "label": "Show Fullscreen Button",
-          "description": "Show the fullscreen button in the sidebar."
-        },
-        "SELKIES_UI_SIDEBAR_SHOW_GAMING_MODE": {
-          "label": "Show Gaming Mode Button",
-          "description": "Show the gaming mode (pointer lock) button in the sidebar."
-        },
-        "SELKIES_UI_SIDEBAR_SHOW_TRACKPAD": {
-          "label": "Show Trackpad Button",
-          "description": "Show the virtual trackpad button in the sidebar."
-        },
-        "SELKIES_UI_SIDEBAR_SHOW_KEYBOARD_BUTTON": {
-          "label": "Show Keyboard Button",
-          "description": "Show the on-screen keyboard button."
-        },
-        "SELKIES_UI_SIDEBAR_SHOW_SOFT_BUTTONS": {
-          "label": "Show Soft Buttons",
-          "description": "Show the soft buttons section (for mobile)."
-        },
-        "WATERMARK_PNG": {
-          "label": "Watermark PNG Path",
-          "description": "Full path inside the container to a watermark png."
-        },
-        "WATERMARK_LOCATION": {
-          "label": "Watermark Location",
-          "description": "Where to paint the image over the stream.",
-          "options": {
-            "disabled": "Disabled",
-            "topLeft": "Top-Left",
-            "topRight": "Top-Right",
-            "bottomLeft": "Bottom-Left",
-            "bottomRight": "Bottom-Right",
-            "centered": "Centered",
-            "animated": "Animated"
-          }
-        },
-        "DASHBOARD": {
-          "label": "Dashboard Style",
-          "description": "Allows the user to set their dashboard.",
-          "options": {
-            "default": "Default",
-            "selkiesDefault": "Selkies (Default)",
-            "wish": "Wish"
-          }
-        },
-        "SELKIES_AUDIO_ENABLED": {
-          "label": "Enable Audio",
-          "description": "Enable server-to-client audio streaming."
-        },
-        "SELKIES_MICROPHONE_ENABLED": {
-          "label": "Enable Microphone",
-          "description": "Enable client-to-server microphone forwarding. Off by default upstream."
-        },
-        "SELKIES_GAMEPAD_ENABLED": {
-          "label": "Enable Gamepad",
-          "description": "Enable gamepad support."
-        },
-        "SELKIES_ENABLE_CLIPBOARD": {
-          "label": "Clipboard Policy",
-          "description": "Which clipboard directions are allowed. 'Server to client only' also stops the page reading the local clipboard, which is what triggers paste prompts in Firefox and Safari.",
-          "options": {
-            "both": "Both directions",
-            "inOnly": "Client to server only",
-            "outOnly": "Server to client only",
-            "disabled": "Disabled"
-          }
-        },
-        "SELKIES_ENABLE_BINARY_CLIPBOARD": {
-          "label": "Enable Binary Clipboard",
-          "description": "Allow binary data (images) on the clipboard."
-        },
-        "SELKIES_COMMAND_ENABLED": {
-          "label": "Enable Command Websocket",
-          "description": "Enable parsing of command websocket messages."
-        },
-        "SELKIES_FILE_TRANSFERS": {
-          "label": "File Transfers",
-          "description": "Allowed directions ('upload,download', 'upload', 'download' or 'none'). Emptied by Harden Desktop unless set here."
-        },
-        "SELKIES_FILE_TRANSFER_LIMIT_MBPS": {
-          "label": "File Transfer Limit (Mbit/s)",
-          "description": "Static throttle shared by all uploads and downloads. 0 disables the cap."
-        },
-        "SELKIES_ENABLE_SHARING": {
-          "label": "Enable All Sharing",
-          "description": "Master toggle for all sharing features."
-        },
-        "SELKIES_ENABLE_SHARED": {
-          "label": "Enable View-Only Sharing",
-          "description": "Enable view-only sharing links."
-        },
-        "SELKIES_ENABLE_COLLAB": {
-          "label": "Enable Collaboration",
-          "description": "Let a viewer holding the session's master token act as a read-write collaborator. Required for SealSkin rooms."
-        },
-        "SELKIES_ENABLE_PLAYER2": {
-          "label": "Enable Player 2 Sharing",
-          "description": "Enable the sharing link for gamepad player 2."
-        },
-        "SELKIES_ENABLE_PLAYER3": {
-          "label": "Enable Player 3 Sharing",
-          "description": "Enable the sharing link for gamepad player 3."
-        },
-        "SELKIES_ENABLE_PLAYER4": {
-          "label": "Enable Player 4 Sharing",
-          "description": "Enable the sharing link for gamepad player 4."
-        },
-        "SELKIES_SECOND_SCREEN": {
-          "label": "Enable Second Screen",
-          "description": "Enable support for a second monitor/display."
-        },
-        "SELKIES_ENABLE_RESIZE": {
-          "label": "Enable Dynamic Resize",
-          "description": "Resize the remote display to match the browser window."
-        },
-        "SELKIES_USE_BROWSER_CURSORS": {
-          "label": "Use Browser Cursors",
-          "description": "Use browser CSS cursors instead of rendering to canvas."
-        },
-        "SELKIES_ENABLE_CURSORS": {
-          "label": "Enable Remote Cursors",
-          "description": "Send the application's own cursor shapes to the client."
-        },
-        "SELKIES_CURSOR_SIZE": {
-          "label": "Cursor Size",
-          "description": "Cursor size in points at 96 DPI, scaled with the session DPI. -1 uses the platform default (32 on X11, 24 on Wayland)."
-        },
-        "SELKIES_USE_CSS_SCALING": {
-          "label": "Use CSS Scaling (LoDPI)",
-          "description": "If true, a lower resolution is sent and the canvas is stretched."
-        },
-        "SELKIES_MANUAL_RESOLUTION": {
-          "label": "Manual Resolution Mode",
-          "description": "Lock the resolution to the manual width/height values."
-        },
-        "SELKIES_FORCE_ALIGNED_RESOLUTION": {
-          "label": "Force Aligned Resolution",
-          "description": "Forces the display resolution to be a multiple of 16 pixels."
-        },
-        "SELKIES_MANUAL_WIDTH": {
-          "label": "Manual Width",
-          "description": "Lock width to a fixed value. Forces manual mode."
-        },
-        "SELKIES_MANUAL_HEIGHT": {
-          "label": "Manual Height",
-          "description": "Lock height to a fixed value. Forces manual mode."
-        },
-        "SELKIES_SCALING_DPI": {
-          "label": "UI Scaling DPI",
-          "description": "The default DPI for UI scaling."
-        },
-        "SELKIES_AUDIO_BITRATE": {
-          "label": "Audio Bitrate",
-          "description": "The default Opus audio bitrate."
-        },
-        "SELKIES_AUDIO_FRAME_DURATION_MS": {
-          "label": "Audio Frame Duration",
-          "description": "Opus frame duration. Lower values cut audio latency at a small bandwidth and packet-rate cost."
-        },
-        "SELKIES_AUDIO_CHANNELS": {
-          "label": "Audio Channels",
-          "description": "Number of audio channels; 2 is stereo."
-        },
-        "SELKIES_AUDIO_REDUNDANCY": {
-          "label": "Audio Redundancy (Opus RED)",
-          "description": "Carry prior audio frames as redundancy to cut dropouts under packet loss."
-        },
-        "SELKIES_AUDIO_REDUNDANCY_DISTANCE": {
-          "label": "Audio Redundancy Distance",
-          "description": "Number of prior frames carried as redundancy (0-4). Higher survives longer loss bursts at proportionally more bandwidth."
-        },
-        "SELKIES_ENCODER": {
-          "label": "Encoders",
-          "description": "Comma-separated list of allowed encoders (h264enc, h264enc-striped, jpeg). The first is the default; a single value locks the choice. Only h264enc streams over WebRTC."
-        },
-        "SELKIES_USE_CPU": {
-          "label": "Force CPU Encoding",
-          "description": "Force CPU-based encoding for pixelflux."
-        },
-        "SELKIES_FRAMERATE": {
-          "label": "Framerate (Range or Fixed)",
-          "description": "e.g. '8-240' for a range, '60' for a fixed initial value, '60,8-240' for both; '60-60' locks it."
-        },
-        "SELKIES_RATE_CONTROL_MODE": {
-          "label": "Rate Control Mode",
-          "description": "Default H.264 rate control: constant quality (CRF) or constant bitrate (CBR).",
-          "options": {
-            "crf": "Constant quality (CRF)",
-            "cbr": "Constant bitrate (CBR)"
-          }
-        },
-        "SELKIES_ENABLE_RATE_CONTROL": {
-          "label": "Allow Rate Control Switching",
-          "description": "Let clients switch between CRF and CBR. Off locks the encoder to its built-in default."
-        },
-        "SELKIES_VIDEO_CRF": {
-          "label": "Video CRF (Range or Fixed)",
-          "description": "H.264 constant quality: '5-50' for a range, '25' for a fixed initial value, or '25,5-50' for both."
-        },
-        "SELKIES_VIDEO_BITRATE": {
-          "label": "Video Bitrate kbps (Range or Fixed)",
-          "description": "CBR bitrate in kilobits per second: '100-1000000' for a range, '8000' for a fixed initial value, or '8000,100-1000000' for both."
-        },
-        "SELKIES_VIDEO_MIN_QP": {
-          "label": "Video Minimum QP",
-          "description": "CBR-mode minimum H.264 quantizer (0 = encoder default). Raising it caps bit spend on easy content."
-        },
-        "SELKIES_VIDEO_MAX_QP": {
-          "label": "Video Maximum QP",
-          "description": "CBR-mode maximum H.264 quantizer (0 = encoder default). Lowering it keeps text legible under motion at the cost of overshooting the bitrate target."
-        },
-        "SELKIES_KEYFRAME_INTERVAL": {
-          "label": "Keyframe Interval (seconds)",
-          "description": "Seconds between scheduled recovery keyframes. 0 keeps the GOP infinite and sends keyframes only on demand."
-        },
-        "SELKIES_JPEG_QUALITY": {
-          "label": "JPEG Quality (Range or Fixed)",
-          "description": "'1-100' for a range, '40' for a fixed initial value, or '40,1-100' for both."
-        },
-        "SELKIES_VIDEO_FULLCOLOR": {
-          "label": "Video Full Color (4:4:4)",
-          "description": "Encode H.264 with 4:4:4 chroma instead of 4:2:0. Clients without a 4:4:4 decoder fall back to JPEG when this is locked on."
-        },
-        "SELKIES_VIDEO_STREAMING_MODE": {
-          "label": "Video Streaming (Turbo) Mode",
-          "description": "Encode every frame like a traditional video encoder instead of only changed regions."
-        },
-        "SELKIES_USE_PAINT_OVER_QUALITY": {
-          "label": "Use Paint-Over Quality",
-          "description": "Enable high-quality paint-over for static scenes."
-        },
-        "SELKIES_PAINT_OVER_JPEG_QUALITY": {
-          "label": "Paint-Over JPEG Quality",
-          "description": "'1-100' for a range, '90' for a fixed initial value, or '90,1-100' for both."
-        },
-        "SELKIES_VIDEO_PAINTOVER_CRF": {
-          "label": "Paint-Over Video CRF",
-          "description": "'5-50' for a range, '18' for a fixed initial value, or '18,5-50' for both."
-        },
-        "SELKIES_VIDEO_PAINTOVER_BURST_FRAMES": {
-          "label": "Paint-Over Burst Frames",
-          "description": "'1-30' for a range, '5' for a fixed initial value, or '5,1-30' for both."
-        },
-        "SELKIES_BACKPRESSURE_QUEUE_SIZE": {
-          "label": "Backpressure Queue Size",
-          "description": "Frames and audio chunks buffered per stream before dropping under backpressure (WebSockets mode). Higher tolerates client hiccups at the cost of latency."
-        },
-        "SELKIES_WEBCAM_WIDTH": {
-          "label": "Webcam Width",
-          "description": "Width of the virtual webcam device; client frames are scaled and letterboxed to fit."
-        },
-        "SELKIES_WEBCAM_HEIGHT": {
-          "label": "Webcam Height",
-          "description": "Height of the virtual webcam device; client frames are scaled and letterboxed to fit."
-        },
-        "SELKIES_WEBCAM_ENCODER": {
-          "label": "Webcam Uplink Encoder",
-          "description": "Codec WebSocket clients use to send camera frames. Auto picks the best the browser can sustain.",
-          "options": {
-            "auto": "Auto"
-          }
-        },
-        "SELKIES_WEBCAM_PIXEL_FORMAT": {
-          "label": "Webcam Pixel Format",
-          "description": "Pixel format of the virtual webcam device. Auto follows what the client sends.",
-          "options": {
-            "auto": "Auto"
-          }
-        },
-        "HARDEN_DESKTOP": {
-          "label": "Harden Desktop (Preset)",
-          "description": "Enables DISABLE_OPEN_TOOLS, DISABLE_SUDO and DISABLE_TERMINALS, and unless set explicitly also disables file transfers, the command websocket and the files and apps sidebar sections. Forced on for users with Harden Container."
-        },
-        "HARDEN_OPENBOX": {
-          "label": "Harden Window Manager (Preset)",
-          "description": "Enables DISABLE_CLOSE_BUTTON, DISABLE_MOUSE_BUTTONS and HARDEN_KEYBINDS for Openbox and labwc, and RESTART_APP unless set explicitly. Forced on for users with Harden Window Manager."
-        },
-        "DISABLE_OPEN_TOOLS": {
-          "label": "Disable Open Tools",
-          "description": "Disables xdg-open and exo-open binaries."
-        },
-        "DISABLE_SUDO": {
-          "label": "Disable Sudo",
-          "description": "Disables the sudo command."
-        },
-        "DISABLE_TERMINALS": {
-          "label": "Disable Terminals",
-          "description": "Disables common terminal emulators."
-        },
-        "DISABLE_CLOSE_BUTTON": {
-          "label": "Disable Window Close Button",
-          "description": "Removes the close button from window title bars."
-        },
-        "DISABLE_MOUSE_BUTTONS": {
-          "label": "Disable Right/Middle Click",
-          "description": "Disables right-click and middle-click context menus."
-        },
-        "HARDEN_KEYBINDS": {
-          "label": "Harden Keybinds",
-          "description": "Disables window manager keybinds such as Alt+F4, Alt+Escape, Alt+Space and Super+E, and locks the window manager config."
-        },
-        "RESTART_APP": {
-          "label": "Restart App on Close",
-          "description": "Automatically restarts the main application if it is closed and makes the autostart file read-only."
-        },
-        "MAX_RES": {
-          "label": "Maximum Resolution",
-          "description": "Max resolution for the container, default is 16k."
-        },
-        "START_DOCKER": {
-          "label": "Start Docker-in-Docker",
-          "description": "If false, a privileged container will not start DinD."
-        },
-        "DISABLE_IPV6": {
-          "label": "Disable IPv6",
-          "description": "If true, this will disable IPv6."
-        },
-        "DISABLE_ZINK": {
-          "label": "Disable Zink",
-          "description": "Do not set Zink env vars if a video card is detected."
-        },
-        "DISABLE_DRI3": {
-          "label": "Disable DRI3",
-          "description": "Do not use DRI3 acceleration if a video card is detected."
-        },
-        "AUTO_GPU": {
-          "label": "Automatic GPU Selection",
-          "description": "'true' renders on the first GPU, 'false' disables it, or a vendor, driver or PCI vendor ID (nvidia, amdgpu, 0x10de) picks a specific one."
-        },
-        "NO_DECOR": {
-          "label": "No Window Decorations",
-          "description": "Run application without window borders for PWA use."
-        },
-        "NO_FULL": {
-          "label": "No Fullscreen",
-          "description": "Do not automatically fullscreen applications."
-        },
-        "NO_GAMEPAD": {
-          "label": "Disable Gamepad Injection",
-          "description": "Skip the userspace gamepad interposer. Also hides the gamepad section and player sharing links."
-        },
-        "NO_WEBCAM": {
-          "label": "Disable Webcam Injection",
-          "description": "Skip the virtual webcam device and interposer. Also hides the webcam button."
-        },
-        "SELKIES_RUN_AFTER_CONNECT": {
-          "label": "Run After Connect",
-          "description": "Shell command run inside the container when the first client connects."
-        },
-        "SELKIES_RUN_AFTER_DISCONNECT": {
-          "label": "Run After Disconnect",
-          "description": "Shell command run inside the container when the last client disconnects."
-        },
-        "SELKIES_DEBUG": {
-          "label": "Enable Selkies Debugging",
-          "description": "Enable debug logging for streaming components."
-        },
-        "SELKIES_MODE": {
-          "label": "Streaming Mode",
-          "description": "Transport used by default. Auto picks WebRTC when any TURN/STUN value is set, otherwise WebSockets.",
-          "options": {
-            "auto": "Auto",
-            "websockets": "WebSockets",
-            "webrtc": "WebRTC"
-          }
-        },
-        "SELKIES_ENABLE_DUAL_MODE": {
-          "label": "Dual Mode",
-          "description": "Let users switch between WebRTC and WebSockets from the sidebar. Auto enables it only when WebRTC is configured.",
-          "options": {
-            "auto": "Auto",
-            "enabled": "Enabled",
-            "disabled": "Disabled"
-          }
-        },
-        "SELKIES_WEBRTC_PACER": {
-          "label": "WebRTC Pacer",
-          "description": "Pace outgoing WebRTC packets with strict priorities so audio and input are protected from video bursts on congested links."
-        },
-        "SELKIES_CONGESTION_CONTROL": {
-          "label": "Congestion Control",
-          "description": "Adapt the video bitrate to the bandwidth estimate from WebRTC receiver feedback. Effective in CBR mode."
-        },
-        "SELKIES_STUN_HOST": {
-          "label": "STUN Host",
-          "description": "STUN server for NAT hole punching. Point at an internal server for networks without internet."
-        },
-        "SELKIES_STUN_PORT": {
-          "label": "STUN Port",
-          "description": "Port of the STUN server."
-        },
-        "SELKIES_TURN_HOST": {
-          "label": "TURN Host",
-          "description": "TURN server used with the shared secret or long-term credentials. Wrap IPv6 addresses in square brackets."
-        },
-        "SELKIES_TURN_PORT": {
-          "label": "TURN Port",
-          "description": "Port of the TURN server."
-        },
-        "SELKIES_TURN_PROTOCOL": {
-          "label": "TURN Protocol",
-          "description": "Transport the client uses to reach TURN. UDP is strongly recommended; use TCP only where UDP is blocked."
-        },
-        "SELKIES_TURN_TLS": {
-          "label": "TURN over TLS/DTLS",
-          "description": "Use TURN over TLS (TCP) or DTLS (UDP). Requires a valid certificate on the TURN server."
-        },
-        "SELKIES_TURN_SHARED_SECRET": {
-          "label": "TURN Shared Secret",
-          "description": "Shared secret used to generate time-limited HMAC TURN credentials."
-        },
-        "SELKIES_TURN_USERNAME": {
-          "label": "TURN Username",
-          "description": "Legacy long-term TURN credential username."
-        },
-        "SELKIES_TURN_PASSWORD": {
-          "label": "TURN Password",
-          "description": "Legacy long-term TURN credential password."
-        },
-        "SELKIES_TURN_REST_URI": {
-          "label": "TURN REST API URI",
-          "description": "URI of a TURN REST credential service, e.g. http://localhost:8008."
-        },
-        "SELKIES_TURN_REST_API_KEY": {
-          "label": "TURN REST API Key",
-          "description": "API key sent to the TURN REST service."
-        },
-        "SELKIES_TURN_REST_USERNAME": {
-          "label": "TURN REST Username",
-          "description": "Username the TURN REST service embeds in the credential. Empty uses 'selkies'."
-        },
-        "SELKIES_WEBRTC_PUBLIC_IP": {
-          "label": "WebRTC Public IP",
-          "description": "Public address to advertise in host ICE candidates for a server behind static 1:1 NAT. One IPv4 and/or one IPv6 address."
-        },
-        "SELKIES_ENABLE_CLOUDFLARE_TURN": {
-          "label": "Enable Cloudflare TURN",
-          "description": "Use the Cloudflare TURN service. Requires the token ID and API token below."
-        },
-        "SELKIES_CLOUDFLARE_TURN_TOKEN_ID": {
-          "label": "Cloudflare TURN Token ID",
-          "description": "The Cloudflare TURN app token ID."
-        },
-        "SELKIES_CLOUDFLARE_TURN_API_TOKEN": {
-          "label": "Cloudflare TURN API Token",
-          "description": "The Cloudflare TURN API token."
-        },
-        "SELKIES_RTC_CONFIG_JSON": {
-          "label": "RTC Config JSON Path",
-          "description": "Path inside the container to a JSON file with the WebRTC configuration. Overrides every other STUN/TURN setting and is re-read periodically."
-        },
-        "DOCKER_PRIVILEGED": {
-          "label": "Privileged Mode",
-          "description": "Give all caps to container, lift cgroup restrictions, mounts all host devices. This will break things!"
-        },
-        "DOCKER_BIND_MOUNTS": {
-          "label": "Extra Bind Mounts",
-          "description": "Extra host binds (comma separated, e.g., /host/path:/container/path:ro)."
-        },
-        "DOCKER_ENV": {
-          "label": "Environment Variables",
-          "description": "Extra environment variables (comma separated, e.g., KEY=VALUE,KEY2=VALUE2)."
-        },
-        "DOCKER_CAP_ADD": {
-          "label": "Cap Add",
-          "description": "Add kernel capabilities (comma separated, e.g., SYS_ADMIN,MKNOD)."
-        },
-        "DOCKER_CAP_DROP": {
-          "label": "Cap Drop",
-          "description": "Drop kernel capabilities (comma separated)."
-        },
-        "DOCKER_SECURITY_OPT": {
-          "label": "Security Options",
-          "description": "Security options (comma separated, e.g., seccomp=unconfined,apparmor=unconfined)."
-        },
-        "DOCKER_DEVICES": {
-          "label": "Devices",
-          "description": "Expose host devices (comma separated, e.g., /dev/sda:/dev/xvda:rwm)."
-        },
-        "DOCKER_SHM_SIZE": {
-          "label": "SHM Size",
-          "description": "Size of /dev/shm (e.g. 1G, 2G)."
-        },
-        "DOCKER_MEM_LIMIT": {
-          "label": "Memory Limit",
-          "description": "Memory limit (e.g. 1g, 512m)."
-        },
-        "DOCKER_CPU_SHARES": {
-          "label": "CPU Shares",
-          "description": "CPU shares (relative weight integer)."
-        },
-        "DOCKER_NANO_CPUS": {
-          "label": "Nano CPUs",
-          "description": "CPU quota in units of 1e-9 CPUs."
-        },
-        "DOCKER_NETWORK_MODE": {
-          "label": "Network Mode",
-          "description": "Networking mode for the container.",
-          "options": {
-            "default": "Default (Bridge)",
-            "host": "Host",
-            "none": "None",
-            "bridge": "Bridge"
-          }
-        },
-        "DOCKER_IPC_MODE": {
-          "label": "IPC Mode",
-          "description": "Set the IPC mode for the container.",
-          "options": {
-            "default": "Default",
-            "host": "Host",
-            "private": "Private",
-            "shareable": "Shareable"
-          }
-        },
-        "DOCKER_PID_MODE": {
-          "label": "PID Mode",
-          "description": "Set the PID mode for the container.",
-          "options": {
-            "default": "Default",
-            "host": "Host"
-          }
-        },
-        "DOCKER_DNS": {
-          "label": "DNS Servers",
-          "description": "Custom DNS servers (comma separated)."
-        },
-        "DOCKER_EXTRA_HOSTS": {
-          "label": "Extra Hosts",
-          "description": "Host to IP mappings (comma separated, e.g., hostname:1.2.3.4)."
-        },
-        "DOCKER_SYSCTLS": {
-          "label": "Sysctls",
-          "description": "Kernel parameters (comma separated, e.g., net.ipv4.ip_forward=1)."
-        },
-        "DOCKER_ULIMITS": {
-          "label": "Ulimits",
-          "description": "Ulimits (comma separated, e.g., nofile=1024:1024)."
-        },
-        "DOCKER_TMPFS": {
-          "label": "Tmpfs Mounts",
-          "description": "Temporary filesystems (comma separated, e.g., /run:rw,noexec,nosuid,size=65536k)."
-        },
-        "DOCKER_GROUP_ADD": {
-          "label": "Group Add",
-          "description": "List of additional group names and/or IDs (comma separated)."
-        }
-      }
-    },
-    "appLaboratory": {
-      "title": "App Laboratory",
-      "description": "Create and test custom application configurations by layering changes on top of a base app.",
-      "selectApp": "Select App",
-      "createNew": "Create New App",
-      "baseApp": "Base Application",
-      "baseAppDescription": "The installed application that your new custom app will be based on.",
-      "selectBase": "Select a Base App",
-      "customizationTitle": "Customization",
-      "appName": "App Name",
-      "appIcon": "App Icon",
-      "uploadIcon": "Upload Icon",
-      "autostartScriptLabel": "Custom Autostart Script",
-      "permissionsTitle": "Permissions",
-      "usersLabel": "Allowed Users",
-      "groupsLabel": "Allowed Groups",
-      "launchButton": "Save & Launch Customization Session",
-      "closeButton": "Close Session & Finalize",
-      "savingAndLaunching": "Saving & Launching...",
-      "placeholder": "The App Labratory allows you to configure the base home directory and launch script for an application based on an existing installed application. This home directory will be copied on first init for the user with all files and settings you setup in this session. You can re-launch an existing Labratory App to modify it's contents further.",
-      "formInvalid": "Please select a base app and provide a name for the new app."
-    },
-    "modals": {
-      "editUserTitle": "Edit User: {username}",
-      "saveChanges": "Save Changes",
-      "effectiveSettings": "Effective Settings (with group overrides)",
-      "editGroupTitle": "Edit Group: {groupName}",
-      "userConfigTitle": "User Configuration",
-      "warning": "This is the only time this configuration will be shown. Provide it to the user securely.",
-      "info": "You can download this configuration file to easily set up SealSkin on another device. Keep this file safe as it contains your private key.",
-      "configDataLabel": "Configuration Data (JSON)",
-      "copyButton": "Copy Text",
-      "downloadButton": "Download File",
-      "manageHomeDirs": "Manage Home Directories",
-      "dirsForUser": "Directories for user: {username}",
-      "dirsForAdmin": "Directories for admin: {username}",
-      "newDirForUser": "Create New Directory for User",
-      "customAutostartScriptLabel": "Custom Autostart Script",
-      "customAutostartScriptDescription": "Customize autostart logic, leave blank to use default from application provider.",
-      "createDirButton": "Create Directory",
-      "confirmDeleteDir": "Are you sure you want to delete '{homeName}' for user '{username}'? This is permanent.",
-      "installAppTitle": "Install {appName}",
-      "editAppTitle": "Edit {appName}",
-      "customNameLabel": "Custom Name",
-      "imageLabel": "Container Image",
-      "permissions": "Permissions",
-      "allowedUsersLabel": "Allowed Users (comma-separated, 'all' for everyone)",
-      "allowedGroupsLabel": "Allowed Groups (comma-separated, 'all' for everyone)",
-      "features": "Features",
-      "gpuSupport": "GPU Support",
-      "homeMounting": "Home Directory Mounting",
-      "urlSupport": "URL Opening Support",
-      "fileSupport": "File Opening Support",
-      "autoUpdate": "Auto Update Image",
-      "advancedSettings": "Advanced Settings",
-      "appTemplateLabel": "Application Template",
-      "appTemplateDescription": "Select a pre-configured template for advanced container launch settings.",
-      "saveInstallation": "Save Installation",
-      "updateStatusTitle": "Update Status for {appName}",
-      "checkingUpdates": "Checking for updates...",
-      "updateAvailable": "A new image version is available!",
-      "yourVersion": "Your version: {sha}",
-      "latestAvailable": "Latest version is available to pull from the registry.",
-      "pullLatest": "Pull Latest Image",
-      "upToDate": "Your image is up to date.",
-      "currentVersion": "Current version: {sha}",
-      "errorChecking": "Error checking for updates.",
-      "pullingLatest": "Pulling latest image... This may take a moment.",
-      "pullComplete": "Pull complete!",
-      "newVersion": "New version: {sha}",
-      "errorPulling": "Error pulling image.",
-      "manualInstallNote": "Note: Manually added images should be based on a selkies-baseimage compatible image.",
-      "generalTitle": "General & Performance Settings",
-      "webrtcTitle": "WebRTC & TURN Settings",
-      "webrtcDescription": "Sessions stream over WebSockets by default. Setting any STUN, TURN, Cloudflare or public IP value below, or choosing WebRTC mode, switches the container to WebRTC with dual mode enabled so users can still fall back to WebSockets.",
-      "dockerTitle": "Docker Advanced Overrides",
-      "dockerDescription": "These settings override the default container configuration. Use with caution and only if you know what you are doing."
-    },
-    "status": {
-      "loggingIn": "Logging in...",
-      "configSaved": "Configuration saved successfully!",
-      "configApplied": "Configuration applied! Please Login & Test.",
-      "configApplyFailed": "Failed to apply configuration: {error}",
-      "fileReadError": "Error reading file.",
-      "noConfig": "Please provide a config file or text.",
-      "loggedInAdmin": "Logged in as admin: {username}",
-      "loggedInUser": "Logged in as standard user: {username}.",
-      "loginFailed": "Login failed: {error}",
-      "adminDataRefreshFailed": "Failed to refresh admin data: {error}",
-      "logoutSuccess": "Logged out and configuration cleared.",
-      "generateConfigFailed": "Could not generate config, user details are missing.",
-      "copySuccess": "Configuration copied to clipboard!",
-      "copyFailed": "Failed to copy text.",
-      "publicKeyCopied": "Public key copied!",
-      "keyCopyFailed": "Failed to copy key.",
-      "creatingAdmin": "Creating admin...",
-      "adminCreated": "Admin '{username}' created.",
-      "adminCreateFailed": "Error creating admin: {error}",
-      "adminDeleted": "Admin '{username}' deleted successfully.",
-      "adminDeleteFailed": "Error deleting admin: {error}",
-      "creatingUser": "Creating user...",
-      "userCreated": "User '{username}' created.",
-      "userCreateFailed": "Error creating user: {error}",
-      "userDeleted": "User '{username}' deleted successfully.",
-      "userDeleteFailed": "Error deleting user: {error}",
-      "userUpdated": "User '{username}' updated successfully.",
-      "userUpdateFailed": "Error updating user: {error}",
-      "creatingGroup": "Creating group...",
-      "groupCreated": "Group '{groupName}' created.",
-      "groupCreateFailed": "Error creating group: {error}",
-      "groupDeleted": "Group '{groupName}' deleted successfully.",
-      "groupDeleteFailed": "Error deleting group: {error}",
-      "groupUpdated": "Group '{groupName}' updated successfully.",
-      "groupUpdateFailed": "Error updating group: {error}",
-      "homedirLoadFailed": "Failed to load home directories: {error}",
-      "homedirCreateFailed": "Error creating directory: {error}",
-      "homedirCreated": "Home directory '{homeName}' created.",
-      "homedirDeleted": "Directory '{homeName}' deleted.",
-      "homedirDeleteFailed": "Error deleting directory: {error}",
-      "homedirCreatedFor": "Directory '{homeName}' created for {username}.",
-      "homedirDeletedFor": "Directory '{homeName}' deleted for {username}.",
-      "sessionsLoadFailed": "Failed to load sessions: {error}",
-      "sessionStopError": "Error stopping session: {error}",
-      "sessionStopped": "Session stopped successfully.",
-      "appDataRefreshFailed": "Failed to refresh app data: {error}",
-      "closingSession": "Committing customization session...",
-      "sessionClosed": "Customization session closed.",
-      "sessionCloseFailed": "Failed to close customization session: {error}",
-      "fetchingApps": "Fetching apps from store...",
-      "fetchAppsFailed": "Failed to fetch apps from store: {error}",
-      "appStoreAddFailed": "Error adding store: {error}",
-      "appStoreAdded": "App store '{name}' added.",
-      "appSaved": "App '{name}' {action} successfully.",
-      "appSaveActions": {
-        "updated": "updated",
-        "installed": "installed"
-      },
-      "appSaveFailed": "Error saving app: {error}",
-      "appDeleted": "App '{name}' deleted.",
-      "appDeleteFailed": "Error deleting app: {error}",
-      "templateSaved": "Template '{name}' saved successfully.",
-      "templateSaveFailed": "Error saving template: {error}",
-      "templateDeleted": "Template '{name}' deleted successfully.",
-      "templateDeleteFailed": "Error deleting template: {error}",
-      "pinRemoved": "Pinned behavior removed.",
-      "keyGenerated": "New key pair generated.",
-      "keyGenFailed": "Key generation failed: {error}",
-      "pendingConfigSaved": "Pending configuration saved. You can now provide your public key to the administrator.",
-      "settingsSaved": "Settings saved.",
-      "appCreated": "App '{name}' created successfully.",
-      "launchFailed": "Launch failed: {error}"
-    },
-    "placeholders": {
-      "noAdmins": "No admins found.",
-      "noUsers": "No users found.",
-      "noGroups": "No groups found.",
-      "noHomeDirs": "No home directories found.",
-      "noSessions": "No active sessions found.",
-      "noPinned": "No pinned behaviors found.",
-      "errorLoading": "Error loading directories.",
-      "noInstalledApps": "No applications have been installed yet."
-    }
-  },
-  "popup": {
-    "tabs": {
-      "launch": "Launch New",
-      "sessions": "Active Sessions",
-      "manageFiles": "Manage Files",
-      "uploadStorage": "Upload to Storage",
-      "uploadFiles": "Upload Files",
-      "uploadFilesTitle": "Open dedicated file upload page"
-    },
-    "launchView": {
-      "searchPlaceholder": "Search applications...",
-      "uploadingFile": "Uploading file...",
-      "gpuLabel": "GPU",
-      "storageLabel": "Storage",
-      "languageLabel": "Language",
-      "cleanroom": "Cleanroom (Ephemeral)",
-      "noGpu": "None",
-      "saveOptions": "Save these launch options",
-      "saveOptionsForUrl": "Save options for all URLs",
-      "saveOptionsForFile": "Save options for .{extension} files",
-      "openFile": "Open file on launch",
-      "launchButton": "Launch",
-      "launchingButton": "Launching...",
-      "uploadingButton": "Uploading...",
-      "autoHome": "Auto (per-app persistence)",
-      "collaborationMode": "Collaborative Session",
-      "waylandMode": "Wayland Mode"
-    },
-    "sessionsView": {
-      "noSessions": "No active sessions found."
-    },
-    "uploadStorageView": {
-      "selectHome": "Select Home Directory",
-      "description": "This will upload the file <strong>{filename}</strong> directly to your Files storage for future use.",
-      "descriptionFallback": "This will upload the file <strong>{filename}</strong> directly to your Files storage for future use.",
-      "uploadButton": "Upload File",
-      "uploadingButton": "Uploading...",
-      "preparing": "Preparing file...",
-      "uploadingChunk": "Uploading chunk {current} of {total}...",
-      "finalizing": "Finalizing...",
-      "uploadComplete": "Upload Complete!"
-    },
-    "status": {
-      "unconfigured": "Please configure the extension via the options page.",
-      "openingServerFile": "Opening server-side file: {filename}",
-      "openingFile": "Opening file: {filename}",
-      "openingUrl": "Opening URL: {targetUrl}",
-      "error": "Error: {message}",
-      "preparingFile": "Preparing file...",
-      "sendingFile": "Sending file to session...",
-      "errorSendingFile": "Error sending file: {message}",
-      "errorClosingSession": "Error closing session: {message}",
-      "preparingSession": "Preparing isolated session...",
-      "fetchingData": "Fetching file data...",
-      "fetchDataFailed": "Failed to fetch file data: {statusText}",
-      "unknownAction": "Unknown launch action.",
-      "noAppSelected": "Please select an application.",
-      "noAppsAvailable": "No applications are available for your account.",
-      "uploadSuccess": "File uploaded successfully!",
-      "creatingAutoHome": "Creating automatic home directory..."
-    },
-    "languages": {
-      "default": "Default ({locale})"
-    }
-  },
-  "upload": {
-    "title": "File Upload",
-    "description": "Select a file from your computer to open it in a secure, isolated session.",
-    "dropzone": {
-      "title": "Drag & drop a file here",
-      "or": "or",
-      "button": "Select File"
-    },
-    "confirm": {
-      "ready": "File is ready to be opened securely.",
-      "button": "Continue to Launch"
-    }
-  },
   "files": {
-    "title": "SealSkin Files",
-    "header": {
-      "title": "Files",
-      "newFolder": "New Folder",
-      "uploadFiles": "Upload Files",
-      "uploadFolder": "Upload Folder"
-    },
-    "sidebar": {
-      "sharedFiles": "SealSkin Files",
-      "publicShares": "Public Shares"
-    },
     "shares": "Shares",
-    "table": {
-      "name": "Name",
-      "size": "Size",
-      "lastModified": "Last Modified",
-      "created": "Created",
-      "expires": "Expires",
-      "url": "Public URL",
-      "passwordProtected": "Password"
-    },
-    "dropzone": {
-      "title": "Drop files to upload"
-    },
-    "pagination": {
-      "previous": "« Previous",
-      "next": "Next »",
-      "pageOf": "Page {page} of {totalPages}"
-    },
-    "modals": {
-      "newFolder": {
-        "title": "Create New Folder",
-        "folderNameLabel": "Folder Name",
-        "nameTitle": "Use only letters, numbers, underscore, hyphen, or period.",
-        "createButton": "Create"
-      },
-      "confirmDelete": {
-        "title": "Confirm Deletion",
-        "message": "Are you sure you want to delete {count, plural, one {1 selected item} other {{count} selected items}}? This action cannot be undone.",
-        "messageDefault": "Are you sure you want to delete the selected items? This action cannot be undone."
-      },
-      "uploadProgress": {
-        "title": "Upload Progress",
-        "doneButton": "Done"
-      },
-      "share": {
-        "title": "Share File",
-        "sharingFile": "Sharing file: <strong>{filename}</strong>",
-        "passwordLabel": "Password (optional)",
-        "passwordPlaceholder": "Leave blank for no password",
-        "expiryLabel": "Expires in (hours, optional)",
-        "expiryPlaceholder": "e.g., 24 for one day",
-        "shareButton": "Create Share Link"
-      }
-    },
-    "status": {
-      "homeDirLoadFailed": "Failed to load home directories: {error}",
-      "filesLoadFailed": "Error loading files: {error}",
-      "deleteProtectedError": "Cannot delete protected system folders.",
-      "deletingItems": "Deleting {count, plural, one {1 item} other {{count} items}}...",
-      "deleteSuccess": "Deletion successful.",
-      "deleteFailed": "Deletion failed: {error}",
-      "preparingUpload": "Preparing to upload {count, plural, one {1 file} other {{count} files}}...",
-      "uploadPrepFailed": "Error during folder upload preparation: {error}",
-      "notConfigured": "Error: SealSkin not configured. Please set up in options.",
-      "folderCreated": "Folder '{folderName}' created.",
-      "folderCreateFailed": "Error creating folder: {error}",
-      "shareCreated": "Share created successfully! The link has been copied to your clipboard.",
-      "shareCreateFailed": "Failed to create share: {error}",
-      "sharesLoadFailed": "Failed to load shared files: {error}",
-      "shareDeleteFailed": "Failed to delete share: {error}",
-      "shareDeleted": "Share successfully deleted.",
-      "urlCopied": "Public URL copied to clipboard.",
-      "downloading": "Downloading {filename}...",
-      "downloadSuccess": "Download complete",
-      "downloadFailed": "Download failed: {error}"
-    },
-    "placeholders": {
-      "errorLoading": "Error loading files.",
-      "folderEmpty": "This folder is empty.",
-      "noHomeDirs": "No home directories available.",
-      "noShares": "You have not shared any files yet."
-    },
-    "uploadStatus": {
-      "pending": "pending",
-      "initiating": "Initiating...",
-      "uploading": "Uploading...",
-      "finalizing": "Finalizing...",
-      "completed": "Completed",
-      "error": "Error"
-    },
-    "files": {
-      "searchPlaceholder": "Search files..."
-    },
     "upOneLevel": "Up one level",
     "newFolder": "New folder",
-    "upload": "Upload",
     "openInApp": "Open in app",
     "size": "Size",
     "modified": "Modified",
@@ -1237,22 +66,6 @@
     "shareRevoked": "Share revoked",
     "up": "Up"
   },
-  "shell": {
-    "host": {
-      "loading": "Connecting to your SealSkin server…",
-      "unconfiguredTitle": "Not connected",
-      "unconfiguredBody": "SealSkin is not connected to a server yet.",
-      "setUp": "Set up connection",
-      "unreachableTitle": "Server unreachable",
-      "unreachableBody": "The SealSkin server could not be reached or its web interface did not load.",
-      "selfSigned": "If the server uses a self-signed certificate, open it once and accept the certificate, then retry.",
-      "retry": "Retry",
-      "openServer": "Open server",
-      "changeConnection": "Change connection",
-      "mismatchTitle": "Update required",
-      "mismatchBody": "This app and the server web interface speak different bridge versions. Update the extension or app, or update the server, so both match."
-    }
-  },
   "login": {
     "signIn": "Sign in",
     "or": "or",
@@ -1277,7 +90,6 @@
     "backup": "Backup",
     "sessions": "Sessions",
     "certificates": "Certificates",
-    "password": "Password",
     "signOut": "Sign out"
   },
   "launch": {
@@ -1340,11 +152,9 @@
     "kvApiPort": "API port",
     "kvSessionPort": "Session port",
     "yes": "yes",
-    "no": "no",
-    "none": "none"
+    "no": "no"
   },
   "howto": {
-    "title": "How to Use Vreckan",
     "intro": "A quick guide to the main things you can do in Vreckan.",
     "close": "Close",
     "item1Lead": "Launch an app",
@@ -1359,6 +169,7 @@
     "item5Body": "In the Admin tab you can manage users, admins, groups, apps, templates, volume mounts and backups."
   },
   "settings": {
+    "settingsSection": "Settings",
     "active": "Active",
     "group": "Group",
     "persistentStorage": "Persistent storage",
@@ -1368,7 +179,6 @@
     "gpu": "GPU",
     "storageLimit": "Storage limit (MB, -1 = unlimited)",
     "sessionLimit": "Session limit (-1 = unlimited)",
-    "none": "none",
     "adminPerms": "Admin permissions",
     "userPerms": "User permissions"
   },
@@ -1378,7 +188,6 @@
     "addHelp": "Create a new account. Tick \"Admin\" to make it an administrator.",
     "labelAdmin": "Admin",
     "badgeAdmin": "admin",
-    "badgeSso": "SSO",
     "btnSetPassword": "Set password",
     "btnAccess": "Access",
     "btnHomeDirs": "Home dirs",
@@ -1451,7 +260,6 @@
     "badgePerms": "perms: {perms}",
     "rolesLabel": "Roles (granted to every member)",
     "permsLabel": "Permissions (granted to every member)",
-    "ssoBadge": "SSO",
     "ssoAdminSuffix": " · admin",
     "ssoAdminTitle": "In the admin SSO list (grants admin)",
     "ssoObservedTitle": "Observed from SSO",
@@ -1486,7 +294,6 @@
     "heading": "SSO / OIDC",
     "help": "Connect Vreckan to an OpenID Connect provider (e.g. authentik). Discovery is fetched from <code>{issuer}/.well-known/openid-configuration</code>. A value saved here overrides the <code>VRECKAN_OIDC_*</code> environment; the badge on each field shows its current source.",
     "enableLabel": "Enable SSO login",
-    "enabled": "Enabled",
     "issuerLabel": "Issuer URL",
     "issuerHelp": "Base URL of the provider.",
     "clientIdLabel": "Client ID",
@@ -1497,7 +304,6 @@
     "redirectUriPlaceholder": "default: {base}/api/auth/oidc/callback",
     "scopesLabel": "Scopes",
     "allowSignupLabel": "Auto-provision new users",
-    "allowSignupHelp": "Create an account for a new SSO identity",
     "stateTtlLabel": "State TTL (seconds)",
     "testButton": "Test connection",
     "testing": "Contacting the provider…",
@@ -1517,7 +323,6 @@
     "srcDefault": "default"
   },
   "certificates": {
-    "heading": "Certificates",
     "help": "Issue and renew Let’s Encrypt certificates with certbot. When disabled, the server uses a self-signed certificate.",
     "enableLabel": "Let’s Encrypt",
     "enabled": "Enable Let’s Encrypt",
@@ -1593,7 +398,6 @@
     "addTitle": "Add App Store",
     "urlLabel": "URL (YAML)",
     "urlPlaceholder": "https://…/store.yml",
-    "add": "Add",
     "configuredTitle": "Configured Stores",
     "url": "URL",
     "empty": "No stores.",
@@ -1617,7 +421,6 @@
     "noAppsInStore": "No apps in this store.",
     "noAppsMatch": "No apps match “{q}”.",
     "installedTitle": "Installed Apps",
-    "app": "App",
     "source": "Source",
     "homeDirs": "Home dirs",
     "users": "Users",
@@ -1656,6 +459,10 @@
     "appTemplate": "App template",
     "accessLabel": "Who can use this app",
     "allUsers": "All users",
+    "accessUsersSection": "Users",
+    "accessGroupsSection": "Groups",
+    "accessSelectAll": "select all",
+    "accessDeselectAll": "deselect all",
     "noUsers": "No users",
     "noGroups": "No groups",
     "noOneSelected": "No one is selected — this app will be hidden from and unusable by everyone.",
@@ -1700,7 +507,6 @@
     "dockerHelp": "These settings override the default container configuration. Use with caution and only if you know what you are doing.",
     "duplicateName": "Duplicate setting name: '{name}'.",
     "enterNameFirst": "Enter a template name first.",
-    "heading": "Templates",
     "imageDefault": "image default",
     "invalidName": "Invalid setting name: '{name}'.",
     "label": "Label",
@@ -1712,7 +518,6 @@
     "previewClipboard": "Clipboard",
     "previewContentArea": "Application Content Area",
     "previewCoreButtons": "Core Buttons",
-    "previewFiles": "Files",
     "previewGamepads": "Gamepads",
     "previewScreenSettings": "Screen Settings",
     "previewSharing": "Sharing",
@@ -1761,7 +566,6 @@
     "includeUserData": "Include user data (home directories)",
     "create": "Create backup",
     "listTitle": "Backups",
-    "size": "Size",
     "created": "Created",
     "userData": "User data",
     "noBackups": "No backups yet.",
@@ -1769,7 +573,6 @@
     "restoreFromFileHelp": "Upload a previously downloaded backup <code>tar.gz</code> to restore it. Restoring overwrites the configuration files contained in the archive; files not present in the archive are left unchanged. Active sessions are not affected.",
     "restoreFileButton": "Restore uploaded file",
     "createdToast": "Created {name}",
-    "download": "Download",
     "downloadStarted": "Download started",
     "restore": "Restore",
     "restoreConfirm": "Restore {name}? This overwrites the configuration files contained in the archive and reloads them. Active sessions are not affected. If the archive is older than the current admin key, you could lock yourself out.",
@@ -1844,12 +647,10 @@
     "default": "Default",
     "allApps": "All apps",
     "makeDefault": "Make default",
-    "apply": "Apply",
     "setDefaultFailed": "Could not set default: {message}",
     "deleteConfirm": "Delete preset '{name}'?",
     "deleteTitle": "Delete preset",
     "deleted": "Deleted '{name}'",
-    "deleteFailed": "Delete failed: {message}",
     "applied": "Applied preset '{name}'",
     "installFirst": "Install an app first to save a preset.",
     "saveTitle": "Save launch options",

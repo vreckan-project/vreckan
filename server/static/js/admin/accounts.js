@@ -17,6 +17,9 @@ import {
   readSettingsForm,
   loadPermCatalog,
   permCheckboxesHtml,
+  roleCheckboxesHtml,
+  pickSectionHtml,
+  wirePickSections,
   readPermCheckboxes,
   render,
 } from "../admin.js";
@@ -59,7 +62,7 @@ function userCard(user, homedirs, adminGroups = []) {
         <div>
           <strong>${esc(user.username)}</strong>
           ${isAdmin ? `<span class="badge badge-ok ml-8" >${t("accounts.badgeAdmin")}</span>` : ""}
-          ${sso ? `<span class="badge ml-8" >${t("accounts.badgeSso")}</span>` : ""}
+          ${sso ? `<span class="badge ml-8" >${t("nav.sso")}</span>` : ""}
         </div>
         <div class="admin-actions">
           <button class="btn btn-sm btn-ghost" data-action="edit" data-username="${esc(user.username)}">${t("common.edit")}</button>
@@ -117,6 +120,7 @@ async function renderRoster() {
     <div id="roster-cards">${cards}</div>
     <div id="roster-modal"></div>
   `);
+  wirePickSections($("admin-section"));
   wireRoster();
 }
 
@@ -217,29 +221,27 @@ async function wireRoster() {
         const groups = target.groups || [];
         // Role options come from the management data (all roles), not the catalog.
         const allRoles = (d.data && d.data.roles) || [];
-        const roleChecks = allRoles
+        const roleChecks = roleCheckboxesHtml(roles, allRoles, "access-roles", t("accounts.accessLabelRoles"));
+        const groupRows = lastGroups
           .map(
-            (r) => `<label class="check"><input type="checkbox" name="role" value="${esc(r.name)}" ${roles.includes(r.name) ? "checked" : ""}> ${esc(r.name)}${r.is_builtin ? t("accounts.builtinSuffix") : ""}</label>`
+            (gn) => `<label class="pick-item"><input type="checkbox" name="group" value="${esc(gn)}"${groups.includes(gn) ? " checked" : ""}> <span class="pick-item-name">${esc(gn)}</span></label>`
           )
           .join("");
-        const groupChecks = lastGroups
-          .map(
-            (gn) => `<label class="check"><input type="checkbox" name="group" value="${esc(gn)}" ${groups.includes(gn) ? "checked" : ""}> ${esc(gn)}</label>`
-          )
-          .join("") || `<p class="muted">${t("accounts.accessNoGroups")}</p>`;
+        const groupChecks = pickSectionHtml("access-groups", t("accounts.accessLabelGroups"), lastGroups.length, groupRows, { empty: t("accounts.accessNoGroups") });
         $("roster-modal").innerHTML = `
           <div class="card mt-16" >
             <h3>${t("accounts.accessTitle", { username: esc(username) })}</h3>
             <p class="muted">${t("accounts.accessHelp")}</p>
-            <div class="field mb-10" ><label>${t("accounts.accessLabelRoles")}</label>${roleChecks}</div>
-            <div class="field mb-10" ><label>${t("accounts.accessLabelPerms")}</label><div id="access-perms">${permCheckboxesHtml(perms)}</div></div>
-            <div class="field mb-10" ><label>${t("accounts.accessLabelGroups")}</label>${groupChecks}</div>
+            ${roleChecks}
+            <div class="field mb-10" ><label>${t("accounts.accessLabelPerms")}</label><div id="access-perms">${permCheckboxesHtml(perms, "perm", "access-perms")}</div></div>
+            ${groupChecks}
             <div id="access-result"></div>
              <div class="mt-12" >
               <button class="btn btn-primary" id="access-save">${t("common.save")}</button>
               <button class="btn btn-ghost" id="close-modal">${t("common.cancel")}</button>
             </div>
           </div>`;
+        wirePickSections($("roster-modal"));
         $("close-modal").addEventListener("click", () => ($("roster-modal").innerHTML = ""));
         $("access-save").addEventListener("click", async () => {
           const form = $("roster-modal");
@@ -322,6 +324,7 @@ async function wireRoster() {
             <button class="btn btn-primary" id="save-edit">${t("common.save")}</button>
             <button class="btn btn-ghost" id="cancel-edit">${t("common.cancel")}</button>
           </div>`;
+        wirePickSections(card);
         $("cancel-edit").addEventListener("click", () => render());
         $("save-edit").addEventListener("click", async () => {
           const settings = readSettingsForm("edit-settings");

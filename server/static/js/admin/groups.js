@@ -16,6 +16,7 @@ import {
   loadPermCatalog,
   permCheckboxesHtml,
   roleCheckboxesHtml,
+  wirePickSections,
   render,
 } from "../admin.js";
 
@@ -51,7 +52,7 @@ async function renderGroups() {
       const s = g.settings || {};
       const isSso = observedGroups.includes(g.name);
       const ssoBadge = isSso
-        ? `<span class="badge${adminGroups.includes(g.name) ? " badge-ok" : ""}" title="${adminGroups.includes(g.name) ? t("groups.ssoAdminTitle") : t("groups.ssoObservedTitle")}">${t("groups.ssoBadge")}${adminGroups.includes(g.name) ? t("groups.ssoAdminSuffix") : ""}</span>`
+        ? `<span class="badge${adminGroups.includes(g.name) ? " badge-ok" : ""}" title="${adminGroups.includes(g.name) ? t("groups.ssoAdminTitle") : t("groups.ssoObservedTitle")}">${t("nav.sso")}${adminGroups.includes(g.name) ? t("groups.ssoAdminSuffix") : ""}</span>`
         : "";
       return `
         <div class="card" data-group-name="${esc(g.name)}">
@@ -84,13 +85,14 @@ async function renderGroups() {
         <div class="field"><label>${t("common.name")}</label><input type="text" id="group-new-name" placeholder="^[a-zA-Z0-9_-]+$"></div>
       </div>
       ${settingsFormHtml(defaultSettings(lastGroups), lastGroups, "group-new-settings", false)}
-      <div class="field mt-12" ><label>${t("groups.rolesLabel")}</label><div id="group-new-roles">${roleCheckboxesHtml([], allRoles)}</div></div>
-      <div class="field mt-12" ><label>${t("groups.permsLabel")}</label><div id="group-new-perms">${permCheckboxesHtml([], "perm")}</div></div>
+      <div class="field mt-12" ><label>${t("groups.rolesLabel")}</label><div id="group-new-roles">${roleCheckboxesHtml([], allRoles, "group-new-roles", t("groups.rolesLabel"))}</div></div>
+      <div class="field mt-12" ><label>${t("groups.permsLabel")}</label><div id="group-new-perms">${permCheckboxesHtml([], "perm", "group-new-perms")}</div></div>
        <div class="mt-12" ><button class="btn btn-primary" id="group-create">${t("common.create")}</button></div>
     </div>
     <div class="section-title">${t("groups.heading")}</div>
     <div id="group-cards">${cards || `<div class="card"><p class="muted">${t("groups.empty")}</p>`}</div>
   `);
+  wirePickSections($("admin-section"));
 
   $("group-create").addEventListener("click", async () => {
     const name = $("group-new-name").value.trim();
@@ -132,13 +134,14 @@ async function renderGroups() {
       card.innerHTML = `
         <h3>${t("groups.editTitle", { name: esc(name) })}</h3>
         ${settingsFormHtml(g.settings || defaultSettings(lastGroups), lastGroups, "group-edit-settings", false)}
-        <div class="field mt-12" ><label>${t("groups.rolesLabel")}</label><div id="group-edit-roles">${roleCheckboxesHtml(g.roles || [], allRoles)}</div></div>
-        <div class="field mt-12" ><label>${t("groups.permsLabel")}</label><div id="group-edit-perms">${permCheckboxesHtml(g.permissions || [], "perm")}</div></div>
+        <div class="field mt-12" ><label>${t("groups.rolesLabel")}</label><div id="group-edit-roles">${roleCheckboxesHtml(g.roles || [], allRoles, "group-edit-roles", t("groups.rolesLabel"))}</div></div>
+        <div class="field mt-12" ><label>${t("groups.permsLabel")}</label><div id="group-edit-perms">${permCheckboxesHtml(g.permissions || [], "perm", "group-edit-perms")}</div></div>
         <div id="group-edit-result"></div>
          <div class="mt-12" >
           <button class="btn btn-primary" id="group-save">${t("common.save")}</button>
           <button class="btn btn-ghost" id="group-close">${t("common.cancel")}</button>
         </div>`;
+      wirePickSections(card);
       $("group-close").addEventListener("click", () => render());
       $("group-save").addEventListener("click", async () => {
         const settings = readSettingsForm("group-edit-settings");

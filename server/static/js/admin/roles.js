@@ -12,6 +12,7 @@ import { t } from "../i18n.js";
 import {
   loadPermCatalog,
   permCheckboxesHtml,
+  wirePickSections,
   readPermCheckboxes,
   render,
 } from "../admin.js";
@@ -54,7 +55,7 @@ async function renderRoles() {
         <div class="field"><label>${t("common.name")}</label><input type="text" id="role-new-name" placeholder="^[a-zA-Z0-9_-]+$"></div>
         <div class="field flex-2" ><label>${t("roles.description")}</label><input type="text" id="role-new-desc"></div>
       </div>
-      <div id="role-new-perms">${permCheckboxesHtml()}</div>
+      <div id="role-new-perms">${permCheckboxesHtml([], "perm", "role-new-perms")}</div>
        <div class="mt-12" ><button class="btn btn-primary" id="role-create">${t("common.create")}</button></div>
       <div id="role-result"></div>
     </div>
@@ -68,6 +69,7 @@ async function renderRoles() {
     <div id="role-modal"></div>
   `);
 
+  wirePickSections($("admin-section"));
   $("role-create").addEventListener("click", async () => {
     const name = $("role-new-name").value.trim();
     if (!name) return toast(t("roles.nameRequired"), "error");
@@ -102,13 +104,14 @@ async function renderRoles() {
         <div class="card mt-16" >
           <h3>${t("roles.editTitle", { name: esc(name) })}</h3>
           <div class="field mb-12" ><label>${t("roles.description")}</label><input type="text" id="role-edit-desc" value="${esc(role.description || "")}"></div>
-          <div id="role-edit-perms">${permCheckboxesHtml(role.permissions || [])}</div>
+          <div id="role-edit-perms">${permCheckboxesHtml(role.permissions || [], "perm", "role-edit-perms")}</div>
           <div id="role-edit-result"></div>
            <div class="mt-12" >
             <button class="btn btn-primary" id="role-save">${t("common.save")}</button>
             <button class="btn btn-ghost" id="role-close">${t("common.cancel")}</button>
           </div>
         </div>`;
+      wirePickSections($("role-modal"));
       $("role-close").addEventListener("click", () => ($("role-modal").innerHTML = ""));
       $("role-save").addEventListener("click", async () => {
         const description = $("role-edit-desc").value;

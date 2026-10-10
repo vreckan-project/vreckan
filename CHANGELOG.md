@@ -12,6 +12,40 @@ Gitea registry and GHCR). The release entries below summarize what each tag
 contains; the date-based entries that follow give the finer-grained
 development history.
 
+## 2026-10-09 — v0.5.0 — Admin UI tidy-up
+A pass over the admin UI to make the busy forms calmer and the i18n
+catalog leaner.
+
+**Collapsible pick sections.** A consistent, tidy pattern for every
+multi-item picker. The app access picker's collapsible section became a
+shared component (`pickSectionHtml` / `wirePickSections`) and is now used
+everywhere:
+
+- **App access picker** (install/edit modals): single column of one item per
+  line (sorted A–Z), collapsible Users/Groups sections (closed by default)
+  with a per-section select-all, horizontal `[checkbox] name … tag` rows, and
+  a horizontally laid-out "All users" master box checked by default.
+- **Permissions** (roles create/edit, groups create/edit, account access):
+  Admin permissions and User permissions are collapsible sections with a
+  per-section select-all.
+- **Roles** (account access, groups create/edit) and **Groups** (account
+  access): single collapsible sections with select-all.
+- **Settings** (account add/edit, group add/edit, overview): the six on/off
+  toggles move into a collapsible Settings section; the group and limit
+  fields stay visible up top.
+
+**SSO page.** The Enable and Auto-provision fields each had a field label
+plus a checkbox repeating the same thing; the label is now merged into the
+checkbox (source badge kept).
+
+**i18n pruning.** The catalog carried ~55% dead weight from the SealSkin
+browser-extension port. Removed the five legacy extension namespaces
+(`options`, `popup`, `shell`, `background`, `upload`) plus 101 other unused
+keys, then consolidated 15 more keys that duplicated an existing string
+(redirected onto the shared key, e.g. `common.password`, `nav.files`).
+`en.json` drops from 1420 to 616 keys; every remaining key is referenced by
+the app and no two keys share a value.
+
 ## 2026-10-09 — v0.4.6 — Security hardening
 A focused pass over the codebase and its dependencies.
 - **OIDC: `python-jose` → `PyJWT`.** `python-jose` 3.5.0 is affected by

@@ -51,7 +51,7 @@ export function settingsFormHtml(settings, groupOptions, formId, includeGroup = 
   // includeGroup=false to drop it.
   let groupField = "";
   if (includeGroup) {
-    const groupOpts = [`<option value="none">${t("settings.none")}</option>`];
+    const groupOpts = [`<option value="none">${t("common.none")}</option>`];
     (groupOptions || []).forEach((name) => {
       const sel = g.group === name ? " selected" : "";
       groupOpts.push(`<option value="${esc(name)}"${sel}>${esc(name)}</option>`);
@@ -61,17 +61,26 @@ export function settingsFormHtml(settings, groupOptions, formId, includeGroup = 
     }
     groupField = `<div class="field"><label>${t("settings.group")}</label><select name="group">${groupOpts.join("")}</select></div>`;
   }
+  // The six on/off toggles live in a collapsible "Settings" section so the
+  // form stays compact; the group and limit fields stay visible up top.
+  const check = (name, label, val) =>
+    `<label class="pick-item"><input type="checkbox" name="${name}"${val ? " checked" : ""}> <span class="pick-item-name">${label}</span></label>`;
+  const checks = [
+    check("active", t("settings.active"), g.active),
+    check("persistent_storage", t("settings.persistentStorage"), g.persistent_storage),
+    check("public_sharing", t("settings.publicSharing"), g.public_sharing),
+    check("harden_container", t("settings.hardenContainer"), g.harden_container),
+    check("harden_openbox", t("settings.hardenOpenbox"), g.harden_openbox),
+    check("gpu", t("settings.gpu"), g.gpu),
+  ].join("");
   return `
     <div class="admin-settings-form" id="${formId}">
-      <label class="check"><input type="checkbox" name="active" ${g.active ? "checked" : ""}> ${t("settings.active")}</label>
-      ${groupField}
-      <label class="check"><input type="checkbox" name="persistent_storage" ${g.persistent_storage ? "checked" : ""}> ${t("settings.persistentStorage")}</label>
-      <label class="check"><input type="checkbox" name="public_sharing" ${g.public_sharing ? "checked" : ""}> ${t("settings.publicSharing")}</label>
-      <label class="check"><input type="checkbox" name="harden_container" ${g.harden_container ? "checked" : ""}> ${t("settings.hardenContainer")}</label>
-      <label class="check"><input type="checkbox" name="harden_openbox" ${g.harden_openbox ? "checked" : ""}> ${t("settings.hardenOpenbox")}</label>
-      <label class="check"><input type="checkbox" name="gpu" ${g.gpu ? "checked" : ""}> ${t("settings.gpu")}</label>
-      <div class="field"><label>${t("settings.storageLimit")}</label><input type="number" name="storage_limit" value="${g.storage_limit}"></div>
-      <div class="field"><label>${t("settings.sessionLimit")}</label><input type="number" name="session_limit" value="${g.session_limit}"></div>
+      <div class="admin-form-row">
+        ${groupField}
+        <div class="field"><label>${t("settings.storageLimit")}</label><input type="number" name="storage_limit" value="${g.storage_limit}"></div>
+        <div class="field"><label>${t("settings.sessionLimit")}</label><input type="number" name="session_limit" value="${g.session_limit}"></div>
+      </div>
+      ${pickSectionHtml(formId + "-settings", t("settings.settingsSection"), 6, checks, { selectAll: false })}
     </div>`;
 }
 
@@ -105,24 +114,76 @@ export async function loadPermCatalog() {
   return permCatalog;
 }
 
-// Render the permission checkboxes for a form. `selected` is the list of
-// permission names that should start checked; `name` is the input name used
-// to group the checkboxes ("perm" for permissions, "role" for roles). Returns
-// the HTML.
-export function permCheckboxesHtml(selected = [], name = "perm") {
+// --- Shared collapsible "pick" sections -----------------------------------
+// A reusable collapsible section used by the permission, role, settings, and
+// app-access pickers. `id` namespaces the element IDs so several sections can
+// coexist in one form (the body is #id, the header is #id-header). `body` is
+// the inner HTML (rows of checkboxes). When `selectAll` is true (the default)
+// a "select all"/"deselect all" toggle is added to the header. Sections start
+// collapsed.
+export function pickSectionHtml(id, title, count, body, { selectAll = true, empty = "" } = {}) {
+  const selectAllBtn = selectAll
+    ? `<button type="button" class="pick-select-all" id="${id}-selectall">${t("apps.accessSelectAll")}</button>`
+    : "";
+  return `
+    <div class="pick-section">
+      <div class="pick-section-header collapsed" id="${id}-header" role="button" tabindex="0" aria-expanded="false">
+        <span class="pick-section-arrow" aria-hidden="true">▾</span>
+        <span class="pick-section-title">${title} <span class="pick-section-count">${count}</span></span>
+        ${selectAllBtn}
+      </div>
+      <div class="pick-section-body collapsed" id="${id}">${body || (empty ? `<span class="muted pick-empty">${empty}</span>` : "")}</div>
+    </div>`;
+}
+
+// Wire up the collapsible sections inside `box`: a header click (or Enter /
+// Space) toggles its body, and each "select all" button flips every checkbox
+// in its section and relabels itself. `onChange` (optional) is called after a
+// select-all flip so callers can run extra sync logic.
+export function wirePickSections(box, onChange) {
+  box.querySelectorAll(".pick-section-header").forEach((header) => {
+    const body = header.parentElement.querySelector(".pick-section-body");
+    const selectAll = header.querySelector(".pick-select-all");
+    const toggle = () => {
+      const collapsed = header.classList.toggle("collapsed");
+      header.setAttribute("aria-expanded", String(!collapsed));
+      body.classList.toggle("collapsed", collapsed);
+    };
+    header.addEventListener("click", (e) => {
+      if (e.target.closest(".pick-select-all")) return; // let the button handle it
+      toggle();
+    });
+    header.addEventListener("keydown", (e) => {
+      if (e.key === "Enter" || e.key === " ") {
+        e.preventDefault();
+        toggle();
+      }
+    });
+    if (selectAll) {
+      selectAll.addEventListener("click", () => {
+        const boxes = [...body.querySelectorAll("input[type=checkbox]")];
+        const allChecked = boxes.length > 0 && boxes.every((b) => b.checked);
+        boxes.forEach((b) => (b.checked = !allChecked));
+        selectAll.textContent = allChecked ? t("apps.accessSelectAll") : t("apps.accessDeselectAll");
+        if (onChange) onChange();
+      });
+    }
+  });
+}
+
+// Render the permission checkboxes for a form as two collapsible sections
+// (admin + user). `selected` is the list of permission names that should start
+// checked; `name` is the input name used to group the checkboxes; `idPrefix`
+// namespaces the section IDs so several forms can coexist. Returns the HTML.
+export function permCheckboxesHtml(selected = [], name = "perm", idPrefix = "perms") {
   const sel = new Set(selected || []);
-  const group = (title, perms) =>
-    perms.length
-      ? `<div class="perm-group"><div class="perm-group-label">${title}</div>${perms
-          .map(
-            (p) => `<label class="check perm-check" title="${esc(p.description)}"><input type="checkbox" name="${name}" value="${esc(p.name)}" ${sel.has(p.name) ? "checked" : ""}> ${esc(p.name)}</label>`
-          )
-          .join("")}</div>`
-      : "";
-  return (
-    group(t("settings.adminPerms"), (permCatalog && permCatalog.admin) || []) +
-    group(t("settings.userPerms"), (permCatalog && permCatalog.user) || [])
-  );
+  const row = (p) =>
+    `<label class="pick-item"><input type="checkbox" name="${name}" value="${esc(p.name)}" title="${esc(p.description)}"${sel.has(p.name) ? " checked" : ""}> <span class="pick-item-name">${esc(p.name)}</span></label>`;
+  const admin = (permCatalog && permCatalog.admin) || [];
+  const user = (permCatalog && permCatalog.user) || [];
+  return `
+    ${pickSectionHtml(`${idPrefix}-admin`, t("settings.adminPerms"), admin.length, admin.map(row).join(""), { empty: t("common.none") })}
+    ${pickSectionHtml(`${idPrefix}-user`, t("settings.userPerms"), user.length, user.map(row).join(""), { empty: t("common.none") })}`;
 }
 
 // Read the checked values of the permission/role checkboxes (by input name)
@@ -133,16 +194,21 @@ export function readPermCheckboxes(form, name = "perm") {
   );
 }
 
-// Render the role checkboxes for a form, sourced from the roles list (not the
-// permission catalog, which has no roles). `selected` is the list of role
-// names that should start checked.
-export function roleCheckboxesHtml(selected = [], roles = []) {
+// Render the role checkboxes for a form as a single collapsible section,
+// sourced from the roles list (not the permission catalog, which has no
+// roles). `selected` is the list of role names that should start checked;
+// `idPrefix` namespaces the section ID; `title` is the section heading.
+export function roleCheckboxesHtml(selected = [], roles = [], idPrefix = "roles", title = t("accounts.accessLabelRoles")) {
   const sel = new Set(selected || []);
-  return (roles || [])
-    .map(
-      (r) => `<label class="check perm-check"><input type="checkbox" name="role" value="${esc(r.name)}" ${sel.has(r.name) ? "checked" : ""}> ${esc(r.name)}${r.is_builtin ? t("accounts.builtinSuffix") : ""}</label>`
-    )
-    .join("") || `<p class="muted">${t("groups.noRolesDefined")}</p>`;
+  const list = roles || [];
+  const body = list.length
+    ? list
+        .map(
+          (r) => `<label class="pick-item"><input type="checkbox" name="role" value="${esc(r.name)}"${sel.has(r.name) ? " checked" : ""}> <span class="pick-item-name">${esc(r.name)}${r.is_builtin ? t("accounts.builtinSuffix") : ""}</span></label>`
+        )
+        .join("")
+    : `<span class="muted pick-empty">${t("groups.noRolesDefined")}</span>`;
+  return pickSectionHtml(idPrefix, title, list.length, body);
 }
 
 // --- Admin state ----------------------------------------------------------

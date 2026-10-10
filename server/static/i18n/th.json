@@ -1,70 +1,26 @@
 {
-  "background": {
-    "contextMenu": {
-      "openUrl": "เปิดลิงก์ใน SealSkin",
-      "openFile": "เปิดเป้าหมายลิงก์เป็นไฟล์ใน SealSkin",
-      "sendMedia": "ส่งสื่อไปยัง SealSkin",
-      "searchText": "ค้นหา \"%s\" ใน SealSkin",
-      "sendDownload": "ส่งการดาวน์โหลดถัดไปไปยัง SealSkin"
-    }
-  },
   "common": {
-    "actions": "การดำเนินการ",
-    "active": "ใช้งานอยู่",
     "cancel": "ยกเลิก",
     "manage": "จัดการ",
     "delete": "ลบ",
     "edit": "แก้ไข",
     "save": "บันทึก",
     "none": "ไม่มี",
-    "error": "ข้อผิดพลาด",
-    "na": "ไม่มีข้อมูล",
-    "of": "ของ",
-    "status": "สถานะ",
     "username": "ชื่อผู้ใช้",
-    "group": "กลุ่ม",
-    "groups": "กลุ่ม",
-    "publicKey": "คีย์สาธารณะ",
     "name": "ชื่อ",
-    "source": "แหล่งที่มา",
-    "imageVersion": "เวอร์ชันอิมเมจ",
     "language": "ภาษา",
-    "storage": "พื้นที่จัดเก็บ",
     "gpu": "GPU",
-    "version": "เวอร์ชัน",
-    "checked": "ตรวจสอบแล้ว",
-    "never": "ไม่เคย",
-    "stop": "หยุด",
-    "reopen": "เปิดใหม่",
     "sendFile": "ส่งไฟล์",
     "share": "แชร์",
-    "search": "ค้นหา",
     "refresh": "รีเฟรช",
     "close": "ปิด",
     "copy": "คัดลอก",
     "open": "เปิด",
-    "copyUrl": "คัดลอก URL",
     "download": "ดาวน์โหลด",
     "next": "ถัดไป",
     "previous": "ก่อนหน้า",
-    "page": "หน้า",
-    "home": "โฮมไดเรกทอรี",
-    "homes": "โฮมไดเรกทอรี",
-    "sessions": "เซสชัน",
-    "users": "ผู้ใช้",
-    "admins": "ผู้ดูแลระบบ",
     "yes": "ใช่",
     "no": "ไม่",
-    "daysAgo": "{count, plural, one {1 วันที่แล้ว} other {{count} วันที่แล้ว}}",
-    "hoursAgo": "{count, plural, one {1 ชั่วโมงที่แล้ว} other {{count} ชั่วโมงที่แล้ว}}",
-    "minutesAgo": "{count, plural, one {1 นาทีที่แล้ว} other {{count} นาทีที่แล้ว}}",
-    "justNow": "เมื่อสักครู่",
-    "bytes": "ไบต์",
-    "kb": "KB",
-    "mb": "MB",
-    "gb": "GB",
-    "tb": "TB",
-    "pb": "PB",
     "password": "รหัสผ่าน",
     "upload": "อัปโหลด",
     "create": "สร้าง",
@@ -74,1128 +30,10 @@
     "remove": "นำออก",
     "connect": "เชื่่อมต่อ"
   },
-  "options": {
-    "sidebar": {
-      "config": "การกำหนดค่า",
-      "home": "โฮมไดเรกทอรี",
-      "sessions": "เซสชันที่ใช้งานอยู่",
-      "pinned": "พฤติกรรมที่ปักหมุด",
-      "appStore": "ร้านค้าแอป",
-      "appTemplates": "เทมเพลตแอป",
-      "appLaboratory": "ห้องปฏิบัติการแอป",
-      "installedApps": "แอปที่ติดตั้งแล้ว",
-      "users": "ผู้ใช้",
-      "groups": "กลุ่ม",
-      "admins": "ผู้ดูแลระบบ"
-    },
-    "dashboard": {
-      "title": "แดชบอร์ด",
-      "clientSettings": "การตั้งค่าไคลเอ็นต์",
-      "exportConfig": "ส่งออกการกำหนดค่า",
-      "userStatus": "สถานะผู้ใช้",
-      "loggedInAs": "เข้าสู่ระบบในชื่อ:",
-      "role": "บทบาท",
-      "roleAdmin": "ผู้ดูแลระบบ",
-      "roleUser": "ผู้ใช้มาตรฐาน",
-      "serverInfo": "ข้อมูลเซิร์ฟเวอร์",
-      "server": "เซิร์ฟเวอร์:",
-      "cpuModel": "รุ่น CPU:",
-      "storageUsage": "การใช้งานพื้นที่จัดเก็บ:",
-      "detectedGpus": "GPU ที่ตรวจพบ:",
-      "logout": "ออกจากระบบและล้างการกำหนดค่า",
-      "howTo": "วิธีใช้ SealSkin",
-      "howToDescription": "ส่วนนี้ประกอบด้วยเอกสารพื้นฐานเกี่ยวกับวิธีใช้ส่วนขยาย",
-      "howToList": [
-        "<strong>วิธีเปิดเนื้อหาแบบแยก:</strong> คลิกขวาที่ลิงก์ รูปภาพ หรือข้อความที่เลือก แล้วเลือกตัวเลือกจากเมนูบริบท \"SealSkin Isolation\"",
-        "<strong>วิธีส่งการดาวน์โหลดไปยังการแยก:</strong> คลิกขวาที่หน้าและเลือก \"ส่งการดาวน์โหลดครั้งต่อไปไปยังการแยก\" ไฟล์ถัดไปที่คุณดาวน์โหลดจะถูกดักจับและส่งไปยังเซสชันที่ปลอดภัย",
-        "<strong>วิธีเปิดแอปพลิเคชันใหม่:</strong> คลิกไอคอน SealSkin ในแถบเครื่องมือของเบราว์เซอร์ของคุณ",
-        "<strong>วิธีจัดการพื้นที่จัดเก็บถาวร:</strong> ใช้แท็บ \"โฮมไดเรกทอรี\" ในหน้านี้เพื่อสร้างและลบวอลุ่มพื้นที่จัดเก็บที่สามารถใช้ได้หลายเซสชัน",
-        "<strong>วิธีบันทึกตัวเลือกการเปิด:</strong> เลือกช่อง \"บันทึกตัวเลือกการเปิดเหล่านี้\" ในป๊อปอัปก่อนเปิดแอปพลิเคชันสำหรับประเภทไฟล์เฉพาะ (เช่น .pdf) หรือสำหรับ URL ทั้งหมด จัดการการตั้งค่าที่บันทึกไว้เหล่านี้ในแท็บ \"พฤติกรรมที่ปักหมุด\""
-      ],
-      "confirmLogout": "คุณแน่ใจหรือไม่ว่าต้องการออกจากระบบ? การดำเนินการนี้จะล้างการกำหนดค่าที่บันทึกไว้ของคุณจากเบราว์เซอร์นี้"
-    },
-    "config": {
-      "quickSetup": "ตั้งค่าด่วน",
-      "quickSetupDescription": "อัปโหลดไฟล์กำหนดค่า (.json) ที่ผู้ดูแลระบบของคุณให้มา หรือวางเนื้อหาด้านล่างเพื่อตั้งค่าส่วนขยายโดยอัตโนมัติ",
-      "uploadLabel": "อัปโหลดไฟล์กำหนดค่า",
-      "pasteLabel": "หรือวางข้อความกำหนดค่า",
-      "pastePlaceholder": "วางการกำหนดค่า JSON ของคุณที่นี่...",
-      "applyButton": "ใช้การกำหนดค่า",
-      "manualLink": "การกำหนดค่าด้วยตนเอง",
-      "advancedTitle": "การกำหนดค่าไคลเอนต์ (ขั้นสูง)",
-      "serverIpLabel": "IP หรือโดเมนของเซิร์ฟเวอร์",
-      "serverIpPlaceholder": "เช่น 192.168.1.100",
-      "apiPortLabel": "พอร์ต API",
-      "apiPortPlaceholder": "เช่น 8000",
-      "sessionPortLabel": "พอร์ตเซสชัน",
-      "sessionPortPlaceholder": "เช่น 8443",
-      "usernameLabel": "ชื่อผู้ใช้",
-      "usernamePlaceholder": "ชื่อผู้ใช้ของคุณ",
-      "privateKeyLabel": "คีย์ส่วนตัวของคุณ (รูปแบบ PEM)",
-      "privateKeyPlaceholder": "วางเนื้อหาคีย์ส่วนตัวของคุณที่นี่",
-      "serverKeyLabel": "คีย์สาธารณะของเซิร์ฟเวอร์ (รูปแบบ PEM)",
-      "serverKeyPlaceholder": "วางเนื้อหา server_public.pem ที่นี่",
-      "searchEngineLabel": "เครื่องมือค้นหาเริ่มต้นสำหรับข้อความที่เลือก",
-      "saveButton": "บันทึกการกำหนดค่า",
-      "loginButton": "เข้าสู่ระบบและทดสอบ",
-      "automaticLink": "การกำหนดค่าอัตโนมัติ",
-      "chooseFile": "เลือกไฟล์",
-      "keyGeneration": "การสร้างคีย์",
-      "keyGenDescription": "หากคุณไม่มีคู่คีย์ คุณสามารถสร้างได้ที่นี่ คีย์ส่วนตัวจะถูกกรอกไว้ด้านบน โปรดให้คีย์สาธารณะแก่ผู้ดูแลระบบของคุณ",
-      "generateKeyButton": "สร้างคู่คีย์ใหม่",
-      "publicKeyForAdminLabel": "คีย์สาธารณะของคุณ (สำหรับผู้ดูแลระบบ)"
-    },
-    "home": {
-      "title": "โฮมไดเรกทอรีของคุณ",
-      "description": "สร้างไดเรกทอรีพื้นที่จัดเก็บถาวรเพื่อใช้ในเซสชันต่างๆ ไดเรกทอรีเหล่านี้จะถูกเมาท์เข้ากับแอปพลิเคชันของคุณเป็นไดเรกทอรีการกำหนดค่าของคุณ",
-      "newTitle": "สร้างโฮมไดเรกทอรีใหม่",
-      "nameLabel": "ชื่อไดเรกทอรี:",
-      "namePlaceholder": "เช่น my-project-files",
-      "nameTitle": "ใช้เฉพาะตัวอักษร ตัวเลข ขีดล่าง หรือขีดกลางเท่านั้น",
-      "createButton": "สร้างไดเรกทอรี",
-      "isLaboratory": "นี่คือแอปห้องปฏิบัติการ สร้างจากอิมเมจพื้นฐานพร้อมการตั้งค่าแบบกำหนดเอง",
-      "laboratory": "ห้องปฏิบัติการ",
-      "confirmDelete": "คุณแน่ใจหรือไม่ว่าต้องการลบแอปที่ติดตั้งแล้ว '{appName}'?"
-    },
-    "sessions": {
-      "title": "เซสชันที่ใช้งานอยู่",
-      "application": "แอปพลิเคชัน",
-      "started": "เริ่มเมื่อ",
-      "noSessionsUser": "ไม่พบเซสชันที่ใช้งานอยู่",
-      "noSessionsAdmin": "ไม่พบเซสชันที่ใช้งานอยู่สำหรับผู้ใช้ใดๆ",
-      "sessionsFor": "เซสชันสำหรับ {username} ({count})",
-      "confirmStop": "คุณแน่ใจหรือไม่ว่าต้องการหยุดเซสชันนี้? คอนเทนเนอร์จะถูกทำลาย"
-    },
-    "pinned": {
-      "title": "พฤติกรรมส่วนขยายที่ปักหมุด",
-      "description": "ตารางนี้แสดงตัวเลือกการเปิดที่คุณบันทึกไว้สำหรับประเภทไฟล์เฉพาะหรือสำหรับ URL ทั้งหมด คุณสามารถลบพฤติกรรมที่ปักหมุดเพื่อรับการแจ้งเตือนสำหรับตัวเลือกการเปิดอีกครั้ง",
-      "trigger": "ทริกเกอร์",
-      "savedApp": "แอปพลิเคชันที่บันทึกไว้",
-      "triggerSimple": "การเปิดแบบง่าย (ปุ่มแถบเครื่องมือ)",
-      "triggerUrl": "URL ทั้งหมด (จากเมนูบริบท)",
-      "triggerFile": "ประเภทไฟล์: <strong>{fileType}</strong>",
-      "unknownApp": "แอปที่ไม่รู้จัก ({appId}...)"
-    },
-    "admins": {
-      "serverKeyTitle": "คีย์สาธารณะของเซิร์ฟเวอร์",
-      "serverKeyDescription": "นี่คือคีย์สาธารณะที่ไฟล์กำหนดค่าของผู้ใช้จะต้องใช้เพื่อเชื่อมต่อกับเซิร์ฟเวอร์นี้",
-      "title": "การจัดการผู้ดูแลระบบ",
-      "searchPlaceholder": "ค้นหาผู้ดูแลระบบ...",
-      "newTitle": "สร้างผู้ดูแลระบบใหม่",
-      "publicKeyOptionalLabel": "คีย์สาธารณะ (ไม่บังคับ):",
-      "publicKeyPlaceholder": "วางคีย์สาธารณะที่นี่ หรือเว้นว่างไว้เพื่อสร้างใหม่",
-      "createButton": "สร้างผู้ดูแลระบบ",
-      "confirmDelete": "คุณแน่ใจหรือไม่ว่าต้องการลบผู้ดูแลระบบ '{username}'? การดำเนินการนี้จะลบพื้นที่จัดเก็บถาวรทั้งหมดของพวกเขาด้วยและไม่สามารถยกเลิกได้"
-    },
-    "users": {
-      "title": "การจัดการผู้ใช้",
-      "searchPlaceholder": "ค้นหาผู้ใช้ตามชื่อหรือกลุ่ม...",
-      "newTitle": "สร้างผู้ใช้ใหม่",
-      "publicKeyOptionalLabel": "คีย์สาธารณะ (ไม่บังคับ):",
-      "publicKeyPlaceholder": "วางคีย์สาธารณะของผู้ใช้ที่นี่ หรือเว้นว่างไว้เพื่อสร้างใหม่",
-      "settingsTitle": "การตั้งค่าผู้ใช้",
-      "sessionLimitLabel": "จำกัดเซสชัน",
-      "sessionLimitTitle": "จำนวนเซสชันที่ใช้งานอยู่ที่ผู้ใช้สามารถมีได้ -1 สำหรับไม่จำกัด",
-      "permissionsTitle": "สิทธิ์และการเพิ่มความปลอดภัย",
-      "activeAccount": "บัญชีที่ใช้งานอยู่",
-      "allowStorage": "อนุญาตพื้นที่จัดเก็บถาวร",
-      "allowGpu": "อนุญาตการเข้าถึง GPU",
-      "hardenContainer": "เพิ่มความปลอดภัยคอนเทนเนอร์",
-      "hardenWm": "เพิ่มความปลอดภัยตัวจัดการหน้าต่าง",
-      "createButton": "สร้างผู้ใช้",
-      "homesDisabledTooltip": "พื้นที่จัดเก็บถาวรถูกปิดใช้งานสำหรับผู้ใช้นี้",
-      "confirmDelete": "คุณแน่ใจหรือไม่ว่าต้องการลบผู้ใช้ '{username}'? การดำเนินการนี้จะลบพื้นที่จัดเก็บถาวรทั้งหมดของพวกเขาด้วยและไม่สามารถยกเลิกได้",
-      "allowPublicSharing": "อนุญาตให้แชร์ไฟล์สาธารณะ"
-    },
-    "groups": {
-      "title": "การจัดการกลุ่ม",
-      "searchPlaceholder": "ค้นหากลุ่ม...",
-      "newTitle": "สร้างกลุ่มใหม่",
-      "nameLabel": "ชื่อกลุ่ม:",
-      "overrideTitle": "การตั้งค่าการแทนที่ของกลุ่ม",
-      "permissionsTitle": "การแทนที่สิทธิ์และการเพิ่มความปลอดภัย",
-      "createButton": "สร้างกลุ่ม",
-      "confirmDelete": "คุณแน่ใจหรือไม่ว่าต้องการลบกลุ่ม '{groupName}'? ผู้ใช้ในกลุ่มนี้จะกลับไปใช้การตั้งค่าส่วนบุคคลของตนเอง"
-    },
-    "installedApps": {
-      "title": "แอปพลิเคชันที่ติดตั้งแล้ว",
-      "searchPlaceholder": "ค้นหาแอปที่ติดตั้งแล้ว...",
-      "noAppsFound": "ไม่พบแอปที่ติดตั้งแล้ว",
-      "pulling": "กำลังดึงอิมเมจใหม่...",
-      "notLocal": "ไม่พบอิมเมจในเครื่อง",
-      "confirmDelete": "คุณแน่ใจหรือไม่ว่าต้องการลบแอปที่ติดตั้งแล้ว '{appName}'?"
-    },
-    "appStore": {
-      "title": "ร้านค้าแอป",
-      "refreshTitle": "รีเฟรชร้านค้าที่เลือก",
-      "selectLabel": "เลือกร้านค้าแอป",
-      "addLabel": "เพิ่มร้านค้าแอปใหม่",
-      "namePlaceholder": "ชื่อร้านค้า",
-      "urlPlaceholder": "URL YAML ของร้านค้า",
-      "availableTitle": "แอปที่มีให้",
-      "addManual": "เพิ่มแอปด้วยตนเอง",
-      "searchPlaceholder": "ค้นหาแอปที่มีให้...",
-      "noAppsFound": "ไม่พบแอปพลิเคชัน",
-      "availableFrom": "แอปที่มีให้จาก {storeName}",
-      "couldNotLoad": "ไม่สามารถโหลดแอปจากร้านค้านี้ได้"
-    },
-    "appTemplates": {
-      "title": "ตัวแก้ไขเทมเพลตแอปพลิเคชัน",
-      "loadLabel": "โหลดเทมเพลต",
-      "createOption": "สร้างเทมเพลตใหม่",
-      "nameLabel": "ชื่อเทมเพลต",
-      "namePlaceholder": "ป้อนชื่อสำหรับเทมเพลตใหม่",
-      "saveButton": "บันทึกโปรไฟล์",
-      "deleteButton": "ลบ",
-      "previewTitle": "ตัวอย่าง UI",
-      "contentArea": "พื้นที่เนื้อหาแอปพลิเคชัน",
-      "confirmDelete": "คุณแน่ใจหรือไม่ว่าต้องการลบเทมเพลต '{templateName}'? การกระทำนี้ไม่สามารถยกเลิกได้",
-      "deleteDisabled": "เทมเพลตนี้ไม่สามารถลบได้",
-      "enterName": "กรุณาป้อนชื่อสำหรับเทมเพลตใหม่",
-      "settings": {
-        "TITLE": {
-          "label": "ชื่อหน้า",
-          "description": "ชื่อหน้าที่แสดงบนเว็บเบราว์เซอร์"
-        },
-        "SELKIES_UI_TITLE": {
-          "label": "ชื่อแถบด้านข้าง",
-          "description": "ชื่อที่มุมบนซ้ายของแถบด้านข้าง"
-        },
-        "SELKIES_UI_SHOW_SIDEBAR": {
-          "label": "แสดงแถบด้านข้าง",
-          "description": "แสดง UI หลักของแถบด้านข้าง"
-        },
-        "SELKIES_UI_SHOW_LOGO": {
-          "label": "แสดงโลโก้",
-          "description": "แสดงโลโก้ Selkies ในแถบด้านข้าง"
-        },
-        "SELKIES_UI_SHOW_CORE_BUTTONS": {
-          "label": "แสดงปุ่มหลัก",
-          "description": "แสดงปุ่มส่วนประกอบหลัก (จอแสดงผล, เสียง, ฯลฯ)"
-        },
-        "SELKIES_UI_SIDEBAR_SHOW_VIDEO_SETTINGS": {
-          "label": "แสดงการตั้งค่าวิดีโอ",
-          "description": "แสดงส่วนการตั้งค่าวิดีโอในแถบด้านข้าง"
-        },
-        "SELKIES_UI_SIDEBAR_SHOW_SCREEN_SETTINGS": {
-          "label": "แสดงการตั้งค่าหน้าจอ",
-          "description": "แสดงส่วนการตั้งค่าหน้าจอในแถบด้านข้าง"
-        },
-        "SELKIES_UI_SIDEBAR_SHOW_AUDIO_SETTINGS": {
-          "label": "แสดงการตั้งค่าเสียง",
-          "description": "แสดงส่วนการตั้งค่าเสียงในแถบด้านข้าง"
-        },
-        "SELKIES_UI_SIDEBAR_SHOW_STATS": {
-          "label": "แสดงสถิติ",
-          "description": "แสดงส่วนสถิติในแถบด้านข้าง"
-        },
-        "SELKIES_UI_SIDEBAR_SHOW_SHORTCUTS": {
-          "label": "แสดงส่วนแป้นพิมพ์ลัด",
-          "description": "แสดงส่วนแป้นพิมพ์ลัดในแถบด้านข้าง"
-        },
-        "SELKIES_UI_SIDEBAR_SHOW_CLIPBOARD": {
-          "label": "แสดงคลิปบอร์ด",
-          "description": "แสดงส่วนคลิปบอร์ดในแถบด้านข้าง"
-        },
-        "SELKIES_UI_SIDEBAR_SHOW_FILES": {
-          "label": "แสดงส่วนไฟล์",
-          "description": "แสดงส่วนการถ่ายโอนไฟล์ในแถบด้านข้าง"
-        },
-        "SELKIES_UI_SIDEBAR_SHOW_APPS": {
-          "label": "แสดงส่วนแอป",
-          "description": "แสดงส่วนแอปพลิเคชันในแถบด้านข้าง"
-        },
-        "SELKIES_UI_SIDEBAR_SHOW_SHARING": {
-          "label": "แสดงส่วนการแชร์",
-          "description": "แสดงส่วนการแชร์ในแถบด้านข้าง"
-        },
-        "SELKIES_UI_SIDEBAR_SHOW_GAMEPADS": {
-          "label": "แสดงส่วนเกมแพด",
-          "description": "แสดงส่วนเกมแพดในแถบด้านข้าง"
-        },
-        "SELKIES_UI_SIDEBAR_SHOW_FULLSCREEN": {
-          "label": "แสดงปุ่มเต็มหน้าจอ",
-          "description": "แสดงปุ่มเต็มหน้าจอในแถบด้านข้าง"
-        },
-        "SELKIES_UI_SIDEBAR_SHOW_GAMING_MODE": {
-          "label": "แสดงปุ่มโหมดเกม",
-          "description": "แสดงปุ่มโหมดเกม (ล็อกตัวชี้) ในแถบด้านข้าง"
-        },
-        "SELKIES_UI_SIDEBAR_SHOW_TRACKPAD": {
-          "label": "แสดงปุ่มแทร็กแพด",
-          "description": "แสดงปุ่มแทร็กแพดเสมือนในแถบด้านข้าง"
-        },
-        "SELKIES_UI_SIDEBAR_SHOW_KEYBOARD_BUTTON": {
-          "label": "แสดงปุ่มคีย์บอร์ด",
-          "description": "แสดงปุ่มคีย์บอร์ดบนหน้าจอ"
-        },
-        "SELKIES_UI_SIDEBAR_SHOW_SOFT_BUTTONS": {
-          "label": "แสดงปุ่มซอฟต์",
-          "description": "แสดงส่วนปุ่มซอฟต์ (สำหรับมือถือ)"
-        },
-        "WATERMARK_PNG": {
-          "label": "เส้นทาง PNG ลายน้ำ",
-          "description": "เส้นทางเต็มภายในคอนเทนเนอร์ไปยังไฟล์ png ลายน้ำ"
-        },
-        "WATERMARK_LOCATION": {
-          "label": "ตำแหน่งลายน้ำ",
-          "description": "ตำแหน่งที่จะวาดภาพทับสตรีม",
-          "options": {
-            "disabled": "ปิดใช้งาน",
-            "topLeft": "บนซ้าย",
-            "topRight": "บนขวา",
-            "bottomLeft": "ล่างซ้าย",
-            "bottomRight": "ล่างขวา",
-            "centered": "ตรงกลาง",
-            "animated": "เคลื่อนไหว"
-          }
-        },
-        "DASHBOARD": {
-          "label": "สไตล์แดชบอร์ด",
-          "description": "อนุญาตให้ผู้ใช้ตั้งค่าแดชบอร์ดของตนเอง",
-          "options": {
-            "default": "ค่าเริ่มต้น",
-            "selkiesDefault": "Selkies (ค่าเริ่มต้น)",
-            "wish": "Wish"
-          }
-        },
-        "SELKIES_AUDIO_ENABLED": {
-          "label": "เปิดใช้งานเสียง",
-          "description": "เปิดใช้งานการสตรีมเสียงจากเซิร์ฟเวอร์ไปยังไคลเอนต์"
-        },
-        "SELKIES_MICROPHONE_ENABLED": {
-          "label": "เปิดใช้งานไมโครโฟน",
-          "description": "เปิดใช้งานการส่งต่อไมโครโฟนจากไคลเอนต์ไปยังเซิร์ฟเวอร์ ปิดตามค่าเริ่มต้นในโครงการต้นน้ำ"
-        },
-        "SELKIES_GAMEPAD_ENABLED": {
-          "label": "เปิดใช้งานเกมแพด",
-          "description": "เปิดใช้งานการรองรับเกมแพด"
-        },
-        "SELKIES_ENABLE_CLIPBOARD": {
-          "label": "นโยบายคลิปบอร์ด",
-          "description": "ทิศทางคลิปบอร์ดที่อนุญาต 'จากเซิร์ฟเวอร์ไปยังไคลเอนต์เท่านั้น' ยังป้องกันไม่ให้หน้าเว็บอ่านคลิปบอร์ดในเครื่อง ซึ่งเป็นสิ่งที่ทำให้เกิดข้อความแจ้งเตือนการวางใน Firefox และ Safari",
-          "options": {
-            "both": "ทั้งสองทิศทาง",
-            "inOnly": "จากไคลเอนต์ไปยังเซิร์ฟเวอร์เท่านั้น",
-            "outOnly": "จากเซิร์ฟเวอร์ไปยังไคลเอนต์เท่านั้น",
-            "disabled": "ปิดใช้งาน"
-          }
-        },
-        "SELKIES_ENABLE_BINARY_CLIPBOARD": {
-          "label": "เปิดใช้งานคลิปบอร์ดไบนารี",
-          "description": "อนุญาตข้อมูลไบนารี (รูปภาพ) บนคลิปบอร์ด"
-        },
-        "SELKIES_COMMAND_ENABLED": {
-          "label": "เปิดใช้งาน Command Websocket",
-          "description": "เปิดใช้งานการแยกวิเคราะห์ข้อความ command websocket"
-        },
-        "SELKIES_FILE_TRANSFERS": {
-          "label": "การถ่ายโอนไฟล์",
-          "description": "ทิศทางที่อนุญาต ('upload,download', 'upload', 'download' หรือ 'none') จะถูกล้างค่าโดยเพิ่มความปลอดภัยเดสก์ท็อป เว้นแต่จะตั้งค่าไว้ที่นี่"
-        },
-        "SELKIES_FILE_TRANSFER_LIMIT_MBPS": {
-          "label": "ขีดจำกัดการถ่ายโอนไฟล์ (Mbit/s)",
-          "description": "ขีดจำกัดคงที่ที่ใช้ร่วมกันสำหรับการอัปโหลดและดาวน์โหลดทั้งหมด 0 จะปิดใช้งานขีดจำกัด"
-        },
-        "SELKIES_ENABLE_SHARING": {
-          "label": "เปิดใช้งานการแชร์ทั้งหมด",
-          "description": "สวิตช์หลักสำหรับคุณสมบัติการแชร์ทั้งหมด"
-        },
-        "SELKIES_ENABLE_SHARED": {
-          "label": "เปิดใช้งานการแชร์แบบดูอย่างเดียว",
-          "description": "เปิดใช้งานลิงก์การแชร์แบบดูอย่างเดียว"
-        },
-        "SELKIES_ENABLE_COLLAB": {
-          "label": "เปิดใช้งานการทำงานร่วมกัน",
-          "description": "ให้ผู้ชมที่ถือโทเค็นหลักของเซสชันทำหน้าที่เป็นผู้ร่วมงานแบบอ่านและเขียนได้ จำเป็นสำหรับห้อง SealSkin"
-        },
-        "SELKIES_ENABLE_PLAYER2": {
-          "label": "เปิดใช้งานการแชร์ผู้เล่น 2",
-          "description": "เปิดใช้งานลิงก์การแชร์สำหรับเกมแพดผู้เล่น 2"
-        },
-        "SELKIES_ENABLE_PLAYER3": {
-          "label": "เปิดใช้งานการแชร์ผู้เล่น 3",
-          "description": "เปิดใช้งานลิงก์การแชร์สำหรับเกมแพดผู้เล่น 3"
-        },
-        "SELKIES_ENABLE_PLAYER4": {
-          "label": "เปิดใช้งานการแชร์ผู้เล่น 4",
-          "description": "เปิดใช้งานลิงก์การแชร์สำหรับเกมแพดผู้เล่น 4"
-        },
-        "SELKIES_SECOND_SCREEN": {
-          "label": "เปิดใช้งานหน้าจอที่สอง",
-          "description": "เปิดใช้งานการรองรับจอภาพ/จอแสดงผลที่สอง"
-        },
-        "SELKIES_ENABLE_RESIZE": {
-          "label": "เปิดใช้งานการปรับขนาดแบบไดนามิก",
-          "description": "ปรับขนาดจอแสดงผลระยะไกลให้ตรงกับหน้าต่างเบราว์เซอร์"
-        },
-        "SELKIES_USE_BROWSER_CURSORS": {
-          "label": "ใช้เคอร์เซอร์ของเบราว์เซอร์",
-          "description": "ใช้เคอร์เซอร์ CSS ของเบราว์เซอร์แทนการเรนเดอร์ลงบน canvas"
-        },
-        "SELKIES_ENABLE_CURSORS": {
-          "label": "เปิดใช้งานเคอร์เซอร์ระยะไกล",
-          "description": "ส่งรูปร่างเคอร์เซอร์ของแอปพลิเคชันเองไปยังไคลเอนต์"
-        },
-        "SELKIES_CURSOR_SIZE": {
-          "label": "ขนาดเคอร์เซอร์",
-          "description": "ขนาดเคอร์เซอร์เป็นพอยต์ที่ 96 DPI โดยปรับตาม DPI ของเซสชัน -1 ใช้ค่าเริ่มต้นของแพลตฟอร์ม (32 บน X11, 24 บน Wayland)"
-        },
-        "SELKIES_USE_CSS_SCALING": {
-          "label": "ใช้การปรับขนาด CSS (LoDPI)",
-          "description": "หากเป็นจริง จะส่งความละเอียดที่ต่ำกว่าและยืด canvas"
-        },
-        "SELKIES_MANUAL_RESOLUTION": {
-          "label": "โหมดความละเอียดด้วยตนเอง",
-          "description": "ล็อกความละเอียดไว้ที่ค่าความกว้าง/ความสูงด้วยตนเอง"
-        },
-        "SELKIES_FORCE_ALIGNED_RESOLUTION": {
-          "label": "บังคับความละเอียดที่จัดตำแหน่ง",
-          "description": "บังคับให้ความละเอียดของจอแสดงผลเป็นผลคูณของ 16 พิกเซล."
-        },
-        "SELKIES_MANUAL_WIDTH": {
-          "label": "ความกว้างด้วยตนเอง",
-          "description": "ล็อกความกว้างไว้ที่ค่าคงที่ บังคับใช้โหมดด้วยตนเอง"
-        },
-        "SELKIES_MANUAL_HEIGHT": {
-          "label": "ความสูงด้วยตนเอง",
-          "description": "ล็อกความสูงไว้ที่ค่าคงที่ บังคับใช้โหมดด้วยตนเอง"
-        },
-        "SELKIES_SCALING_DPI": {
-          "label": "DPI การปรับขนาด UI",
-          "description": "DPI เริ่มต้นสำหรับการปรับขนาด UI"
-        },
-        "SELKIES_AUDIO_BITRATE": {
-          "label": "บิตเรตเสียง",
-          "description": "บิตเรตเสียง Opus เริ่มต้น"
-        },
-        "SELKIES_AUDIO_FRAME_DURATION_MS": {
-          "label": "ระยะเวลาเฟรมเสียง",
-          "description": "ระยะเวลาเฟรม Opus ค่าที่ต่ำกว่าจะลดความหน่วงของเสียงโดยแลกกับแบนด์วิดท์และอัตราแพ็กเก็ตที่เพิ่มขึ้นเล็กน้อย"
-        },
-        "SELKIES_AUDIO_CHANNELS": {
-          "label": "ช่องสัญญาณเสียง",
-          "description": "จำนวนช่องสัญญาณเสียง; 2 คือสเตอริโอ"
-        },
-        "SELKIES_AUDIO_REDUNDANCY": {
-          "label": "ความซ้ำซ้อนของเสียง (Opus RED)",
-          "description": "ส่งเฟรมเสียงก่อนหน้าไปด้วยเป็นข้อมูลสำรอง เพื่อลดเสียงขาดหายเมื่อแพ็กเก็ตสูญหาย"
-        },
-        "SELKIES_AUDIO_REDUNDANCY_DISTANCE": {
-          "label": "ระยะความซ้ำซ้อนของเสียง",
-          "description": "จำนวนเฟรมก่อนหน้าที่ส่งไปด้วยเป็นข้อมูลสำรอง (0-4) ค่าที่สูงกว่าทนต่อการสูญหายเป็นช่วงยาวขึ้นได้ โดยใช้แบนด์วิดท์เพิ่มขึ้นตามสัดส่วน"
-        },
-        "SELKIES_ENCODER": {
-          "label": "ตัวเข้ารหัส",
-          "description": "รายการตัวเข้ารหัสที่อนุญาตคั่นด้วยจุลภาค (h264enc, h264enc-striped, jpeg) ตัวแรกคือค่าเริ่มต้น; ค่าเดียวจะล็อกตัวเลือกไว้ มีเพียง h264enc เท่านั้นที่สตรีมผ่าน WebRTC"
-        },
-        "SELKIES_USE_CPU": {
-          "label": "บังคับใช้การเข้ารหัส CPU",
-          "description": "บังคับใช้การเข้ารหัสโดยใช้ CPU สำหรับ pixelflux"
-        },
-        "SELKIES_FRAMERATE": {
-          "label": "เฟรมเรต (ช่วงหรือค่าคงที่)",
-          "description": "เช่น '8-240' สำหรับช่วง, '60' สำหรับค่าเริ่มต้นคงที่, '60,8-240' สำหรับทั้งสองอย่าง; '60-60' จะล็อกค่าไว้"
-        },
-        "SELKIES_RATE_CONTROL_MODE": {
-          "label": "โหมดควบคุมอัตรา",
-          "description": "การควบคุมอัตรา H.264 เริ่มต้น: คุณภาพคงที่ (CRF) หรือบิตเรตคงที่ (CBR)",
-          "options": {
-            "crf": "คุณภาพคงที่ (CRF)",
-            "cbr": "บิตเรตคงที่ (CBR)"
-          }
-        },
-        "SELKIES_ENABLE_RATE_CONTROL": {
-          "label": "อนุญาตการสลับการควบคุมอัตรา",
-          "description": "ให้ไคลเอนต์สลับระหว่าง CRF และ CBR ได้ หากปิดจะล็อกตัวเข้ารหัสไว้ที่ค่าเริ่มต้นในตัว"
-        },
-        "SELKIES_VIDEO_CRF": {
-          "label": "CRF วิดีโอ (ช่วงหรือค่าคงที่)",
-          "description": "คุณภาพคงที่ H.264: '5-50' สำหรับช่วง, '25' สำหรับค่าเริ่มต้นคงที่ หรือ '25,5-50' สำหรับทั้งสองอย่าง"
-        },
-        "SELKIES_VIDEO_BITRATE": {
-          "label": "บิตเรตวิดีโอ kbps (ช่วงหรือค่าคงที่)",
-          "description": "บิตเรต CBR เป็นกิโลบิตต่อวินาที: '100-1000000' สำหรับช่วง, '8000' สำหรับค่าเริ่มต้นคงที่ หรือ '8000,100-1000000' สำหรับทั้งสองอย่าง"
-        },
-        "SELKIES_VIDEO_MIN_QP": {
-          "label": "QP ต่ำสุดของวิดีโอ",
-          "description": "ค่าควอนไทเซอร์ H.264 ต่ำสุดในโหมด CBR (0 = ค่าเริ่มต้นของตัวเข้ารหัส) การเพิ่มค่านี้จะจำกัดการใช้บิตกับเนื้อหาที่เข้ารหัสง่าย"
-        },
-        "SELKIES_VIDEO_MAX_QP": {
-          "label": "QP สูงสุดของวิดีโอ",
-          "description": "ค่าควอนไทเซอร์ H.264 สูงสุดในโหมด CBR (0 = ค่าเริ่มต้นของตัวเข้ารหัส) การลดค่านี้จะช่วยให้ข้อความอ่านออกขณะเคลื่อนไหว โดยแลกกับการใช้บิตเรตเกินเป้าหมาย"
-        },
-        "SELKIES_KEYFRAME_INTERVAL": {
-          "label": "ช่วงเวลาคีย์เฟรม (วินาที)",
-          "description": "จำนวนวินาทีระหว่างคีย์เฟรมสำหรับกู้คืนตามกำหนด 0 จะคง GOP ไว้ไม่จำกัดและส่งคีย์เฟรมเฉพาะเมื่อร้องขอเท่านั้น"
-        },
-        "SELKIES_JPEG_QUALITY": {
-          "label": "คุณภาพ JPEG (ช่วงหรือค่าคงที่)",
-          "description": "'1-100' สำหรับช่วง, '40' สำหรับค่าเริ่มต้นคงที่ หรือ '40,1-100' สำหรับทั้งสองอย่าง"
-        },
-        "SELKIES_VIDEO_FULLCOLOR": {
-          "label": "วิดีโอสีเต็ม (4:4:4)",
-          "description": "เข้ารหัส H.264 ด้วยโครมา 4:4:4 แทน 4:2:0 ไคลเอนต์ที่ไม่มีตัวถอดรหัส 4:4:4 จะกลับไปใช้ JPEG เมื่อตัวเลือกนี้ถูกล็อกเปิดไว้"
-        },
-        "SELKIES_VIDEO_STREAMING_MODE": {
-          "label": "โหมดสตรีมมิ่งวิดีโอ (Turbo)",
-          "description": "เข้ารหัสทุกเฟรมเหมือนตัวเข้ารหัสวิดีโอแบบดั้งเดิม แทนที่จะเข้ารหัสเฉพาะบริเวณที่เปลี่ยนแปลง"
-        },
-        "SELKIES_USE_PAINT_OVER_QUALITY": {
-          "label": "ใช้คุณภาพ Paint-Over",
-          "description": "เปิดใช้งานการวาดทับคุณภาพสูงสำหรับฉากที่คงที่"
-        },
-        "SELKIES_PAINT_OVER_JPEG_QUALITY": {
-          "label": "คุณภาพ JPEG ของ Paint-Over",
-          "description": "'1-100' สำหรับช่วง, '90' สำหรับค่าเริ่มต้นคงที่ หรือ '90,1-100' สำหรับทั้งสองอย่าง"
-        },
-        "SELKIES_VIDEO_PAINTOVER_CRF": {
-          "label": "CRF วิดีโอของ Paint-Over",
-          "description": "'5-50' สำหรับช่วง, '18' สำหรับค่าเริ่มต้นคงที่ หรือ '18,5-50' สำหรับทั้งสองอย่าง"
-        },
-        "SELKIES_VIDEO_PAINTOVER_BURST_FRAMES": {
-          "label": "เฟรมเบิร์สต์ของ Paint-Over",
-          "description": "'1-30' สำหรับช่วง, '5' สำหรับค่าเริ่มต้นคงที่ หรือ '5,1-30' สำหรับทั้งสองอย่าง"
-        },
-        "SELKIES_BACKPRESSURE_QUEUE_SIZE": {
-          "label": "ขนาดคิวแบ็กเพรสเชอร์",
-          "description": "จำนวนเฟรมและชิ้นส่วนเสียงที่บัฟเฟอร์ต่อสตรีมก่อนจะทิ้งเมื่อเกิดแบ็กเพรสเชอร์ (โหมด WebSockets) ค่าที่สูงกว่าทนต่อการสะดุดของไคลเอนต์ได้มากขึ้น โดยแลกกับความหน่วง"
-        },
-        "SELKIES_WEBCAM_WIDTH": {
-          "label": "ความกว้างเว็บแคม",
-          "description": "ความกว้างของอุปกรณ์เว็บแคมเสมือน; เฟรมจากไคลเอนต์จะถูกปรับขนาดและใส่ขอบดำให้พอดี"
-        },
-        "SELKIES_WEBCAM_HEIGHT": {
-          "label": "ความสูงเว็บแคม",
-          "description": "ความสูงของอุปกรณ์เว็บแคมเสมือน; เฟรมจากไคลเอนต์จะถูกปรับขนาดและใส่ขอบดำให้พอดี"
-        },
-        "SELKIES_WEBCAM_ENCODER": {
-          "label": "ตัวเข้ารหัสอัปลิงก์เว็บแคม",
-          "description": "โคเดกที่ไคลเอนต์ WebSocket ใช้ส่งเฟรมกล้อง อัตโนมัติจะเลือกตัวที่ดีที่สุดที่เบราว์เซอร์รองรับได้อย่างต่อเนื่อง",
-          "options": {
-            "auto": "อัตโนมัติ"
-          }
-        },
-        "SELKIES_WEBCAM_PIXEL_FORMAT": {
-          "label": "รูปแบบพิกเซลเว็บแคม",
-          "description": "รูปแบบพิกเซลของอุปกรณ์เว็บแคมเสมือน อัตโนมัติจะใช้ตามที่ไคลเอนต์ส่งมา",
-          "options": {
-            "auto": "อัตโนมัติ"
-          }
-        },
-        "HARDEN_DESKTOP": {
-          "label": "เพิ่มความปลอดภัยเดสก์ท็อป (ค่าที่ตั้งไว้ล่วงหน้า)",
-          "description": "เปิดใช้งาน DISABLE_OPEN_TOOLS, DISABLE_SUDO และ DISABLE_TERMINALS และหากไม่ได้ตั้งค่าไว้อย่างชัดเจน จะปิดใช้งานการถ่ายโอนไฟล์, websocket คำสั่ง และส่วนไฟล์กับส่วนแอปในแถบด้านข้างด้วย บังคับเปิดสำหรับผู้ใช้ที่มีเพิ่มความปลอดภัยคอนเทนเนอร์"
-        },
-        "HARDEN_OPENBOX": {
-          "label": "เพิ่มความปลอดภัยตัวจัดการหน้าต่าง (ค่าที่ตั้งไว้ล่วงหน้า)",
-          "description": "เปิดใช้งาน DISABLE_CLOSE_BUTTON, DISABLE_MOUSE_BUTTONS และ HARDEN_KEYBINDS สำหรับ Openbox และ labwc และเปิดใช้งาน RESTART_APP ด้วยหากไม่ได้ตั้งค่าไว้อย่างชัดเจน บังคับเปิดสำหรับผู้ใช้ที่มีเพิ่มความปลอดภัยตัวจัดการหน้าต่าง"
-        },
-        "DISABLE_OPEN_TOOLS": {
-          "label": "ปิดใช้งานเครื่องมือเปิด",
-          "description": "ปิดใช้งานไบนารี xdg-open และ exo-open"
-        },
-        "DISABLE_SUDO": {
-          "label": "ปิดใช้งาน Sudo",
-          "description": "ปิดใช้งานคำสั่ง sudo"
-        },
-        "DISABLE_TERMINALS": {
-          "label": "ปิดใช้งานเทอร์มินัล",
-          "description": "ปิดใช้งานเทอร์มินัลอีมูเลเตอร์ทั่วไป"
-        },
-        "DISABLE_CLOSE_BUTTON": {
-          "label": "ปิดใช้งานปุ่มปิดหน้าต่าง",
-          "description": "ลบปุ่มปิดออกจากแถบชื่อเรื่องของหน้าต่าง"
-        },
-        "DISABLE_MOUSE_BUTTONS": {
-          "label": "ปิดใช้งานคลิกขวา/กลาง",
-          "description": "ปิดใช้งานเมนูบริบทของคลิกขวาและคลิกกลาง"
-        },
-        "HARDEN_KEYBINDS": {
-          "label": "เพิ่มความปลอดภัยคีย์ลัด",
-          "description": "ปิดใช้งานคีย์ลัดของตัวจัดการหน้าต่าง เช่น Alt+F4, Alt+Escape, Alt+Space และ Super+E และล็อกการกำหนดค่าตัวจัดการหน้าต่าง"
-        },
-        "RESTART_APP": {
-          "label": "รีสตาร์ทแอปเมื่อปิด",
-          "description": "รีสตาร์ทแอปพลิเคชันหลักโดยอัตโนมัติหากถูกปิด และทำให้ไฟล์เริ่มอัตโนมัติเป็นแบบอ่านอย่างเดียว"
-        },
-        "MAX_RES": {
-          "label": "ความละเอียดสูงสุด",
-          "description": "ความละเอียดสูงสุดสำหรับคอนเทนเนอร์ ค่าเริ่มต้นคือ 16k"
-        },
-        "START_DOCKER": {
-          "label": "เริ่ม Docker-in-Docker",
-          "description": "หากเป็นเท็จ คอนเทนเนอร์ที่มีสิทธิ์พิเศษจะไม่เริ่ม DinD"
-        },
-        "DISABLE_IPV6": {
-          "label": "ปิดใช้งาน IPv6",
-          "description": "หากเป็นจริง จะปิดใช้งาน IPv6"
-        },
-        "DISABLE_ZINK": {
-          "label": "ปิดใช้งาน Zink",
-          "description": "ไม่ตั้งค่าตัวแปรสภาพแวดล้อม Zink หากตรวจพบการ์ดวิดีโอ"
-        },
-        "DISABLE_DRI3": {
-          "label": "ปิดใช้งาน DRI3",
-          "description": "ไม่ใช้การเร่งความเร็ว DRI3 หากตรวจพบการ์ดวิดีโอ"
-        },
-        "AUTO_GPU": {
-          "label": "เลือก GPU อัตโนมัติ",
-          "description": "'true' จะเรนเดอร์บน GPU ตัวแรก, 'false' จะปิดใช้งาน หรือระบุผู้ผลิต, ไดรเวอร์ หรือ PCI vendor ID (nvidia, amdgpu, 0x10de) เพื่อเลือกตัวที่ต้องการ"
-        },
-        "NO_DECOR": {
-          "label": "ไม่มีการตกแต่งหน้าต่าง",
-          "description": "เรียกใช้แอปพลิเคชันโดยไม่มีขอบหน้าต่างสำหรับการใช้งาน PWA"
-        },
-        "NO_FULL": {
-          "label": "ไม่มีโหมดเต็มหน้าจอ",
-          "description": "ไม่ทำให้แอปพลิเคชันเต็มหน้าจอโดยอัตโนมัติ"
-        },
-        "NO_GAMEPAD": {
-          "label": "ปิดใช้งานการฉีดเกมแพด",
-          "description": "ข้ามตัวสอดแทรกเกมแพดในพื้นที่ผู้ใช้ และซ่อนส่วนเกมแพดกับลิงก์การแชร์ผู้เล่นด้วย"
-        },
-        "NO_WEBCAM": {
-          "label": "ปิดใช้งานการฉีดเว็บแคม",
-          "description": "ข้ามอุปกรณ์เว็บแคมเสมือนและตัวสอดแทรก และซ่อนปุ่มเว็บแคมด้วย"
-        },
-        "SELKIES_RUN_AFTER_CONNECT": {
-          "label": "รันหลังเชื่อมต่อ",
-          "description": "คำสั่งเชลล์ที่รันภายในคอนเทนเนอร์เมื่อไคลเอนต์แรกเชื่อมต่อ"
-        },
-        "SELKIES_RUN_AFTER_DISCONNECT": {
-          "label": "รันหลังตัดการเชื่อมต่อ",
-          "description": "คำสั่งเชลล์ที่รันภายในคอนเทนเนอร์เมื่อไคลเอนต์สุดท้ายตัดการเชื่อมต่อ"
-        },
-        "SELKIES_DEBUG": {
-          "label": "เปิดใช้งานการดีบัก Selkies",
-          "description": "เปิดใช้งานการบันทึกการดีบักสำหรับส่วนประกอบการสตรีม"
-        },
-        "SELKIES_MODE": {
-          "label": "โหมดสตรีมมิ่ง",
-          "description": "ทรานสปอร์ตที่ใช้ตามค่าเริ่มต้น อัตโนมัติจะเลือก WebRTC เมื่อตั้งค่า TURN/STUN ใดๆ ไว้ มิฉะนั้นจะใช้ WebSockets",
-          "options": {
-            "auto": "อัตโนมัติ",
-            "websockets": "WebSockets",
-            "webrtc": "WebRTC"
-          }
-        },
-        "SELKIES_ENABLE_DUAL_MODE": {
-          "label": "โหมดคู่",
-          "description": "ให้ผู้ใช้สลับระหว่าง WebRTC และ WebSockets จากแถบด้านข้างได้ อัตโนมัติจะเปิดใช้งานเฉพาะเมื่อกำหนดค่า WebRTC ไว้เท่านั้น",
-          "options": {
-            "auto": "อัตโนมัติ",
-            "enabled": "เปิดใช้งาน",
-            "disabled": "ปิดใช้งาน"
-          }
-        },
-        "SELKIES_WEBRTC_PACER": {
-          "label": "ตัวควบคุมจังหวะ WebRTC",
-          "description": "ควบคุมจังหวะการส่งแพ็กเก็ต WebRTC ขาออกด้วยลำดับความสำคัญที่เข้มงวด เพื่อให้เสียงและอินพุตได้รับการปกป้องจากการเบิร์สต์ของวิดีโอบนลิงก์ที่แออัด"
-        },
-        "SELKIES_CONGESTION_CONTROL": {
-          "label": "การควบคุมความแออัด",
-          "description": "ปรับบิตเรตวิดีโอตามค่าประมาณแบนด์วิดท์จากฟีดแบ็กของตัวรับ WebRTC มีผลในโหมด CBR"
-        },
-        "SELKIES_STUN_HOST": {
-          "label": "โฮสต์ STUN",
-          "description": "เซิร์ฟเวอร์ STUN สำหรับการเจาะรู NAT ชี้ไปยังเซิร์ฟเวอร์ภายในสำหรับเครือข่ายที่ไม่มีอินเทอร์เน็ต"
-        },
-        "SELKIES_STUN_PORT": {
-          "label": "พอร์ต STUN",
-          "description": "พอร์ตของเซิร์ฟเวอร์ STUN"
-        },
-        "SELKIES_TURN_HOST": {
-          "label": "โฮสต์ TURN",
-          "description": "เซิร์ฟเวอร์ TURN ที่ใช้ร่วมกับซีเคร็ตที่ใช้ร่วมกันหรือข้อมูลรับรองระยะยาว ใส่ที่อยู่ IPv6 ไว้ในวงเล็บเหลี่ยม"
-        },
-        "SELKIES_TURN_PORT": {
-          "label": "พอร์ต TURN",
-          "description": "พอร์ตของเซิร์ฟเวอร์ TURN"
-        },
-        "SELKIES_TURN_PROTOCOL": {
-          "label": "โปรโตคอล TURN",
-          "description": "ทรานสปอร์ตที่ไคลเอนต์ใช้เข้าถึง TURN แนะนำอย่างยิ่งให้ใช้ UDP; ใช้ TCP เฉพาะเมื่อ UDP ถูกบล็อกเท่านั้น"
-        },
-        "SELKIES_TURN_TLS": {
-          "label": "TURN ผ่าน TLS/DTLS",
-          "description": "ใช้ TURN ผ่าน TLS (TCP) หรือ DTLS (UDP) ต้องมีใบรับรองที่ถูกต้องบนเซิร์ฟเวอร์ TURN"
-        },
-        "SELKIES_TURN_SHARED_SECRET": {
-          "label": "ซีเคร็ตที่ใช้ร่วมกันของ TURN",
-          "description": "ซีเคร็ตที่ใช้ร่วมกันสำหรับสร้างข้อมูลรับรอง TURN แบบ HMAC ที่มีเวลาจำกัด"
-        },
-        "SELKIES_TURN_USERNAME": {
-          "label": "ชื่อผู้ใช้ TURN",
-          "description": "ชื่อผู้ใช้ของข้อมูลรับรอง TURN ระยะยาวแบบเดิม"
-        },
-        "SELKIES_TURN_PASSWORD": {
-          "label": "รหัสผ่าน TURN",
-          "description": "รหัสผ่านของข้อมูลรับรอง TURN ระยะยาวแบบเดิม"
-        },
-        "SELKIES_TURN_REST_URI": {
-          "label": "URI ของ TURN REST API",
-          "description": "URI ของบริการข้อมูลรับรอง TURN REST เช่น http://localhost:8008"
-        },
-        "SELKIES_TURN_REST_API_KEY": {
-          "label": "คีย์ TURN REST API",
-          "description": "คีย์ API ที่ส่งไปยังบริการ TURN REST"
-        },
-        "SELKIES_TURN_REST_USERNAME": {
-          "label": "ชื่อผู้ใช้ TURN REST",
-          "description": "ชื่อผู้ใช้ที่บริการ TURN REST ฝังไว้ในข้อมูลรับรอง หากว่างจะใช้ 'selkies'"
-        },
-        "SELKIES_WEBRTC_PUBLIC_IP": {
-          "label": "IP สาธารณะของ WebRTC",
-          "description": "ที่อยู่สาธารณะที่จะประกาศใน ICE candidate ของโฮสต์ สำหรับเซิร์ฟเวอร์ที่อยู่หลัง NAT แบบ 1:1 คงที่ ที่อยู่ IPv4 หนึ่งรายการและ/หรือ IPv6 หนึ่งรายการ"
-        },
-        "SELKIES_ENABLE_CLOUDFLARE_TURN": {
-          "label": "เปิดใช้งาน Cloudflare TURN",
-          "description": "ใช้บริการ Cloudflare TURN ต้องมี Token ID และ API token ด้านล่าง"
-        },
-        "SELKIES_CLOUDFLARE_TURN_TOKEN_ID": {
-          "label": "Token ID ของ Cloudflare TURN",
-          "description": "Token ID ของแอป Cloudflare TURN"
-        },
-        "SELKIES_CLOUDFLARE_TURN_API_TOKEN": {
-          "label": "API Token ของ Cloudflare TURN",
-          "description": "API token ของ Cloudflare TURN"
-        },
-        "SELKIES_RTC_CONFIG_JSON": {
-          "label": "พาธ JSON การกำหนดค่า RTC",
-          "description": "พาธภายในคอนเทนเนอร์ไปยังไฟล์ JSON ที่มีการกำหนดค่า WebRTC จะแทนที่การตั้งค่า STUN/TURN อื่นๆ ทั้งหมด และถูกอ่านซ้ำเป็นระยะ"
-        },
-        "DOCKER_PRIVILEGED": {
-          "label": "โหมดสิทธิ์พิเศษ",
-          "description": "ให้สิทธิ์ทั้งหมดแก่คอนเทนเนอร์ ยกเลิกข้อจำกัด cgroup เมาท์อุปกรณ์โฮสต์ทั้งหมด การทำเช่นนี้จะทำให้ระบบเสียหาย!"
-        },
-        "DOCKER_BIND_MOUNTS": {
-          "label": "Bind Mounts เพิ่มเติม",
-          "description": "การผูกโฮสต์เพิ่มเติม (คั่นด้วยจุลภาค เช่น /host/path:/container/path:ro)"
-        },
-        "DOCKER_ENV": {
-          "label": "ตัวแปรสภาพแวดล้อม",
-          "description": "ตัวแปรสภาพแวดล้อมเพิ่มเติม (คั่นด้วยจุลภาค เช่น KEY=VALUE,KEY2=VALUE2)"
-        },
-        "DOCKER_CAP_ADD": {
-          "label": "เพิ่ม Cap",
-          "description": "เพิ่มความสามารถของเคอร์เนล (คั่นด้วยจุลภาค เช่น SYS_ADMIN,MKNOD)"
-        },
-        "DOCKER_CAP_DROP": {
-          "label": "ลบ Cap",
-          "description": "ลบความสามารถของเคอร์เนล (คั่นด้วยจุลภาค)"
-        },
-        "DOCKER_SECURITY_OPT": {
-          "label": "ตัวเลือกความปลอดภัย",
-          "description": "ตัวเลือกความปลอดภัย (คั่นด้วยจุลภาค เช่น seccomp=unconfined,apparmor=unconfined)"
-        },
-        "DOCKER_DEVICES": {
-          "label": "อุปกรณ์",
-          "description": "เปิดเผยอุปกรณ์โฮสต์ (คั่นด้วยจุลภาค เช่น /dev/sda:/dev/xvda:rwm)"
-        },
-        "DOCKER_SHM_SIZE": {
-          "label": "ขนาด SHM",
-          "description": "ขนาดของ /dev/shm (เช่น 1G, 2G)"
-        },
-        "DOCKER_MEM_LIMIT": {
-          "label": "ขีดจำกัดหน่วยความจำ",
-          "description": "ขีดจำกัดหน่วยความจำ (เช่น 1g, 512m)"
-        },
-        "DOCKER_CPU_SHARES": {
-          "label": "ส่วนแบ่ง CPU",
-          "description": "ส่วนแบ่ง CPU (จำนวนเต็มน้ำหนักสัมพัทธ์)"
-        },
-        "DOCKER_NANO_CPUS": {
-          "label": "Nano CPUs",
-          "description": "โควตา CPU ในหน่วย 1e-9 CPUs"
-        },
-        "DOCKER_NETWORK_MODE": {
-          "label": "โหมดเครือข่าย",
-          "description": "โหมดเครือข่ายสำหรับคอนเทนเนอร์",
-          "options": {
-            "default": "ค่าเริ่มต้น (Bridge)",
-            "host": "Host",
-            "none": "ไม่มี",
-            "bridge": "Bridge"
-          }
-        },
-        "DOCKER_IPC_MODE": {
-          "label": "โหมด IPC",
-          "description": "ตั้งค่าโหมด IPC สำหรับคอนเทนเนอร์",
-          "options": {
-            "default": "ค่าเริ่มต้น",
-            "host": "Host",
-            "private": "ส่วนตัว",
-            "shareable": "แชร์ได้"
-          }
-        },
-        "DOCKER_PID_MODE": {
-          "label": "โหมด PID",
-          "description": "ตั้งค่าโหมด PID สำหรับคอนเทนเนอร์",
-          "options": {
-            "default": "ค่าเริ่มต้น",
-            "host": "Host"
-          }
-        },
-        "DOCKER_DNS": {
-          "label": "เซิร์ฟเวอร์ DNS",
-          "description": "เซิร์ฟเวอร์ DNS ที่กำหนดเอง (คั่นด้วยจุลภาค)"
-        },
-        "DOCKER_EXTRA_HOSTS": {
-          "label": "โฮสต์เพิ่มเติม",
-          "description": "การแมปโฮสต์กับ IP (คั่นด้วยจุลภาค เช่น hostname:1.2.3.4)"
-        },
-        "DOCKER_SYSCTLS": {
-          "label": "Sysctls",
-          "description": "พารามิเตอร์เคอร์เนล (คั่นด้วยจุลภาค เช่น net.ipv4.ip_forward=1)"
-        },
-        "DOCKER_ULIMITS": {
-          "label": "Ulimits",
-          "description": "Ulimits (คั่นด้วยจุลภาค เช่น nofile=1024:1024)"
-        },
-        "DOCKER_TMPFS": {
-          "label": "Tmpfs Mounts",
-          "description": "ระบบไฟล์ชั่วคราว (คั่นด้วยจุลภาค เช่น /run:rw,noexec,nosuid,size=65536k)"
-        },
-        "DOCKER_GROUP_ADD": {
-          "label": "เพิ่มกลุ่ม",
-          "description": "รายการชื่อกลุ่มและ/หรือ ID เพิ่มเติม (คั่นด้วยจุลภาค)"
-        }
-      }
-    },
-    "appLaboratory": {
-      "title": "ห้องปฏิบัติการแอป",
-      "description": "สร้างและทดสอบการกำหนดค่าแอปพลิเคชันแบบกำหนดเองโดยการวางชั้นการเปลี่ยนแปลงทับแอปพื้นฐาน",
-      "selectApp": "เลือกแอป",
-      "createNew": "สร้างแอปใหม่",
-      "baseApp": "แอปพลิเคชันพื้นฐาน",
-      "baseAppDescription": "แอปพลิเคชันที่ติดตั้งแล้วซึ่งแอปแบบกำหนดเองใหม่ของคุณจะใช้เป็นฐาน",
-      "selectBase": "เลือกแอปพื้นฐาน",
-      "customizationTitle": "การปรับแต่ง",
-      "appName": "ชื่อแอป",
-      "appIcon": "ไอคอนแอป",
-      "uploadIcon": "อัปโหลดไอคอน",
-      "autostartScriptLabel": "สคริปต์เริ่มทำงานอัตโนมัติแบบกำหนดเอง",
-      "permissionsTitle": "สิทธิ์",
-      "usersLabel": "ผู้ใช้ที่ได้รับอนุญาต",
-      "groupsLabel": "กลุ่มที่ได้รับอนุญาต",
-      "launchButton": "บันทึกและเริ่มเซสชันการปรับแต่ง",
-      "closeButton": "ปิดเซสชันและสิ้นสุด",
-      "savingAndLaunching": "กำลังบันทึกและเริ่ม...",
-      "placeholder": "ห้องปฏิบัติการแอปช่วยให้คุณสามารถกำหนดค่าโฮมไดเรกทอรีพื้นฐานและสคริปต์เริ่มต้นสำหรับแอปพลิเคชันที่สร้างจากแอปพลิเคชันที่ติดตั้งไว้แล้ว โฮมไดเรกทอรีนี้จะถูกคัดลอกเมื่อเริ่มต้นครั้งแรกสำหรับผู้ใช้พร้อมกับไฟล์และการตั้งค่าทั้งหมดที่คุณตั้งค่าในเซสชันนี้ คุณสามารถเริ่มแอปห้องปฏิบัติการที่มีอยู่ใหม่เพื่อแก้ไขเนื้อหาเพิ่มเติมได้",
-      "formInvalid": "โปรดเลือกแอปพื้นฐานและระบุชื่อสำหรับแอปใหม่"
-    },
-    "modals": {
-      "editUserTitle": "แก้ไขผู้ใช้: {username}",
-      "saveChanges": "บันทึกการเปลี่ยนแปลง",
-      "effectiveSettings": "การตั้งค่าที่มีผล (พร้อมการแทนที่ของกลุ่ม)",
-      "editGroupTitle": "แก้ไขกลุ่ม: {groupName}",
-      "userConfigTitle": "การกำหนดค่าผู้ใช้",
-      "warning": "นี่เป็นครั้งเดียวที่จะแสดงการกำหนดค่านี้ โปรดส่งให้ผู้ใช้อย่างปลอดภัย",
-      "info": "คุณสามารถดาวน์โหลดไฟล์กำหนดค่านี้เพื่อตั้งค่า SealSkin บนอุปกรณ์อื่นได้อย่างง่ายดาย เก็บไฟล์นี้ให้ปลอดภัยเนื่องจากมีคีย์ส่วนตัวของคุณอยู่",
-      "configDataLabel": "ข้อมูลการกำหนดค่า (JSON)",
-      "copyButton": "คัดลอกข้อความ",
-      "downloadButton": "ดาวน์โหลดไฟล์",
-      "manageHomeDirs": "จัดการโฮมไดเรกทอรี",
-      "dirsForUser": "ไดเรกทอรีสำหรับผู้ใช้: {username}",
-      "dirsForAdmin": "ไดเรกทอรีสำหรับผู้ดูแลระบบ: {username}",
-      "newDirForUser": "สร้างไดเรกทอรีใหม่สำหรับผู้ใช้",
-      "createDirButton": "สร้างไดเรกทอรี",
-      "confirmDeleteDir": "คุณแน่ใจหรือไม่ว่าต้องการลบ '{homeName}' สำหรับผู้ใช้ '{username}'? การกระทำนี้เป็นการกระทำถาวร",
-      "installAppTitle": "ติดตั้ง {appName}",
-      "editAppTitle": "แก้ไข {appName}",
-      "customNameLabel": "ชื่อที่กำหนดเอง",
-      "imageLabel": "อิมเมจคอนเทนเนอร์",
-      "permissions": "สิทธิ์",
-      "allowedUsersLabel": "ผู้ใช้ที่ได้รับอนุญาต (คั่นด้วยจุลภาค, 'all' สำหรับทุกคน)",
-      "allowedGroupsLabel": "กลุ่มที่ได้รับอนุญาต (คั่นด้วยจุลภาค, 'all' สำหรับทุกคน)",
-      "features": "คุณสมบัติ",
-      "gpuSupport": "รองรับ GPU",
-      "homeMounting": "การเมาท์โฮมไดเรกทอรี",
-      "urlSupport": "รองรับการเปิด URL",
-      "fileSupport": "รองรับการเปิดไฟล์",
-      "autoUpdate": "อัปเดตอิมเมจอัตโนมัติ",
-      "advancedSettings": "การตั้งค่าขั้นสูง",
-      "appTemplateLabel": "เทมเพลตแอปพลิเคชัน",
-      "appTemplateDescription": "เลือกเทมเพลตที่กำหนดค่าไว้ล่วงหน้าสำหรับการตั้งค่าการเปิดคอนเทนเนอร์ขั้นสูง",
-      "customAutostartScriptLabel": "สคริปต์เริ่มทำงานอัตโนมัติแบบกำหนดเอง",
-      "customAutostartScriptDescription": "ปรับแต่งตรรกะการเริ่มทำงานอัตโนมัติ เว้นว่างไว้เพื่อใช้ค่าเริ่มต้นจากผู้ให้บริการแอปพลิเคชัน",
-      "saveInstallation": "บันทึกการติดตั้ง",
-      "updateStatusTitle": "สถานะการอัปเดตสำหรับ {appName}",
-      "checkingUpdates": "กำลังตรวจสอบการอัปเดต...",
-      "updateAvailable": "มีเวอร์ชันอิมเมจใหม่พร้อมใช้งาน!",
-      "yourVersion": "เวอร์ชันของคุณ: {sha}",
-      "latestAvailable": "เวอร์ชันล่าสุดพร้อมให้ดึงจากรีจิสทรีแล้ว",
-      "pullLatest": "ดึงอิมเมจล่าสุด",
-      "upToDate": "อิมเมจของคุณเป็นเวอร์ชันล่าสุด",
-      "currentVersion": "เวอร์ชันปัจจุบัน: {sha}",
-      "errorChecking": "เกิดข้อผิดพลาดในการตรวจสอบการอัปเดต",
-      "pullingLatest": "กำลังดึงอิมเมจล่าสุด... อาจใช้เวลาสักครู่",
-      "pullComplete": "ดึงข้อมูลเสร็จสมบูรณ์!",
-      "newVersion": "เวอร์ชันใหม่: {sha}",
-      "errorPulling": "เกิดข้อผิดพลาดในการดึงอิมเมจ",
-      "manualInstallNote": "หมายเหตุ: อิมเมจที่เพิ่มด้วยตนเองควรเป็นอิมเมจที่เข้ากันได้กับ selkies-baseimage",
-      "generalTitle": "การตั้งค่าทั่วไปและประสิทธิภาพ",
-      "webrtcTitle": "การตั้งค่า WebRTC และ TURN",
-      "webrtcDescription": "เซสชันจะสตรีมผ่าน WebSockets ตามค่าเริ่มต้น การตั้งค่า STUN, TURN, Cloudflare หรือ IP สาธารณะใดๆ ด้านล่าง หรือการเลือกโหมด WebRTC จะเปลี่ยนคอนเทนเนอร์ไปใช้ WebRTC พร้อมเปิดใช้งานโหมดคู่ เพื่อให้ผู้ใช้ยังคงกลับไปใช้ WebSockets ได้",
-      "dockerTitle": "การแทนที่ขั้นสูงของ Docker",
-      "dockerDescription": "การตั้งค่าเหล่านี้จะแทนที่การกำหนดค่าคอนเทนเนอร์เริ่มต้น โปรดใช้ด้วยความระมัดระวังและเฉพาะในกรณีที่คุณรู้ว่ากำลังทำอะไรอยู่"
-    },
-    "status": {
-      "loggingIn": "กำลังเข้าสู่ระบบ...",
-      "configSaved": "บันทึกการกำหนดค่าสำเร็จ!",
-      "configApplied": "ใช้การกำหนดค่าแล้ว! กรุณาเข้าสู่ระบบและทดสอบ",
-      "configApplyFailed": "ไม่สามารถใช้การกำหนดค่าได้: {error}",
-      "fileReadError": "เกิดข้อผิดพลาดในการอ่านไฟล์",
-      "noConfig": "กรุณาให้ไฟล์กำหนดค่าหรือข้อความ",
-      "loggedInAdmin": "เข้าสู่ระบบในฐานะผู้ดูแลระบบ: {username}",
-      "loggedInUser": "เข้าสู่ระบบในฐานะผู้ใช้มาตรฐาน: {username}",
-      "loginFailed": "การเข้าสู่ระบบล้มเหลว: {error}",
-      "adminDataRefreshFailed": "ไม่สามารถรีเฟรชข้อมูลผู้ดูแลระบบได้: {error}",
-      "logoutSuccess": "ออกจากระบบและล้างการกำหนดค่าแล้ว",
-      "generateConfigFailed": "ไม่สามารถสร้างการกำหนดค่าได้ ขาดรายละเอียดผู้ใช้",
-      "copySuccess": "คัดลอกการกำหนดค่าไปยังคลิปบอร์ดแล้ว!",
-      "copyFailed": "ไม่สามารถคัดลอกข้อความได้",
-      "publicKeyCopied": "คัดลอกคีย์สาธารณะแล้ว!",
-      "keyCopyFailed": "ไม่สามารถคัดลอกคีย์ได้",
-      "creatingAdmin": "กำลังสร้างผู้ดูแลระบบ...",
-      "adminCreated": "สร้างผู้ดูแลระบบ '{username}' แล้ว",
-      "adminCreateFailed": "เกิดข้อผิดพลาดในการสร้างผู้ดูแลระบบ: {error}",
-      "adminDeleted": "ลบผู้ดูแลระบบ '{username}' สำเร็จ",
-      "adminDeleteFailed": "เกิดข้อผิดพลาดในการลบผู้ดูแลระบบ: {error}",
-      "creatingUser": "กำลังสร้างผู้ใช้...",
-      "userCreated": "สร้างผู้ใช้ '{username}' แล้ว",
-      "userCreateFailed": "เกิดข้อผิดพลาดในการสร้างผู้ใช้: {error}",
-      "userDeleted": "ลบผู้ใช้ '{username}' สำเร็จ",
-      "userDeleteFailed": "เกิดข้อผิดพลาดในการลบผู้ใช้: {error}",
-      "userUpdated": "อัปเดตผู้ใช้ '{username}' สำเร็จ",
-      "userUpdateFailed": "เกิดข้อผิดพลาดในการอัปเดตผู้ใช้: {error}",
-      "creatingGroup": "กำลังสร้างกลุ่ม...",
-      "groupCreated": "สร้างกลุ่ม '{groupName}' แล้ว",
-      "groupCreateFailed": "เกิดข้อผิดพลาดในการสร้างกลุ่ม: {error}",
-      "groupDeleted": "ลบกลุ่ม '{groupName}' สำเร็จ",
-      "groupDeleteFailed": "เกิดข้อผิดพลาดในการลบกลุ่ม: {error}",
-      "groupUpdated": "อัปเดตกลุ่ม '{groupName}' สำเร็จ",
-      "groupUpdateFailed": "เกิดข้อผิดพลาดในการอัปเดตกลุ่ม: {error}",
-      "homedirLoadFailed": "ไม่สามารถโหลดโฮมไดเรกทอรีได้: {error}",
-      "homedirCreateFailed": "เกิดข้อผิดพลาดในการสร้างไดเรกทอรี: {error}",
-      "homedirCreated": "สร้างโฮมไดเรกทอรี '{homeName}' แล้ว",
-      "homedirDeleted": "ลบไดเรกทอรี '{homeName}' แล้ว",
-      "homedirDeleteFailed": "เกิดข้อผิดพลาดในการลบไดเรกทอรี: {error}",
-      "homedirCreatedFor": "สร้างไดเรกทอรี '{homeName}' สำหรับ {username} แล้ว",
-      "homedirDeletedFor": "ลบไดเรกทอรี '{homeName}' สำหรับ {username} แล้ว",
-      "sessionsLoadFailed": "ไม่สามารถโหลดเซสชันได้: {error}",
-      "sessionStopError": "เกิดข้อผิดพลาดในการหยุดเซสชัน: {error}",
-      "sessionStopped": "หยุดเซสชันสำเร็จ",
-      "appDataRefreshFailed": "ไม่สามารถรีเฟรชข้อมูลแอปได้: {error}",
-      "closingSession": "กำลังส่งการเปลี่ยนแปลงเซสชันการปรับแต่ง...",
-      "sessionClosed": "ปิดเซสชันการปรับแต่งแล้ว",
-      "sessionCloseFailed": "ไม่สามารถปิดเซสชันการปรับแต่งได้: {error}",
-      "fetchingApps": "กำลังดึงแอปจากร้านค้า...",
-      "fetchAppsFailed": "ไม่สามารถดึงแอปจากร้านค้าได้: {error}",
-      "appStoreAddFailed": "เกิดข้อผิดพลาดในการเพิ่มร้านค้า: {error}",
-      "appStoreAdded": "เพิ่มร้านค้าแอป '{name}' แล้ว",
-      "appSaved": "แอป '{name}' {action} สำเร็จ",
-      "appSaveActions": {
-        "updated": "อัปเดต",
-        "installed": "ติดตั้ง"
-      },
-      "appSaveFailed": "เกิดข้อผิดพลาดในการบันทึกแอป: {error}",
-      "appDeleted": "ลบแอป '{name}' แล้ว",
-      "appDeleteFailed": "เกิดข้อผิดพลาดในการลบแอป: {error}",
-      "templateSaved": "บันทึกเทมเพลต '{name}' สำเร็จ",
-      "templateSaveFailed": "เกิดข้อผิดพลาดในการบันทึกเทมเพลต: {error}",
-      "templateDeleted": "ลบเทมเพลต '{name}' สำเร็จ",
-      "templateDeleteFailed": "เกิดข้อผิดพลาดในการลบเทมเพลต: {error}",
-      "pinRemoved": "ลบพฤติกรรมที่ปักหมุดแล้ว",
-      "keyGenerated": "สร้างคู่คีย์ใหม่แล้ว",
-      "keyGenFailed": "การสร้างคีย์ล้มเหลว: {error}",
-      "pendingConfigSaved": "บันทึกการกำหนดค่าที่รอดำเนินการแล้ว ตอนนี้คุณสามารถให้คีย์สาธารณะของคุณแก่ผู้ดูแลระบบได้",
-      "settingsSaved": "บันทึกการตั้งค่าแล้ว",
-      "appCreated": "สร้างแอป '{name}' สำเร็จ",
-      "launchFailed": "การเปิดใช้งานล้มเหลว: {error}"
-    },
-    "placeholders": {
-      "noAdmins": "ไม่พบผู้ดูแลระบบ",
-      "noUsers": "ไม่พบผู้ใช้",
-      "noGroups": "ไม่พบกลุ่ม",
-      "noHomeDirs": "ไม่พบโฮมไดเรกทอรี",
-      "noSessions": "ไม่พบเซสชันที่ใช้งานอยู่",
-      "noPinned": "ไม่พบพฤติกรรมที่ปักหมุด",
-      "errorLoading": "เกิดข้อผิดพลาดในการโหลดไดเรกทอรี",
-      "noInstalledApps": "ยังไม่มีแอปพลิเคชันใดติดตั้ง"
-    }
-  },
-  "popup": {
-    "tabs": {
-      "launch": "เปิดใหม่",
-      "sessions": "เซสชันที่ใช้งานอยู่",
-      "manageFiles": "จัดการไฟล์",
-      "uploadStorage": "อัปโหลดไปยังที่เก็บข้อมูล",
-      "uploadFiles": "อัปโหลดไฟล์",
-      "uploadFilesTitle": "เปิดหน้าอัปโหลดไฟล์โดยเฉพาะ"
-    },
-    "launchView": {
-      "searchPlaceholder": "ค้นหาแอปพลิเคชัน...",
-      "uploadingFile": "กำลังอัปโหลดไฟล์...",
-      "gpuLabel": "GPU",
-      "storageLabel": "พื้นที่จัดเก็บ",
-      "languageLabel": "ภาษา",
-      "cleanroom": "ห้องปลอดเชื้อ (ชั่วคราว)",
-      "noGpu": "ไม่มี",
-      "saveOptions": "บันทึกตัวเลือกการเปิดเหล่านี้",
-      "saveOptionsForUrl": "บันทึกตัวเลือกสำหรับ URL ทั้งหมด",
-      "saveOptionsForFile": "บันทึกตัวเลือกสำหรับไฟล์ .{extension}",
-      "openFile": "เปิดไฟล์เมื่อเปิด",
-      "launchButton": "เปิด",
-      "launchingButton": "กำลังเปิด...",
-      "uploadingButton": "กำลังอัปโหลด...",
-      "autoHome": "อัตโนมัติ (คงอยู่ตามแอป)",
-      "collaborationMode": "เซสชันการทำงานร่วมกัน",
-      "waylandMode": "โหมด Wayland"
-    },
-    "sessionsView": {
-      "noSessions": "ไม่พบเซสชันที่ใช้งานอยู่"
-    },
-    "uploadStorageView": {
-      "selectHome": "เลือกโฮมไดเรกทอรี",
-      "description": "การดำเนินการนี้จะอัปโหลดไฟล์ <strong>{filename}</strong> ไปยังที่เก็บไฟล์ของคุณโดยตรงเพื่อใช้ในอนาคต",
-      "descriptionFallback": "การดำเนินการนี้จะอัปโหลดไฟล์ <strong>{filename}</strong> ไปยังที่เก็บไฟล์ของคุณโดยตรงเพื่อใช้ในอนาคต",
-      "uploadButton": "อัปโหลดไฟล์",
-      "uploadingButton": "กำลังอัปโหลด...",
-      "preparing": "กำลังเตรียมไฟล์...",
-      "uploadingChunk": "กำลังอัปโหลดส่วนที่ {current} จาก {total}...",
-      "finalizing": "กำลังสิ้นสุด...",
-      "uploadComplete": "อัปโหลดเสร็จสมบูรณ์!"
-    },
-    "status": {
-      "unconfigured": "กรุณากำหนดค่าส่วนขยายผ่านหน้าตัวเลือก",
-      "openingServerFile": "กำลังเปิดไฟล์ฝั่งเซิร์ฟเวอร์: {filename}",
-      "openingFile": "กำลังเปิดไฟล์: {filename}",
-      "openingUrl": "กำลังเปิด URL: {targetUrl}",
-      "error": "ข้อผิดพลาด: {message}",
-      "preparingFile": "กำลังเตรียมไฟล์...",
-      "sendingFile": "กำลังส่งไฟล์ไปยังเซสชัน...",
-      "errorSendingFile": "เกิดข้อผิดพลาดในการส่งไฟล์: {message}",
-      "errorClosingSession": "เกิดข้อผิดพลาดในการปิดเซสชัน: {message}",
-      "preparingSession": "กำลังเตรียมเซสชันแยก...",
-      "fetchingData": "กำลังดึงข้อมูลไฟล์...",
-      "fetchDataFailed": "ไม่สามารถดึงข้อมูลไฟล์ได้: {statusText}",
-      "unknownAction": "การกระทำในการเปิดที่ไม่รู้จัก",
-      "noAppSelected": "กรุณาเลือกแอปพลิเคชัน",
-      "noAppsAvailable": "ไม่มีแอปพลิเคชันสำหรับบัญชีของคุณ",
-      "uploadSuccess": "อัปโหลดไฟล์สำเร็จ!",
-      "creatingAutoHome": "กำลังสร้างโฮมไดเรกทอรีอัตโนมัติ..."
-    },
-    "languages": {
-      "default": "ค่าเริ่มต้น ({locale})"
-    }
-  },
-  "upload": {
-    "title": "อัปโหลดไฟล์",
-    "description": "เลือกไฟล์จากคอมพิวเตอร์ของคุณเพื่อเปิดในเซสชันที่ปลอดภัยและแยกต่างหาก",
-    "dropzone": {
-      "title": "ลากและวางไฟล์ที่นี่",
-      "or": "หรือ",
-      "button": "เลือกไฟล์"
-    },
-    "confirm": {
-      "ready": "ไฟล์พร้อมที่จะเปิดอย่างปลอดภัยแล้ว",
-      "button": "ดำเนินการต่อเพื่อเปิด"
-    }
-  },
   "files": {
-    "title": "ไฟล์ SealSkin",
-    "header": {
-      "title": "ไฟล์",
-      "newFolder": "โฟลเดอร์ใหม่",
-      "uploadFiles": "อัปโหลดไฟล์",
-      "uploadFolder": "อัปโหลดโฟลเดอร์"
-    },
-    "sidebar": {
-      "sharedFiles": "ไฟล์ SealSkin",
-      "publicShares": "การแชร์สาธารณะ"
-    },
     "shares": "การแชร์",
-    "table": {
-      "name": "ชื่อ",
-      "size": "ขนาด",
-      "lastModified": "แก้ไขล่าสุด",
-      "created": "สร้างเมื่อ",
-      "expires": "หมดอายุ",
-      "url": "URL สาธารณะ",
-      "passwordProtected": "รหัสผ่าน"
-    },
-    "dropzone": {
-      "title": "วางไฟล์เพื่ออัปโหลด"
-    },
-    "pagination": {
-      "previous": "« ก่อนหน้า",
-      "next": "ถัดไป »",
-      "pageOf": "หน้า {page} จาก {totalPages}"
-    },
-    "modals": {
-      "newFolder": {
-        "title": "สร้างโฟลเดอร์ใหม่",
-        "folderNameLabel": "ชื่อโฟลเดอร์",
-        "nameTitle": "ใช้เฉพาะตัวอักษร, ตัวเลข, ขีดล่าง, ยัติภังค์, หรือจุดเท่านั้น",
-        "createButton": "สร้าง"
-      },
-      "confirmDelete": {
-        "title": "ยืนยันการลบ",
-        "message": "คุณแน่ใจหรือไม่ว่าต้องการลบ {count, plural, one {1 รายการที่เลือก} other {{count} รายการที่เลือก}}? การกระทำนี้ไม่สามารถยกเลิกได้",
-        "messageDefault": "คุณแน่ใจหรือไม่ว่าต้องการลบรายการที่เลือก? การกระทำนี้ไม่สามารถยกเลิกได้"
-      },
-      "uploadProgress": {
-        "title": "ความคืบหน้าการอัปโหลด",
-        "doneButton": "เสร็จสิ้น"
-      },
-      "share": {
-        "title": "แชร์ไฟล์",
-        "sharingFile": "กำลังแชร์ไฟล์: <strong>{filename}</strong>",
-        "passwordLabel": "รหัสผ่าน (ไม่บังคับ)",
-        "passwordPlaceholder": "เว้นว่างไว้หากไม่ต้องการรหัสผ่าน",
-        "expiryLabel": "หมดอายุใน (ชั่วโมง, ไม่บังคับ)",
-        "expiryPlaceholder": "เช่น 24 สำหรับหนึ่งวัน",
-        "shareButton": "สร้างลิงก์แชร์"
-      }
-    },
-    "status": {
-      "homeDirLoadFailed": "ไม่สามารถโหลดโฮมไดเรกทอรี: {error}",
-      "filesLoadFailed": "เกิดข้อผิดพลาดในการโหลดไฟล์: {error}",
-      "deleteProtectedError": "ไม่สามารถลบโฟลเดอร์ระบบที่ได้รับการป้องกัน",
-      "deletingItems": "กำลังลบ {count, plural, one {1 รายการ} other {{count} รายการ}}...",
-      "deleteSuccess": "ลบสำเร็จ",
-      "deleteFailed": "การลบล้มเหลว: {error}",
-      "preparingUpload": "กำลังเตรียมอัปโหลด {count, plural, one {1 ไฟล์} other {{count} ไฟล์}}...",
-      "uploadPrepFailed": "เกิดข้อผิดพลาดระหว่างการเตรียมอัปโหลดโฟลเดอร์: {error}",
-      "notConfigured": "ข้อผิดพลาด: SealSkin ยังไม่ได้กำหนดค่า โปรดตั้งค่าในตัวเลือก",
-      "folderCreated": "สร้างโฟลเดอร์ '{folderName}' แล้ว",
-      "folderCreateFailed": "เกิดข้อผิดพลาดในการสร้างโฟลเดอร์: {error}",
-      "shareCreated": "สร้างการแชร์สำเร็จ! ลิงก์ถูกคัดลอกไปยังคลิปบอร์ดของคุณแล้ว",
-      "shareCreateFailed": "ไม่สามารถสร้างการแชร์ได้: {error}",
-      "sharesLoadFailed": "ไม่สามารถโหลดไฟล์ที่แชร์ได้: {error}",
-      "shareDeleteFailed": "ไม่สามารถลบการแชร์ได้: {error}",
-      "shareDeleted": "ลบการแชร์สำเร็จแล้ว",
-      "urlCopied": "คัดลอก URL สาธารณะไปยังคลิปบอร์ดแล้ว"
-    },
-    "placeholders": {
-      "errorLoading": "เกิดข้อผิดพลาดในการโหลดไฟล์",
-      "folderEmpty": "โฟลเดอร์นี้ว่างเปล่า",
-      "noHomeDirs": "ไม่มีโฮมไดเรกทอรีที่ใช้ได้",
-      "noShares": "คุณยังไม่ได้แชร์ไฟล์ใดๆ"
-    },
-    "uploadStatus": {
-      "pending": "รอดำเนินการ",
-      "initiating": "กำลังเริ่มต้น...",
-      "uploading": "กำลังอัปโหลด...",
-      "finalizing": "กำลังสิ้นสุด...",
-      "completed": "เสร็จสมบูรณ์",
-      "error": "ข้อผิดพลาด"
-    },
     "upOneLevel": "ขึ้นหนึ่งระดับ",
     "newFolder": "โฟลเดอร์ใหม่",
-    "upload": "อัปโหลด",
     "openInApp": "เปิดในแอป",
     "size": "ขนาด",
     "modified": "แก้ไขเมื่อ",
@@ -1251,7 +89,6 @@
     "volumeMounts": "โวลุ่ม",
     "backup": "สำรองข้อมูล",
     "sessions": "เซสชัน",
-    "password": "รหัสผ่าน",
     "signOut": "ออกจากระบบ"
   },
   "launch": {
@@ -1314,11 +151,9 @@
     "kvApiPort": "พอร์ต API",
     "kvSessionPort": "พอร์ตเซสชัน",
     "yes": "ใช่",
-    "no": "ไม่ใช่",
-    "none": "ไม่มี"
+    "no": "ไม่ใช่"
   },
   "howto": {
-    "title": "วิธีใช้ Vreckan",
     "intro": "คู่มือสั้นๆ สำหรับฟังก์ชันหลักของ Vreckan",
     "close": "ปิด",
     "item1Lead": "เริ่มแอป",
@@ -1333,6 +168,7 @@
     "item5Body": "ในแท็บแอดมิน คุณสามารถจัดการผู้ใชแอดมิน กลุ่ม แอป เทมเพลต โวลุ่ม และสำรองข้อมูล"
   },
   "settings": {
+    "settingsSection": "การตั้งค่า",
     "active": "ใช้งาน",
     "group": "กลุ่ม",
     "persistentStorage": "พื้้นที่จัดเก็บถาวร",
@@ -1342,7 +178,6 @@
     "gpu": "GPU",
     "storageLimit": "เพิ่่มพื้้นที่จัดเก็บ (MB, -1 = ไม่จํากัด)",
     "sessionLimit": "เพิ่่มเซสชัน (-1 = ไม่จํากัด)",
-    "none": "ไม่มี",
     "adminPerms": "หนจิดต้อนพีว่าง",
     "userPerms": "หนจิดต้อนใซล่าว"
   },
@@ -1352,7 +187,6 @@
     "addHelp": "สร้างบญชีใหม ติ๊ก \"ผู้ดแลระบบ\" เพือ่ ใหเป็็นผู้ดแลระบบ",
     "labelAdmin": "ผู้ดแลระบบ",
     "badgeAdmin": "ผู้ดแลระบบ",
-    "badgeSso": "SSO",
     "btnSetPassword": "ตั้งรหัสผ่าน",
     "btnAccess": "การเข้าถื่ง",
     "btnHomeDirs": "โฮมไดเรกทอรี",
@@ -1425,7 +259,6 @@
     "badgePerms": "สิทธิ์: {perms}",
     "rolesLabel": "บทบาท (ใหสิทธิ์แก่สมาชิกทุกคน)",
     "permsLabel": "สิทธิ์ (ใหสิทธิ์แก่สมาชิกทุกคน)",
-    "ssoBadge": "SSO",
     "ssoAdminSuffix": " · ผู้ดแลระบบ",
     "ssoAdminTitle": "อย่ในรายชื่ SSO ผู้ดแลระบบ (ใหสิทธิ์ผู้ดแลระบบ)",
     "ssoObservedTitle": "พบจาก SSO",
@@ -1460,7 +293,6 @@
     "heading": "SSO / OIDC",
     "help": "เชื่่อมต่อ Vreckan กับผู้ใหบริการ OpenID Connect (เช่น authentik) การค้้นพบจะดึงจาก <code>{issuer}/.well-known/openid-configuration</code> ค่าวที่บันทึ่กท่ีนีจะทับค่า <code>VRECKAN_OIDC_*</code> จากตัวแปรสภาพแวดล้อม; ป้ายบนแต้ละฟิลด์แสดงแหล่งท่ีมาปัจจุบัน",
     "enableLabel": "เปิดใช้งานการเข้าร้ะบบด้วย SSO",
-    "enabled": "เปิดใช้งานแล้ว",
     "issuerLabel": "URL ของ Issuer",
     "issuerHelp": "URL หลักของผู้ใหบริการ",
     "clientIdLabel": "Client ID",
@@ -1471,7 +303,6 @@
     "redirectUriPlaceholder": "ค่าเริ่่มตั้น: {base}/api/auth/oidc/callback",
     "scopesLabel": "Scopes",
     "allowSignupLabel": "สร้างผู้ใช้ใหม่อัตโนมัติ",
-    "allowSignupHelp": "สร้างบัญชีสำหรับตัวตน SSO ใหม่",
     "stateTtlLabel": "State TTL (วินาที)",
     "testButton": "ทดสอบการเชื่่อมต่อ",
     "testing": "กำลังติดต่อผู้ใหบริการ…",
@@ -1521,7 +352,6 @@
     "addTitle": "เพิ่่มร้านค้้าแอป",
     "urlLabel": "URL (YAML)",
     "urlPlaceholder": "https://…/store.yml",
-    "add": "เพิ่่ม",
     "configuredTitle": "ร้านค้้าแอปท่ีตั้่งค้่าแล้ว",
     "url": "URL",
     "empty": "ไม่มีร้านค้้าแอป",
@@ -1545,7 +375,6 @@
     "noAppsInStore": "ไมมีแอปในร้านค้านี้",
     "noAppsMatch": "ไมมีแอปท่ีตรงกัับ “{q}”.",
     "installedTitle": "แอปท่ีติดตังแล้้ว",
-    "app": "แอป",
     "source": "แหล่ง",
     "homeDirs": "โฮมไดเรกทอรี่",
     "users": "ผ้้ใช้",
@@ -1575,6 +404,10 @@
     "appTemplate": "เทมเพลตแอป",
     "accessLabel": "ใครใชแอปนี้ได",
     "allUsers": "ผ้้ใช้ทังหมด",
+    "accessUsersSection": "ผู้ใช้",
+    "accessGroupsSection": "กลุ่ม",
+    "accessSelectAll": "เลือกทั้่งหมด",
+    "accessDeselectAll": "ยกเลิกการเลือกทั้่งหมด",
     "noUsers": "ไมมีผ้้ใช้",
     "noGroups": "ไมมีกลุ่่ม",
     "noOneSelected": "ไมมีใครเลืือก — แอปนี้จะถูกซ่อนแล้้วไมมีใครใชได",
@@ -1619,7 +452,6 @@
     "dockerHelp": "การตั้้งค่าเหล่านี้ทับค่าการกำหนดค่าคอนเทนเนอร์เริ่มต้น ใช้ด้วยความระมั่่นระวังและเฉพาะเมื่อคุณรู้ว่าคุณกำลังทำอะไร",
     "duplicateName": "ชื่่่อการตั้้งค่าซ้ำ: '{name}'.",
     "enterNameFirst": "ใส่ชื่่่อเทมเพลตก่อน",
-    "heading": "เทมเพลต",
     "imageDefault": "ค่าเริ่มต้นของ image",
     "invalidName": "ชื่่่อการตั้้งค่าไม่ถูกต้อง: '{name}'.",
     "label": "ป้ายชื่อ",
@@ -1631,7 +463,6 @@
     "previewClipboard": "คลิปบอร์ด",
     "previewContentArea": "พื้นที่เนื้อหาแอปพลิเคชัน",
     "previewCoreButtons": "ปุ่มหลัก",
-    "previewFiles": "ไฟล์",
     "previewGamepads": "เกมแพด",
     "previewScreenSettings": "การตั้้งค่าหน้าจอ",
     "previewSharing": "การแชร์",
@@ -1674,7 +505,6 @@
     "includeUserData": "รวมข้อมูลผู้ใช้ (ไดเรกทอรีบ้าน)",
     "create": "สร้างการสำรองข้อมูล",
     "listTitle": "การสำรองข้อมูล",
-    "size": "ขนาด",
     "created": "สร้างเมื่อ",
     "userData": "ข้อมูลผู้ใช้",
     "noBackups": "ยังไม่มีข้อมูลสำรอง",
@@ -1682,7 +512,6 @@
     "restoreFromFileHelp": "อัปโหลดข้อมูลสำรอง <code>tar.gz</code> ที่ดาวน์โหลดไว้ก่อนหน้าเพื่อกู้คืน การกู้คืนจะเขียนทับไฟล์การกำหนดค่าที่มีอยู่ในอาร์ไคฟ์ ไฟล์ที่ไม่มีในอาร์ไคฟ์จะคงเดิม เซสชันที่กำลังทำงานไม่ได้รับผลกระทบ",
     "restoreFileButton": "กู้คืนไฟล์ที่อัปโหลด",
     "createdToast": "สร้าง {name} แล้ว",
-    "download": "ดาวน์โหลด",
     "downloadStarted": "เริ่มดาวน์โหลดแล้ว",
     "restore": "กู้คืน",
     "restoreConfirm": "กู้คืน {name}? สิ่งนี้จะเขียนทับไฟล์การกำหนดค่าที่มีอยู่ในอาร์ไคฟ์และโหลดใหม่ เซสชันที่กำลังทำงานไม่ได้รับผลกระทบ หากอาร์ไคฟ์เก่ากว่าคีย์ผู้ดูแลปัจจุบัน คุณอาจล็อกตัวเองออก",
@@ -1757,12 +586,10 @@
     "default": "ค่าเริ่มต้น",
     "allApps": "แอปท้่าม",
     "makeDefault": "ตั้งเป็็นค่าเริ่มต้น",
-    "apply": "ใช้",
     "setDefaultFailed": "ตั้งค่าเริ่มต้นไม่ได้: {message}",
     "deleteConfirm": "ลบพรีเซต '{name}'?",
     "deleteTitle": "ลบพรีเซต",
     "deleted": "ลบ '{name}' แล้้้ว",
-    "deleteFailed": "ลบไม่สำเร็จ: {message}",
     "applied": "ใช้พรีเซต '{name}' แล้้้ว",
     "installFirst": "ติดตั้งแอปก่อนเพื่อบันทึกพรีเซต",
     "saveTitle": "บันทึกตัวเลือกการเริ่มทำงาน",

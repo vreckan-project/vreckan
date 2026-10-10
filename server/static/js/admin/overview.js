@@ -9,7 +9,7 @@ import { openCustomModal, closeModal } from "../modal.js";
 import { t } from "../i18n.js";
 // Shared with the rest of the admin UI (defined in admin.js). Referenced only
 // inside renderOverview, so the admin.js <-> overview.js import cycle is safe.
-import { settingsFormHtml, lastGroups } from "../admin.js";
+import { settingsFormHtml, lastGroups, wirePickSections } from "../admin.js";
 
 function setPanel(html) {
   const panel = $("admin-section");
@@ -38,7 +38,7 @@ function howToGuideHtml() {
 }
 
 function openHowToGuide() {
-  const { box } = openCustomModal({ title: t("howto.title"), body: howToGuideHtml() });
+  const { box } = openCustomModal({ title: t("overview.howToBtn"), body: howToGuideHtml() });
   const btn = box.querySelector('[data-act="howto-close"]');
   if (btn) btn.addEventListener("click", () => closeModal());
 }
@@ -58,7 +58,7 @@ async function renderOverview() {
     [t("overview.kvCpu"), status.data && status.data.cpu_model],
     [t("overview.kvDiskTotal"), status.data && status.data.disk_total != null ? `${(status.data.disk_total / 1048576).toFixed(1)} MB` : "—"],
     [t("overview.kvDiskUsed"), status.data && status.data.disk_used != null ? `${(status.data.disk_used / 1048576).toFixed(1)} MB` : "—"],
-    [t("overview.kvGpus"), gpus.length ? gpus.map((g) => g.device || "GPU").join(", ") : t("overview.none")],
+    [t("overview.kvGpus"), gpus.length ? gpus.map((g) => g.device || "GPU").join(", ") : t("common.none")],
     [t("overview.kvApiPort"), data.data && data.data.api_port],
     [t("overview.kvSessionPort"), data.data && data.data.session_port],
   ];
@@ -95,6 +95,7 @@ async function renderOverview() {
     </div>
   `);
 
+  wirePickSections($("admin-section"));
   const howtoBtn = $("howto-btn");
   if (howtoBtn) howtoBtn.addEventListener("click", () => openHowToGuide());
 }

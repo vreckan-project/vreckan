@@ -1,70 +1,26 @@
 {
-  "background": {
-    "contextMenu": {
-      "openUrl": "Åbn link i SealSkin",
-      "openFile": "Åbn linkmål som fil i SealSkin",
-      "sendMedia": "Send medie til SealSkin",
-      "searchText": "Søg efter \"%s\" i SealSkin",
-      "sendDownload": "Send næste download til SealSkin"
-    }
-  },
   "common": {
-    "actions": "Handlinger",
-    "active": "Aktiv",
     "cancel": "Annuller",
     "manage": "Administrer",
     "delete": "Slet",
     "edit": "Rediger",
     "save": "Gem",
     "none": "ingen",
-    "error": "Fejl",
-    "na": "I/T",
-    "of": "af",
-    "status": "Status",
     "username": "Brugernavn",
-    "group": "Gruppe",
-    "groups": "Grupper",
-    "publicKey": "Offentlig Nøgle",
     "name": "Navn",
-    "source": "Kilde",
-    "imageVersion": "Image Version",
     "language": "Sprog",
-    "storage": "Lager",
     "gpu": "GPU",
-    "version": "Version",
-    "checked": "Afkrydset",
-    "never": "Aldrig",
-    "stop": "Stop",
-    "reopen": "Genåbn",
     "sendFile": "Send Fil",
     "share": "Del",
-    "search": "Søg",
     "refresh": "Opdater",
     "close": "Luk",
     "copy": "Kopier",
     "open": "Åbn",
-    "copyUrl": "Kopier URL",
     "download": "Download",
     "next": "Næste",
     "previous": "Forrige",
-    "page": "Side",
-    "home": "Hjemmemappe",
-    "homes": "Hjemmemapper",
-    "sessions": "Sessioner",
-    "users": "Brugere",
-    "admins": "Administratorer",
     "yes": "Ja",
     "no": "Nej",
-    "daysAgo": "{count, plural, one {for 1 dag siden} other {for {count} dage siden}}",
-    "hoursAgo": "{count, plural, one {for 1 time siden} other {for {count} timer siden}}",
-    "minutesAgo": "{count, plural, one {for 1 minut siden} other {for {count} minutter siden}}",
-    "justNow": "lige nu",
-    "bytes": "Bytes",
-    "kb": "KB",
-    "mb": "MB",
-    "gb": "GB",
-    "tb": "TB",
-    "pb": "PB",
     "password": "Adgangskode",
     "upload": "Upload",
     "create": "Opret",
@@ -74,1128 +30,10 @@
     "remove": "Fjern",
     "connect": "Forbind"
   },
-  "options": {
-    "sidebar": {
-      "config": "Konfiguration",
-      "home": "Hjemmemapper",
-      "sessions": "Aktive Sessioner",
-      "pinned": "Fastgjort Adfærd",
-      "appStore": "App Store",
-      "appTemplates": "App-skabeloner",
-      "appLaboratory": "App-laboratorium",
-      "installedApps": "Installerede Apps",
-      "users": "Brugere",
-      "groups": "Grupper",
-      "admins": "Administratorer"
-    },
-    "dashboard": {
-      "title": "Kontrolpanel",
-      "clientSettings": "Klientindstillinger",
-      "exportConfig": "Eksporter Konfiguration",
-      "userStatus": "Brugerstatus",
-      "loggedInAs": "Logget ind som:",
-      "role": "Rolle",
-      "roleAdmin": "Administrator",
-      "roleUser": "Standardbruger",
-      "serverInfo": "Serverinformation",
-      "server": "Server:",
-      "cpuModel": "CPU Model:",
-      "storageUsage": "Lagerbrug:",
-      "detectedGpus": "Registrerede GPU'er:",
-      "logout": "Log ud & Ryd Konfiguration",
-      "howTo": "Sådan bruges SealSkin",
-      "howToDescription": "Dette afsnit indeholder grundlæggende dokumentation om, hvordan du bruger udvidelsen.",
-      "howToList": [
-        "<strong>For at åbne indhold i isolation:</strong> Højreklik på et link, billede eller markeret tekst og vælg en mulighed fra \"SealSkin Isolation\" kontekstmenuen.",
-        "<strong>For at sende en download til isolation:</strong> Højreklik på siden og vælg \"Send Næste Download til Isolation\". Den næste fil, du downloader, vil blive opsnappet og sendt til en sikker session.",
-        "<strong>For at starte en ren applikation:</strong> Klik på SealSkin-ikonet i din browsers værktøjslinje.",
-        "<strong>For at administrere vedvarende lager:</strong> Brug fanen \"Hjemmemapper\" på denne side til at oprette og slette lagervolumener, der kan bruges på tværs af flere sessioner.",
-        "<strong>For at gemme startindstillinger:</strong> Marker afkrydsningsfeltet \"Gem disse startindstillinger\" i pop op-vinduet, før du starter en applikation for en bestemt filtype (f.eks. .pdf) eller for alle URL'er. Administrer disse gemte præferencer i fanen \"Fastgjort Adfærd\"."
-      ],
-      "confirmLogout": "Er du sikker på, at du vil logge ud? Dette vil rydde din gemte konfiguration fra denne browser."
-    },
-    "config": {
-      "quickSetup": "Hurtig Opsætning",
-      "quickSetupDescription": "Upload konfigurationsfilen (.json) fra din administrator, eller indsæt dens indhold nedenfor for automatisk at opsætte udvidelsen.",
-      "uploadLabel": "Upload Konfigurationsfil",
-      "pasteLabel": "Eller Indsæt Konfigurationstekst",
-      "pastePlaceholder": "Indsæt din JSON-konfiguration her...",
-      "applyButton": "Anvend Konfiguration",
-      "manualLink": "Manuel Konfiguration",
-      "advancedTitle": "Klientkonfiguration (Avanceret)",
-      "serverIpLabel": "Server IP eller Domæne",
-      "serverIpPlaceholder": "f.eks., 192.168.1.100",
-      "apiPortLabel": "API Port",
-      "apiPortPlaceholder": "f.eks., 8000",
-      "sessionPortLabel": "Sessionsport",
-      "sessionPortPlaceholder": "f.eks., 8443",
-      "usernameLabel": "Brugernavn",
-      "usernamePlaceholder": "Dit brugernavn",
-      "privateKeyLabel": "Din Private Nøgle (PEM Format)",
-      "privateKeyPlaceholder": "Indsæt indholdet af din private nøgle her",
-      "serverKeyLabel": "Serverens Offentlige Nøgle (PEM Format)",
-      "serverKeyPlaceholder": "Indsæt indholdet af server_public.pem her",
-      "searchEngineLabel": "Standard Søgemaskine for markeret tekst",
-      "saveButton": "Gem Konfiguration",
-      "loginButton": "Log ind & Test",
-      "automaticLink": "Automatisk Konfiguration",
-      "chooseFile": "Vælg Fil",
-      "keyGeneration": "Nøglegenerering",
-      "keyGenDescription": "Hvis du ikke har et nøglepar, kan du generere et her. Den private nøgle vil blive udfyldt ovenfor. Giv den offentlige nøgle til din administrator.",
-      "generateKeyButton": "Generer Nyt Nøglepar",
-      "publicKeyForAdminLabel": "Din Offentlige Nøgle (til admin)"
-    },
-    "home": {
-      "title": "Dine Hjemmemapper",
-      "description": "Opret vedvarende lagermapper til brug på tværs af sessioner. Disse vil blive monteret i dine applikationer som din konfigurationsmappe.",
-      "newTitle": "Opret Ny Hjemmemappe",
-      "nameLabel": "Mappenavn:",
-      "namePlaceholder": "f.eks., mine-projekt-filer",
-      "nameTitle": "Brug kun bogstaver, tal, understregning eller bindestreg.",
-      "createButton": "Opret Mappe",
-      "isLaboratory": "Dette er en Laboratorie-app, bygget fra et basis-image med brugerdefinerede indstillinger.",
-      "laboratory": "Laboratorium",
-      "confirmDelete": "Er du sikker på, at du vil slette den installerede app '{appName}'?"
-    },
-    "sessions": {
-      "title": "Aktive Sessioner",
-      "application": "Applikation",
-      "started": "Startet",
-      "noSessionsUser": "Ingen aktive sessioner fundet.",
-      "noSessionsAdmin": "Ingen aktive sessioner fundet for nogen bruger.",
-      "sessionsFor": "Sessioner for {username} ({count})",
-      "confirmStop": "Er du sikker på, at du vil stoppe denne session? Containeren vil blive ødelagt."
-    },
-    "pinned": {
-      "title": "Fastgjort Udvidelsesadfærd",
-      "description": "Denne tabel viser de startindstillinger, du har gemt for specifikke filtyper eller for alle URL'er. Du kan fjerne en fastgjort adfærd for at blive spurgt om startindstillinger igen.",
-      "trigger": "Udløser",
-      "savedApp": "Gemt Applikation",
-      "triggerSimple": "Simpel Start (Værktøjslinjeknap)",
-      "triggerUrl": "Alle URL'er (fra kontekstmenu)",
-      "triggerFile": "Filtype: <strong>{fileType}</strong>",
-      "unknownApp": "Ukendt App ({appId}...)"
-    },
-    "admins": {
-      "serverKeyTitle": "Serverens Offentlige Nøgle",
-      "serverKeyDescription": "Dette er den offentlige nøgle, som brugerkonfigurationsfiler skal bruge for at oprette forbindelse til denne server.",
-      "title": "Admin-administration",
-      "searchPlaceholder": "Søg efter administratorer...",
-      "newTitle": "Opret Ny Administrator",
-      "publicKeyOptionalLabel": "Offentlig Nøgle (Valgfri):",
-      "publicKeyPlaceholder": "Indsæt offentlig nøgle her, eller lad feltet være tomt for at generere en.",
-      "createButton": "Opret Administrator",
-      "confirmDelete": "Er du sikker på, at du vil slette administratoren '{username}'? Dette vil også slette alt deres vedvarende lager og kan ikke fortrydes."
-    },
-    "users": {
-      "title": "Brugeradministration",
-      "searchPlaceholder": "Søg efter brugere via navn eller gruppe...",
-      "newTitle": "Opret Ny Bruger",
-      "publicKeyOptionalLabel": "Offentlig Nøgle (Valgfri):",
-      "publicKeyPlaceholder": "Indsæt brugerens offentlige nøgle her, eller lad feltet være tomt for at generere en.",
-      "settingsTitle": "Brugerindstillinger",
-      "sessionLimitLabel": "Sessionsgrænse",
-      "sessionLimitTitle": "Antal aktive sessioner en bruger kan have. -1 for ubegrænset.",
-      "permissionsTitle": "Tilladelser & Hærdning",
-      "activeAccount": "Aktiv Konto",
-      "allowStorage": "Tillad Vedvarende Lager",
-      "allowGpu": "Tillad GPU-adgang",
-      "hardenContainer": "Hærd Container",
-      "hardenWm": "Hærd Vindueshåndtering",
-      "createButton": "Opret Bruger",
-      "homesDisabledTooltip": "Vedvarende lager deaktiveret for denne bruger",
-      "confirmDelete": "Er du sikker på, at du vil slette brugeren '{username}'? Dette vil også slette alt deres vedvarende lager og kan ikke fortrydes.",
-      "allowPublicSharing": "Tillad offentlig fildeling"
-    },
-    "groups": {
-      "title": "Gruppeadministration",
-      "searchPlaceholder": "Søg efter grupper...",
-      "newTitle": "Opret Ny Gruppe",
-      "nameLabel": "Gruppenavn:",
-      "overrideTitle": "Gruppe Tilsidesættelsesindstillinger",
-      "permissionsTitle": "Tilsidesættelser for Tilladelser & Hærdning",
-      "createButton": "Opret Gruppe",
-      "confirmDelete": "Er du sikker på, at du vil slette gruppen '{groupName}'? Brugere i denne gruppe vil vende tilbage til deres individuelle indstillinger."
-    },
-    "installedApps": {
-      "title": "Installerede Applikationer",
-      "searchPlaceholder": "Søg efter installerede apps...",
-      "noAppsFound": "Ingen installerede apps fundet.",
-      "pulling": "Henter nyt image...",
-      "notLocal": "Image ikke fundet lokalt",
-      "confirmDelete": "Er du sikker på, at du vil slette den installerede app '{appName}'?"
-    },
-    "appStore": {
-      "title": "App Stores",
-      "refreshTitle": "Opdater valgt store",
-      "selectLabel": "Vælg App Store",
-      "addLabel": "Tilføj Ny App Store",
-      "namePlaceholder": "Store-navn",
-      "urlPlaceholder": "Store YAML URL",
-      "availableTitle": "Tilgængelige Apps",
-      "addManual": "Tilføj Manuel App",
-      "searchPlaceholder": "Søg efter tilgængelige apps...",
-      "noAppsFound": "Ingen applikationer fundet.",
-      "availableFrom": "Tilgængelige Apps fra {storeName}",
-      "couldNotLoad": "Kunne ikke indlæse apps fra denne store."
-    },
-    "appTemplates": {
-      "title": "Applikationsskabelon-editor",
-      "loadLabel": "Indlæs Skabelon",
-      "createOption": "Opret Ny Skabelon",
-      "nameLabel": "Skabelonnavn",
-      "namePlaceholder": "Indtast et navn til den nye skabelon",
-      "saveButton": "Gem Profil",
-      "deleteButton": "Slet",
-      "previewTitle": "UI-forhåndsvisning",
-      "contentArea": "Applikationsindholdsområde",
-      "confirmDelete": "Er du sikker på, at du vil slette skabelonen '{templateName}'? Handlingen kan ikke fortrydes.",
-      "deleteDisabled": "Denne skabelon kan ikke slettes.",
-      "enterName": "Indtast venligst et navn til den nye skabelon.",
-      "settings": {
-        "TITLE": {
-          "label": "Sidetitel",
-          "description": "Sidetitlen, der vises i webbrowseren."
-        },
-        "SELKIES_UI_TITLE": {
-          "label": "Sidepanel Titel",
-          "description": "Titel i øverste venstre hjørne af sidepanelet."
-        },
-        "SELKIES_UI_SHOW_SIDEBAR": {
-          "label": "Vis Sidepanel",
-          "description": "Vis hovedbrugerfladen for sidepanelet."
-        },
-        "SELKIES_UI_SHOW_LOGO": {
-          "label": "Vis Logo",
-          "description": "Vis Selkies-logoet i sidepanelet."
-        },
-        "SELKIES_UI_SHOW_CORE_BUTTONS": {
-          "label": "Vis Kerneknapper",
-          "description": "Vis knapperne for kernekomponenter (skærm, lyd, osv.)."
-        },
-        "SELKIES_UI_SIDEBAR_SHOW_VIDEO_SETTINGS": {
-          "label": "Vis Videoindstillinger",
-          "description": "Vis sektionen for videoindstillinger i sidepanelet."
-        },
-        "SELKIES_UI_SIDEBAR_SHOW_SCREEN_SETTINGS": {
-          "label": "Vis Skærmindstillinger",
-          "description": "Vis sektionen for skærmindstillinger i sidepanelet."
-        },
-        "SELKIES_UI_SIDEBAR_SHOW_AUDIO_SETTINGS": {
-          "label": "Vis Lydindstillinger",
-          "description": "Vis sektionen for lydindstillinger i sidepanelet."
-        },
-        "SELKIES_UI_SIDEBAR_SHOW_STATS": {
-          "label": "Vis Statistik",
-          "description": "Vis statistiksektionen i sidepanelet."
-        },
-        "SELKIES_UI_SIDEBAR_SHOW_SHORTCUTS": {
-          "label": "Vis Tastaturgenvejssektion",
-          "description": "Vis sektionen for tastaturgenveje i sidepanelet."
-        },
-        "SELKIES_UI_SIDEBAR_SHOW_CLIPBOARD": {
-          "label": "Vis Udklipsholder",
-          "description": "Vis sektionen for udklipsholder i sidepanelet."
-        },
-        "SELKIES_UI_SIDEBAR_SHOW_FILES": {
-          "label": "Vis Filsektion",
-          "description": "Vis sektionen for filoverførsel i sidepanelet."
-        },
-        "SELKIES_UI_SIDEBAR_SHOW_APPS": {
-          "label": "Vis App-sektion",
-          "description": "Vis applikationssektionen i sidepanelet."
-        },
-        "SELKIES_UI_SIDEBAR_SHOW_SHARING": {
-          "label": "Vis Delingssektion",
-          "description": "Vis delingssektionen i sidepanelet."
-        },
-        "SELKIES_UI_SIDEBAR_SHOW_GAMEPADS": {
-          "label": "Vis Gamepad-sektion",
-          "description": "Vis gamepad-sektionen i sidepanelet."
-        },
-        "SELKIES_UI_SIDEBAR_SHOW_FULLSCREEN": {
-          "label": "Vis Fuldskærmsknap",
-          "description": "Vis fuldskærmsknappen i sidepanelet."
-        },
-        "SELKIES_UI_SIDEBAR_SHOW_GAMING_MODE": {
-          "label": "Vis Spiltilstandsknap",
-          "description": "Vis knappen for spiltilstand (markørlås) i sidepanelet."
-        },
-        "SELKIES_UI_SIDEBAR_SHOW_TRACKPAD": {
-          "label": "Vis Trackpad-knap",
-          "description": "Vis knappen for det virtuelle trackpad i sidepanelet."
-        },
-        "SELKIES_UI_SIDEBAR_SHOW_KEYBOARD_BUTTON": {
-          "label": "Vis Tastaturknap",
-          "description": "Vis knappen for skærmtastatur."
-        },
-        "SELKIES_UI_SIDEBAR_SHOW_SOFT_BUTTONS": {
-          "label": "Vis Soft-knapper",
-          "description": "Vis sektionen for soft-knapper (til mobil)."
-        },
-        "WATERMARK_PNG": {
-          "label": "Vandmærke PNG-sti",
-          "description": "Fuld sti inde i containeren til en vandmærke-png."
-        },
-        "WATERMARK_LOCATION": {
-          "label": "Vandmærke Placering",
-          "description": "Hvor billedet skal tegnes over streamen.",
-          "options": {
-            "disabled": "Deaktiveret",
-            "topLeft": "Øverst-Venstre",
-            "topRight": "Øverst-Højre",
-            "bottomLeft": "Nederst-Venstre",
-            "bottomRight": "Nederst-Højre",
-            "centered": "Centreret",
-            "animated": "Animeret"
-          }
-        },
-        "DASHBOARD": {
-          "label": "Dashboard Stil",
-          "description": "Tillader brugeren at indstille sit dashboard.",
-          "options": {
-            "default": "Standard",
-            "selkiesDefault": "Selkies (Standard)",
-            "wish": "Wish"
-          }
-        },
-        "SELKIES_AUDIO_ENABLED": {
-          "label": "Aktiver Lyd",
-          "description": "Aktiver lydstreaming fra server til klient."
-        },
-        "SELKIES_MICROPHONE_ENABLED": {
-          "label": "Aktiver Mikrofon",
-          "description": "Aktiver mikrofon-forwarding fra klient til server. Som standard slået fra upstream."
-        },
-        "SELKIES_GAMEPAD_ENABLED": {
-          "label": "Aktiver Gamepad",
-          "description": "Aktiver gamepad-understøttelse."
-        },
-        "SELKIES_ENABLE_CLIPBOARD": {
-          "label": "Udklipsholderpolitik",
-          "description": "Hvilke retninger for udklipsholderen der er tilladt. 'Kun server til klient' forhindrer også siden i at læse den lokale udklipsholder, hvilket er det, der udløser indsæt-prompter i Firefox og Safari.",
-          "options": {
-            "both": "Begge retninger",
-            "inOnly": "Kun klient til server",
-            "outOnly": "Kun server til klient",
-            "disabled": "Deaktiveret"
-          }
-        },
-        "SELKIES_ENABLE_BINARY_CLIPBOARD": {
-          "label": "Aktiver Binær Udklipsholder",
-          "description": "Tillad binære data (billeder) i udklipsholderen."
-        },
-        "SELKIES_COMMAND_ENABLED": {
-          "label": "Aktiver Kommando Websocket",
-          "description": "Aktiver parsing af kommando-websocket-meddelelser."
-        },
-        "SELKIES_FILE_TRANSFERS": {
-          "label": "Filoverførsler",
-          "description": "Tilladte retninger ('upload,download', 'upload', 'download' eller 'none'). Tømmes af Hærd Desktop, medmindre det angives her."
-        },
-        "SELKIES_FILE_TRANSFER_LIMIT_MBPS": {
-          "label": "Filoverførselsgrænse (Mbit/s)",
-          "description": "Statisk begrænsning delt af alle uploads og downloads. 0 deaktiverer loftet."
-        },
-        "SELKIES_ENABLE_SHARING": {
-          "label": "Aktiver al Deling",
-          "description": "Hovedafbryder for alle delingsfunktioner."
-        },
-        "SELKIES_ENABLE_SHARED": {
-          "label": "Aktiver Skrivebeskyttet Deling",
-          "description": "Aktiver skrivebeskyttede delingslinks."
-        },
-        "SELKIES_ENABLE_COLLAB": {
-          "label": "Aktiver Samarbejde",
-          "description": "Lad en seer med sessionens master-token fungere som samarbejdspartner med læse- og skriveadgang. Påkrævet for SealSkin-rum."
-        },
-        "SELKIES_ENABLE_PLAYER2": {
-          "label": "Aktiver Deling for Spiller 2",
-          "description": "Aktiver delingslinket for gamepad-spiller 2."
-        },
-        "SELKIES_ENABLE_PLAYER3": {
-          "label": "Aktiver Deling for Spiller 3",
-          "description": "Aktiver delingslinket for gamepad-spiller 3."
-        },
-        "SELKIES_ENABLE_PLAYER4": {
-          "label": "Aktiver Deling for Spiller 4",
-          "description": "Aktiver delingslinket for gamepad-spiller 4."
-        },
-        "SELKIES_SECOND_SCREEN": {
-          "label": "Aktiver Anden Skærm",
-          "description": "Aktiver understøttelse for en ekstra skærm/monitor."
-        },
-        "SELKIES_ENABLE_RESIZE": {
-          "label": "Aktiver Dynamisk Størrelsesændring",
-          "description": "Tilpas den eksterne skærm, så den matcher browservinduet."
-        },
-        "SELKIES_USE_BROWSER_CURSORS": {
-          "label": "Brug Browser-markører",
-          "description": "Brug browserens CSS-markører i stedet for at rendere til canvas."
-        },
-        "SELKIES_ENABLE_CURSORS": {
-          "label": "Aktiver Eksterne Markører",
-          "description": "Send applikationens egne markørformer til klienten."
-        },
-        "SELKIES_CURSOR_SIZE": {
-          "label": "Markørstørrelse",
-          "description": "Markørstørrelse i punkter ved 96 DPI, skaleret med sessionens DPI. -1 bruger platformens standard (32 på X11, 24 på Wayland)."
-        },
-        "SELKIES_USE_CSS_SCALING": {
-          "label": "Brug CSS-skalering (LoDPI)",
-          "description": "Hvis sand, sendes en lavere opløsning, og canvas strækkes."
-        },
-        "SELKIES_MANUAL_RESOLUTION": {
-          "label": "Manuel Opløsningstilstand",
-          "description": "Lås opløsningen til de manuelle bredde/højde-værdier."
-        },
-        "SELKIES_FORCE_ALIGNED_RESOLUTION": {
-          "label": "Gennemtving justeret opløsning",
-          "description": "Gennemtvinger skærmopløsningen til at være et multiplum af 16 pixels."
-        },
-        "SELKIES_MANUAL_WIDTH": {
-          "label": "Manuel Bredde",
-          "description": "Lås bredden til en fast værdi. Tvinger manuel tilstand."
-        },
-        "SELKIES_MANUAL_HEIGHT": {
-          "label": "Manuel Højde",
-          "description": "Lås højden til en fast værdi. Tvinger manuel tilstand."
-        },
-        "SELKIES_SCALING_DPI": {
-          "label": "UI Skalering DPI",
-          "description": "Standard DPI for UI-skalering."
-        },
-        "SELKIES_AUDIO_BITRATE": {
-          "label": "Lyd Bitrate",
-          "description": "Standard Opus lyd-bitrate."
-        },
-        "SELKIES_AUDIO_FRAME_DURATION_MS": {
-          "label": "Lydframevarighed",
-          "description": "Opus framevarighed. Lavere værdier reducerer lydlatens mod en lille omkostning i båndbredde og pakkerate."
-        },
-        "SELKIES_AUDIO_CHANNELS": {
-          "label": "Lydkanaler",
-          "description": "Antal lydkanaler; 2 er stereo."
-        },
-        "SELKIES_AUDIO_REDUNDANCY": {
-          "label": "Lydredundans (Opus RED)",
-          "description": "Medsend tidligere lydframes som redundans for at reducere udfald ved pakketab."
-        },
-        "SELKIES_AUDIO_REDUNDANCY_DISTANCE": {
-          "label": "Lydredundansafstand",
-          "description": "Antal tidligere frames, der medsendes som redundans (0-4). Højere overlever længere tabsperioder mod proportionelt mere båndbredde."
-        },
-        "SELKIES_ENCODER": {
-          "label": "Encodere",
-          "description": "Kommasepareret liste af tilladte encodere (h264enc, h264enc-striped, jpeg). Den første er standard; en enkelt værdi låser valget. Kun h264enc streamer over WebRTC."
-        },
-        "SELKIES_USE_CPU": {
-          "label": "Tving CPU Encoding",
-          "description": "Tving CPU-baseret encoding for pixelflux."
-        },
-        "SELKIES_FRAMERATE": {
-          "label": "Billedfrekvens (Område eller Fast)",
-          "description": "f.eks., '8-240' for et område, '60' for en fast startværdi, '60,8-240' for begge; '60-60' låser den."
-        },
-        "SELKIES_RATE_CONTROL_MODE": {
-          "label": "Ratestyringstilstand",
-          "description": "Standard H.264-ratestyring: konstant kvalitet (CRF) eller konstant bitrate (CBR).",
-          "options": {
-            "crf": "Konstant kvalitet (CRF)",
-            "cbr": "Konstant bitrate (CBR)"
-          }
-        },
-        "SELKIES_ENABLE_RATE_CONTROL": {
-          "label": "Tillad Skift af Ratestyring",
-          "description": "Lad klienter skifte mellem CRF og CBR. Fra låser encoderen til dens indbyggede standard."
-        },
-        "SELKIES_VIDEO_CRF": {
-          "label": "Video CRF (Område eller Fast)",
-          "description": "H.264 konstant kvalitet: '5-50' for et område, '25' for en fast startværdi eller '25,5-50' for begge."
-        },
-        "SELKIES_VIDEO_BITRATE": {
-          "label": "Video Bitrate kbps (Område eller Fast)",
-          "description": "CBR-bitrate i kilobit per sekund: '100-1000000' for et område, '8000' for en fast startværdi eller '8000,100-1000000' for begge."
-        },
-        "SELKIES_VIDEO_MIN_QP": {
-          "label": "Video Minimum QP",
-          "description": "Minimum H.264-kvantisering i CBR-tilstand (0 = encoderens standard). Hæves den, begrænses bitforbruget på simpelt indhold."
-        },
-        "SELKIES_VIDEO_MAX_QP": {
-          "label": "Video Maksimum QP",
-          "description": "Maksimum H.264-kvantisering i CBR-tilstand (0 = encoderens standard). Sænkes den, holdes tekst læsbar under bevægelse, på bekostning af at bitrate-målet overskrides."
-        },
-        "SELKIES_KEYFRAME_INTERVAL": {
-          "label": "Keyframe-interval (sekunder)",
-          "description": "Sekunder mellem planlagte gendannelses-keyframes. 0 holder GOP uendelig og sender kun keyframes på forespørgsel."
-        },
-        "SELKIES_JPEG_QUALITY": {
-          "label": "JPEG Kvalitet (Område eller Fast)",
-          "description": "'1-100' for et område, '40' for en fast startværdi eller '40,1-100' for begge."
-        },
-        "SELKIES_VIDEO_FULLCOLOR": {
-          "label": "Video Fuld Farve (4:4:4)",
-          "description": "Encode H.264 med 4:4:4 chroma i stedet for 4:2:0. Klienter uden en 4:4:4-decoder falder tilbage til JPEG, når dette er låst til."
-        },
-        "SELKIES_VIDEO_STREAMING_MODE": {
-          "label": "Video Streaming (Turbo) Tilstand",
-          "description": "Encode hver frame som en traditionel video-encoder i stedet for kun ændrede områder."
-        },
-        "SELKIES_USE_PAINT_OVER_QUALITY": {
-          "label": "Brug Overmaling Kvalitet",
-          "description": "Aktiver høj-kvalitets overmaling for statiske scener."
-        },
-        "SELKIES_PAINT_OVER_JPEG_QUALITY": {
-          "label": "Overmaling JPEG Kvalitet",
-          "description": "'1-100' for et område, '90' for en fast startværdi eller '90,1-100' for begge."
-        },
-        "SELKIES_VIDEO_PAINTOVER_CRF": {
-          "label": "Overmaling Video CRF",
-          "description": "'5-50' for et område, '18' for en fast startværdi eller '18,5-50' for begge."
-        },
-        "SELKIES_VIDEO_PAINTOVER_BURST_FRAMES": {
-          "label": "Overmaling Burst Frames",
-          "description": "'1-30' for et område, '5' for en fast startværdi eller '5,1-30' for begge."
-        },
-        "SELKIES_BACKPRESSURE_QUEUE_SIZE": {
-          "label": "Backpressure-køstørrelse",
-          "description": "Frames og lydstykker, der bufferes per stream, før der droppes under backpressure (WebSockets-tilstand). Højere tolererer klientudsving på bekostning af latens."
-        },
-        "SELKIES_WEBCAM_WIDTH": {
-          "label": "Webcam Bredde",
-          "description": "Bredde af den virtuelle webcam-enhed; klientframes skaleres og letterboxes, så de passer."
-        },
-        "SELKIES_WEBCAM_HEIGHT": {
-          "label": "Webcam Højde",
-          "description": "Højde af den virtuelle webcam-enhed; klientframes skaleres og letterboxes, så de passer."
-        },
-        "SELKIES_WEBCAM_ENCODER": {
-          "label": "Webcam Uplink-encoder",
-          "description": "Codec, som WebSocket-klienter bruger til at sende kameraframes. Auto vælger det bedste, browseren kan holde.",
-          "options": {
-            "auto": "Auto"
-          }
-        },
-        "SELKIES_WEBCAM_PIXEL_FORMAT": {
-          "label": "Webcam Pixelformat",
-          "description": "Pixelformat for den virtuelle webcam-enhed. Auto følger det, klienten sender.",
-          "options": {
-            "auto": "Auto"
-          }
-        },
-        "HARDEN_DESKTOP": {
-          "label": "Hærd Desktop (Forudindstilling)",
-          "description": "Aktiverer DISABLE_OPEN_TOOLS, DISABLE_SUDO og DISABLE_TERMINALS, og medmindre det angives eksplicit, deaktiveres også filoverførsler, kommando-websocket samt fil- og app-sektionerne i sidepanelet. Tvunget til for brugere med Hærd Container."
-        },
-        "HARDEN_OPENBOX": {
-          "label": "Hærd Vindueshåndtering (Forudindstilling)",
-          "description": "Aktiverer DISABLE_CLOSE_BUTTON, DISABLE_MOUSE_BUTTONS og HARDEN_KEYBINDS for Openbox og labwc, samt RESTART_APP medmindre det angives eksplicit. Tvunget til for brugere med Hærd Vindueshåndtering."
-        },
-        "DISABLE_OPEN_TOOLS": {
-          "label": "Deaktiver Åbn-værktøjer",
-          "description": "Deaktiverer xdg-open og exo-open binære filer."
-        },
-        "DISABLE_SUDO": {
-          "label": "Deaktiver Sudo",
-          "description": "Deaktiverer sudo-kommandoen."
-        },
-        "DISABLE_TERMINALS": {
-          "label": "Deaktiver Terminaler",
-          "description": "Deaktiverer almindelige terminalemulatorer."
-        },
-        "DISABLE_CLOSE_BUTTON": {
-          "label": "Deaktiver vindues luk-knap",
-          "description": "Fjerner luk-knappen fra vinduestitelbjælker."
-        },
-        "DISABLE_MOUSE_BUTTONS": {
-          "label": "Deaktiver Højre-/Midterklik",
-          "description": "Deaktiverer højreklik og midterklik kontekstmenu."
-        },
-        "HARDEN_KEYBINDS": {
-          "label": "Hærd Tastaturgenveje",
-          "description": "Deaktiverer vindueshåndteringens tastaturgenveje som Alt+F4, Alt+Escape, Alt+Space og Super+E, og låser vindueshåndteringens konfiguration."
-        },
-        "RESTART_APP": {
-          "label": "Genstart App ved Lukning",
-          "description": "Genstarter automatisk hovedapplikationen, hvis den lukkes, og gør autostart-filen skrivebeskyttet."
-        },
-        "MAX_RES": {
-          "label": "Maksimal Opløsning",
-          "description": "Maksimal opløsning for containeren, standard er 16k."
-        },
-        "START_DOCKER": {
-          "label": "Start Docker-i-Docker",
-          "description": "Hvis falsk, vil en privilegeret container ikke starte DinD."
-        },
-        "DISABLE_IPV6": {
-          "label": "Deaktiver IPv6",
-          "description": "Hvis sand, vil dette deaktivere IPv6."
-        },
-        "DISABLE_ZINK": {
-          "label": "Deaktiver Zink",
-          "description": "Indstil ikke Zink-miljøvariabler, hvis et grafikkort registreres."
-        },
-        "DISABLE_DRI3": {
-          "label": "Deaktiver DRI3",
-          "description": "Brug ikke DRI3-acceleration, hvis et grafikkort registreres."
-        },
-        "AUTO_GPU": {
-          "label": "Automatisk GPU-valg",
-          "description": "'true' renderer på den første GPU, 'false' deaktiverer det, eller en producent, driver eller PCI-producent-ID (nvidia, amdgpu, 0x10de) vælger en bestemt."
-        },
-        "NO_DECOR": {
-          "label": "Ingen Vinduesdekorationer",
-          "description": "Kør applikation uden vinduesrammer til PWA-brug."
-        },
-        "NO_FULL": {
-          "label": "Ingen Fuldskærm",
-          "description": "Sæt ikke applikationer automatisk i fuldskærm."
-        },
-        "NO_GAMEPAD": {
-          "label": "Deaktiver Gamepad Injektion",
-          "description": "Spring userspace gamepad interposer over. Skjuler også gamepad-sektionen og delingslinks for spillere."
-        },
-        "NO_WEBCAM": {
-          "label": "Deaktiver Webcam Injektion",
-          "description": "Spring den virtuelle webcam-enhed og interposer over. Skjuler også webcam-knappen."
-        },
-        "SELKIES_RUN_AFTER_CONNECT": {
-          "label": "Kør Efter Forbindelse",
-          "description": "Shell-kommando, der køres inde i containeren, når den første klient forbinder."
-        },
-        "SELKIES_RUN_AFTER_DISCONNECT": {
-          "label": "Kør Efter Afbrydelse",
-          "description": "Shell-kommando, der køres inde i containeren, når den sidste klient afbryder."
-        },
-        "SELKIES_DEBUG": {
-          "label": "Aktiver Selkies Debugging",
-          "description": "Aktiver debug-logning for streamingkomponenter."
-        },
-        "SELKIES_MODE": {
-          "label": "Streamingtilstand",
-          "description": "Transport, der bruges som standard. Auto vælger WebRTC, når en TURN/STUN-værdi er angivet, ellers WebSockets.",
-          "options": {
-            "auto": "Auto",
-            "websockets": "WebSockets",
-            "webrtc": "WebRTC"
-          }
-        },
-        "SELKIES_ENABLE_DUAL_MODE": {
-          "label": "Dobbelt Tilstand",
-          "description": "Lad brugere skifte mellem WebRTC og WebSockets fra sidepanelet. Auto aktiverer det kun, når WebRTC er konfigureret.",
-          "options": {
-            "auto": "Auto",
-            "enabled": "Aktiveret",
-            "disabled": "Deaktiveret"
-          }
-        },
-        "SELKIES_WEBRTC_PACER": {
-          "label": "WebRTC Pacer",
-          "description": "Udjævn udgående WebRTC-pakker med strenge prioriteter, så lyd og input beskyttes mod video-bursts på overbelastede forbindelser."
-        },
-        "SELKIES_CONGESTION_CONTROL": {
-          "label": "Overbelastningsstyring",
-          "description": "Tilpas video-bitraten til båndbreddeestimatet fra WebRTC-modtagerfeedback. Virker i CBR-tilstand."
-        },
-        "SELKIES_STUN_HOST": {
-          "label": "STUN Vært",
-          "description": "STUN-server til NAT hole punching. Peg på en intern server for netværk uden internet."
-        },
-        "SELKIES_STUN_PORT": {
-          "label": "STUN Port",
-          "description": "Port for STUN-serveren."
-        },
-        "SELKIES_TURN_HOST": {
-          "label": "TURN Vært",
-          "description": "TURN-server, der bruges med den delte hemmelighed eller langtidslegitimationsoplysninger. Omslut IPv6-adresser med firkantede parenteser."
-        },
-        "SELKIES_TURN_PORT": {
-          "label": "TURN Port",
-          "description": "Port for TURN-serveren."
-        },
-        "SELKIES_TURN_PROTOCOL": {
-          "label": "TURN Protokol",
-          "description": "Transport, som klienten bruger til at nå TURN. UDP anbefales kraftigt; brug kun TCP, hvor UDP er blokeret."
-        },
-        "SELKIES_TURN_TLS": {
-          "label": "TURN over TLS/DTLS",
-          "description": "Brug TURN over TLS (TCP) eller DTLS (UDP). Kræver et gyldigt certifikat på TURN-serveren."
-        },
-        "SELKIES_TURN_SHARED_SECRET": {
-          "label": "TURN Delt Hemmelighed",
-          "description": "Delt hemmelighed, der bruges til at generere tidsbegrænsede HMAC TURN-legitimationsoplysninger."
-        },
-        "SELKIES_TURN_USERNAME": {
-          "label": "TURN Brugernavn",
-          "description": "Brugernavn for ældre TURN-langtidslegitimationsoplysninger."
-        },
-        "SELKIES_TURN_PASSWORD": {
-          "label": "TURN Adgangskode",
-          "description": "Adgangskode for ældre TURN-langtidslegitimationsoplysninger."
-        },
-        "SELKIES_TURN_REST_URI": {
-          "label": "TURN REST API URI",
-          "description": "URI for en TURN REST-legitimationstjeneste, f.eks. http://localhost:8008."
-        },
-        "SELKIES_TURN_REST_API_KEY": {
-          "label": "TURN REST API-nøgle",
-          "description": "API-nøgle, der sendes til TURN REST-tjenesten."
-        },
-        "SELKIES_TURN_REST_USERNAME": {
-          "label": "TURN REST Brugernavn",
-          "description": "Brugernavn, som TURN REST-tjenesten indlejrer i legitimationsoplysningerne. Tomt bruger 'selkies'."
-        },
-        "SELKIES_WEBRTC_PUBLIC_IP": {
-          "label": "WebRTC Offentlig IP",
-          "description": "Offentlig adresse, der annonceres i host ICE-kandidater for en server bag statisk 1:1 NAT. Én IPv4- og/eller én IPv6-adresse."
-        },
-        "SELKIES_ENABLE_CLOUDFLARE_TURN": {
-          "label": "Aktiver Cloudflare TURN",
-          "description": "Brug Cloudflare TURN-tjenesten. Kræver token-ID og API-token nedenfor."
-        },
-        "SELKIES_CLOUDFLARE_TURN_TOKEN_ID": {
-          "label": "Cloudflare TURN Token-ID",
-          "description": "Cloudflare TURN app-token-ID."
-        },
-        "SELKIES_CLOUDFLARE_TURN_API_TOKEN": {
-          "label": "Cloudflare TURN API-token",
-          "description": "Cloudflare TURN API-token."
-        },
-        "SELKIES_RTC_CONFIG_JSON": {
-          "label": "RTC Konfiguration JSON-sti",
-          "description": "Sti inde i containeren til en JSON-fil med WebRTC-konfigurationen. Tilsidesætter alle andre STUN/TURN-indstillinger og genindlæses periodisk."
-        },
-        "DOCKER_PRIVILEGED": {
-          "label": "Priviligeret Tilstand",
-          "description": "Giv alle rettigheder til container, ophæv cgroup-begrænsninger, monter alle værtsenheder. Dette vil ødelægge ting!"
-        },
-        "DOCKER_BIND_MOUNTS": {
-          "label": "Ekstra Bind Mounts",
-          "description": "Ekstra værtsbindinger (kommasepareret, f.eks., /host/path:/container/path:ro)."
-        },
-        "DOCKER_ENV": {
-          "label": "Miljøvariabler",
-          "description": "Ekstra miljøvariabler (kommasepareret, f.eks., KEY=VALUE,KEY2=VALUE2)."
-        },
-        "DOCKER_CAP_ADD": {
-          "label": "Tilføj Cap",
-          "description": "Tilføj kernefunktioner (kommasepareret, f.eks., SYS_ADMIN,MKNOD)."
-        },
-        "DOCKER_CAP_DROP": {
-          "label": "Fjern Cap",
-          "description": "Fjern kernefunktioner (kommasepareret)."
-        },
-        "DOCKER_SECURITY_OPT": {
-          "label": "Sikkerhedsindstillinger",
-          "description": "Sikkerhedsindstillinger (kommasepareret, f.eks., seccomp=unconfined,apparmor=unconfined)."
-        },
-        "DOCKER_DEVICES": {
-          "label": "Enheder",
-          "description": "Eksponer værtsenheder (kommasepareret, f.eks., /dev/sda:/dev/xvda:rwm)."
-        },
-        "DOCKER_SHM_SIZE": {
-          "label": "SHM Størrelse",
-          "description": "Størrelse af /dev/shm (f.eks. 1G, 2G)."
-        },
-        "DOCKER_MEM_LIMIT": {
-          "label": "Hukommelsesgrænse",
-          "description": "Hukommelsesgrænse (f.eks. 1g, 512m)."
-        },
-        "DOCKER_CPU_SHARES": {
-          "label": "CPU Andele",
-          "description": "CPU andele (relativ vægt heltal)."
-        },
-        "DOCKER_NANO_CPUS": {
-          "label": "Nano CPU'er",
-          "description": "CPU-kvote i enheder af 1e-9 CPU'er."
-        },
-        "DOCKER_NETWORK_MODE": {
-          "label": "Netværkstilstand",
-          "description": "Netværkstilstand for containeren.",
-          "options": {
-            "default": "Standard (Bridge)",
-            "host": "Host",
-            "none": "Ingen",
-            "bridge": "Bridge"
-          }
-        },
-        "DOCKER_IPC_MODE": {
-          "label": "IPC Tilstand",
-          "description": "Indstil IPC-tilstand for containeren.",
-          "options": {
-            "default": "Standard",
-            "host": "Host",
-            "private": "Privat",
-            "shareable": "Delbar"
-          }
-        },
-        "DOCKER_PID_MODE": {
-          "label": "PID Tilstand",
-          "description": "Indstil PID-tilstand for containeren.",
-          "options": {
-            "default": "Standard",
-            "host": "Host"
-          }
-        },
-        "DOCKER_DNS": {
-          "label": "DNS Servere",
-          "description": "Brugerdefinerede DNS-servere (kommasepareret)."
-        },
-        "DOCKER_EXTRA_HOSTS": {
-          "label": "Ekstra Værter",
-          "description": "Vært til IP-kortlægninger (kommasepareret, f.eks., hostname:1.2.3.4)."
-        },
-        "DOCKER_SYSCTLS": {
-          "label": "Sysctls",
-          "description": "Kerneparametre (kommasepareret, f.eks., net.ipv4.ip_forward=1)."
-        },
-        "DOCKER_ULIMITS": {
-          "label": "Ulimits",
-          "description": "Ulimits (kommasepareret, f.eks., nofile=1024:1024)."
-        },
-        "DOCKER_TMPFS": {
-          "label": "Tmpfs Mounts",
-          "description": "Midlertidige filsystemer (kommasepareret, f.eks., /run:rw,noexec,nosuid,size=65536k)."
-        },
-        "DOCKER_GROUP_ADD": {
-          "label": "Tilføj Gruppe",
-          "description": "Liste over yderligere gruppenavne og/eller ID'er (kommasepareret)."
-        }
-      }
-    },
-    "appLaboratory": {
-      "title": "App-laboratorium",
-      "description": "Opret og test brugerdefinerede applikationskonfigurationer ved at lægge ændringer oven på en basis-app.",
-      "selectApp": "Vælg App",
-      "createNew": "Opret Ny App",
-      "baseApp": "Basisapplikation",
-      "baseAppDescription": "Den installerede applikation, som din nye brugerdefinerede app vil være baseret på.",
-      "selectBase": "Vælg en Basis-app",
-      "customizationTitle": "Tilpasning",
-      "appName": "App-navn",
-      "appIcon": "App-ikon",
-      "uploadIcon": "Upload Ikon",
-      "autostartScriptLabel": "Brugerdefineret Autostart Script",
-      "permissionsTitle": "Tilladelser",
-      "usersLabel": "Tilladte Brugere",
-      "groupsLabel": "Tilladte Grupper",
-      "launchButton": "Gem & Start Tilpasningssession",
-      "closeButton": "Luk Session & Afslut",
-      "savingAndLaunching": "Gemmer & Starter...",
-      "placeholder": "App-laboratoriet giver dig mulighed for at konfigurere basis-hjemmemappen og start-scriptet for en applikation baseret på en eksisterende installeret applikation. Denne hjemmemappe vil blive kopieret ved første initialisering for brugeren med alle de filer og indstillinger, du opsætter i denne session. Du kan genstarte en eksisterende Laboratorie-app for yderligere at ændre dens indhold.",
-      "formInvalid": "Vælg venligst en basis-app og angiv et navn til den nye app."
-    },
-    "modals": {
-      "editUserTitle": "Rediger Bruger: {username}",
-      "saveChanges": "Gem Ændringer",
-      "effectiveSettings": "Effektive Indstillinger (med gruppetilsidesættelser)",
-      "editGroupTitle": "Rediger Gruppe: {groupName}",
-      "userConfigTitle": "Brugerkonfiguration",
-      "warning": "Dette er den eneste gang, denne konfiguration vil blive vist. Giv den sikkert til brugeren.",
-      "info": "Du kan downloade denne konfigurationsfil for nemt at opsætte SealSkin på en anden enhed. Opbevar denne fil sikkert, da den indeholder din private nøgle.",
-      "configDataLabel": "Konfigurationsdata (JSON)",
-      "copyButton": "Kopier Tekst",
-      "downloadButton": "Download Fil",
-      "manageHomeDirs": "Administrer Hjemmemapper",
-      "dirsForUser": "Mapper for bruger: {username}",
-      "dirsForAdmin": "Mapper for admin: {username}",
-      "newDirForUser": "Opret Ny Mappe for Bruger",
-      "createDirButton": "Opret Mappe",
-      "confirmDeleteDir": "Er du sikker på, at du vil slette '{homeName}' for bruger '{username}'? Dette er permanent.",
-      "installAppTitle": "Installer {appName}",
-      "editAppTitle": "Rediger {appName}",
-      "customNameLabel": "Brugerdefineret Navn",
-      "imageLabel": "Container Image",
-      "permissions": "Tilladelser",
-      "allowedUsersLabel": "Tilladte Brugere (kommasepareret, 'all' for alle)",
-      "allowedGroupsLabel": "Tilladte Grupper (kommasepareret, 'all' for alle)",
-      "features": "Funktioner",
-      "gpuSupport": "GPU-understøttelse",
-      "homeMounting": "Montering af Hjemmemappe",
-      "urlSupport": "URL-åbningsunderstøttelse",
-      "fileSupport": "Filåbningsunderstøttelse",
-      "autoUpdate": "Auto-opdater Image",
-      "advancedSettings": "Avancerede Indstillinger",
-      "appTemplateLabel": "Applikationsskabelon",
-      "appTemplateDescription": "Vælg en forudkonfigureret skabelon for avancerede container-startindstillinger.",
-      "customAutostartScriptLabel": "Brugerdefineret Autostart Script",
-      "customAutostartScriptDescription": "Tilpas autostart-logik, lad feltet være tomt for at bruge standard fra applikationsudbyderen.",
-      "saveInstallation": "Gem Installation",
-      "updateStatusTitle": "Opdateringsstatus for {appName}",
-      "checkingUpdates": "Søger efter opdateringer...",
-      "updateAvailable": "En ny image-version er tilgængelig!",
-      "yourVersion": "Din version: {sha}",
-      "latestAvailable": "Den seneste version er tilgængelig til at hente fra registreringsdatabasen.",
-      "pullLatest": "Hent Seneste Image",
-      "upToDate": "Dit image er opdateret.",
-      "currentVersion": "Nuværende version: {sha}",
-      "errorChecking": "Fejl under søgning efter opdateringer.",
-      "pullingLatest": "Henter seneste image... Dette kan tage et øjeblik.",
-      "pullComplete": "Hentning fuldført!",
-      "newVersion": "Ny version: {sha}",
-      "errorPulling": "Fejl under hentning af image.",
-      "manualInstallNote": "Bemærk: Manuelt tilføjede billeder skal være baseret på et selkies-baseimage-kompatibelt billede.",
-      "generalTitle": "Generelle & Ydelsesindstillinger",
-      "webrtcTitle": "WebRTC- og TURN-indstillinger",
-      "webrtcDescription": "Sessioner streames som standard over WebSockets. Angives en STUN-, TURN-, Cloudflare- eller offentlig IP-værdi nedenfor, eller vælges WebRTC-tilstand, skifter containeren til WebRTC med dobbelt tilstand aktiveret, så brugerne stadig kan falde tilbage til WebSockets.",
-      "dockerTitle": "Docker Avancerede Tilsidesættelser",
-      "dockerDescription": "Disse indstillinger tilsidesætter standard containerkonfigurationen. Brug med forsigtighed og kun hvis du ved, hvad du gør."
-    },
-    "status": {
-      "loggingIn": "Logger ind...",
-      "configSaved": "Konfiguration gemt med succes!",
-      "configApplied": "Konfiguration anvendt! Log venligst ind & test.",
-      "configApplyFailed": "Kunne ikke anvende konfiguration: {error}",
-      "fileReadError": "Fejl ved læsning af fil.",
-      "noConfig": "Angiv venligst en konfigurationsfil eller tekst.",
-      "loggedInAdmin": "Logget ind som admin: {username}",
-      "loggedInUser": "Logget ind som standardbruger: {username}.",
-      "loginFailed": "Login mislykkedes: {error}",
-      "adminDataRefreshFailed": "Kunne ikke opdatere admin-data: {error}",
-      "logoutSuccess": "Logget ud og konfiguration ryddet.",
-      "generateConfigFailed": "Kunne ikke generere konfiguration, brugeroplysninger mangler.",
-      "copySuccess": "Konfiguration kopieret til udklipsholder!",
-      "copyFailed": "Kunne ikke kopiere tekst.",
-      "publicKeyCopied": "Offentlig nøgle kopieret!",
-      "keyCopyFailed": "Kunne ikke kopiere nøgle.",
-      "creatingAdmin": "Opretter administrator...",
-      "adminCreated": "Administrator '{username}' oprettet.",
-      "adminCreateFailed": "Fejl ved oprettelse af administrator: {error}",
-      "adminDeleted": "Administrator '{username}' slettet med succes.",
-      "adminDeleteFailed": "Fejl ved sletning af administrator: {error}",
-      "creatingUser": "Opretter bruger...",
-      "userCreated": "Bruger '{username}' oprettet.",
-      "userCreateFailed": "Fejl ved oprettelse af bruger: {error}",
-      "userDeleted": "Bruger '{username}' slettet med succes.",
-      "userDeleteFailed": "Fejl ved sletning af bruger: {error}",
-      "userUpdated": "Bruger '{username}' opdateret med succes.",
-      "userUpdateFailed": "Fejl ved opdatering af bruger: {error}",
-      "creatingGroup": "Opretter gruppe...",
-      "groupCreated": "Gruppe '{groupName}' oprettet.",
-      "groupCreateFailed": "Fejl ved oprettelse af gruppe: {error}",
-      "groupDeleted": "Gruppe '{groupName}' slettet med succes.",
-      "groupDeleteFailed": "Fejl ved sletning af gruppe: {error}",
-      "groupUpdated": "Gruppe '{groupName}' opdateret med succes.",
-      "groupUpdateFailed": "Fejl ved opdatering af gruppe: {error}",
-      "homedirLoadFailed": "Kunne ikke indlæse hjemmemapper: {error}",
-      "homedirCreateFailed": "Fejl ved oprettelse af mappe: {error}",
-      "homedirCreated": "Hjemmemappe '{homeName}' oprettet.",
-      "homedirDeleted": "Mappe '{homeName}' slettet.",
-      "homedirDeleteFailed": "Fejl ved sletning af mappe: {error}",
-      "homedirCreatedFor": "Mappe '{homeName}' oprettet for {username}.",
-      "homedirDeletedFor": "Mappe '{homeName}' slettet for {username}.",
-      "sessionsLoadFailed": "Kunne ikke indlæse sessioner: {error}",
-      "sessionStopError": "Fejl ved stop af session: {error}",
-      "sessionStopped": "Session stoppet med succes.",
-      "appDataRefreshFailed": "Kunne ikke opdatere app-data: {error}",
-      "closingSession": "Gemmer tilpasningssession...",
-      "sessionClosed": "Tilpasningssession lukket.",
-      "sessionCloseFailed": "Kunne ikke lukke tilpasningssession: {error}",
-      "fetchingApps": "Henter apps fra store...",
-      "fetchAppsFailed": "Kunne ikke hente apps fra store: {error}",
-      "appStoreAddFailed": "Fejl ved tilføjelse af store: {error}",
-      "appStoreAdded": "App store '{name}' tilføjet.",
-      "appSaved": "Appen '{name}' blev {action} med succes.",
-      "appSaveActions": {
-        "updated": "opdateret",
-        "installed": "installeret"
-      },
-      "appSaveFailed": "Fejl ved gemning af app: {error}",
-      "appDeleted": "App '{name}' slettet.",
-      "appDeleteFailed": "Fejl ved sletning af app: {error}",
-      "templateSaved": "Skabelon '{name}' gemt med succes.",
-      "templateSaveFailed": "Fejl ved gemning af skabelon: {error}",
-      "templateDeleted": "Skabelon '{name}' slettet med succes.",
-      "templateDeleteFailed": "Fejl ved sletning af skabelon: {error}",
-      "pinRemoved": "Fastgjort adfærd fjernet.",
-      "keyGenerated": "Nyt nøglepar genereret.",
-      "keyGenFailed": "Nøglegenerering mislykkedes: {error}",
-      "pendingConfigSaved": "Ventende konfiguration gemt. Du kan nu give din offentlige nøgle til administratoren.",
-      "settingsSaved": "Indstillinger gemt.",
-      "appCreated": "Appen '{name}' blev oprettet med succes.",
-      "launchFailed": "Start mislykkedes: {error}"
-    },
-    "placeholders": {
-      "noAdmins": "Ingen administratorer fundet.",
-      "noUsers": "Ingen brugere fundet.",
-      "noGroups": "Ingen grupper fundet.",
-      "noHomeDirs": "Ingen hjemmemapper fundet.",
-      "noSessions": "Ingen aktive sessioner fundet.",
-      "noPinned": "Ingen fastgjorte adfærd fundet.",
-      "errorLoading": "Fejl ved indlæsning af mapper.",
-      "noInstalledApps": "Ingen applikationer er installeret endnu."
-    }
-  },
-  "popup": {
-    "tabs": {
-      "launch": "Start Ny",
-      "sessions": "Aktive Sessioner",
-      "manageFiles": "Administrer filer",
-      "uploadStorage": "Upload til Lager",
-      "uploadFiles": "Upload Filer",
-      "uploadFilesTitle": "Åbn dedikeret side for filupload"
-    },
-    "launchView": {
-      "searchPlaceholder": "Søg efter applikationer...",
-      "uploadingFile": "Uploader fil...",
-      "gpuLabel": "GPU",
-      "storageLabel": "Lager",
-      "languageLabel": "Sprog",
-      "cleanroom": "Cleanroom (Midlertidig)",
-      "noGpu": "Ingen",
-      "saveOptions": "Gem disse startindstillinger",
-      "saveOptionsForUrl": "Gem indstillinger for alle URL'er",
-      "saveOptionsForFile": "Gem indstillinger for .{extension} filer",
-      "openFile": "Åbn fil ved start",
-      "launchButton": "Start",
-      "launchingButton": "Starter...",
-      "uploadingButton": "Uploader...",
-      "autoHome": "Automatisk (vedvarende pr. app)",
-      "collaborationMode": "Samarbejdssession",
-      "waylandMode": "Wayland-tilstand"
-    },
-    "sessionsView": {
-      "noSessions": "Ingen aktive sessioner fundet."
-    },
-    "uploadStorageView": {
-      "selectHome": "Vælg Hjemmemappe",
-      "description": "Dette vil uploade filen <strong>{filename}</strong> direkte til dit Fillager til fremtidig brug.",
-      "descriptionFallback": "Dette vil uploade filen <strong>{filename}</strong> direkte til dit Fillager til fremtidig brug.",
-      "uploadButton": "Upload Fil",
-      "uploadingButton": "Uploader...",
-      "preparing": "Forbereder fil...",
-      "uploadingChunk": "Uploader del {current} af {total}...",
-      "finalizing": "Afslutter...",
-      "uploadComplete": "Upload Fuldført!"
-    },
-    "status": {
-      "unconfigured": "Konfigurer venligst udvidelsen via indstillingssiden.",
-      "openingServerFile": "Åbner server-side fil: {filename}",
-      "openingFile": "Åbner fil: {filename}",
-      "openingUrl": "Åbner URL: {targetUrl}",
-      "error": "Fejl: {message}",
-      "preparingFile": "Forbereder fil...",
-      "sendingFile": "Sender fil til session...",
-      "errorSendingFile": "Fejl ved afsendelse af fil: {message}",
-      "errorClosingSession": "Fejl ved lukning af session: {message}",
-      "preparingSession": "Forbereder isoleret session...",
-      "fetchingData": "Henter fildata...",
-      "fetchDataFailed": "Kunne ikke hente fildata: {statusText}",
-      "unknownAction": "Ukendt starthandling.",
-      "noAppSelected": "Vælg venligst en applikation.",
-      "noAppsAvailable": "Ingen applikationer er tilgængelige for din konto.",
-      "uploadSuccess": "Fil uploadet med succes!",
-      "creatingAutoHome": "Opretter automatisk hjemmemappe..."
-    },
-    "languages": {
-      "default": "Standard ({locale})"
-    }
-  },
-  "upload": {
-    "title": "Filupload",
-    "description": "Vælg en fil fra din computer for at åbne den i en sikker, isoleret session.",
-    "dropzone": {
-      "title": "Træk & slip en fil her",
-      "or": "eller",
-      "button": "Vælg Fil"
-    },
-    "confirm": {
-      "ready": "Filen er klar til at blive åbnet sikkert.",
-      "button": "Fortsæt til Start"
-    }
-  },
   "files": {
-    "title": "SealSkin-filer",
-    "header": {
-      "title": "Filer",
-      "newFolder": "Ny mappe",
-      "uploadFiles": "Upload filer",
-      "uploadFolder": "Upload mappe"
-    },
-    "sidebar": {
-      "sharedFiles": "SealSkin-filer",
-      "publicShares": "Offentlige Delinger"
-    },
     "shares": "Delinger",
-    "table": {
-      "name": "Navn",
-      "size": "Størrelse",
-      "lastModified": "Sidst ændret",
-      "created": "Oprettet",
-      "expires": "Udløber",
-      "url": "Offentlig URL",
-      "passwordProtected": "Adgangskode"
-    },
-    "dropzone": {
-      "title": "Træk filer hertil for at uploade"
-    },
-    "pagination": {
-      "previous": "« Forrige",
-      "next": "Næste »",
-      "pageOf": "Side {page} af {totalPages}"
-    },
-    "modals": {
-      "newFolder": {
-        "title": "Opret ny mappe",
-        "folderNameLabel": "Mappenavn",
-        "nameTitle": "Brug kun bogstaver, tal, understregning, bindestreg eller punktum.",
-        "createButton": "Opret"
-      },
-      "confirmDelete": {
-        "title": "Bekræft sletning",
-        "message": "Er du sikker på, at du vil slette {count, plural, one {1 valgt element} other {{count} valgte elementer}}? Handlingen kan ikke fortrydes.",
-        "messageDefault": "Er du sikker på, at du vil slette de valgte elementer? Handlingen kan ikke fortrydes."
-      },
-      "uploadProgress": {
-        "title": "Upload-status",
-        "doneButton": "Færdig"
-      },
-      "share": {
-        "title": "Del Fil",
-        "sharingFile": "Deler fil: <strong>{filename}</strong>",
-        "passwordLabel": "Adgangskode (valgfri)",
-        "passwordPlaceholder": "Lad være blank for ingen adgangskode",
-        "expiryLabel": "Udløber om (timer, valgfri)",
-        "expiryPlaceholder": "f.eks. 24 for en dag",
-        "shareButton": "Opret Delingslink"
-      }
-    },
-    "status": {
-      "homeDirLoadFailed": "Kunne ikke indlæse hjemmebiblioteker: {error}",
-      "filesLoadFailed": "Fejl ved indlæsning af filer: {error}",
-      "deleteProtectedError": "Kan ikke slette beskyttede systemmapper.",
-      "deletingItems": "Sletter {count, plural, one {1 element} other {{count} elementer}}...",
-      "deleteSuccess": "Sletning lykkedes.",
-      "deleteFailed": "Sletning mislykkedes: {error}",
-      "preparingUpload": "Forbereder upload af {count, plural, one {1 fil} other {{count} filer}}...",
-      "uploadPrepFailed": "Fejl under forberedelse af mappe-upload: {error}",
-      "notConfigured": "Fejl: SealSkin er ikke konfigureret. Konfigurer venligst i indstillinger.",
-      "folderCreated": "Mappen '{folderName}' blev oprettet.",
-      "folderCreateFailed": "Fejl ved oprettelse af mappe: {error}",
-      "shareCreated": "Deling oprettet med succes! Linket er blevet kopieret til din udklipsholder.",
-      "shareCreateFailed": "Kunne ikke oprette deling: {error}",
-      "sharesLoadFailed": "Kunne ikke indlæse delte filer: {error}",
-      "shareDeleteFailed": "Kunne ikke slette deling: {error}",
-      "shareDeleted": "Deling slettet med succes.",
-      "urlCopied": "Offentlig URL kopieret til udklipsholder."
-    },
-    "placeholders": {
-      "errorLoading": "Fejl ved indlæsning af filer.",
-      "folderEmpty": "Denne mappe er tom.",
-      "noHomeDirs": "Ingen hjemmebiblioteker tilgængelige.",
-      "noShares": "Du har endnu ikke delt nogen filer."
-    },
-    "uploadStatus": {
-      "pending": "afventer",
-      "initiating": "Starter...",
-      "uploading": "Uploader...",
-      "finalizing": "Afslutter...",
-      "completed": "Fuldført",
-      "error": "Fejl"
-    },
     "upOneLevel": "Et niveau op",
     "newFolder": "Ny mappe",
-    "upload": "Upload",
     "openInApp": "Åbn i app",
     "size": "Størrelse",
     "modified": "ændret",
@@ -1251,7 +89,6 @@
     "volumeMounts": "Volumes",
     "backup": "Backup",
     "sessions": "Sessioner",
-    "password": "Adgangskode",
     "signOut": "Log ud"
   },
   "launch": {
@@ -1314,11 +151,9 @@
     "kvApiPort": "API-port",
     "kvSessionPort": "Sessionport",
     "yes": "ja",
-    "no": "nej",
-    "none": "ingen"
+    "no": "nej"
   },
   "howto": {
-    "title": "Sådan bruger du Vreckan",
     "intro": "En kort guide til Vreckans hovedfunktioner.",
     "close": "Luk",
     "item1Lead": "Start en app",
@@ -1333,6 +168,7 @@
     "item5Body": "I Admin-fanen kan du administrere brugere, adminer, grupper, apps, skabeloner, volumes og backups."
   },
   "settings": {
+    "settingsSection": "Indstillinger",
     "active": "Aktiv",
     "group": "Gruppe",
     "persistentStorage": "Persistent lager",
@@ -1342,7 +178,6 @@
     "gpu": "GPU",
     "storageLimit": "Lagergrænse (MB, -1 = ubegrænset)",
     "sessionLimit": "Sessionsgrænse (-1 = ubegrænset)",
-    "none": "ingen",
     "adminPerms": "Administratorrettigheder",
     "userPerms": "Brugerrettigheder"
   },
@@ -1352,7 +187,6 @@
     "addHelp": "Opret en ny konto. Afkryds \"Admin\" for at gøre den til administrator.",
     "labelAdmin": "Administrator",
     "badgeAdmin": "administrator",
-    "badgeSso": "SSO",
     "btnSetPassword": "Sæt adgangskode",
     "btnAccess": "Adgang",
     "btnHomeDirs": "Hjemmemapper",
@@ -1425,7 +259,6 @@
     "badgePerms": "rettigheder: {perms}",
     "rolesLabel": "Roller (givet til alle medlemmer)",
     "permsLabel": "Rettigheder (givet til alle medlemmer)",
-    "ssoBadge": "SSO",
     "ssoAdminSuffix": " · admin",
     "ssoAdminTitle": "På SSO-adminlisten (giver admin)",
     "ssoObservedTitle": "Observeret fra SSO",
@@ -1460,7 +293,6 @@
     "heading": "SSO / OIDC",
     "help": "Forbind Vreckan til en OpenID Connect-udbyder (f.eks. authentik). Discovery hentes fra <code>{issuer}/.well-known/openid-configuration</code>. En værdi gemt her overskriver <code>VRECKAN_OIDC_*</code>-miljøet; badge på hvert felt viser dens aktuelle kilde.",
     "enableLabel": "Aktivér SSO-login",
-    "enabled": "Aktiveret",
     "issuerLabel": "Issuer-URL",
     "issuerHelp": "Udbyderens basis-URL.",
     "clientIdLabel": "Klient-ID",
@@ -1471,7 +303,6 @@
     "redirectUriPlaceholder": "standard: {base}/api/auth/oidc/callback",
     "scopesLabel": "Scopes",
     "allowSignupLabel": "Auto-opsæt nye brugere",
-    "allowSignupHelp": "Opret en konto for en ny SSO-identitet",
     "stateTtlLabel": "State TTL (sekunder)",
     "testButton": "Test forbindelse",
     "testing": "Kontakterer udbyderen…",
@@ -1521,7 +352,6 @@
     "addTitle": "Tilføj Appbutik",
     "urlLabel": "URL (YAML)",
     "urlPlaceholder": "https://…/store.yml",
-    "add": "Tilføj",
     "configuredTitle": "Konfigurerede Butikker",
     "url": "URL",
     "empty": "Ingen butikker.",
@@ -1545,7 +375,6 @@
     "noAppsInStore": "Ingen apps i denne butik.",
     "noAppsMatch": "Ingen apps matcher “{q}”.",
     "installedTitle": "Installerede Apps",
-    "app": "App",
     "source": "Kilde",
     "homeDirs": "Hjemmemapper",
     "users": "Brugere",
@@ -1575,6 +404,10 @@
     "appTemplate": "App-skabelon",
     "accessLabel": "Hvem kan bruge denne app",
     "allUsers": "Alle brugere",
+    "accessUsersSection": "Brugere",
+    "accessGroupsSection": "Grupper",
+    "accessSelectAll": "vælg alle",
+    "accessDeselectAll": "fravælg alle",
     "noUsers": "Ingen brugere",
     "noGroups": "Ingen grupper",
     "noOneSelected": "Ingen er valgt — appen vil være skjult for og ubrugelig for alle.",
@@ -1619,7 +452,6 @@
     "dockerHelp": "Disse indstillinger overskriver containerens standardkonfiguration. Brug med forsigtighed, og kun hvis du ved, hvad du laver.",
     "duplicateName": "Dupliceret indstillingsnavn: '{name}'.",
     "enterNameFirst": "Indtast først et skabelonnavn.",
-    "heading": "Skabeloner",
     "imageDefault": "billedets standardværdi",
     "invalidName": "Ugyldigt indstillingsnavn: '{name}'.",
     "label": "Etiket",
@@ -1631,7 +463,6 @@
     "previewClipboard": "Udklipsholder",
     "previewContentArea": "Applikationens indholdsområde",
     "previewCoreButtons": "Knappepanel",
-    "previewFiles": "Filer",
     "previewGamepads": "Gamepads",
     "previewScreenSettings": "Skærminstillinger",
     "previewSharing": "Deling",
@@ -1674,7 +505,6 @@
     "includeUserData": "Inkluder brugerdata (hjemmemapper)",
     "create": "Opret backup",
     "listTitle": "Backups",
-    "size": "Størrelse",
     "created": "Oprettet",
     "userData": "Brugerdata",
     "noBackups": "Ingen backups endnu.",
@@ -1682,7 +512,6 @@
     "restoreFromFileHelp": "Upload en tidligere downloadet backup <code>tar.gz</code> for at gendanne den. Gendannelse overskriver konfigurationsfilerne i arkivet; filer, der ikke er i arkivet, forbliver uændrede. Aktive sessioner påvirkes ikke.",
     "restoreFileButton": "Gendan uploadet fil",
     "createdToast": "Oprettet {name}",
-    "download": "Download",
     "downloadStarted": "Download startet",
     "restore": "Gendan",
     "restoreConfirm": "Gendan {name}? Dette overskriver konfigurationsfilerne i arkivet og genindlæser dem. Aktive sessioner påvirkes ikke. Hvis arkivet er ældre end den aktuelle admin-nøgle, kan du låse dig selv ude.",
@@ -1757,12 +586,10 @@
     "default": "Standard",
     "allApps": "Alle apps",
     "makeDefault": "Gør til standard",
-    "apply": "Anvend",
     "setDefaultFailed": "Kunne ikke sætte standard: {message}",
     "deleteConfirm": "Slet forudindstillingen '{name}'?",
     "deleteTitle": "Slet forudindstilling",
     "deleted": "Slettet '{name}'",
-    "deleteFailed": "Sletning fejlede: {message}",
     "applied": "Anvendt forudindstilling '{name}'",
     "installFirst": "Installer en app først for at gemme en forudindstilling.",
     "saveTitle": "Gem startindstillinger",

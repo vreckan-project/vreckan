@@ -39,7 +39,7 @@ async function renderStores() {
         <div class="field"><label>${t("common.name")}</label><input type="text" id="store-name"></div>
         <div class="field flex-2" ><label>${t("stores.urlLabel")}</label><input type="text" id="store-url" placeholder="${t("stores.urlPlaceholder")}"></div>
       </div>
-      <button class="btn btn-primary" id="store-create">${t("stores.add")}</button>
+      <button class="btn btn-primary" id="store-create">${t("accounts.btnAdd")}</button>
     </div>
     <div class="card">
        <h3 class="mb-12" >${t("stores.configuredTitle")}</h3>

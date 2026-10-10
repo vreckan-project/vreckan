@@ -1,70 +1,26 @@
 {
-  "background": {
-    "contextMenu": {
-      "openUrl": "Bağlantıyı SealSkin'de Aç",
-      "openFile": "Bağlantı Hedefini SealSkin'de Dosya Olarak Aç",
-      "sendMedia": "Medyayı SealSkin'e Gönder",
-      "searchText": "SealSkin'de \"%s\" için arama yap",
-      "sendDownload": "Sonraki İndirmeyi SealSkin'e Gönder"
-    }
-  },
   "common": {
-    "actions": "Eylemler",
-    "active": "Aktif",
     "cancel": "İptal",
     "manage": "Yönet",
     "delete": "Sil",
     "edit": "Düzenle",
     "save": "Kaydet",
     "none": "yok",
-    "error": "Hata",
-    "na": "N/A",
-    "of": "/",
-    "status": "Durum",
     "username": "Kullanıcı Adı",
-    "group": "Grup",
-    "groups": "Gruplar",
-    "publicKey": "Açık Anahtar",
     "name": "İsim",
-    "source": "Kaynak",
-    "imageVersion": "İmaj Versiyonu",
     "language": "Dil",
-    "storage": "Depolama",
     "gpu": "GPU",
-    "version": "Versiyon",
-    "checked": "İşaretli",
-    "never": "Asla",
-    "stop": "Durdur",
-    "reopen": "Yeniden Aç",
     "sendFile": "Dosya Gönder",
     "share": "Paylaş",
-    "search": "Ara",
     "refresh": "Yenile",
     "close": "Kapat",
     "copy": "Kopyala",
     "open": "Aç",
-    "copyUrl": "URL'yi Kopyala",
     "download": "İndir",
     "next": "Sonraki",
     "previous": "Önceki",
-    "page": "Sayfa",
-    "home": "Ana Dizin",
-    "homes": "Ana Dizinler",
-    "sessions": "Oturumlar",
-    "users": "Kullanıcılar",
-    "admins": "Yöneticiler",
     "yes": "Evet",
     "no": "Hayır",
-    "daysAgo": "{count} gün önce",
-    "hoursAgo": "{count} saat önce",
-    "minutesAgo": "{count} dakika önce",
-    "justNow": "az önce",
-    "bytes": "Bayt",
-    "kb": "KB",
-    "mb": "MB",
-    "gb": "GB",
-    "tb": "TB",
-    "pb": "PB",
     "password": "Parola",
     "upload": "Yükle",
     "create": "Oluştur",
@@ -74,1128 +30,10 @@
     "remove": "Kaldır",
     "connect": "Bağlan"
   },
-  "options": {
-    "sidebar": {
-      "config": "Yapılandırma",
-      "home": "Ana Dizinler",
-      "sessions": "Aktif Oturumlar",
-      "pinned": "Sabitlenmiş Davranış",
-      "appStore": "Uygulama Mağazası",
-      "appTemplates": "Uygulama Şablonları",
-      "appLaboratory": "Uygulama Laboratuvarı",
-      "installedApps": "Yüklü Uygulamalar",
-      "users": "Kullanıcılar",
-      "groups": "Gruplar",
-      "admins": "Yöneticiler"
-    },
-    "dashboard": {
-      "title": "Kontrol Paneli",
-      "clientSettings": "İstemci Ayarları",
-      "exportConfig": "Yapılandırmayı Dışa Aktar",
-      "userStatus": "Kullanıcı Durumu",
-      "loggedInAs": "Giriş yapan:",
-      "role": "Rol",
-      "roleAdmin": "Yönetici",
-      "roleUser": "Standart Kullanıcı",
-      "serverInfo": "Sunucu Bilgisi",
-      "server": "Sunucu:",
-      "cpuModel": "CPU Modeli:",
-      "storageUsage": "Depolama Kullanımı:",
-      "detectedGpus": "Tespit Edilen GPU'lar:",
-      "logout": "Çıkış Yap ve Yapılandırmayı Temizle",
-      "howTo": "SealSkin Nasıl Kullanılır",
-      "howToDescription": "Bu bölüm, uzantının nasıl kullanılacağına dair temel belgeleri içerir.",
-      "howToList": [
-        "<strong>İçeriği izolasyonda açmak için:</strong> Herhangi bir bağlantıya, resme veya seçili metne sağ tıklayın ve \"SealSkin İzolasyonu\" içerik menüsünden bir seçenek belirleyin.",
-        "<strong>Bir indirmeyi izolasyona göndermek için:</strong> Sayfaya sağ tıklayın ve \"Sıradaki İndirmeyi İzolasyona Gönder\" seçeneğini seçin. İndireceğiniz bir sonraki dosya yakalanacak ve güvenli bir oturuma gönderilecektir.",
-        "<strong>Temiz bir uygulama başlatmak için:</strong> Tarayıcınızın araç çubuğundaki SealSkin simgesine tıklayın.",
-        "<strong>Kalıcı depolamayı yönetmek için:</strong> Birden fazla oturumda kullanılabilecek depolama birimleri oluşturmak ve silmek için bu sayfadaki \"Ana Dizinler\" sekmesini kullanın.",
-        "<strong>Başlatma seçeneklerini kaydetmek için:</strong> Belirli bir dosya türü (ör. .pdf) veya tüm URL'ler için bir uygulama başlatmadan önce açılır penceredeki \"Bu başlatma seçeneklerini kaydet\" kutusunu işaretleyin. Bu kaydedilmiş tercihleri \"Sabitlenmiş Davranış\" sekmesinde yönetin."
-      ],
-      "confirmLogout": "Çıkış yapmak istediğinizden emin misiniz? Bu, kaydedilmiş yapılandırmanızı bu tarayıcıdan temizleyecektir."
-    },
-    "config": {
-      "quickSetup": "Hızlı Kurulum",
-      "quickSetupDescription": "Yöneticiniz tarafından sağlanan yapılandırma dosyasını (.json) yükleyin veya uzantıyı otomatik olarak kurmak için içeriğini aşağıya yapıştırın.",
-      "uploadLabel": "Yapılandırma Dosyasını Yükle",
-      "pasteLabel": "Veya Yapılandırma Metnini Yapıştır",
-      "pastePlaceholder": "JSON yapılandırmanızı buraya yapıştırın...",
-      "applyButton": "Yapılandırmayı Uygula",
-      "manualLink": "Manuel Yapılandırma",
-      "advancedTitle": "İstemci Yapılandırması (Gelişmiş)",
-      "serverIpLabel": "Sunucu IP'si veya Alan Adı",
-      "serverIpPlaceholder": "örn. 192.168.1.100",
-      "apiPortLabel": "API Portu",
-      "apiPortPlaceholder": "örn. 8000",
-      "sessionPortLabel": "Oturum Portu",
-      "sessionPortPlaceholder": "örn. 8443",
-      "usernameLabel": "Kullanıcı Adı",
-      "usernamePlaceholder": "Kullanıcı adınız",
-      "privateKeyLabel": "Özel Anahtarınız (PEM Formatı)",
-      "privateKeyPlaceholder": "Özel anahtarınızın içeriğini buraya yapıştırın",
-      "serverKeyLabel": "Sunucu Açık Anahtarı (PEM Formatı)",
-      "serverKeyPlaceholder": "server_public.pem içeriğini buraya yapıştırın",
-      "searchEngineLabel": "Seçili Metin için Varsayılan Arama Motoru",
-      "saveButton": "Yapılandırmayı Kaydet",
-      "loginButton": "Giriş Yap ve Test Et",
-      "automaticLink": "Otomatik Yapılandırma",
-      "chooseFile": "Dosya Seç",
-      "keyGeneration": "Anahtar Oluşturma",
-      "keyGenDescription": "Bir anahtar çiftiniz yoksa, buradan bir tane oluşturabilirsiniz. Özel anahtar yukarıda doldurulacaktır. Açık anahtarı yöneticinize verin.",
-      "generateKeyButton": "Yeni Anahtar Çifti Oluştur",
-      "publicKeyForAdminLabel": "Açık Anahtarınız (yönetici için)"
-    },
-    "home": {
-      "title": "Ana Dizinleriniz",
-      "description": "Oturumlar arasında kullanmak için kalıcı depolama dizinleri oluşturun. Bunlar, uygulamalarınıza yapılandırma dizininiz olarak bağlanacaktır.",
-      "newTitle": "Yeni Ana Dizin Oluştur",
-      "nameLabel": "Dizin Adı:",
-      "namePlaceholder": "örn. proje-dosyalarim",
-      "nameTitle": "Sadece harf, rakam, alt çizgi veya tire kullanın.",
-      "createButton": "Dizin Oluştur",
-      "isLaboratory": "Bu, temel bir imajdan özel ayarlarla oluşturulmuş bir Laboratuvar uygulamasıdır.",
-      "laboratory": "Laboratuvar",
-      "confirmDelete": "'{appName}' yüklü uygulamasını silmek istediğinizden emin misiniz?"
-    },
-    "sessions": {
-      "title": "Aktif Oturumlar",
-      "application": "Uygulama",
-      "started": "Başlatıldı",
-      "noSessionsUser": "Aktif oturum bulunamadı.",
-      "noSessionsAdmin": "Hiçbir kullanıcı için aktif oturum bulunamadı.",
-      "sessionsFor": "{username} için oturumlar ({count})",
-      "confirmStop": "Bu oturumu durdurmak istediğinizden emin misiniz? Konteyner yok edilecek."
-    },
-    "pinned": {
-      "title": "Sabitlenmiş Uzantı Davranışı",
-      "description": "Bu tablo, belirli dosya türleri veya tüm URL'ler için kaydettiğiniz başlatma seçeneklerini gösterir. Başlatma seçeneklerinin tekrar sorulması için sabitlenmiş bir davranışı kaldırabilirsiniz.",
-      "trigger": "Tetikleyici",
-      "savedApp": "Kaydedilmiş Uygulama",
-      "triggerSimple": "Basit Başlatma (Araç Çubuğu Düğmesi)",
-      "triggerUrl": "Tüm URL'ler (içerik menüsünden)",
-      "triggerFile": "Dosya Türü: <strong>{fileType}</strong>",
-      "unknownApp": "Bilinmeyen Uygulama ({appId}...)"
-    },
-    "admins": {
-      "serverKeyTitle": "Sunucu Açık Anahtarı",
-      "serverKeyDescription": "Bu, kullanıcı yapılandırma dosyalarının bu sunucuya bağlanmak için ihtiyaç duyacağı açık anahtardır.",
-      "title": "Yönetici Yönetimi",
-      "searchPlaceholder": "Yöneticileri ara...",
-      "newTitle": "Yeni Yönetici Oluştur",
-      "publicKeyOptionalLabel": "Açık Anahtar (İsteğe Bağlı):",
-      "publicKeyPlaceholder": "Açık anahtarı buraya yapıştırın veya bir tane oluşturmak için boş bırakın.",
-      "createButton": "Yönetici Oluştur",
-      "confirmDelete": "'{username}' yöneticisini silmek istediğinizden emin misiniz? Bu, tüm kalıcı depolamasını da silecek ve geri alınamaz."
-    },
-    "users": {
-      "title": "Kullanıcı Yönetimi",
-      "searchPlaceholder": "Kullanıcıları isme veya gruba göre ara...",
-      "newTitle": "Yeni Kullanıcı Oluştur",
-      "publicKeyOptionalLabel": "Açık Anahtar (İsteğe Bağlı):",
-      "publicKeyPlaceholder": "Kullanıcının açık anahtarını buraya yapıştırın veya bir tane oluşturmak için boş bırakın.",
-      "settingsTitle": "Kullanıcı Ayarları",
-      "sessionLimitLabel": "Oturum limiti",
-      "sessionLimitTitle": "Bir kullanıcının sahip olabileceği aktif oturum sayısı. Sınırsız için -1.",
-      "permissionsTitle": "İzinler ve Güvenlik",
-      "activeAccount": "Aktif Hesap",
-      "allowStorage": "Kalıcı Depolamaya İzin Ver",
-      "allowGpu": "GPU Erişimine İzin Ver",
-      "hardenContainer": "Konteyneri Güçlendir",
-      "hardenWm": "Pencere Yöneticisini Güçlendir",
-      "createButton": "Kullanıcı Oluştur",
-      "homesDisabledTooltip": "Bu kullanıcı için kalıcı depolama devre dışı bırakıldı",
-      "confirmDelete": "'{username}' kullanıcısını silmek istediğinizden emin misiniz? Bu, tüm kalıcı depolamasını da silecek ve geri alınamaz.",
-      "allowPublicSharing": "Herkese Açık Dosya Paylaşımına İzin Ver"
-    },
-    "groups": {
-      "title": "Grup Yönetimi",
-      "searchPlaceholder": "Grupları ara...",
-      "newTitle": "Yeni Grup Oluştur",
-      "nameLabel": "Grup Adı:",
-      "overrideTitle": "Grup Geçersiz Kılma Ayarları",
-      "permissionsTitle": "İzinler ve Güvenlik Geçersiz Kılmaları",
-      "createButton": "Grup Oluştur",
-      "confirmDelete": "'{groupName}' grubunu silmek istediğinizden emin misiniz? Bu gruptaki kullanıcılar bireysel ayarlarına geri dönecektir."
-    },
-    "installedApps": {
-      "title": "Yüklü Uygulamalar",
-      "searchPlaceholder": "Yüklü uygulamaları ara...",
-      "noAppsFound": "Yüklü uygulama bulunamadı.",
-      "pulling": "Yeni imaj çekiliyor...",
-      "notLocal": "İmaj yerel olarak bulunamadı",
-      "confirmDelete": "'{appName}' yüklü uygulamasını silmek istediğinizden emin misiniz?"
-    },
-    "appStore": {
-      "title": "Uygulama Mağazaları",
-      "refreshTitle": "Seçili mağazayı yenile",
-      "selectLabel": "Uygulama Mağazası Seç",
-      "addLabel": "Yeni Uygulama Mağazası Ekle",
-      "namePlaceholder": "Mağaza Adı",
-      "urlPlaceholder": "Mağaza YAML URL'si",
-      "availableTitle": "Mevcut Uygulamalar",
-      "addManual": "Manuel Uygulama Ekle",
-      "searchPlaceholder": "Mevcut uygulamaları ara...",
-      "noAppsFound": "Uygulama bulunamadı.",
-      "availableFrom": "{storeName} mağazasındaki Mevcut Uygulamalar",
-      "couldNotLoad": "Bu mağazadan uygulamalar yüklenemedi."
-    },
-    "appTemplates": {
-      "title": "Uygulama Şablonu Düzenleyici",
-      "loadLabel": "Şablon Yükle",
-      "createOption": "Yeni Şablon Oluştur",
-      "nameLabel": "Şablon Adı",
-      "namePlaceholder": "Yeni şablon için bir isim girin",
-      "saveButton": "Profili Kaydet",
-      "deleteButton": "Sil",
-      "previewTitle": "Arayüz Önizlemesi",
-      "contentArea": "Uygulama İçerik Alanı",
-      "confirmDelete": "'{templateName}' şablonunu silmek istediğinizden emin misiniz? Bu işlem geri alınamaz.",
-      "deleteDisabled": "Bu şablon silinemez.",
-      "enterName": "Lütfen yeni şablon için bir isim girin.",
-      "settings": {
-        "TITLE": {
-          "label": "Sayfa Başlığı",
-          "description": "Web tarayıcısında görüntülenen sayfa başlığı."
-        },
-        "SELKIES_UI_TITLE": {
-          "label": "Kenar Çubuğu Başlığı",
-          "description": "Kenar çubuğunun sol üst köşesindeki başlık."
-        },
-        "SELKIES_UI_SHOW_SIDEBAR": {
-          "label": "Kenar Çubuğunu Göster",
-          "description": "Ana kenar çubuğu arayüzünü göster."
-        },
-        "SELKIES_UI_SHOW_LOGO": {
-          "label": "Logoyu Göster",
-          "description": "Kenar çubuğunda Selkies logosunu göster."
-        },
-        "SELKIES_UI_SHOW_CORE_BUTTONS": {
-          "label": "Çekirdek Düğmeleri Göster",
-          "description": "Çekirdek bileşen düğmelerini (ekran, ses vb.) göster."
-        },
-        "SELKIES_UI_SIDEBAR_SHOW_VIDEO_SETTINGS": {
-          "label": "Video Ayarlarını Göster",
-          "description": "Kenar çubuğunda video ayarları bölümünü göster."
-        },
-        "SELKIES_UI_SIDEBAR_SHOW_SCREEN_SETTINGS": {
-          "label": "Ekran Ayarlarını Göster",
-          "description": "Kenar çubuğunda ekran ayarları bölümünü göster."
-        },
-        "SELKIES_UI_SIDEBAR_SHOW_AUDIO_SETTINGS": {
-          "label": "Ses Ayarlarını Göster",
-          "description": "Kenar çubuğunda ses ayarları bölümünü göster."
-        },
-        "SELKIES_UI_SIDEBAR_SHOW_STATS": {
-          "label": "İstatistikleri Göster",
-          "description": "Kenar çubuğunda istatistikler bölümünü göster."
-        },
-        "SELKIES_UI_SIDEBAR_SHOW_SHORTCUTS": {
-          "label": "Klavye Kısayolları Bölümünü Göster",
-          "description": "Kenar çubuğunda klavye kısayolları bölümünü göster."
-        },
-        "SELKIES_UI_SIDEBAR_SHOW_CLIPBOARD": {
-          "label": "Panoyu Göster",
-          "description": "Kenar çubuğunda pano bölümünü göster."
-        },
-        "SELKIES_UI_SIDEBAR_SHOW_FILES": {
-          "label": "Dosyalar Bölümünü Göster",
-          "description": "Kenar çubuğunda dosya aktarımı bölümünü göster."
-        },
-        "SELKIES_UI_SIDEBAR_SHOW_APPS": {
-          "label": "Uygulamalar Bölümünü Göster",
-          "description": "Kenar çubuğunda uygulamalar bölümünü göster."
-        },
-        "SELKIES_UI_SIDEBAR_SHOW_SHARING": {
-          "label": "Paylaşım Bölümünü Göster",
-          "description": "Kenar çubuğunda paylaşım bölümünü göster."
-        },
-        "SELKIES_UI_SIDEBAR_SHOW_GAMEPADS": {
-          "label": "Oyun Kumandaları Bölümünü Göster",
-          "description": "Kenar çubuğunda oyun kumandaları bölümünü göster."
-        },
-        "SELKIES_UI_SIDEBAR_SHOW_FULLSCREEN": {
-          "label": "Tam Ekran Düğmesini Göster",
-          "description": "Kenar çubuğunda tam ekran düğmesini göster."
-        },
-        "SELKIES_UI_SIDEBAR_SHOW_GAMING_MODE": {
-          "label": "Oyun Modu Düğmesini Göster",
-          "description": "Kenar çubuğunda oyun modu (imleç kilidi) düğmesini göster."
-        },
-        "SELKIES_UI_SIDEBAR_SHOW_TRACKPAD": {
-          "label": "Dokunmatik Yüzey Düğmesini Göster",
-          "description": "Kenar çubuğunda sanal dokunmatik yüzey düğmesini göster."
-        },
-        "SELKIES_UI_SIDEBAR_SHOW_KEYBOARD_BUTTON": {
-          "label": "Klavye Düğmesini Göster",
-          "description": "Ekran klavyesi düğmesini göster."
-        },
-        "SELKIES_UI_SIDEBAR_SHOW_SOFT_BUTTONS": {
-          "label": "Sanal Düğmeleri Göster",
-          "description": "Sanal düğmeler bölümünü göster (mobil için)."
-        },
-        "WATERMARK_PNG": {
-          "label": "Filigran PNG Yolu",
-          "description": "Konteyner içinde bir filigran png dosyasına tam yol."
-        },
-        "WATERMARK_LOCATION": {
-          "label": "Filigran Konumu",
-          "description": "Görüntüyü akışın üzerine nerede çizileceği.",
-          "options": {
-            "disabled": "Devre Dışı",
-            "topLeft": "Sol Üst",
-            "topRight": "Sağ Üst",
-            "bottomLeft": "Sol Alt",
-            "bottomRight": "Sağ Alt",
-            "centered": "Ortalanmış",
-            "animated": "Animasyonlu"
-          }
-        },
-        "DASHBOARD": {
-          "label": "Kontrol Paneli Stili",
-          "description": "Kullanıcının kontrol panelini ayarlamasına izin verir.",
-          "options": {
-            "default": "Varsayılan",
-            "selkiesDefault": "Selkies (Varsayılan)",
-            "wish": "Wish"
-          }
-        },
-        "SELKIES_AUDIO_ENABLED": {
-          "label": "Sesi Etkinleştir",
-          "description": "Sunucudan istemciye ses akışını etkinleştir."
-        },
-        "SELKIES_MICROPHONE_ENABLED": {
-          "label": "Mikrofonu Etkinleştir",
-          "description": "İstemciden sunucuya mikrofon yönlendirmesini etkinleştir. Yukarı akışta varsayılan olarak kapalıdır."
-        },
-        "SELKIES_GAMEPAD_ENABLED": {
-          "label": "Oyun Kumandasını Etkinleştir",
-          "description": "Oyun kumandası desteğini etkinleştir."
-        },
-        "SELKIES_ENABLE_CLIPBOARD": {
-          "label": "Pano Politikası",
-          "description": "Hangi pano yönlerine izin verildiği. 'Yalnızca sunucudan istemciye' ayrıca sayfanın yerel panoyu okumasını engeller; Firefox ve Safari'de yapıştırma istemlerini tetikleyen de budur.",
-          "options": {
-            "both": "Her iki yön",
-            "inOnly": "Yalnızca istemciden sunucuya",
-            "outOnly": "Yalnızca sunucudan istemciye",
-            "disabled": "Devre Dışı"
-          }
-        },
-        "SELKIES_ENABLE_BINARY_CLIPBOARD": {
-          "label": "İkili Panoyu Etkinleştir",
-          "description": "Panoda ikili verilere (resimler) izin ver."
-        },
-        "SELKIES_COMMAND_ENABLED": {
-          "label": "Komut Websocket'ini Etkinleştir",
-          "description": "Komut websocket mesajlarının ayrıştırılmasını etkinleştir."
-        },
-        "SELKIES_FILE_TRANSFERS": {
-          "label": "Dosya Aktarımları",
-          "description": "İzin verilen yönler ('upload,download', 'upload', 'download' veya 'none'). Burada ayarlanmadıkça Masaüstünü Güçlendir tarafından boşaltılır."
-        },
-        "SELKIES_FILE_TRANSFER_LIMIT_MBPS": {
-          "label": "Dosya Aktarım Sınırı (Mbit/s)",
-          "description": "Tüm yüklemeler ve indirmeler tarafından paylaşılan sabit kısıtlama. 0 sınırı devre dışı bırakır."
-        },
-        "SELKIES_ENABLE_SHARING": {
-          "label": "Tüm Paylaşımı Etkinleştir",
-          "description": "Tüm paylaşım özellikleri için ana anahtar."
-        },
-        "SELKIES_ENABLE_SHARED": {
-          "label": "Salt Görüntüleme Paylaşımını Etkinleştir",
-          "description": "Salt görüntüleme paylaşım bağlantılarını etkinleştir."
-        },
-        "SELKIES_ENABLE_COLLAB": {
-          "label": "İş Birliğini Etkinleştir",
-          "description": "Oturumun ana belirtecine sahip bir izleyicinin okuma-yazma yetkili bir iş birlikçi olarak hareket etmesine izin ver. SealSkin odaları için gereklidir."
-        },
-        "SELKIES_ENABLE_PLAYER2": {
-          "label": "2. Oyuncu Paylaşımını Etkinleştir",
-          "description": "Oyun kumandası 2. oyuncu için paylaşım bağlantısını etkinleştir."
-        },
-        "SELKIES_ENABLE_PLAYER3": {
-          "label": "3. Oyuncu Paylaşımını Etkinleştir",
-          "description": "Oyun kumandası 3. oyuncu için paylaşım bağlantısını etkinleştir."
-        },
-        "SELKIES_ENABLE_PLAYER4": {
-          "label": "4. Oyuncu Paylaşımını Etkinleştir",
-          "description": "Oyun kumandası 4. oyuncu için paylaşım bağlantısını etkinleştir."
-        },
-        "SELKIES_SECOND_SCREEN": {
-          "label": "İkinci Ekranı Etkinleştir",
-          "description": "İkinci bir monitör/ekran için destek etkinleştir."
-        },
-        "SELKIES_ENABLE_RESIZE": {
-          "label": "Dinamik Yeniden Boyutlandırmayı Etkinleştir",
-          "description": "Uzak ekranı tarayıcı penceresine uyacak şekilde yeniden boyutlandır."
-        },
-        "SELKIES_USE_BROWSER_CURSORS": {
-          "label": "Tarayıcı İmleçlerini Kullan",
-          "description": "Tuvale render etmek yerine tarayıcı CSS imleçlerini kullan."
-        },
-        "SELKIES_ENABLE_CURSORS": {
-          "label": "Uzak İmleçleri Etkinleştir",
-          "description": "Uygulamanın kendi imleç şekillerini istemciye gönder."
-        },
-        "SELKIES_CURSOR_SIZE": {
-          "label": "İmleç Boyutu",
-          "description": "96 DPI'da punto cinsinden imleç boyutu, oturum DPI'sına göre ölçeklenir. -1 platform varsayılanını kullanır (X11'de 32, Wayland'de 24)."
-        },
-        "SELKIES_USE_CSS_SCALING": {
-          "label": "CSS Ölçeklendirme Kullan (LoDPI)",
-          "description": "Eğer doğruysa, daha düşük bir çözünürlük gönderilir ve tuval gerilir."
-        },
-        "SELKIES_MANUAL_RESOLUTION": {
-          "label": "Manuel Çözünürlük Modu",
-          "description": "Çözünürlüğü manuel genişlik/yükseklik değerlerine kilitle."
-        },
-        "SELKIES_FORCE_ALIGNED_RESOLUTION": {
-          "label": "Hizalanmış Çözünürlüğü Zorla",
-          "description": "Ekran çözünürlüğünün 16 pikselin katı olmasını zorlar."
-        },
-        "SELKIES_MANUAL_WIDTH": {
-          "label": "Manuel Genişlik",
-          "description": "Genişliği sabit bir değere kilitle. Manuel modu zorlar."
-        },
-        "SELKIES_MANUAL_HEIGHT": {
-          "label": "Manuel Yükseklik",
-          "description": "Yüksekliği sabit bir değere kilitle. Manuel modu zorlar."
-        },
-        "SELKIES_SCALING_DPI": {
-          "label": "Arayüz Ölçeklendirme DPI",
-          "description": "Arayüz ölçeklendirmesi için varsayılan DPI."
-        },
-        "SELKIES_AUDIO_BITRATE": {
-          "label": "Ses Bit Hızı",
-          "description": "Varsayılan Opus ses bit hızı."
-        },
-        "SELKIES_AUDIO_FRAME_DURATION_MS": {
-          "label": "Ses Çerçeve Süresi",
-          "description": "Opus çerçeve süresi. Daha düşük değerler, küçük bir bant genişliği ve paket hızı maliyetiyle ses gecikmesini azaltır."
-        },
-        "SELKIES_AUDIO_CHANNELS": {
-          "label": "Ses Kanalları",
-          "description": "Ses kanalı sayısı; 2 stereodur."
-        },
-        "SELKIES_AUDIO_REDUNDANCY": {
-          "label": "Ses Yedekliliği (Opus RED)",
-          "description": "Paket kaybında kesintileri azaltmak için önceki ses çerçevelerini yedek olarak taşı."
-        },
-        "SELKIES_AUDIO_REDUNDANCY_DISTANCE": {
-          "label": "Ses Yedeklilik Mesafesi",
-          "description": "Yedek olarak taşınan önceki çerçeve sayısı (0-4). Daha yüksek değerler, orantılı olarak daha fazla bant genişliği karşılığında daha uzun kayıp patlamalarına dayanır."
-        },
-        "SELKIES_ENCODER": {
-          "label": "Kodlayıcılar",
-          "description": "Virgülle ayrılmış izin verilen kodlayıcı listesi (h264enc, h264enc-striped, jpeg). Birincisi varsayılandır; tek bir değer seçimi kilitler. Yalnızca h264enc WebRTC üzerinden akar."
-        },
-        "SELKIES_USE_CPU": {
-          "label": "CPU Kodlamasını Zorla",
-          "description": "Pixelflux için CPU tabanlı kodlamayı zorla."
-        },
-        "SELKIES_FRAMERATE": {
-          "label": "Kare Hızı (Aralık veya Sabit)",
-          "description": "örn. bir aralık için '8-240', sabit bir başlangıç değeri için '60', her ikisi için '60,8-240'; '60-60' kilitler."
-        },
-        "SELKIES_RATE_CONTROL_MODE": {
-          "label": "Hız Kontrol Modu",
-          "description": "Varsayılan H.264 hız kontrolü: sabit kalite (CRF) veya sabit bit hızı (CBR).",
-          "options": {
-            "crf": "Sabit kalite (CRF)",
-            "cbr": "Sabit bit hızı (CBR)"
-          }
-        },
-        "SELKIES_ENABLE_RATE_CONTROL": {
-          "label": "Hız Kontrolü Geçişine İzin Ver",
-          "description": "İstemcilerin CRF ve CBR arasında geçiş yapmasına izin ver. Kapalı, kodlayıcıyı yerleşik varsayılanına kilitler."
-        },
-        "SELKIES_VIDEO_CRF": {
-          "label": "Video CRF (Aralık veya Sabit)",
-          "description": "H.264 sabit kalite: bir aralık için '5-50', sabit bir başlangıç değeri için '25' veya her ikisi için '25,5-50'."
-        },
-        "SELKIES_VIDEO_BITRATE": {
-          "label": "Video Bit Hızı kbps (Aralık veya Sabit)",
-          "description": "Saniyede kilobit cinsinden CBR bit hızı: bir aralık için '100-1000000', sabit bir başlangıç değeri için '8000' veya her ikisi için '8000,100-1000000'."
-        },
-        "SELKIES_VIDEO_MIN_QP": {
-          "label": "Video Minimum QP",
-          "description": "CBR modunda minimum H.264 niceleyici (0 = kodlayıcı varsayılanı). Yükseltmek, kolay içerikte harcanan bitleri sınırlar."
-        },
-        "SELKIES_VIDEO_MAX_QP": {
-          "label": "Video Maksimum QP",
-          "description": "CBR modunda maksimum H.264 niceleyici (0 = kodlayıcı varsayılanı). Düşürmek, bit hızı hedefini aşma pahasına hareket sırasında metni okunabilir tutar."
-        },
-        "SELKIES_KEYFRAME_INTERVAL": {
-          "label": "Anahtar Kare Aralığı (saniye)",
-          "description": "Zamanlanmış kurtarma anahtar kareleri arasındaki saniye. 0, GOP'u sonsuz tutar ve anahtar kareleri yalnızca istek üzerine gönderir."
-        },
-        "SELKIES_JPEG_QUALITY": {
-          "label": "JPEG Kalitesi (Aralık veya Sabit)",
-          "description": "Bir aralık için '1-100', sabit bir başlangıç değeri için '40' veya her ikisi için '40,1-100'."
-        },
-        "SELKIES_VIDEO_FULLCOLOR": {
-          "label": "Video Tam Renk (4:4:4)",
-          "description": "H.264'ü 4:2:0 yerine 4:4:4 renk örneklemesiyle kodla. Bu açık olarak kilitlendiğinde 4:4:4 çözücüsü olmayan istemciler JPEG'e geri döner."
-        },
-        "SELKIES_VIDEO_STREAMING_MODE": {
-          "label": "Video Akış (Turbo) Modu",
-          "description": "Yalnızca değişen bölgeler yerine her kareyi geleneksel bir video kodlayıcı gibi kodla."
-        },
-        "SELKIES_USE_PAINT_OVER_QUALITY": {
-          "label": "Üzerine Boyama Kalitesi Kullan",
-          "description": "Statik sahneler için yüksek kaliteli üzerine boyamayı etkinleştir."
-        },
-        "SELKIES_PAINT_OVER_JPEG_QUALITY": {
-          "label": "Üzerine Boyama JPEG Kalitesi",
-          "description": "Bir aralık için '1-100', sabit bir başlangıç değeri için '90' veya her ikisi için '90,1-100'."
-        },
-        "SELKIES_VIDEO_PAINTOVER_CRF": {
-          "label": "Üzerine Boyama Video CRF",
-          "description": "Bir aralık için '5-50', sabit bir başlangıç değeri için '18' veya her ikisi için '18,5-50'."
-        },
-        "SELKIES_VIDEO_PAINTOVER_BURST_FRAMES": {
-          "label": "Üzerine Boyama Seri Çekim Kareleri",
-          "description": "Bir aralık için '1-30', sabit bir başlangıç değeri için '5' veya her ikisi için '5,1-30'."
-        },
-        "SELKIES_BACKPRESSURE_QUEUE_SIZE": {
-          "label": "Geri Basınç Kuyruğu Boyutu",
-          "description": "Geri basınç altında düşürülmeden önce akış başına arabelleğe alınan kareler ve ses parçaları (WebSockets modu). Daha yüksek değerler, gecikme pahasına istemci takılmalarına tolerans gösterir."
-        },
-        "SELKIES_WEBCAM_WIDTH": {
-          "label": "Web Kamerası Genişliği",
-          "description": "Sanal web kamerası aygıtının genişliği; istemci kareleri sığacak şekilde ölçeklenir ve kenarlanır."
-        },
-        "SELKIES_WEBCAM_HEIGHT": {
-          "label": "Web Kamerası Yüksekliği",
-          "description": "Sanal web kamerası aygıtının yüksekliği; istemci kareleri sığacak şekilde ölçeklenir ve kenarlanır."
-        },
-        "SELKIES_WEBCAM_ENCODER": {
-          "label": "Web Kamerası Yükleme Kodlayıcısı",
-          "description": "WebSocket istemcilerinin kamera karelerini göndermek için kullandığı codec. Otomatik, tarayıcının sürdürebileceği en iyisini seçer.",
-          "options": {
-            "auto": "Otomatik"
-          }
-        },
-        "SELKIES_WEBCAM_PIXEL_FORMAT": {
-          "label": "Web Kamerası Piksel Formatı",
-          "description": "Sanal web kamerası aygıtının piksel formatı. Otomatik, istemcinin gönderdiğini izler.",
-          "options": {
-            "auto": "Otomatik"
-          }
-        },
-        "HARDEN_DESKTOP": {
-          "label": "Masaüstünü Güçlendir (Ön Ayar)",
-          "description": "DISABLE_OPEN_TOOLS, DISABLE_SUDO ve DISABLE_TERMINALS'ı etkinleştirir ve açıkça ayarlanmadıkça dosya aktarımlarını, komut websocket'ini ve kenar çubuğundaki dosyalar ve uygulamalar bölümlerini de devre dışı bırakır. Konteyneri Güçlendir yetkisine sahip kullanıcılar için zorunlu olarak açıktır."
-        },
-        "HARDEN_OPENBOX": {
-          "label": "Pencere Yöneticisini Güçlendir (Ön Ayar)",
-          "description": "Openbox ve labwc için DISABLE_CLOSE_BUTTON, DISABLE_MOUSE_BUTTONS ve HARDEN_KEYBINDS'ı, açıkça ayarlanmadıkça RESTART_APP'ı da etkinleştirir. Pencere Yöneticisini Güçlendir yetkisine sahip kullanıcılar için zorunlu olarak açıktır."
-        },
-        "DISABLE_OPEN_TOOLS": {
-          "label": "Açma Araçlarını Devre Dışı Bırak",
-          "description": "xdg-open ve exo-open ikili dosyalarını devre dışı bırakır."
-        },
-        "DISABLE_SUDO": {
-          "label": "Sudo'yu Devre Dışı Bırak",
-          "description": "sudo komutunu devre dışı bırakır."
-        },
-        "DISABLE_TERMINALS": {
-          "label": "Terminalleri Devre Dışı Bırak",
-          "description": "Yaygın terminal emülatörlerini devre dışı bırakır."
-        },
-        "DISABLE_CLOSE_BUTTON": {
-          "label": "Pencere Kapatma Düğmesini Devre Dışı Bırak",
-          "description": "Pencere başlık çubuklarından kapatma düğmesini kaldırır."
-        },
-        "DISABLE_MOUSE_BUTTONS": {
-          "label": "Sağ/Orta Tıklamayı Devre Dışı Bırak",
-          "description": "Sağ tıklama ve orta tıklama içerik menülerini devre dışı bırakır."
-        },
-        "HARDEN_KEYBINDS": {
-          "label": "Klavye Kısayollarını Güçlendir",
-          "description": "Alt+F4, Alt+Escape, Alt+Space ve Super+E gibi pencere yöneticisi klavye kısayollarını devre dışı bırakır ve pencere yöneticisi yapılandırmasını kilitler."
-        },
-        "RESTART_APP": {
-          "label": "Kapatıldığında Uygulamayı Yeniden Başlat",
-          "description": "Ana uygulama kapatılırsa otomatik olarak yeniden başlatır ve otomatik başlatma dosyasını salt okunur yapar."
-        },
-        "MAX_RES": {
-          "label": "Maksimum Çözünürlük",
-          "description": "Konteyner için maksimum çözünürlük, varsayılan 16k'dır."
-        },
-        "START_DOCKER": {
-          "label": "Docker-in-Docker'ı Başlat",
-          "description": "Eğer yanlışsa, ayrıcalıklı bir konteyner DinD'yi başlatmaz."
-        },
-        "DISABLE_IPV6": {
-          "label": "IPv6'yı Devre Dışı Bırak",
-          "description": "Eğer doğruysa, bu IPv6'yı devre dışı bırakacaktır."
-        },
-        "DISABLE_ZINK": {
-          "label": "Zink'i Devre Dışı Bırak",
-          "description": "Bir video kartı algılanırsa Zink ortam değişkenlerini ayarlama."
-        },
-        "DISABLE_DRI3": {
-          "label": "DRI3'ü Devre Dışı Bırak",
-          "description": "Bir video kartı algılanırsa DRI3 hızlandırmasını kullanma."
-        },
-        "AUTO_GPU": {
-          "label": "Otomatik GPU Seçimi",
-          "description": "'true' ilk GPU'da render eder, 'false' devre dışı bırakır; bir üretici, sürücü veya PCI üretici kimliği (nvidia, amdgpu, 0x10de) belirli birini seçer."
-        },
-        "NO_DECOR": {
-          "label": "Pencere Dekorasyonu Yok",
-          "description": "Uygulamayı PWA kullanımı için pencere kenarlıkları olmadan çalıştır."
-        },
-        "NO_FULL": {
-          "label": "Tam Ekran Yok",
-          "description": "Uygulamaları otomatik olarak tam ekran yapma."
-        },
-        "NO_GAMEPAD": {
-          "label": "Oyun Kumandası Enjeksiyonunu Devre Dışı Bırak",
-          "description": "Kullanıcı alanı oyun kumandası aracını atla. Ayrıca oyun kumandası bölümünü ve oyuncu paylaşım bağlantılarını gizler."
-        },
-        "NO_WEBCAM": {
-          "label": "Web Kamerası Enjeksiyonunu Devre Dışı Bırak",
-          "description": "Sanal web kamerası aygıtını ve aracını atla. Ayrıca web kamerası düğmesini gizler."
-        },
-        "SELKIES_RUN_AFTER_CONNECT": {
-          "label": "Bağlantıdan Sonra Çalıştır",
-          "description": "İlk istemci bağlandığında konteyner içinde çalıştırılan kabuk komutu."
-        },
-        "SELKIES_RUN_AFTER_DISCONNECT": {
-          "label": "Bağlantı Kesildikten Sonra Çalıştır",
-          "description": "Son istemcinin bağlantısı kesildiğinde konteyner içinde çalıştırılan kabuk komutu."
-        },
-        "SELKIES_DEBUG": {
-          "label": "Selkies Hata Ayıklamayı Etkinleştir",
-          "description": "Akış bileşenleri için hata ayıklama günlüğünü etkinleştir."
-        },
-        "SELKIES_MODE": {
-          "label": "Akış Modu",
-          "description": "Varsayılan olarak kullanılan aktarım. Otomatik, herhangi bir TURN/STUN değeri ayarlandığında WebRTC'yi, aksi halde WebSockets'i seçer.",
-          "options": {
-            "auto": "Otomatik",
-            "websockets": "WebSockets",
-            "webrtc": "WebRTC"
-          }
-        },
-        "SELKIES_ENABLE_DUAL_MODE": {
-          "label": "Çift Mod",
-          "description": "Kullanıcıların kenar çubuğundan WebRTC ve WebSockets arasında geçiş yapmasına izin ver. Otomatik, yalnızca WebRTC yapılandırıldığında etkinleştirir.",
-          "options": {
-            "auto": "Otomatik",
-            "enabled": "Etkin",
-            "disabled": "Devre Dışı"
-          }
-        },
-        "SELKIES_WEBRTC_PACER": {
-          "label": "WebRTC Hız Düzenleyici",
-          "description": "Tıkanık bağlantılarda ses ve girişin video patlamalarından korunması için giden WebRTC paketlerini katı önceliklerle düzenle."
-        },
-        "SELKIES_CONGESTION_CONTROL": {
-          "label": "Tıkanıklık Kontrolü",
-          "description": "Video bit hızını WebRTC alıcı geri bildiriminden gelen bant genişliği tahminine uyarla. CBR modunda etkilidir."
-        },
-        "SELKIES_STUN_HOST": {
-          "label": "STUN Sunucusu",
-          "description": "NAT geçişi için STUN sunucusu. İnternet erişimi olmayan ağlarda dahili bir sunucuya yönlendirin."
-        },
-        "SELKIES_STUN_PORT": {
-          "label": "STUN Portu",
-          "description": "STUN sunucusunun portu."
-        },
-        "SELKIES_TURN_HOST": {
-          "label": "TURN Sunucusu",
-          "description": "Paylaşılan gizli anahtar veya uzun süreli kimlik bilgileriyle kullanılan TURN sunucusu. IPv6 adreslerini köşeli parantez içine alın."
-        },
-        "SELKIES_TURN_PORT": {
-          "label": "TURN Portu",
-          "description": "TURN sunucusunun portu."
-        },
-        "SELKIES_TURN_PROTOCOL": {
-          "label": "TURN Protokolü",
-          "description": "İstemcinin TURN'e ulaşmak için kullandığı aktarım. UDP şiddetle önerilir; TCP'yi yalnızca UDP'nin engellendiği yerlerde kullanın."
-        },
-        "SELKIES_TURN_TLS": {
-          "label": "TLS/DTLS Üzerinden TURN",
-          "description": "TURN'ü TLS (TCP) veya DTLS (UDP) üzerinden kullan. TURN sunucusunda geçerli bir sertifika gerektirir."
-        },
-        "SELKIES_TURN_SHARED_SECRET": {
-          "label": "TURN Paylaşılan Gizli Anahtar",
-          "description": "Süreli HMAC TURN kimlik bilgileri oluşturmak için kullanılan paylaşılan gizli anahtar."
-        },
-        "SELKIES_TURN_USERNAME": {
-          "label": "TURN Kullanıcı Adı",
-          "description": "Eski tip uzun süreli TURN kimlik bilgisi kullanıcı adı."
-        },
-        "SELKIES_TURN_PASSWORD": {
-          "label": "TURN Parolası",
-          "description": "Eski tip uzun süreli TURN kimlik bilgisi parolası."
-        },
-        "SELKIES_TURN_REST_URI": {
-          "label": "TURN REST API URI'si",
-          "description": "Bir TURN REST kimlik bilgisi hizmetinin URI'si, örn. http://localhost:8008."
-        },
-        "SELKIES_TURN_REST_API_KEY": {
-          "label": "TURN REST API Anahtarı",
-          "description": "TURN REST hizmetine gönderilen API anahtarı."
-        },
-        "SELKIES_TURN_REST_USERNAME": {
-          "label": "TURN REST Kullanıcı Adı",
-          "description": "TURN REST hizmetinin kimlik bilgisine gömdüğü kullanıcı adı. Boş bırakılırsa 'selkies' kullanılır."
-        },
-        "SELKIES_WEBRTC_PUBLIC_IP": {
-          "label": "WebRTC Genel IP",
-          "description": "Statik 1:1 NAT arkasındaki bir sunucu için ana bilgisayar ICE adaylarında duyurulacak genel adres. Bir IPv4 ve/veya bir IPv6 adresi."
-        },
-        "SELKIES_ENABLE_CLOUDFLARE_TURN": {
-          "label": "Cloudflare TURN'ü Etkinleştir",
-          "description": "Cloudflare TURN hizmetini kullan. Aşağıdaki belirteç kimliğini ve API belirtecini gerektirir."
-        },
-        "SELKIES_CLOUDFLARE_TURN_TOKEN_ID": {
-          "label": "Cloudflare TURN Belirteç Kimliği",
-          "description": "Cloudflare TURN uygulaması belirteç kimliği."
-        },
-        "SELKIES_CLOUDFLARE_TURN_API_TOKEN": {
-          "label": "Cloudflare TURN API Belirteci",
-          "description": "Cloudflare TURN API belirteci."
-        },
-        "SELKIES_RTC_CONFIG_JSON": {
-          "label": "RTC Yapılandırma JSON Yolu",
-          "description": "WebRTC yapılandırmasını içeren bir JSON dosyasının konteyner içindeki yolu. Diğer tüm STUN/TURN ayarlarını geçersiz kılar ve periyodik olarak yeniden okunur."
-        },
-        "DOCKER_PRIVILEGED": {
-          "label": "Ayrıcalıklı Mod",
-          "description": "Konteynere tüm yetkileri ver, cgroup kısıtlamalarını kaldır, tüm ana cihazları bağla. Bu bir şeyleri bozabilir!"
-        },
-        "DOCKER_BIND_MOUNTS": {
-          "label": "Ekstra Bağlama Bağlantıları",
-          "description": "Ekstra ana bilgisayar bağlantıları (virgülle ayrılmış, örn. /host/path:/container/path:ro)."
-        },
-        "DOCKER_ENV": {
-          "label": "Ortam Değişkenleri",
-          "description": "Ekstra ortam değişkenleri (virgülle ayrılmış, örn. KEY=VALUE,KEY2=VALUE2)."
-        },
-        "DOCKER_CAP_ADD": {
-          "label": "Cap Ekle",
-          "description": "Çekirdek yetenekleri ekle (virgülle ayrılmış, örn. SYS_ADMIN,MKNOD)."
-        },
-        "DOCKER_CAP_DROP": {
-          "label": "Cap Kaldır",
-          "description": "Çekirdek yetenekleri kaldır (virgülle ayrılmış)."
-        },
-        "DOCKER_SECURITY_OPT": {
-          "label": "Güvenlik Seçenekleri",
-          "description": "Güvenlik seçenekleri (virgülle ayrılmış, örn. seccomp=unconfined,apparmor=unconfined)."
-        },
-        "DOCKER_DEVICES": {
-          "label": "Cihazlar",
-          "description": "Ana bilgisayar cihazlarını göster (virgülle ayrılmış, örn. /dev/sda:/dev/xvda:rwm)."
-        },
-        "DOCKER_SHM_SIZE": {
-          "label": "SHM Boyutu",
-          "description": "/dev/shm boyutu (örn. 1G, 2G)."
-        },
-        "DOCKER_MEM_LIMIT": {
-          "label": "Bellek Sınırı",
-          "description": "Bellek sınırı (örn. 1g, 512m)."
-        },
-        "DOCKER_CPU_SHARES": {
-          "label": "CPU Payları",
-          "description": "CPU payları (göreli ağırlık tam sayısı)."
-        },
-        "DOCKER_NANO_CPUS": {
-          "label": "Nano CPU'lar",
-          "description": "1e-9 CPU biriminde CPU kotası."
-        },
-        "DOCKER_NETWORK_MODE": {
-          "label": "Ağ Modu",
-          "description": "Konteyner için ağ modu.",
-          "options": {
-            "default": "Varsayılan (Bridge)",
-            "host": "Host",
-            "none": "Yok",
-            "bridge": "Bridge"
-          }
-        },
-        "DOCKER_IPC_MODE": {
-          "label": "IPC Modu",
-          "description": "Konteyner için IPC modunu ayarla.",
-          "options": {
-            "default": "Varsayılan",
-            "host": "Host",
-            "private": "Özel",
-            "shareable": "Paylaşılabilir"
-          }
-        },
-        "DOCKER_PID_MODE": {
-          "label": "PID Modu",
-          "description": "Konteyner için PID modunu ayarla.",
-          "options": {
-            "default": "Varsayılan",
-            "host": "Host"
-          }
-        },
-        "DOCKER_DNS": {
-          "label": "DNS Sunucuları",
-          "description": "Özel DNS sunucuları (virgülle ayrılmış)."
-        },
-        "DOCKER_EXTRA_HOSTS": {
-          "label": "Ekstra Hostlar",
-          "description": "Host - IP eşleşmeleri (virgülle ayrılmış, örn. hostname:1.2.3.4)."
-        },
-        "DOCKER_SYSCTLS": {
-          "label": "Sysctls",
-          "description": "Çekirdek parametreleri (virgülle ayrılmış, örn. net.ipv4.ip_forward=1)."
-        },
-        "DOCKER_ULIMITS": {
-          "label": "Ulimits",
-          "description": "Ulimits (virgülle ayrılmış, örn. nofile=1024:1024)."
-        },
-        "DOCKER_TMPFS": {
-          "label": "Tmpfs Bağlantıları",
-          "description": "Geçici dosya sistemleri (virgülle ayrılmış, örn. /run:rw,noexec,nosuid,size=65536k)."
-        },
-        "DOCKER_GROUP_ADD": {
-          "label": "Grup Ekle",
-          "description": "Ek grup adları ve/veya kimlikleri listesi (virgülle ayrılmış)."
-        }
-      }
-    },
-    "appLaboratory": {
-      "title": "Uygulama Laboratuvarı",
-      "description": "Temel bir uygulamanın üzerine değişiklikler katmanlayarak özel uygulama yapılandırmaları oluşturun ve test edin.",
-      "selectApp": "Uygulama Seç",
-      "createNew": "Yeni Uygulama Oluştur",
-      "baseApp": "Temel Uygulama",
-      "baseAppDescription": "Yeni özel uygulamanızın temel alacağı yüklü uygulama.",
-      "selectBase": "Bir Temel Uygulama Seçin",
-      "customizationTitle": "Özelleştirme",
-      "appName": "Uygulama Adı",
-      "appIcon": "Uygulama Simgesi",
-      "uploadIcon": "Simge Yükle",
-      "autostartScriptLabel": "Özel Otomatik Başlatma Betiği",
-      "permissionsTitle": "İzinler",
-      "usersLabel": "İzin Verilen Kullanıcılar",
-      "groupsLabel": "İzin Verilen Gruplar",
-      "launchButton": "Kaydet ve Özelleştirme Oturumunu Başlat",
-      "closeButton": "Oturumu Kapat ve Sonlandır",
-      "savingAndLaunching": "Kaydediliyor ve Başlatılıyor...",
-      "placeholder": "Uygulama Laboratuvarı, mevcut yüklü bir uygulamaya dayalı bir uygulama için temel ana dizini ve başlatma betiğini yapılandırmanıza olanak tanır. Bu ana dizin, bu oturumda ayarladığınız tüm dosya ve ayarlarla birlikte kullanıcı için ilk başlatmada kopyalanacaktır. İçeriğini daha fazla değiştirmek için mevcut bir Laboratuvar Uygulamasını yeniden başlatabilirsiniz.",
-      "formInvalid": "Lütfen bir temel uygulama seçin ve yeni uygulama için bir ad sağlayın."
-    },
-    "modals": {
-      "editUserTitle": "Kullanıcıyı Düzenle: {username}",
-      "saveChanges": "Değişiklikleri Kaydet",
-      "effectiveSettings": "Etkin Ayarlar (grup geçersiz kılmalarıyla birlikte)",
-      "editGroupTitle": "Grubu Düzenle: {groupName}",
-      "userConfigTitle": "Kullanıcı Yapılandırması",
-      "warning": "Bu yapılandırma sadece bu sefer gösterilecektir. Kullanıcıya güvenli bir şekilde sağlayın.",
-      "info": "Bu yapılandırma dosyasını indirerek SealSkin'i başka bir cihazda kolayca kurabilirsiniz. Bu dosya özel anahtarınızı içerdiği için güvende tutun.",
-      "configDataLabel": "Yapılandırma Verisi (JSON)",
-      "copyButton": "Metni Kopyala",
-      "downloadButton": "Dosyayı İndir",
-      "manageHomeDirs": "Ana Dizinleri Yönet",
-      "dirsForUser": "Kullanıcı için dizinler: {username}",
-      "dirsForAdmin": "Yönetici için dizinler: {username}",
-      "newDirForUser": "Kullanıcı için Yeni Dizin Oluştur",
-      "createDirButton": "Dizin Oluştur",
-      "confirmDeleteDir": "'{username}' kullanıcısı için '{homeName}' dizinini silmek istediğinizden emin misiniz? Bu işlem kalıcıdır.",
-      "installAppTitle": "{appName} Yükle",
-      "editAppTitle": "{appName} Düzenle",
-      "customNameLabel": "Özel İsim",
-      "imageLabel": "Konteyner İmajı",
-      "permissions": "İzinler",
-      "allowedUsersLabel": "İzin Verilen Kullanıcılar (virgülle ayrılmış, herkes için 'all')",
-      "allowedGroupsLabel": "İzin Verilen Gruplar (virgülle ayrılmış, herkes için 'all')",
-      "features": "Özellikler",
-      "gpuSupport": "GPU Desteği",
-      "homeMounting": "Ana Dizin Bağlama",
-      "urlSupport": "URL Açma Desteği",
-      "fileSupport": "Dosya Açma Desteği",
-      "autoUpdate": "İmajı Otomatik Güncelle",
-      "advancedSettings": "Gelişmiş Ayarlar",
-      "appTemplateLabel": "Uygulama Şablonu",
-      "appTemplateDescription": "Gelişmiş konteyner başlatma ayarları için önceden yapılandırılmış bir şablon seçin.",
-      "customAutostartScriptLabel": "Özel Otomatik Başlatma Betiği",
-      "customAutostartScriptDescription": "Otomatik başlatma mantığını özelleştirin, uygulama sağlayıcısından varsayılanı kullanmak için boş bırakın.",
-      "saveInstallation": "Kurulumu Kaydet",
-      "updateStatusTitle": "{appName} için Güncelleme Durumu",
-      "checkingUpdates": "Güncellemeler kontrol ediliyor...",
-      "updateAvailable": "Yeni bir imaj versiyonu mevcut!",
-      "yourVersion": "Sizin versiyonunuz: {sha}",
-      "latestAvailable": "En son versiyon kayıt defterinden çekilmeye hazır.",
-      "pullLatest": "En Son İmajı Çek",
-      "upToDate": "İmajınız güncel.",
-      "currentVersion": "Mevcut versiyon: {sha}",
-      "errorChecking": "Güncellemeler kontrol edilirken hata oluştu.",
-      "pullingLatest": "En son imaj çekiliyor... Bu biraz zaman alabilir.",
-      "pullComplete": "Çekme tamamlandı!",
-      "newVersion": "Yeni versiyon: {sha}",
-      "errorPulling": "İmaj çekilirken hata oluştu.",
-      "manualInstallNote": "Not: Manuel olarak eklenen imajlar, selkies-baseimage uyumlu bir imaja dayanmalıdır.",
-      "generalTitle": "Genel ve Performans Ayarları",
-      "webrtcTitle": "WebRTC ve TURN Ayarları",
-      "webrtcDescription": "Oturumlar varsayılan olarak WebSockets üzerinden akar. Aşağıdaki herhangi bir STUN, TURN, Cloudflare veya genel IP değerini ayarlamak ya da WebRTC modunu seçmek, kullanıcıların yine de WebSockets'e geri dönebilmesi için konteyneri çift mod etkin olacak şekilde WebRTC'ye geçirir.",
-      "dockerTitle": "Docker Gelişmiş Geçersiz Kılmalar",
-      "dockerDescription": "Bu ayarlar varsayılan konteyner yapılandırmasını geçersiz kılar. Dikkatli kullanın ve yalnızca ne yaptığınızı biliyorsanız kullanın."
-    },
-    "status": {
-      "loggingIn": "Giriş yapılıyor...",
-      "configSaved": "Yapılandırma başarıyla kaydedildi!",
-      "configApplied": "Yapılandırma uygulandı! Lütfen Giriş Yapıp Test Edin.",
-      "configApplyFailed": "Yapılandırma uygulanamadı: {error}",
-      "fileReadError": "Dosya okunurken hata oluştu.",
-      "noConfig": "Lütfen bir yapılandırma dosyası veya metni sağlayın.",
-      "loggedInAdmin": "Yönetici olarak giriş yapıldı: {username}",
-      "loggedInUser": "Standart kullanıcı olarak giriş yapıldı: {username}.",
-      "loginFailed": "Giriş başarısız: {error}",
-      "adminDataRefreshFailed": "Yönetici verileri yenilenemedi: {error}",
-      "logoutSuccess": "Çıkış yapıldı ve yapılandırma temizlendi.",
-      "generateConfigFailed": "Yapılandırma oluşturulamadı, kullanıcı detayları eksik.",
-      "copySuccess": "Yapılandırma panoya kopyalandı!",
-      "copyFailed": "Metin kopyalanamadı.",
-      "publicKeyCopied": "Açık anahtar kopyalandı!",
-      "keyCopyFailed": "Anahtar kopyalanamadı.",
-      "creatingAdmin": "Yönetici oluşturuluyor...",
-      "adminCreated": "Yönetici '{username}' oluşturuldu.",
-      "adminCreateFailed": "Yönetici oluşturulurken hata: {error}",
-      "adminDeleted": "Yönetici '{username}' başarıyla silindi.",
-      "adminDeleteFailed": "Yönetici silinirken hata: {error}",
-      "creatingUser": "Kullanıcı oluşturuluyor...",
-      "userCreated": "Kullanıcı '{username}' oluşturuldu.",
-      "userCreateFailed": "Kullanıcı oluşturulurken hata: {error}",
-      "userDeleted": "Kullanıcı '{username}' başarıyla silindi.",
-      "userDeleteFailed": "Kullanıcı silinirken hata: {error}",
-      "userUpdated": "Kullanıcı '{username}' başarıyla güncellendi.",
-      "userUpdateFailed": "Kullanıcı güncellenirken hata: {error}",
-      "creatingGroup": "Grup oluşturuluyor...",
-      "groupCreated": "Grup '{groupName}' oluşturuldu.",
-      "groupCreateFailed": "Grup oluşturulurken hata: {error}",
-      "groupDeleted": "Grup '{groupName}' başarıyla silindi.",
-      "groupDeleteFailed": "Grup silinirken hata: {error}",
-      "groupUpdated": "Grup '{groupName}' başarıyla güncellendi.",
-      "groupUpdateFailed": "Grup güncellenirken hata: {error}",
-      "homedirLoadFailed": "Ana dizinler yüklenemedi: {error}",
-      "homedirCreateFailed": "Dizin oluşturulurken hata: {error}",
-      "homedirCreated": "Ana dizin '{homeName}' oluşturuldu.",
-      "homedirDeleted": "Dizin '{homeName}' silindi.",
-      "homedirDeleteFailed": "Dizin silinirken hata: {error}",
-      "homedirCreatedFor": "{username} için '{homeName}' dizini oluşturuldu.",
-      "homedirDeletedFor": "{username} için '{homeName}' dizini silindi.",
-      "sessionsLoadFailed": "Oturumlar yüklenemedi: {error}",
-      "sessionStopError": "Oturum durdurulurken hata: {error}",
-      "sessionStopped": "Oturum başarıyla durduruldu.",
-      "appDataRefreshFailed": "Uygulama verileri yenilenemedi: {error}",
-      "closingSession": "Özelleştirme oturumu kaydediliyor...",
-      "sessionClosed": "Özelleştirme oturumu kapatıldı.",
-      "sessionCloseFailed": "Özelleştirme oturumu kapatılamadı: {error}",
-      "fetchingApps": "Mağazadan uygulamalar getiriliyor...",
-      "fetchAppsFailed": "Mağazadan uygulamalar getirilemedi: {error}",
-      "appStoreAddFailed": "Mağaza eklenirken hata: {error}",
-      "appStoreAdded": "Uygulama mağazası '{name}' eklendi.",
-      "appSaved": "Uygulama '{name}' başarıyla {action}.",
-      "appSaveActions": {
-        "updated": "güncellendi",
-        "installed": "yüklendi"
-      },
-      "appSaveFailed": "Uygulama kaydedilirken hata: {error}",
-      "appDeleted": "Uygulama '{name}' silindi.",
-      "appDeleteFailed": "Uygulama silinirken hata: {error}",
-      "templateSaved": "Şablon '{name}' başarıyla kaydedildi.",
-      "templateSaveFailed": "Şablon kaydedilirken hata: {error}",
-      "templateDeleted": "Şablon '{name}' başarıyla silindi.",
-      "templateDeleteFailed": "Şablon silinirken hata: {error}",
-      "pinRemoved": "Sabitlenmiş davranış kaldırıldı.",
-      "keyGenerated": "Yeni anahtar çifti oluşturuldu.",
-      "keyGenFailed": "Anahtar oluşturma başarısız: {error}",
-      "pendingConfigSaved": "Bekleyen yapılandırma kaydedildi. Artık açık anahtarınızı yöneticiye sağlayabilirsiniz.",
-      "settingsSaved": "Ayarlar kaydedildi.",
-      "appCreated": "Uygulama '{name}' başarıyla oluşturuldu.",
-      "launchFailed": "Başlatma başarısız: {error}"
-    },
-    "placeholders": {
-      "noAdmins": "Yönetici bulunamadı.",
-      "noUsers": "Kullanıcı bulunamadı.",
-      "noGroups": "Grup bulunamadı.",
-      "noHomeDirs": "Ana dizin bulunamadı.",
-      "noSessions": "Aktif oturum bulunamadı.",
-      "noPinned": "Sabitlenmiş davranış bulunamadı.",
-      "errorLoading": "Dizinler yüklenirken hata oluştu.",
-      "noInstalledApps": "Henüz hiçbir uygulama yüklenmedi."
-    }
-  },
-  "popup": {
-    "tabs": {
-      "launch": "Yeni Başlat",
-      "sessions": "Aktif Oturumlar",
-      "manageFiles": "Dosyaları Yönet",
-      "uploadStorage": "Depolamaya Yükle",
-      "uploadFiles": "Dosya Yükle",
-      "uploadFilesTitle": "Ayrı dosya yükleme sayfasını aç"
-    },
-    "launchView": {
-      "searchPlaceholder": "Uygulamaları ara...",
-      "uploadingFile": "Dosya yükleniyor...",
-      "gpuLabel": "GPU",
-      "storageLabel": "Depolama",
-      "languageLabel": "Dil",
-      "cleanroom": "Temiz Oda (Geçici)",
-      "noGpu": "Yok",
-      "saveOptions": "Bu başlatma seçeneklerini kaydet",
-      "saveOptionsForUrl": "Tüm URL'ler için seçenekleri kaydet",
-      "saveOptionsForFile": ".{extension} dosyaları için seçenekleri kaydet",
-      "openFile": "Başlatıldığında dosyayı aç",
-      "launchButton": "Başlat",
-      "launchingButton": "Başlatılıyor...",
-      "uploadingButton": "Yükleniyor...",
-      "autoHome": "Otomatik (uygulama başına kalıcılık)",
-      "collaborationMode": "Ortak Oturum",
-      "waylandMode": "Wayland Modu"
-    },
-    "sessionsView": {
-      "noSessions": "Aktif oturum bulunamadı."
-    },
-    "uploadStorageView": {
-      "selectHome": "Ana Dizin Seç",
-      "description": "Bu, <strong>{filename}</strong> dosyasını ileride kullanmak üzere doğrudan Dosyalar depolama alanınıza yükleyecektir.",
-      "descriptionFallback": "Bu, <strong>{filename}</strong> dosyasını ileride kullanmak üzere doğrudan Dosyalar depolama alanınıza yükleyecektir.",
-      "uploadButton": "Dosya Yükle",
-      "uploadingButton": "Yükleniyor...",
-      "preparing": "Dosya hazırlanıyor...",
-      "uploadingChunk": "{total} parçadan {current}. yükleniyor...",
-      "finalizing": "Sonlandırılıyor...",
-      "uploadComplete": "Yükleme Tamamlandı!"
-    },
-    "status": {
-      "unconfigured": "Lütfen uzantıyı seçenekler sayfasından yapılandırın.",
-      "openingServerFile": "Sunucu tarafı dosya açılıyor: {filename}",
-      "openingFile": "Dosya açılıyor: {filename}",
-      "openingUrl": "URL açılıyor: {targetUrl}",
-      "error": "Hata: {message}",
-      "preparingFile": "Dosya hazırlanıyor...",
-      "sendingFile": "Dosya oturuma gönderiliyor...",
-      "errorSendingFile": "Dosya gönderilirken hata: {message}",
-      "errorClosingSession": "Oturum kapatılırken hata: {message}",
-      "preparingSession": "İzole oturum hazırlanıyor...",
-      "fetchingData": "Dosya verileri alınıyor...",
-      "fetchDataFailed": "Dosya verileri alınamadı: {statusText}",
-      "unknownAction": "Bilinmeyen başlatma eylemi.",
-      "noAppSelected": "Lütfen bir uygulama seçin.",
-      "noAppsAvailable": "Hesabınız için uygun uygulama yok.",
-      "uploadSuccess": "Dosya başarıyla yüklendi!",
-      "creatingAutoHome": "Otomatik ana dizin oluşturuluyor..."
-    },
-    "languages": {
-      "default": "Varsayılan ({locale})"
-    }
-  },
-  "upload": {
-    "title": "Dosya Yükleme",
-    "description": "Güvenli, izole bir oturumda açmak için bilgisayarınızdan bir dosya seçin.",
-    "dropzone": {
-      "title": "Buraya bir dosya sürükleyip bırakın",
-      "or": "veya",
-      "button": "Dosya Seç"
-    },
-    "confirm": {
-      "ready": "Dosya güvenli bir şekilde açılmaya hazır.",
-      "button": "Başlatmaya Devam Et"
-    }
-  },
   "files": {
-    "title": "SealSkin Dosyaları",
-    "header": {
-      "title": "Dosyalar",
-      "newFolder": "Yeni Klasör",
-      "uploadFiles": "Dosya Yükle",
-      "uploadFolder": "Klasör Yükle"
-    },
-    "sidebar": {
-      "sharedFiles": "SealSkin Dosyaları",
-      "publicShares": "Genel Paylaşımlar"
-    },
     "shares": "Paylaşımlar",
-    "table": {
-      "name": "Ad",
-      "size": "Boyut",
-      "lastModified": "Son Değiştirme",
-      "created": "Oluşturuldu",
-      "expires": "Sona Eriyor",
-      "url": "Genel URL",
-      "passwordProtected": "Şifre"
-    },
-    "dropzone": {
-      "title": "Yüklemek için dosyaları buraya bırakın"
-    },
-    "pagination": {
-      "previous": "« Önceki",
-      "next": "Sonraki »",
-      "pageOf": "Sayfa {page} / {totalPages}"
-    },
-    "modals": {
-      "newFolder": {
-        "title": "Yeni Klasör Oluştur",
-        "folderNameLabel": "Klasör Adı",
-        "nameTitle": "Yalnızca harf, sayı, alt çizgi, tire veya nokta kullanın.",
-        "createButton": "Oluştur"
-      },
-      "confirmDelete": {
-        "title": "Silmeyi Onayla",
-        "message": "{count, plural, one {1 seçili öğeyi} other {{count} seçili öğeyi}} silmek istediğinizden emin misiniz? Bu işlem geri alınamaz.",
-        "messageDefault": "Seçili öğeleri silmek istediğinizden emin misiniz? Bu işlem geri alınamaz."
-      },
-      "uploadProgress": {
-        "title": "Yükleme İlerlemesi",
-        "doneButton": "Bitti"
-      },
-      "share": {
-        "title": "Dosya Paylaş",
-        "sharingFile": "Paylaşılan dosya: <strong>{filename}</strong>",
-        "passwordLabel": "Şifre (isteğe bağlı)",
-        "passwordPlaceholder": "Şifresiz bırakmak için boş bırakın",
-        "expiryLabel": "Sona erme süresi (saat, isteğe bağlı)",
-        "expiryPlaceholder": "örn. bir gün için 24",
-        "shareButton": "Paylaşım Bağlantısı Oluştur"
-      }
-    },
-    "status": {
-      "homeDirLoadFailed": "Ana dizinler yüklenemedi: {error}",
-      "filesLoadFailed": "Dosyalar yüklenirken hata oluştu: {error}",
-      "deleteProtectedError": "Korunan sistem klasörleri silinemez.",
-      "deletingItems": "{count, plural, one {1 öğe} other {{count} öğe}} siliniyor...",
-      "deleteSuccess": "Silme başarılı.",
-      "deleteFailed": "Silme başarısız: {error}",
-      "preparingUpload": "{count, plural, one {1 dosya} other {{count} dosya}} yüklemeye hazırlanıyor...",
-      "uploadPrepFailed": "Klasör yükleme hazırlığı sırasında hata: {error}",
-      "notConfigured": "Hata: SealSkin yapılandırılmamış. Lütfen seçeneklerden ayarlayın.",
-      "folderCreated": "'{folderName}' klasörü oluşturuldu.",
-      "folderCreateFailed": "Klasör oluşturulurken hata: {error}",
-      "shareCreated": "Paylaşım başarıyla oluşturuldu! Bağlantı panonuza kopyalandı.",
-      "shareCreateFailed": "Paylaşım oluşturulamadı: {error}",
-      "sharesLoadFailed": "Paylaşılan dosyalar yüklenemedi: {error}",
-      "shareDeleteFailed": "Paylaşım silinemedi: {error}",
-      "shareDeleted": "Paylaşım başarıyla silindi.",
-      "urlCopied": "Genel URL panoya kopyalandı."
-    },
-    "placeholders": {
-      "errorLoading": "Dosyalar yüklenirken hata oluştu.",
-      "folderEmpty": "Bu klasör boş.",
-      "noHomeDirs": "Kullanılabilir ana dizin yok.",
-      "noShares": "Henüz hiçbir dosya paylaşmadınız."
-    },
-    "uploadStatus": {
-      "pending": "beklemede",
-      "initiating": "Başlatılıyor...",
-      "uploading": "Yükleniyor...",
-      "finalizing": "Tamamlanıyor...",
-      "completed": "Tamamlandı",
-      "error": "Hata"
-    },
     "upOneLevel": "Bir seviye yukarı",
     "newFolder": "Yeni klasör",
-    "upload": "Yükle",
     "openInApp": "Uygulamada aç",
     "size": "Boyut",
     "modified": "Değiştirildi",
@@ -1251,7 +89,6 @@
     "volumeMounts": "Hacimler",
     "backup": "Yedek",
     "sessions": "Oturumlar",
-    "password": "Parola",
     "signOut": "Çıkış yap"
   },
   "launch": {
@@ -1314,11 +151,9 @@
     "kvApiPort": "API portu",
     "kvSessionPort": "Oturum portu",
     "yes": "evet",
-    "no": "hayır",
-    "none": "yok"
+    "no": "hayır"
   },
   "howto": {
-    "title": "Vreckan'ı nasıl kullanılır",
     "intro": "Vreckan'ın ana özelliklerine hızlı bir rehber.",
     "close": "Kapat",
     "item1Lead": "Uygulama başlat",
@@ -1333,6 +168,7 @@
     "item5Body": "Yönetici sekmesinde kullanıcıları, yöneticileri, grupları, uygulamaları, şablonları, hacimleri ve yedekleri yönetebilirsiniz."
   },
   "settings": {
+    "settingsSection": "Ayarlar",
     "active": "Etkin",
     "group": "Grup",
     "persistentStorage": "Kalıcı depolama",
@@ -1342,7 +178,6 @@
     "gpu": "GPU",
     "storageLimit": "Depolama sınırı (MB, -1 = sınırsız)",
     "sessionLimit": "Oturum sınırı (-1 = sınırsız)",
-    "none": "yok",
     "adminPerms": "Yönetici izinleri",
     "userPerms": "Kullanıcı izinleri"
   },
@@ -1352,7 +187,6 @@
     "addHelp": "Yeni hesap oluşturun. Yönetici yapmak için \"Yönetici\" seçeneğini işaretleyin.",
     "labelAdmin": "Yönetici",
     "badgeAdmin": "yönetici",
-    "badgeSso": "SSO",
     "btnSetPassword": "Parola ayarla",
     "btnAccess": "Erişim",
     "btnHomeDirs": "Ev dizinleri",
@@ -1425,7 +259,6 @@
     "badgePerms": "izinler: {perms}",
     "rolesLabel": "Roller (tüm üyelere verilir)",
     "permsLabel": "İzinler (tüm üyelere verilir)",
-    "ssoBadge": "SSO",
     "ssoAdminSuffix": " · yönetici",
     "ssoAdminTitle": "Yönetici SSO listesinde (yönetici yetkisi verir)",
     "ssoObservedTitle": "SSO'dan gözlemlendi",
@@ -1460,7 +293,6 @@
     "heading": "SSO / OIDC",
     "help": "Vreckan'ı bir OpenID Connect sağlayıcısına (ör. authentik) bağlar. Discovery, <code>{issuer}/.well-known/openid-configuration</code> adresinden alınır. Burada kaydedilen bir değer <code>VRECKAN_OIDC_*</code> ortamını geçersiz kılar; her alanın üzerindeki rozet güncel kaynağını gösterir.",
     "enableLabel": "SSO girişini etkinleştir",
-    "enabled": "Etkin",
     "issuerLabel": "Yayıncı URL'si",
     "issuerHelp": "Sağlayıcının temel URL'si.",
     "clientIdLabel": "İstemci Kimliği",
@@ -1471,7 +303,6 @@
     "redirectUriPlaceholder": "varsayılan: {base}/api/auth/oidc/callback",
     "scopesLabel": "Kapsamlar",
     "allowSignupLabel": "Yeni kullanıcıları otomatik oluştur",
-    "allowSignupHelp": "Yeni bir SSO kimliği için hesap oluşturur",
     "stateTtlLabel": "State TTL (saniye)",
     "testButton": "Bağlantıyı test et",
     "testing": "Sağlayıcıya bağlanıyor…",
@@ -1521,7 +352,6 @@
     "addTitle": "Uygulama Mağazası Ekle",
     "urlLabel": "URL (YAML)",
     "urlPlaceholder": "https://…/store.yml",
-    "add": "Ekle",
     "configuredTitle": "Yapılandırılmış Mağazalar",
     "url": "URL",
     "empty": "Mağaza yok.",
@@ -1545,7 +375,6 @@
     "noAppsInStore": "Bu mağazada uygulama yok.",
     "noAppsMatch": "“{q}” ile eşleşen uygulama yok.",
     "installedTitle": "Yüklü Uygulamalar",
-    "app": "Uygulama",
     "source": "Kaynak",
     "homeDirs": "Ev dizinleri",
     "users": "Kullanıcılar",
@@ -1575,6 +404,10 @@
     "appTemplate": "Uygulama şablonu",
     "accessLabel": "Bu uygulamayı kimler kullanabilir",
     "allUsers": "Tüm kullanıcılar",
+    "accessUsersSection": "Kullanıcılar",
+    "accessGroupsSection": "Gruplar",
+    "accessSelectAll": "tümünü seç",
+    "accessDeselectAll": "tümünü kaldır",
     "noUsers": "Kullanıcı yok",
     "noGroups": "Grup yok",
     "noOneSelected": "Kimse seçilmedi — bu uygulama herkes tarafından gizli ve kullanılamaz olacak.",
@@ -1619,7 +452,6 @@
     "dockerHelp": "Bu ayarlar, varsayılan konteyner yapılandırmasını geçersiz kılar. Dikkatli kullanın ve yalnızca ne yaptığınızı biliyorsanız kullanın.",
     "duplicateName": "Yinelenen ayar adı: '{name}'.",
     "enterNameFirst": "Önce bir şablon adı girin.",
-    "heading": "Şablonlar",
     "imageDefault": "imaj varsayılanı",
     "invalidName": "Geçersiz ayar adı: '{name}'.",
     "label": "Etiket",
@@ -1631,7 +463,6 @@
     "previewClipboard": "Pano",
     "previewContentArea": "Uygulama İçerik Alanı",
     "previewCoreButtons": "Temel Düğmeler",
-    "previewFiles": "Dosyalar",
     "previewGamepads": "Oyun Kumandaları",
     "previewScreenSettings": "Ekran Ayarları",
     "previewSharing": "Paylaşım",
@@ -1674,7 +505,6 @@
     "includeUserData": "Kullanıcı verilerini dahil et (ev dizinleri)",
     "create": "Yedek oluştur",
     "listTitle": "Yedekler",
-    "size": "Boyut",
     "created": "Oluşturuldu",
     "userData": "Kullanıcı verileri",
     "noBackups": "Henüz yedek yok.",
@@ -1682,7 +512,6 @@
     "restoreFromFileHelp": "Geri yüklemek için daha önce indirilen yedek <code>tar.gz</code> dosyasını yükleyin. Geri yükleme, arşivde bulunan yapılandırma dosyalarını üzerine yazar; arşivde bulunmayan dosyalar değiştirilmez. Aktif oturumlar etkilenmez.",
     "restoreFileButton": "Yüklenen dosyayı geri yükle",
     "createdToast": "{name} oluşturuldu",
-    "download": "İndir",
     "downloadStarted": "İndirme başladı",
     "restore": "Geri yükle",
     "restoreConfirm": "{name} geri yüklensin mi? Bu, arşivde bulunan yapılandırma dosyalarını üzerine yazar ve yeniden yükler. Aktif oturumlar etkilenmez. Arşiv mevcut yönetici anahtarından eskiyse kendinizi dışarıda bırakabilirsiniz.",
@@ -1757,12 +586,10 @@
     "default": "Varsayılan",
     "allApps": "Tüm uygulamalar",
     "makeDefault": "Varsayılan yap",
-    "apply": "Uygula",
     "setDefaultFailed": "Varsayılan ayarlanamadı: {message}",
     "deleteConfirm": "'{name}' ön ayarı silinsin mi?",
     "deleteTitle": "Ön ayarı sil",
     "deleted": "'{name}' silindi",
-    "deleteFailed": "Silme başarısız: {message}",
     "applied": "'{name}' ön ayarı uygulandı",
     "installFirst": "Ön ayar kaydetmek için önce bir uygulama yükleyin.",
     "saveTitle": "Başlatma seçeneklerini kaydet",

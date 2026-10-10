@@ -1875,6 +1875,89 @@ label:has(.src-badge) {
   gap: 4px;
   margin: 2px 12px 2px 0;
 }
+/* --- Access picker (per-app "who can use this app") ------------------- */
+/* The "All users" master box. Overrides the global `label` rule
+   (flex-direction: column, margin: 10px 0) so it lays out horizontally
+   like the item rows: [checkbox] label. */
+.access-all {
+  display: flex;
+  flex-direction: row;
+  align-items: center;
+  gap: 8px;
+  margin: 0 0 4px;
+  font-size: 0.9rem;
+  font-weight: 600;
+  color: var(--text);
+}
+.access-all input { width: 16px; height: 16px; margin: 0; flex-shrink: 0; }
+/* --- Shared collapsible "pick" sections --------------------------------- */
+/* Used by the permission, role, settings, and app-access pickers. A section
+   is a header (arrow + title + count + optional select-all) over a body of
+   one-item-per-line rows. Sections start collapsed. */
+.pick-section { margin-top: 6px; }
+.pick-section-header {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 6px 10px;
+  background: var(--bg-alt);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  cursor: pointer;
+  user-select: none;
+}
+.pick-section-header:hover { background: var(--surface-2); }
+.pick-section-arrow {
+  font-size: 0.7rem;
+  color: var(--text-dim);
+  transition: transform 0.15s;
+}
+.pick-section-header.collapsed .pick-section-arrow { transform: rotate(-90deg); }
+.pick-section-title { flex: 1; font-weight: 600; }
+.pick-section-count { font-weight: 400; font-size: 0.8rem; color: var(--text-muted); }
+.pick-select-all {
+  background: none;
+  border: none;
+  color: var(--accent);
+  font-size: 0.8rem;
+  cursor: pointer;
+  padding: 2px 6px;
+  border-radius: 4px;
+}
+.pick-select-all:hover { background: var(--accent-soft); }
+.pick-select-all:disabled { color: var(--text-dim); cursor: default; }
+.pick-select-all:disabled:hover { background: none; }
+.pick-section-body { padding: 2px 10px 6px; }
+.pick-section-body.collapsed { display: none; }
+/* One item per line, laid out horizontally: [checkbox] name … tag.
+   Overrides the global `label` rule (flex-direction: column, margin: 10px 0). */
+.pick-item {
+  display: flex;
+  flex-direction: row;
+  align-items: center;
+  gap: 8px;
+  margin: 0;
+  padding: 3px 4px;
+  border-bottom: 1px solid var(--border);
+  font-size: 0.85rem;
+  color: var(--text);
+}
+.pick-item:last-child { border-bottom: none; }
+.pick-item input { width: 15px; height: 15px; flex-shrink: 0; margin: 0; }
+.pick-item-name { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.pick-item-tag {
+  flex-shrink: 0;
+  font-size: 0.62rem;
+  font-weight: 600;
+  padding: 0 5px;
+  border-radius: 3px;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+}
+.pick-item-tag-user { background: rgba(76, 175, 80, 0.15); color: #81c784; }
+.pick-item-tag-group { background: rgba(33, 150, 243, 0.15); color: #64b5f6; }
+.pick-empty { display: block; padding: 4px; }
+.pick-disabled { opacity: 0.4; pointer-events: none; }
 .mk-icon-sub {
   margin-left: 3px;
   font-size: 0.8em;

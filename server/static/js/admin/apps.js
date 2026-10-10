@@ -6,7 +6,7 @@
 import { $, esc, toast, request } from "../util.js";
 import { confirmModal, openCustomModal } from "../modal.js";
 import { t } from "../i18n.js";
-import { render } from "../admin.js";
+import { render, pickSectionHtml, wirePickSections } from "../admin.js";
 import { renderStores } from "./stores.js";
 
 function setPanel(html) {
@@ -276,38 +276,49 @@ function accessCheckboxesHtml(prefix, selectedUsers, selectedGroups, userNames, 
   const su = selectedUsers || [];
   const sg = selectedGroups || [];
   const all = su.includes("*") || su.includes("all");
-  const opt = (value, checked) =>
-    ` <label class="chip" ><input type="checkbox" value="${esc(value)}"${checked ? " checked" : ""}> ${esc(value)}</label>`;
-  const users = (userNames || []).map((u) => opt(u, !all && su.includes(u))).join("");
-  const groups = (groupNames || []).map((g) => opt(g, !all && sg.includes(g))).join("");
+  // One item per line, sorted A→Z: [checkbox] name … tag. The tag is a small
+  // right-aligned marker so users and groups stay distinguishable even when
+  // the two sections are collapsed into one view. Sections are collapsible
+  // (see wireAccessChecks).
+  const item = (value, checked, kind) =>
+    ` <label class="pick-item" ><input type="checkbox" value="${esc(value)}"${checked ? " checked" : ""}> <span class="pick-item-name">${esc(value)}</span> <span class="pick-item-tag pick-item-tag-${kind}">${kind}</span></label>`;
+  const users = [...(userNames || [])].sort((a, b) => a.localeCompare(b)).map((u) => item(u, !all && su.includes(u), "user")).join("");
+  const groups = [...(groupNames || [])].sort((a, b) => a.localeCompare(b)).map((g) => item(g, !all && sg.includes(g), "group")).join("");
   return `
-     <label class="row row-center gap-6 fw-600" ><input type="checkbox" id="${prefix}-all"${all ? " checked" : ""}> ${t("apps.allUsers")}</label>
-     <div class="mt-6 row row-wrap" id="${prefix}-users" >${users || `<span class="muted">${t("apps.noUsers")}</span>`}</div>
-     <div class="mt-6 row row-wrap" id="${prefix}-groups" >${groups || `<span class="muted">${t("apps.noGroups")}</span>`}</div>
+     <label class="access-all" ><input type="checkbox" id="${prefix}-all"${all ? " checked" : ""}> ${t("apps.allUsers")}</label>
+     <div class="access-list" id="${prefix}-list" >
+       ${pickSectionHtml(`${prefix}-users`, t("apps.accessUsersSection"), (userNames || []).length, users, { empty: t("apps.noUsers") })}
+       ${pickSectionHtml(`${prefix}-groups`, t("apps.accessGroupsSection"), (groupNames || []).length, groups, { empty: t("apps.noGroups") })}
+     </div>
     <p class="error mt-8" id="${prefix}-warn" hidden >${t("apps.noOneSelected")}</p>`;
 }
 
-// Wire up the "All users" master checkbox: when checked it disables (and
-// unchecks) the individual user/group boxes. collect() returns the
-// {users, groups} arrays to persist — ["*"] / [] when "All users" is set.
+// Wire up the access picker: the "All users" master checkbox (disables and
+// unchecks both sections when checked), the collapsible section headers, and
+// the per-section "select all" buttons. collect() returns the {users, groups}
+// arrays to persist — ["*"] / [] when "All users" is set.
 function wireAccessChecks(box, prefix) {
   const all = box.querySelector(`#${prefix}-all`);
+  const list = box.querySelector(`#${prefix}-list`);
   const usersBox = box.querySelector(`#${prefix}-users`);
   const groupsBox = box.querySelector(`#${prefix}-groups`);
   const warn = box.querySelector(`#${prefix}-warn`);
+  const sections = [
+    { box: usersBox, header: box.querySelector(`#${prefix}-users-header`), selectAll: box.querySelector(`#${prefix}-users-selectall`) },
+    { box: groupsBox, header: box.querySelector(`#${prefix}-groups-header`), selectAll: box.querySelector(`#${prefix}-groups-selectall`) },
+  ];
   const sync = () => {
     const off = all.checked;
-    for (const el of [usersBox, groupsBox]) {
-      el.style.opacity = off ? "0.4" : "";
-      el.style.pointerEvents = off ? "none" : "";
-    }
+    if (list) list.classList.toggle("pick-disabled", off);
     if (off) {
-      usersBox.querySelectorAll("input").forEach((i) => (i.checked = false));
-      groupsBox.querySelectorAll("input").forEach((i) => (i.checked = false));
+      for (const s of sections) s.box.querySelectorAll("input").forEach((i) => (i.checked = false));
     }
-    const any = usersBox.querySelector("input:checked") || groupsBox.querySelector("input:checked");
+    const any = usersBox.querySelector("input:checked") || groupsBox.querySelectorAll("input:checked").length > 0;
     if (warn) warn.hidden = off || !!any;
   };
+  // Collapse/expand + per-section select-all come from the shared helper;
+  // select-all flips call sync() to keep the master box and warning in step.
+  wirePickSections(box, sync);
   all.addEventListener("change", sync);
   [...usersBox.querySelectorAll("input"), ...groupsBox.querySelectorAll("input")].forEach((i) =>
     i.addEventListener("change", sync)
@@ -437,7 +448,7 @@ async function renderApps() {
         </div>
       </div>
       <table class="admin-table">
-        <thead><tr><th>${t("apps.app")}</th><th>${t("apps.source")}</th><th>${t("apps.homeDirs")}</th><th>${t("apps.users")}</th><th>${t("apps.groups")}</th><th>${t("apps.image")}</th><th></th></tr></thead>
+        <thead><tr><th>${t("files.app")}</th><th>${t("apps.source")}</th><th>${t("apps.homeDirs")}</th><th>${t("apps.users")}</th><th>${t("apps.groups")}</th><th>${t("apps.image")}</th><th></th></tr></thead>
         <tbody id="app-rows">${rows || `<tr><td colspan="7" class="muted">${t("apps.noAppsInstalled")}</td></tr>`}</tbody>
       </table>
     </div>
