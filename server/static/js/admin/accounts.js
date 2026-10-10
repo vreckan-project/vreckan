@@ -62,7 +62,7 @@ function userCard(user, homedirs, adminGroups = []) {
         <div>
           <strong>${esc(user.username)}</strong>
           ${isAdmin ? `<span class="badge badge-ok ml-8" >${t("accounts.badgeAdmin")}</span>` : ""}
-          ${sso ? `<span class="badge ml-8" >${t("accounts.badgeSso")}</span>` : ""}
+          ${sso ? `<span class="badge ml-8" >${t("nav.sso")}</span>` : ""}
         </div>
         <div class="admin-actions">
           <button class="btn btn-sm btn-ghost" data-action="edit" data-username="${esc(user.username)}">${t("common.edit")}</button>

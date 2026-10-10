@@ -12,7 +12,7 @@ Gitea registry and GHCR). The release entries below summarize what each tag
 contains; the date-based entries that follow give the finer-grained
 development history.
 
-## 2026-10-09 — v0.4.7 — Admin UI tidy-up
+## 2026-10-09 — v0.5.0 — Admin UI tidy-up
 A pass over the admin UI to make the busy forms calmer and the i18n
 catalog leaner.
 
@@ -41,8 +41,10 @@ checkbox (source badge kept).
 **i18n pruning.** The catalog carried ~55% dead weight from the SealSkin
 browser-extension port. Removed the five legacy extension namespaces
 (`options`, `popup`, `shell`, `background`, `upload`) plus 101 other unused
-keys. `en.json` drops from 1420 to 631 keys; every remaining key is
-referenced by the app.
+keys, then consolidated 15 more keys that duplicated an existing string
+(redirected onto the shared key, e.g. `common.password`, `nav.files`).
+`en.json` drops from 1420 to 616 keys; every remaining key is referenced by
+the app and no two keys share a value.
 
 ## 2026-10-09 — v0.4.6 — Security hardening
 A focused pass over the codebase and its dependencies.

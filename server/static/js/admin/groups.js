@@ -52,7 +52,7 @@ async function renderGroups() {
       const s = g.settings || {};
       const isSso = observedGroups.includes(g.name);
       const ssoBadge = isSso
-        ? `<span class="badge${adminGroups.includes(g.name) ? " badge-ok" : ""}" title="${adminGroups.includes(g.name) ? t("groups.ssoAdminTitle") : t("groups.ssoObservedTitle")}">${t("groups.ssoBadge")}${adminGroups.includes(g.name) ? t("groups.ssoAdminSuffix") : ""}</span>`
+        ? `<span class="badge${adminGroups.includes(g.name) ? " badge-ok" : ""}" title="${adminGroups.includes(g.name) ? t("groups.ssoAdminTitle") : t("groups.ssoObservedTitle")}">${t("nav.sso")}${adminGroups.includes(g.name) ? t("groups.ssoAdminSuffix") : ""}</span>`
         : "";
       return `
         <div class="card" data-group-name="${esc(g.name)}">

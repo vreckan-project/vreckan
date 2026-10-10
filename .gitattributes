@@ -1,0 +1,16 @@
+# Normalize line endings to LF across the repo (Unix).
+# Text files: store LF in the repo, check out LF.
+* text=auto eol=lf
+
+# SVG is XML/text — keep it normalized too.
+*.svg text eol=lf
+
+# Binary files: don't touch line endings.
+*.png binary
+*.ico binary
+*.woff binary
+*.woff2 binary
+*.jpg binary
+*.jpeg binary
+*.gif binary
+*.pdf binary

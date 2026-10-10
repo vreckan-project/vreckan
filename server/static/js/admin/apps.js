@@ -448,7 +448,7 @@ async function renderApps() {
         </div>
       </div>
       <table class="admin-table">
-        <thead><tr><th>${t("apps.app")}</th><th>${t("apps.source")}</th><th>${t("apps.homeDirs")}</th><th>${t("apps.users")}</th><th>${t("apps.groups")}</th><th>${t("apps.image")}</th><th></th></tr></thead>
+        <thead><tr><th>${t("files.app")}</th><th>${t("apps.source")}</th><th>${t("apps.homeDirs")}</th><th>${t("apps.users")}</th><th>${t("apps.groups")}</th><th>${t("apps.image")}</th><th></th></tr></thead>
         <tbody id="app-rows">${rows || `<tr><td colspan="7" class="muted">${t("apps.noAppsInstalled")}</td></tr>`}</tbody>
       </table>
     </div>

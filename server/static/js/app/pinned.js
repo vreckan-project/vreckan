@@ -50,7 +50,7 @@ function renderPinned() {
         </div>
         <div class="pinned-actions">
           ${p.is_default ? "" : `<button class="btn btn-ghost btn-sm" data-makedefault="${esc(p.id)}" type="button">${t("pinned.makeDefault")}</button>`}
-          <button class="btn btn-ghost btn-sm" data-apply="${esc(p.id)}" type="button">${t("pinned.apply")}</button>
+          <button class="btn btn-ghost btn-sm" data-apply="${esc(p.id)}" type="button">${t("common.apply")}</button>
           <button class="btn btn-ghost btn-sm" data-del="${esc(p.id)}" type="button">${t("common.delete")}</button>
         </div>
       </div>`
@@ -91,7 +91,7 @@ function renderPinned() {
         toast(t("pinned.deleted", { name: p.name }));
         await loadPinned();
       } catch (e) {
-        toast(t("pinned.deleteFailed", { message: e.message }), "error");
+        toast(t("homedirs.deleteFailed", { message: e.message }), "error");
       }
     });
   });

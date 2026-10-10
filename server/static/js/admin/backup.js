@@ -91,7 +91,7 @@ async function renderBackup() {
           <td>${esc(b.created_at || "")}</td>
           <td>${b.include_user_data ? t("common.yes") : t("common.no")}</td>
           <td class="admin-actions">
-            <button class="btn btn-sm btn-ghost" data-bact="download" data-name="${esc(b.name)}">${t("backup.download")}</button>
+            <button class="btn btn-sm btn-ghost" data-bact="download" data-name="${esc(b.name)}">${t("common.download")}</button>
             <button class="btn btn-sm btn-primary" data-bact="restore" data-name="${esc(b.name)}">${t("backup.restore")}</button>
             <button class="btn btn-sm btn-danger" data-bact="delete" data-name="${esc(b.name)}">${t("common.delete")}</button>
           </td>
@@ -109,7 +109,7 @@ async function renderBackup() {
     <div class="card">
        <h3 class="mb-12" >${t("backup.listTitle")}</h3>
       <table class="admin-table">
-        <thead><tr><th>${t("common.name")}</th><th>${t("backup.size")}</th><th>${t("backup.created")}</th><th>${t("backup.userData")}</th><th></th></tr></thead>
+        <thead><tr><th>${t("common.name")}</th><th>${t("files.size")}</th><th>${t("backup.created")}</th><th>${t("backup.userData")}</th><th></th></tr></thead>
         <tbody id="bk-rows">${rows || `<tr><td colspan="5" class="muted">${t("backup.noBackups")}</td></tr>`}</tbody>
       </table>
     </div>

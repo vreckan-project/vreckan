@@ -51,7 +51,7 @@ export function settingsFormHtml(settings, groupOptions, formId, includeGroup = 
   // includeGroup=false to drop it.
   let groupField = "";
   if (includeGroup) {
-    const groupOpts = [`<option value="none">${t("settings.none")}</option>`];
+    const groupOpts = [`<option value="none">${t("common.none")}</option>`];
     (groupOptions || []).forEach((name) => {
       const sel = g.group === name ? " selected" : "";
       groupOpts.push(`<option value="${esc(name)}"${sel}>${esc(name)}</option>`);

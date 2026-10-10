@@ -632,7 +632,7 @@ function tplPanelHtml() {
             <div id="preview-audio-settings" class="tpl-sidebar-section">${t("tpl.previewAudioSettings")}</div>
             <div id="preview-stats" class="tpl-sidebar-section">${t("tpl.previewStats")}</div>
             <div id="preview-clipboard" class="tpl-sidebar-section">${t("tpl.previewClipboard")}</div>
-            <div id="preview-files" class="tpl-sidebar-section">${t("tpl.previewFiles")}</div>
+            <div id="preview-files" class="tpl-sidebar-section">${t("nav.files")}</div>
             <div id="preview-apps" class="tpl-sidebar-section">${t("tpl.previewApps")}</div>
             <div id="preview-sharing" class="tpl-sidebar-section">${t("tpl.previewSharing")}</div>
             <div id="preview-gamepads" class="tpl-sidebar-section">${t("tpl.previewGamepads")}</div>
@@ -656,11 +656,11 @@ async function renderTemplates() {
     request("/api/admin/apps/templates", "GET"),
   ]);
   if (tplRes.error) {
-    setPanel(`<div class="card"><h3>${t("tpl.heading")}</h3><div class="error">${esc(tplRes.error.message)}</div></div>`);
+    setPanel(`<div class="card"><h3>${t("nav.templates")}</h3><div class="error">${esc(tplRes.error.message)}</div></div>`);
     return;
   }
   if (schemaRes.error) {
-    setPanel(`<div class="card"><h3>${t("tpl.heading")}</h3><div class="error">${esc(schemaRes.error.message)}</div></div>`);
+    setPanel(`<div class="card"><h3>${t("nav.templates")}</h3><div class="error">${esc(schemaRes.error.message)}</div></div>`);
     return;
   }
   tplSettings = resolveTemplateSchema(schemaRes.data);
