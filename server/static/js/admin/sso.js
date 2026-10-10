@@ -81,8 +81,7 @@ async function renderSso() {
       <p class="muted">${t("sso.help")}</p>
 
       <div class="field mt-12" >
-        <label>${t("sso.enableLabel")} ${badge("oidc_enabled")}</label>
-        <label class="check"><input type="checkbox" id="sso-enabled" ${v.oidc_enabled ? "checked" : ""}> ${t("sso.enabled")}</label>
+        <label class="check"><input type="checkbox" id="sso-enabled" ${v.oidc_enabled ? "checked" : ""}> ${t("sso.enableLabel")} ${badge("oidc_enabled")}</label>
       </div>
 
       <div class="field mt-12" >
@@ -115,8 +114,7 @@ async function renderSso() {
 
       <div class="admin-form-row mt-12" >
         <div class="field flex-1 min-w-220" >
-          <label>${t("sso.allowSignupLabel")} ${badge("oidc_allow_signup")}</label>
-          <label class="check"><input type="checkbox" id="sso-allow-signup" ${v.oidc_allow_signup ? "checked" : ""}> ${t("sso.allowSignupHelp")}</label>
+          <label class="check"><input type="checkbox" id="sso-allow-signup" ${v.oidc_allow_signup ? "checked" : ""}> ${t("sso.allowSignupLabel")} ${badge("oidc_allow_signup")}</label>
         </div>
         <div class="field flex-1 min-w-220" >
           <label>${t("sso.stateTtlLabel")} ${badge("oidc_state_ttl_seconds")}</label>
