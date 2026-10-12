@@ -3,7 +3,9 @@
 # Vreckan (Rust port) — multi-stage image build.
 #
 #   stage 1 (build):   rust:1.99-slim (Debian trixie) — `cargo build --release`
-#   stage 2 (runtime): debian:trixie-slim — the compiled `vreckan` binary
+#   stage 2 (test):    build stage + the `tests/` tree — CI runs
+#                      `cargo test --release` inside it (kept out of prod)
+#   stage 3 (runtime): debian:trixie-slim — the compiled `vreckan` binary
 #                      + the web client (server/static/) + the bundled
 #                      template schema (server/template_schema.yml).
 #
@@ -49,6 +51,13 @@ RUN --mount=type=cache,target=/usr/local/cargo/registry \
     --mount=type=cache,target=/usr/local/cargo/git \
     --mount=type=cache,target=/app/target \
     cargo build --release
+
+# Test stage: the build stage plus the integration-test tree. CI builds
+# `--target test` and runs `cargo test --release` in it (with the docker
+# socket mounted for the daemon-dependent tests). The binary-only runtime
+# stage below stays free of test code.
+FROM build AS test
+COPY tests ./tests
 
 FROM debian:trixie-slim
 RUN apt-get update -y && \

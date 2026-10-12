@@ -95,6 +95,15 @@ fn container_ip(ci: &bollard::models::ContainerInspectResponse) -> Option<String
 async fn spin_up_postgres() -> (String, bollard::Docker, String) {
     let client = bollard::Docker::connect_with_local_defaults()
         .expect("connect docker for postgres");
+    // Honor VRECKAN_TEST_POSTGRES_NETWORK (mirrors the Python fixture): the
+    // test container sits on the CI's shared network, so the throwaway
+    // postgres must join it too or its assigned IP is unreachable.
+    let mut host_config = bollard::models::HostConfig::default();
+    if let Ok(net) = std::env::var("VRECKAN_TEST_POSTGRES_NETWORK") {
+        if !net.trim().is_empty() {
+            host_config.network_mode = Some(net.trim().to_string());
+        }
+    }
     let body = bollard::models::ContainerCreateBody {
         image: Some("postgres:16".to_string()),
         env: Some(vec![
@@ -102,7 +111,7 @@ async fn spin_up_postgres() -> (String, bollard::Docker, String) {
             "POSTGRES_PASSWORD=vreckan".to_string(),
             "POSTGRES_DB=vreckan".to_string(),
         ]),
-        host_config: Some(bollard::models::HostConfig::default()),
+        host_config: Some(host_config),
         ..Default::default()
     };
     let cid = client
