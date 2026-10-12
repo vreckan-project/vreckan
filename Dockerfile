@@ -46,10 +46,12 @@ RUN --mount=type=cache,target=/usr/local/cargo/registry \
     --mount=type=cache,target=/usr/local/cargo/git \
     cargo fetch
 
+# NB: no `type=cache` mount for /app/target — the compiled binary must live
+# in the step's own snapshot so `COPY --from=build` finds it when this step
+# is replayed from cache (a mount that outlives the snapshot breaks that).
 COPY src ./src
 RUN --mount=type=cache,target=/usr/local/cargo/registry \
     --mount=type=cache,target=/usr/local/cargo/git \
-    --mount=type=cache,target=/app/target \
     cargo build --release
 
 # Test stage: the build stage plus the integration-test tree. CI builds
