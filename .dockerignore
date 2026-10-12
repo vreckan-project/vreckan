@@ -14,9 +14,11 @@ __pycache__/
 **/__pycache__/
 *.pyc
 *.pyo
-# Tests are dev-only: `cargo test` runs in the dev container / CI, not in
-# the image.
+# Tests are only pulled in by the `test` stage below (CI runs `cargo test`
+# inside that image); the build and runtime stages never COPY them, so the
+# prod image stays test-free.
 tests/
+!tests/
 # Docs and site — not needed to build or run the server.
 *.md
 site/
