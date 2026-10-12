@@ -3,9 +3,38 @@
 Vreckan is a hard fork of [SealSkin 0.3.2](https://github.com/linuxserver/docker-sealskin).
 The full fork analysis — what was removed, rewritten, and added relative to the
 upstream tree — lives in [`HISTORY.md`](./HISTORY.md). This changelog tracks
-development *after* the fork, newest first. Full detail lives in
-`~/work/memory.md` (§13.x); the git history was squashed into a single
-"initial commit" (2026-09-23), so this log is the authoritative record.
+development *after* the fork, newest first. The Python-era entries below date
+from the squashed git history of the original fork; the Rust-port era (2026-10)
+is committed normally in `vreckan-rust`. The changelog is the authoritative
+record of what shipped in each release — see
+[`docs/release.md`](./docs/release.md) for the conventions.
+
+## 2026-10-12 — Rust port kickoff (ANT-1)
+
+- **Initial Rust port of the server** — the Python/FastAPI/uvicorn server is
+  rewritten as a single static Rust binary (`vreckan`; axum + tokio, SeaORM on
+  SQLite/PostgreSQL/MySQL, `ring` for the E2EE crypto, `bollard` for the
+  Docker provider, `tokio-tungstenite` for the WebSocket legs). All 103 unique
+  endpoint paths of the original are present (one additive `GET /api/health`),
+  the web client under `server/static/` is carried over byte-identical, and
+  the test suite is ported 1:1 by name (387 of 388 original tests; 10
+  Rust-only additions).
+- **Parity audit (ANT-5)** — full static-analysis parity audit against the
+  Python original (Gitea baseline `e7b2de6`, v0.5.0): route tables
+  machine-extracted and diffed, handler behavior verified. Result: complete
+  route coverage, 11 documented gaps (G1–G11, 3× P1) handed to core dev. The
+  gap list is maintained in [`docs/port-status.md`](./docs/port-status.md).
+- **Multi-stage Docker image + compose (ANT-3)** — `rust:1.99-slim` build
+  stage, `debian:trixie-slim` runtime (no Python in the image);
+  `docker-compose.yml` for the Rust image (TLS 443, `vreckan-data` bind
+  mount, Docker socket, `/dev/dri` + group add, optional Postgres service);
+  `.base-image-digest` pins the build base image for the nightly-scan digest
+  flow.
+- **Documentation (ANT-8)** — README updated for the Rust port; new
+  [`docs/`](./docs/) tree: `api.md` (endpoint reference with auth/E2EE
+  requirements), `ops.md` (deployment, registries, Gitea runner/CI, databases,
+  TLS, data layout), `release.md` (release & changelog process), and
+  `port-status.md` (known-gaps living record).
 
 ## 2026-09-24 / 2026-09-25 — Branding, UI polish, DAST hardening
 - **Vreckan wordmark** in the sidebar and on the login page (replaces the

@@ -1,10 +1,10 @@
 # Vreckan
 
-> **Vreckan is a hard fork of [SealSkin](https://github.com/linuxserver/docker-sealskin).** It continues the project under a new name with a leaner codebase and its own roadmap. Project homepage: [vreckanproject.com](https://vreckanproject.com) · Source code: [github.com/vreckan-project/vreckan](https://github.com/vreckan-project/vreckan)
+> **Vreckan is a hard fork of [SealSkin](https://github.com/linuxserver/docker-sealskin).** It continues the project under a new name with a leaner codebase and its own roadmap. The server has been rewritten in Rust (see [REWRITE_EVALUATION.md](./REWRITE_EVALUATION.md) and [docs/port-status.md](./docs/port-status.md)). Project homepage: [vreckanproject.com](https://vreckanproject.com) · Server source: [github.com/vreckan-project/vreckan-rust](https://github.com/vreckan-project/vreckan-rust) · Original (Python): [github.com/vreckan-project/vreckan](https://github.com/vreckan-project/vreckan)
 
 Vreckan is a self-hosted, client-server platform that enables users to run powerful, containerized desktop applications streamed directly to a web browser. A built-in web client provides the interface for launching applications, managing files, and, for administrators, managing the platform. Everything runs in the browser, so there is nothing to install.
 
-Get the server [HERE](https://github.com/vreckan-project/vreckan)
+Get the server [HERE](https://github.com/vreckan-project/vreckan-rust)
 
 ## Primary Functions
 
@@ -23,14 +23,14 @@ The system is composed of two primary components that communicate over a secure,
 
 ### Vreckan Server
 
-The server is a single Python (FastAPI/uvicorn) process that handles all management, orchestration, and traffic proxying. It serves two kinds of traffic on the same HTTPS endpoint:
+The server is a single Rust binary (axum + tokio; SeaORM on SQLite, Postgres, or MySQL) that handles all management, orchestration, and traffic proxying. It serves two kinds of traffic on the same HTTPS endpoint:
 
 *   **API (control plane):** Handles user authentication, application management, and the orchestration of new application sessions. All management communication is protected by end-to-end encryption.
 *   **Session proxy (data plane):** A set of reverse-proxy routes (`/api/apps/session/{id}/...`) that forward live application traffic (HTTP and WebSockets) to the internal application containers, so the containers are never directly exposed to the internet.
 
-The server is normally fronted by a single TLS port (443 in the default deployment). `VRECKAN_SESSION_PORT` exists for deployments that want to publish the session-proxy traffic on a separate port; the server discovers its published port mappings from the Docker daemon at startup.
+The server terminates TLS itself and listens on a single endpoint: `0.0.0.0:$VRECKAN_API_PORT` (default **443**). In the Rust port both planes are served on that one listener; the `api_port` / `session_port` settings are carried over from the Python port as published-port metadata.
 
-All durable configuration (users, groups, applications, sessions, tokens, shares, templates) lives in a database — SQLite by default, PostgreSQL for production — rather than config files.
+All durable configuration (users, groups, applications, sessions, tokens, shares, templates) lives in a database — SQLite by default, PostgreSQL or MySQL for production — rather than config files.
 
 ### Vreckan Web Client
 
@@ -68,20 +68,31 @@ The interaction between the web client and the server follows a secure and orche
 The recommended deployment is the pre-built container image:
 
 ```bash
-git clone --depth 1 https://github.com/vreckan-project/vreckan.git
-cd vreckan
+git clone --depth 1 https://github.com/vreckan-project/vreckan-rust.git
+cd vreckan-rust
 cp .env.example .env   # edit to taste (OIDC, Let's Encrypt, ...)
 docker compose up -d
 ```
 
-This runs the server with TLS on port 443 and a persistent `vreckan-data` volume. Versioned image tags (e.g. `:v0.4.2`) are published alongside `latest` for every release.
+This runs the server with TLS on port 443, a persistent `vreckan-data`
+bind mount, Docker-socket access for the app containers, and DRI/GPU device
+pass-through (see [docs/ops.md](./docs/ops.md)). The compose file's `image:`
+tag follows the Rust-cutover decision (ANT-1 D3); `build: .` always builds
+the Rust image from this repo when the tag is not present, so a local build
+runs the Rust server either way. Versioned image tags (e.g. `:v0.4.2`) are
+published alongside `latest` for every release — see the
+[release process](./docs/release.md).
 
-To run from source instead (e.g. for development): install **Python 3.12+** and Docker on the host, then:
+To run from source instead (e.g. for development): install the Rust toolchain
+(the image builds with `rust:1.99-slim`; any recent stable release works) and
+Docker on the host, then:
 
 ```bash
-pip3 install -r requirements.txt
-python3 run_https.py
+cargo run --release
 ```
+
+The binary reads the same `VRECKAN_*` environment variables; point
+`VRECKAN_DATA_ROOT` at a scratch directory for a throwaway dev instance.
 
 ### 2. Web Client Access
 1.  Open the server's web address in any modern browser (for example, `https://<your-server>/`).
@@ -97,13 +108,33 @@ The Vreckan server is configured entirely through `VRECKAN_*` environment variab
 | Environment Variable | Description | Default Value |
 | --- | --- | --- |
 | `VRECKAN_LOG_LEVEL` | Logging level (e.g., DEBUG, INFO, WARNING). | `INFO` |
-| `VRECKAN_API_PORT` | Port for the main API server. The `run_https.py` entrypoint listens on this port with TLS; it defaults to `443` when the variable is unset. | `8000` (settings) / `443` (entrypoint) |
-| `VRECKAN_SESSION_PORT` | Internal port used for the session-proxy traffic; the server discovers its published host mapping from Docker at startup. | `8443` |
-| `VRECKAN_DATABASE_URL` | SQLAlchemy URL of the configuration database. SQLite by default; use a `postgresql+asyncpg://` URL for PostgreSQL. | `sqlite+aiosqlite:////data/vreckan.db` |
+| `VRECKAN_API_PORT` | Port the server binds with TLS. The entrypoint reads this directly and defaults to `443` when it is unset; the `api_port` setting itself defaults to `8000`. | `443` (bind) / `8000` (setting) |
+| `VRECKAN_SESSION_PORT` | Published-port metadata for session-proxy traffic (carried over from the Python port; in the Rust port the session proxy is served on the same listener). | `8443` |
+| `VRECKAN_DATABASE_URL` | Full override of the configuration-database URL (sqlx format). When empty, the URL is built from the `VRECKAN_DB_*` settings below. | *(empty)* |
 | `VRECKAN_APP_RESOURCE_PATH` | URL for the YAML file defining default available applications. | `https://raw.githubusercontent.com/linuxserver/sealskin-apps/refs/heads/master/apps.yml` |
 | `VRECKAN_DEFAULT_APP_TEMPLATES_PATH` | Path to the directory for default application templates. | `server/default_templates` |
-| `VRECKAN_AUTO_UPDATE_APPS` | Enable automatic pulling of the latest app images in the background. | `True` |
+| `VRECKAN_TEMPLATE_SCHEMA_PATH` | Path to the bundled template-schema YAML (the image baseline for the template editor). | `server/template_schema.yml` |
+| `VRECKAN_AUTO_UPDATE_APPS` | Enable automatic pulling of the latest app images in the background. | `true` |
 | `VRECKAN_AUTO_UPDATE_INTERVAL_SECONDS` | How often to check for app image updates (in seconds). | `3600` |
+
+### Database
+
+Backends are selected with `VRECKAN_DB_BACKEND` (SQLite is the default; the
+same 13-table schema is created and migrated idempotently on every start).
+
+| Environment Variable | Description | Default Value |
+| --- | --- | --- |
+| `VRECKAN_DB_BACKEND` | Database backend: `sqlite`, `postgres`, or `mysql`. | `sqlite` |
+| `VRECKAN_DB_HOST` | Database host (postgres/mysql). | `localhost` |
+| `VRECKAN_DB_PORT` | Database port; `0` means the backend default (5432 postgres, 3306 mysql). | `0` |
+| `VRECKAN_DB_USER` | Database username (postgres/mysql). | *(empty)* |
+| `VRECKAN_DB_PASS` | Database password (postgres/mysql). | *(empty)* |
+| `VRECKAN_DB_NAME` | Database name (postgres/mysql). | `vreckan` |
+| `VRECKAN_DB_PATH` | SQLite database file path. | `{data_root}/vreckan.db` |
+
+The default compose setup includes a `postgres:16` service; to use it set
+`VRECKAN_DB_BACKEND=postgres` and `VRECKAN_DB_HOST=postgres` in `.env`
+(see [docs/ops.md](./docs/ops.md)).
 
 ### Storage & paths
 
@@ -153,6 +184,7 @@ These settings can also be edited from the admin UI's SSO page (a value set ther
 | `VRECKAN_OIDC_STATE_TTL_SECONDS` | Lifetime of a single OIDC authorize state token (seconds). | `600` |
 | `VRECKAN_OIDC_ADMIN_GROUPS` | Comma/space-separated group names; OIDC users in any of these groups are auto-promoted to admin. | *(empty)* |
 | `VRECKAN_OIDC_USER_GROUPS` | Comma/space-separated group names that map to regular (non-admin) Vreckan groups; an SSO user not in an admin group is assigned to their first group in this list. | *(empty)* |
+| `VRECKAN_OIDC_REQUIRE_SIGNATURE` | Require a verified `id_token` signature; fail closed when the JWKS is unreachable (set `false` for a claims-only fallback). | `true` |
 
 ### Let's Encrypt (certbot)
 
@@ -169,6 +201,16 @@ These settings can also be edited from the admin UI's Certificates page (a value
 | `VRECKAN_LE_AUTO_RENEW` | Automatically renew Let's Encrypt certificates in the background. | `True` |
 | `VRECKAN_LE_RENEW_CHECK_HOURS` | How often to check for certificate renewal (in hours). | `6` |
 | `VRECKAN_LE_RENEW_BEFORE_DAYS` | Renew the certificate when it expires within this many days. | `30` |
+
+## Documentation
+
+- **[docs/api.md](./docs/api.md)** — full REST/WS endpoint reference for the Rust port, with per-route auth and E2EE requirements.
+- **[docs/ops.md](./docs/ops.md)** — operations & deployment: the container and its host privileges (docker-sock, DRI, group add), image build and registries, the Gitea vLLM-pattern CI/CD flow, database backends, TLS / Let's Encrypt, and the data layout.
+- **[docs/release.md](./docs/release.md)** — the release & changelog process (`bump-and-tag`, `.base-image-digest`, changelog conventions).
+- **[docs/port-status.md](./docs/port-status.md)** — living record of known gaps vs the Python original, sourced from the ANT-5 parity audit.
+- **[REWRITE_EVALUATION.md](./REWRITE_EVALUATION.md)** — the feasibility assessment that kicked off the Rust rewrite.
+- **[HISTORY.md](./HISTORY.md)** — the full record of the original SealSkin hard fork (pre-Rust).
+- **[CHANGELOG.md](./CHANGELOG.md)** — development log, newest first (post-fork).
 
 ## Details
 
