@@ -1,0 +1,32 @@
+# Per-Dockerfile ignore list for the site image. BuildKit picks this up
+# automatically for `docker build -f site/Dockerfile .`, overriding the
+# root .dockerignore (which is scoped to the Rust server image and would
+# otherwise exclude site/ and *.md).
+# Only site/ is COPYed into the image; everything else stays out of the
+# build context to keep the transfer lean.
+.git
+.gitignore
+.env
+# Previous build outputs must never leak into the context.
+target/
+# Python-era leftovers still present in the tree during the port.
+requirements.txt
+pytest.ini
+__pycache__/
+**/__pycache__/
+*.pyc
+*.pyo
+# Tests are dev-only, not needed for the static site image.
+tests/
+screenshots/
+shots/
+data/
+vreckan-data/
+vreckan-postgres-data/
+.pytest_cache/
+_scan_out/
+*.log
+val_out.txt
+codeto*
+.github/
+scripts/
