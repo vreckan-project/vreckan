@@ -1,0 +1,36 @@
+# Vreckan project site — Jekyll configuration.
+# Build with:  docker run --rm -v "$PWD:/src" -w /src jekyll/jekyll:4 jekyll build
+# (output lands in ./_site)
+
+title: Vreckan
+tagline: Safe Harbor for Selkies
+description: >-
+  Vreckan is a self-hosted, client-server platform that streams powerful,
+  containerized desktop applications to any web browser — with end-to-end
+  encryption, sandboxed isolation, and centralized file management.
+url: "https://vreckanproject.com"
+baseurl: ""
+
+repository: vreckan-project/vreckan
+
+logo: /assets/img/vreckan-wordmark.svg
+icon: /assets/img/vreckan-icon-transparent.svg
+
+author:
+  name: Vreckan Project
+
+# The site is a small, hand-written set of pages (no collections needed).
+permalink: pretty
+
+# Keep the build quiet and deterministic.
+exclude:
+  - Gemfile
+  - Gemfile.lock
+  - README.md
+
+defaults:
+  - scope:
+      path: ""
+      type: pages
+    values:
+      layout: default

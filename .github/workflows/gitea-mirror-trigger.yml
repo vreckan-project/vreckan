@@ -1,0 +1,213 @@
+# Gitea Mirror + Trigger — the GitHub-side "vLLM pattern" leg.
+#
+# One workflow, two independent jobs, so a push to main shows a SINGLE run
+# (not two) while keeping the two concerns clearly separated:
+#
+#   mirror-and-trigger  (push to main + pull_request)
+#     1. Mirrors the current branch to the Gitea mirror repo (vreckan/vreckan).
+#        For PRs, the code is mirrored to a `pr/<number>` branch.
+#     2. Dispatches the Gitea build workflow in vreckan/vreckan-workflow so the
+#        heavy build + test + scan runs on Gitea's own runner.
+#
+#   bump-and-tag  (push to main only)
+#     1. Reads the current VERSION from the repo.
+#     2. If the tag v<VERSION> doesn't exist yet, creates it, pushes it to
+#        GitHub, and mirrors it to Gitea. The Gitea "Release" workflow then
+#        fires on the tag push and builds + pushes the container image.
+#     A version only gets tagged when VERSION actually changes (a version-bump
+#     PR is merged); ordinary pushes are a quick no-op.
+#
+# The jobs are independent (no `needs`), so a tag no-op never masks a build
+# failure and vice-versa.
+#
+# This keeps GitHub Actions costs near zero: ~10 seconds of curl + git push,
+# then the real work happens on Gitea.
+#
+# Secrets needed (GitHub):
+#   GITEA_URL    — e.g. https://repo.vreckanproject.com
+#   GITEA_REPO   — e.g. vreckan/vreckan (the mirror repo)
+#   GITEA_TOKEN  — a Gitea PAT with write access to the mirror repo
+#   GH_APP_ID    — the vreckan-ci GitHub App ID
+#   GH_APP_KEY   — the vreckan-ci GitHub App private key (PEM)
+#   (The bump-and-tag job mints a short-lived app installation token from
+#    GH_APP_ID + GH_APP_KEY, so the tag is pushed by the app, not a human PAT.)
+name: Gitea Mirror + Trigger
+
+# TEMPORARILY DISABLED (2026-10-12): auto-triggers commented out so the initial
+# push of the Rust port to the new vreckan-rust repo doesn't fire the Gitea
+# mirror + build. Re-enable by uncommenting the push/pull_request triggers.
+on:
+  # push:
+  #   branches: [main]
+  # pull_request:
+  #   branches: [main]
+  workflow_dispatch:
+
+jobs:
+  mirror-and-trigger:
+    # Skip PRs from forks (e.g. Dependabot) — repo secrets aren't exposed to
+    # fork PRs by default, so the mirror step would fail on missing secrets.
+    # Regular PRs from branches in this repo still run normally.
+    if: github.event_name != 'pull_request' || github.event.pull_request.base.repo.full_name == github.event.pull_request.head.repo.full_name
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          fetch-depth: 0
+
+      - name: Determine target branch
+        id: target
+        run: |
+          if [ "${{ github.event_name }}" = "pull_request" ]; then
+            echo "target_branch=pr/${{ github.event.number }}" >> "$GITHUB_OUTPUT"
+            # For a PR, github.sha is the MERGE commit (head merged onto base),
+            # which does not exist in the mirror. The mirror only has the PR
+            # head commit, so build + post status against that instead.
+            echo "target_sha=${{ github.event.pull_request.head.sha }}" >> "$GITHUB_OUTPUT"
+          else
+            echo "target_branch=main" >> "$GITHUB_OUTPUT"
+            echo "target_sha=${{ github.sha }}" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Mirror to Gitea
+        env:
+          GITEA_URL: ${{ secrets.GITEA_URL }}
+          GITEA_REPO: ${{ secrets.GITEA_REPO }}
+          GITEA_TOKEN: ${{ secrets.GITEA_TOKEN }}
+          GITEA_TARGET_BRANCH: ${{ steps.target.outputs.target_branch }}
+        run: |
+          chmod +x scripts/mirror-to-gitea.sh
+          ./scripts/mirror-to-gitea.sh
+
+      - name: Trigger Gitea build
+        env:
+          GITEA_URL: ${{ secrets.GITEA_URL }}
+          GITEA_REPO: ${{ secrets.GITEA_REPO }}
+          GITEA_TOKEN: ${{ secrets.GITEA_TOKEN }}
+          GITEA_WORKFLOW_REPO: vreckan/vreckan-workflow
+          GITEA_WORKFLOW: build-test.yml
+          # The dispatch ref must name a branch in the WORKFLOW repo (where
+          # build-test.yml lives) so Gitea can read the workflow file — that's
+          # always main. The branch to actually BUILD is passed as the `branch`
+          # input (a mirror branch like pr/<n>), which the workflow's fetch
+          # step clones from the mirror. Using pr/<n> as the ref would fail,
+          # since that branch only exists in the mirror, not the workflow repo.
+          GITEA_REF: "refs/heads/main"
+          # Pass the values as plain scalars and build the JSON in the shell.
+          # Building it inline with ${{ }} in YAML made the Actions expression
+          # evaluator leak a stray '}' into the value (HTTP 422 on dispatch).
+          TARGET_BRANCH: ${{ steps.target.outputs.target_branch }}
+          TARGET_SHA: ${{ steps.target.outputs.target_sha }}
+        run: |
+          chmod +x scripts/trigger-gitea.sh
+          ./scripts/trigger-gitea.sh
+
+  bump-and-tag:
+    # Only meaningful on a push to main (a merged version-bump). Skipped for
+    # PRs and manual dispatches.
+    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          fetch-depth: 0
+
+      - name: Read version
+        id: version
+        run: |
+          set -euo pipefail
+          VERSION=$(cat VERSION)
+          TAG="v${VERSION}"
+          echo "version=${VERSION}" >> "$GITHUB_OUTPUT"
+          echo "tag=${TAG}" >> "$GITHUB_OUTPUT"
+          echo "Current VERSION: ${VERSION} (tag ${TAG})"
+
+      - name: Mint vreckan-ci app token
+        id: apptoken
+        env:
+          GH_APP_ID: ${{ secrets.GH_APP_ID }}
+          GH_APP_KEY: ${{ secrets.GH_APP_KEY }}
+        run: |
+          set -euo pipefail
+          if ! command -v openssl &>/dev/null; then
+            apt-get update -qq && apt-get install -y -qq openssl
+          fi
+          # Build a short-lived JWT signed with the app's private key, then
+          # exchange it for an installation access token. The token acts as the
+          # vreckan-ci app (not a personal account) and carries the app's
+          # permissions (Contents: write), so the tag push is attributed to the
+          # app instead of a human PAT.
+          NOW=$(date +%s)
+          HEADER=$(echo -n '{"alg":"RS256","typ":"JWT"}' | base64 -w0 | sed 's/=//g; s/+/-/g; s/\//_/g')
+          PAYLOAD=$(printf '{"iat":%d,"exp":%d,"iss":%s}' "$((NOW-60))" "$((NOW+60))" "$GH_APP_ID" | base64 -w0 | sed 's/=//g; s/+/-/g; s/\//_/g')
+          echo "$GH_APP_KEY" > /tmp/gh_app_key.pem
+          SIG=$(printf '%s.%s' "$HEADER" "$PAYLOAD" | openssl dgst -sha256 -sign /tmp/gh_app_key.pem | base64 -w0 | sed 's/=//g; s/+/-/g; s/\//_/g')
+          JWT="${HEADER}.${PAYLOAD}.${SIG}"
+          INSTALL_ID=$(curl -sS -H "Authorization: Bearer $JWT" -H "Accept: application/vnd.github+json" \
+            "https://api.github.com/repos/${{ github.repository }}/installation" | jq -r '.id')
+          ITOKEN=$(curl -sS -X POST -H "Authorization: Bearer $JWT" -H "Accept: application/vnd.github+json" \
+            "https://api.github.com/app/installations/${INSTALL_ID}/access_tokens" | jq -r '.token')
+          if [ -z "$ITOKEN" ] || [ "$ITOKEN" = "null" ]; then
+            echo "Failed to mint app installation token" >&2; exit 1
+          fi
+          echo "token=$ITOKEN" >> "$GITHUB_OUTPUT"
+          echo "Minted vreckan-ci app installation token"
+
+      - name: Check if tag already exists
+        id: exists
+        env:
+          GH_TOKEN: ${{ steps.apptoken.outputs.token }}
+        run: |
+          set -euo pipefail
+          TAG="${{ steps.version.outputs.tag }}"
+          CODE=$(curl -sS -o /dev/null -w '%{http_code}' \
+            -H "Authorization: Bearer $GH_TOKEN" \
+            "https://api.github.com/repos/${{ github.repository }}/git/ref/tags/${TAG}")
+          if [ "$CODE" = "200" ]; then
+            echo "exists=true" >> "$GITHUB_OUTPUT"
+            echo "Tag ${TAG} already exists — skipping."
+          else
+            echo "exists=false" >> "$GITHUB_OUTPUT"
+            echo "Tag ${TAG} does not exist — will create."
+          fi
+
+      - name: Create tag + push to GitHub
+        if: steps.exists.outputs.exists == 'false'
+        env:
+          GH_TOKEN: ${{ steps.apptoken.outputs.token }}
+        run: |
+          set -euo pipefail
+          TAG="${{ steps.version.outputs.tag }}"
+          git config user.name "vreckan-ci[bot]"
+          git config user.email "bot@vreckanproject.com"
+          git tag -a "$TAG" -m "Release ${TAG}"
+          # actions/checkout writes a git extraheader (into a temp credentials
+          # file pulled in via includeIf) that authenticates every github.com
+          # request with the (read-only) GITHUB_TOKEN. That overrides the token
+          # embedded in the push URL and causes a 403 ("Write access to
+          # repository not granted"). Override the extraheader inline for this
+          # one command so the app token (which has write access) is actually used.
+          git -c http.https://github.com/.extraheader= push \
+            "https://x-access-token:${GH_TOKEN}@github.com/${{ github.repository }}.git" "$TAG"
+          echo "Pushed tag ${TAG} to GitHub"
+
+      - name: Mirror tag to Gitea
+        if: steps.exists.outputs.exists == 'false'
+        env:
+          GITEA_URL: ${{ secrets.GITEA_URL }}
+          GITEA_REPO: ${{ secrets.GITEA_REPO }}
+          GITEA_TOKEN: ${{ secrets.GITEA_TOKEN }}
+        run: |
+          set -euo pipefail
+          TAG="${{ steps.version.outputs.tag }}"
+          HOST="${GITEA_URL#https://}"
+          AUTH_REMOTE="https://x-access-token:${GITEA_TOKEN}@${HOST}/$(echo "$GITEA_REPO" | sed 's#^/###').git"
+          git remote remove gitea 2>/dev/null || true
+          git remote add gitea "$AUTH_REMOTE"
+          # Push the tag AND the commit it points to (as main) in one shot. The
+          # Gitea release workflow clones `--branch <tag>`, which needs the
+          # commit to already be in the mirror. The mirror-and-trigger job
+          # pushes main in parallel, but pushing it here too removes the race
+          # (both push the same commit, so it's a no-op for them).
+          git push gitea "$TAG" "HEAD:refs/heads/main"
+          echo "Mirrored tag ${TAG} + main to Gitea"

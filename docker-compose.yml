@@ -1,0 +1,41 @@
+name: vreckan
+services:
+  vreckan-http:
+    image: ghcr.io/vreckan-project/vreckan:latest
+    container_name: vreckan-http
+    restart: unless-stopped
+    working_dir: /app
+    ports:
+      - "443:443"
+    env_file:
+      - .env
+    privileged: true
+    ipc: host
+    devices:
+      - /dev/dri:/dev/dri
+    group_add:
+      - "990"
+      - "44"
+    volumes:
+      - ./vreckan-data:/data
+      - /var/run/docker.sock:/var/run/docker.sock
+      - /dev/dri:/dev/dri
+  postgres:
+    image: postgres:16
+    container_name: vreckan-postgres
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: vreckan
+      POSTGRES_PASSWORD: vreckan
+      POSTGRES_DB: vreckan
+    ports:
+      - "5432:5432"
+    volumes:
+      - ./vreckan-postgres-data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U vreckan -d vreckan"]
+      interval: 5s
+      timeout: 5s
+      retries: 12
+      start_period: 10s
+

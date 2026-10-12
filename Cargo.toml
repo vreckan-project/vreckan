@@ -1,0 +1,110 @@
+[package]
+name = "vreckan"
+version = "0.1.0"
+edition = "2021"
+description = "Vreckan server (Rust port of the Python/FastAPI server)"
+# MPL-2.0 to match the upstream SealSkin fork this project derives from (see
+# LICENSE). The Rust source is a net-new implementation; the served web client
+# under `server/static/` carries over SealSkin-licensed files (see the
+# per-file notes in the repo).
+license = "MPL-2.0"
+
+[[bin]]
+name = "vreckan"
+path = "src/main.rs"
+
+[dependencies]
+# HTTP server + routing
+axum = { version = "0.8", features = ["macros", "query", "json", "multipart", "ws", "http2", "form"] }
+axum-extra = { version = "0.10", features = ["cookie"] }
+axum-server = { version = "0.7", features = ["tls-rustls"] }
+axum-reverse-proxy = "2.2"
+tokio = { version = "1", features = ["full"] }
+hyper = { version = "1", features = ["full"] }
+http = "1"
+http-body-util = "0.1"
+futures-util = "0.3"
+tokio-tungstenite = "0.30"
+# Object-safe async trait (the `CertbotDocker` trait in `le_certbot.rs`).
+async-trait = "0.1"
+
+# Database (SeaORM — Django-like ORM over sqlx; multi-backend: SQLite/Postgres/MySQL)
+sea-orm = { version = "2.0", features = ["runtime-tokio", "sqlx-all", "with-json", "macros", "schema-sync"] }
+# `log::LevelFilter` is the type sea-orm's `ConnectOptions::sqlx_logging_level`
+# takes, so we need it as a direct dependency to configure SQL query logging.
+log = "0.4"
+
+# Serialization
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+# YAML (app templates, app-store catalogs, template schema baseline).
+serde_yaml = "0.9"
+
+# Crypto (E2EE + password hashing)
+ring = "0.17"
+argon2 = "0.6"
+sha2 = "0.10"
+base64 = "0.22"
+rand = "0.9"
+# E2EE handshake: RSA-PSS (server identity) + RSA-OAEP (session-key wrap).
+# `sha2` is not a default feature of `rsa`, so enable it explicitly.
+rsa = { version = "0.9", features = ["sha2"] }
+# E2EE payload: AES-256-GCM with the session id as AAD.
+aes-gcm = "0.10"
+# Key encoding (PKCS#8 private key load, SPKI public-key PEM).
+pkcs8 = "0.10"
+spki = "0.7"
+der = "0.7"
+# `rsa 0.9` is built against `rand_core 0.6`; use its `OsRng` for one-time
+# server-key generation (our `rand 0.9` uses `rand_core 0.9`, a different
+# trait version, so it can't be passed to `rsa` directly).
+rand_core = { version = "0.6", features = ["getrandom"] }
+
+# OIDC / SSO
+openid = "0.25"
+jwks = "0.5"
+# JWT (id_token) decode + RS256 signature verification. Pinned to the same
+# major as the `jwks` dependency so the `DecodingKey` types line up.
+jsonwebtoken = "10"
+
+# Docker Engine API
+bollard = "0.21"
+
+# Outbound HTTP (app stores, health checks, OIDC transport)
+reqwest = { version = "0.12", default-features = false, features = ["json", "stream", "rustls-tls"] }
+
+# Backup / restore
+tar = "0.4"
+flate2 = "1"
+
+# TLS / certs
+rustls = { version = "0.23", features = ["ring"] }
+rustls-pemfile = "2"
+x509-cert = "0.2"
+rcgen = "0.13"
+
+# Logging
+tracing = "0.1"
+tracing-subscriber = { version = "0.3", features = ["env-filter"] }
+
+# Misc
+uuid = { version = "1", features = ["v4", "serde"] }
+chrono = { version = "0.4", features = ["serde"] }
+# `time` is a transitive dep of `rcgen`; used directly in tests to build
+# custom certificate validity windows (rcgen's `OffsetDateTime`).
+time = "0.3"
+url = "2"
+mime_guess = "2"
+hex = "0.4"
+thiserror = "2"
+anyhow = "1"
+
+[dev-dependencies]
+# Direct router invocation in integration tests (no real socket needed).
+tower = { version = "0.5", features = ["util"] }
+
+[profile.release]
+opt-level = 3
+lto = true
+codegen-units = 1
+strip = true

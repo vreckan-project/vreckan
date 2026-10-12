@@ -1,0 +1,6 @@
+# Vreckan project site — Jekyll.
+# Build with the official image (no local Ruby needed):
+#   docker run --rm -v "$PWD:/src" -w /src jekyll/jekyll:4 jekyll build
+# Output is written to ./_site
+source "https://rubygems.org"
+gem "jekyll", "~> 4.0"

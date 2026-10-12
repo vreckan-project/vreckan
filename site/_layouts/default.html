@@ -1,0 +1,48 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>{% if page.title %}{{ page.title }} · {{ site.title }}{% else %}{{ site.title }} — {{ site.tagline }}{% endif %}</title>
+  <meta name="description" content="{% if page.description %}{{ page.description }}{% else %}{{ site.description }}{% endif %}">
+  <link rel="icon" type="image/svg+xml" href="{{ site.icon }}">
+  <link rel="icon" type="image/png" sizes="32x32" href="/assets/img/favicon-32.png">
+  <link rel="apple-touch-icon" href="/assets/img/icon-256.png">
+  <link rel="stylesheet" href="/assets/css/site.css">
+</head>
+<body>
+  <header class="site-header">
+    <div class="container header-inner">
+      <a class="brand" href="{{ '/' | relative_url }}">
+        <img src="{{ site.logo }}" alt="Vreckan" class="brand-logo">
+      </a>
+      <nav class="site-nav">
+        <a href="{{ '/' | relative_url }}" class="{% if page.nav == 'overview' %}active{% endif %}">Overview</a>
+        <a href="{{ '/docs/setup' | relative_url }}" class="{% if page.nav == 'setup' %}active{% endif %}">Setup</a>
+        <a href="{{ '/docs/usage' | relative_url }}" class="{% if page.nav == 'usage' %}active{% endif %}">Usage</a>
+        <a href="{{ '/docs/faq' | relative_url }}" class="{% if page.nav == 'faq' %}active{% endif %}">FAQ</a>
+        <a href="https://github.com/vreckan-project/vreckan" class="nav-external" target="_blank" rel="noopener">GitHub</a>
+      </nav>
+    </div>
+  </header>
+
+  <main class="container main">
+    {{ content }}
+  </main>
+
+  <footer class="site-footer">
+    <div class="container footer-inner">
+      <div class="footer-brand">
+        <img src="{{ site.icon }}" alt="" class="footer-icon">
+        <span>Vreckan — {{ site.tagline }}</span>
+      </div>
+      <div class="footer-links">
+        <a href="{{ '/docs/setup' | relative_url }}">Setup</a>
+        <a href="{{ '/docs/usage' | relative_url }}">Usage</a>
+        <a href="{{ '/docs/faq' | relative_url }}">FAQ</a>
+        <a href="https://github.com/vreckan-project/vreckan" target="_blank" rel="noopener">Source</a>
+      </div>
+    </div>
+  </footer>
+</body>
+</html>
