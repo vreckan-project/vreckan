@@ -1,10 +1,13 @@
 name: vreckan
 services:
   vreckan-http:
-    # Rust image (vreckan-rust). `build: .` is the local fallback so the
-    # image can be built from this repo without pulling from a registry;
-    # when the tagged image is already present it is used as-is.
-    image: ghcr.io/vreckan-project/vreckan-rust:latest
+    # Deployment pull stays on the Python image for now (ANT-1 D3: cutover
+    # deferred to a later explicit change). The Rust image is built by the
+    # multi-stage Dockerfile and served by CI/registry once cut over.
+    # `build: .` is the local fallback: `docker compose build` (or
+    # `up --build`) builds the Rust image from this repo and tags it under
+    # the image name above, so it can be run locally without a registry.
+    image: ghcr.io/vreckan-project/vreckan:latest
     build:
       context: .
       dockerfile: Dockerfile
