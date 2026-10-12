@@ -85,7 +85,7 @@ jobs:
           GITEA_REPO: ${{ secrets.GITEA_REPO }}
           GITEA_TOKEN: ${{ secrets.GITEA_TOKEN }}
           GITEA_WORKFLOW_REPO: vreckan/vreckan-workflow
-          GITEA_WORKFLOW: build-test.yml
+          GITEA_WORKFLOW: build-test-rust.yml
           # The dispatch ref must name a branch in the WORKFLOW repo (where
           # build-test.yml lives) so Gitea can read the workflow file — that's
           # always main. The branch to actually BUILD is passed as the `branch`
