@@ -1,21 +1,38 @@
-# Keep the Docker build context lean. Persistent state is provided at runtime
-# by Docker volumes / bind mounts, not baked into the image.
-data/
-vreckan-data/
-screenshots/
-.pytest_cache/
-codeto*
+# Keep the Docker build context lean. The image only needs the Cargo
+# manifests, src/, and server/ (web client + template schema).
+# Persistent state is provided at runtime by Docker volumes / bind mounts,
+# not baked into the image.
+.git/
+.gitignore
+.env
+# Previous build outputs must never leak into the context.
+target/
+# Python-era leftovers still present in the tree during the port.
+requirements.txt
+pytest.ini
 __pycache__/
 **/__pycache__/
 *.pyc
 *.pyo
-.git/
-.gitignore
-.env
+# Tests are dev-only: `cargo test` runs in the dev container / CI, not in
+# the image.
+tests/
+# Docs and site — not needed to build or run the server.
 *.md
+site/
+docs/
+screenshots/
 shots/
+data/
+vreckan-data/
+vreckan-postgres-data/
+.pytest_cache/
 # Security-scan output (trivy/grype JSON reports + the parse helper) — kept
 # out of the image. Safe to delete; regenerate with the Task 8 scan commands.
 _scan_out/
 *.log
 val_out.txt
+codeto*
+# CI plumbing (Gitea mirror/trigger) is not needed in the image.
+.github/
+scripts/

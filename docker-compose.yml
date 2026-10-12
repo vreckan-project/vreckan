@@ -1,7 +1,13 @@
 name: vreckan
 services:
   vreckan-http:
-    image: ghcr.io/vreckan-project/vreckan:latest
+    # Rust image (vreckan-rust). `build: .` is the local fallback so the
+    # image can be built from this repo without pulling from a registry;
+    # when the tagged image is already present it is used as-is.
+    image: ghcr.io/vreckan-project/vreckan-rust:latest
+    build:
+      context: .
+      dockerfile: Dockerfile
     container_name: vreckan-http
     restart: unless-stopped
     working_dir: /app
@@ -38,4 +44,3 @@ services:
       timeout: 5s
       retries: 12
       start_period: 10s
-

@@ -1,26 +1,74 @@
-FROM python:3.12-slim
+# syntax=docker/dockerfile:1
+#
+# Vreckan (Rust port) — multi-stage image build.
+#
+#   stage 1 (build):   rust:1.99-slim (Debian trixie) — `cargo build --release`
+#   stage 2 (runtime): debian:trixie-slim — the compiled `vreckan` binary
+#                      + the web client (server/static/) + the bundled
+#                      template schema (server/template_schema.yml).
+#
+# No Python, no pip, no site-packages, no starlette testclient patch — the
+# server is one Rust binary; TLS (ring/rustls), sqlite, and the web client
+# are all self-contained.
+#
+# Base-image pinning (carried over from the Python image): `.base-image-digest`
+# holds the digest of the BUILD base image (rust:1.99-slim). The nightly scan
+# workflow rebuilds when the live registry digest of that base differs from
+# the `vreckan.base-digest` label of the last nightly image, and its bot PR
+# re-points the file. The runtime base (debian:trixie-slim, the same trixie
+# distro the build stage is built on, so the glibc-linked binary runs as-is)
+# is a fixed tag, not part of the digest convention.
 
-ENV PYTHONDONTWRITEBYTECODE=1 \
-    PYTHONUNBUFFERED=1 \
-    WORK=/data
-
+FROM rust:1.99-slim AS build
 WORKDIR /app
 
-COPY requirements.txt ./
-
+# System deps needed by the -sys crates in the tree (gcc, libc6-dev and
+# ca-certificates already ship with rust:slim):
+#   linux-libc-dev   — kernel UAPI headers, required by the C code bundled
+#                      with libsqlite3-sys and aws-lc-sys
+#   pkg-config +
+#   libssl-dev       — system OpenSSL for openssl-sys (the native-tls
+#                      provider pulled in via openid/jwks -> reqwest)
 RUN apt-get update -y && \
-    DEBIAN_FRONTEND=noninteractive apt-get dist-upgrade -y && \
+    DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends \
+      linux-libc-dev \
+      pkg-config \
+      libssl-dev && \
     apt-get clean && \
-    rm -rf /var/lib/apt/lists/* && \
-    pip install --no-cache-dir -r requirements.txt && \
-    pip uninstall -y ecdsa && \
-    SITE=$(python3 -c "import site; print(site.getsitepackages()[0])") && \
-    sed -i 's/anyio\.abc\.BlockingPortal/anyio.from_thread.BlockingPortal/g' \
-    "$SITE/starlette/testclient.py" && \
-    mkdir -p /data
+    rm -rf /var/lib/apt/lists/*
 
-COPY . ./
+# Warm the cargo cache from manifests alone, so later source-only changes
+# don't re-fetch the whole dependency tree.
+COPY Cargo.toml Cargo.lock ./
+RUN --mount=type=cache,target=/usr/local/cargo/registry \
+    --mount=type=cache,target=/usr/local/cargo/git \
+    cargo fetch
+
+COPY src ./src
+RUN --mount=type=cache,target=/usr/local/cargo/registry \
+    --mount=type=cache,target=/usr/local/cargo/git \
+    --mount=type=cache,target=/app/target \
+    cargo build --release
+
+FROM debian:trixie-slim
+RUN apt-get update -y && \
+    DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends \
+      ca-certificates \
+      libssl3t64 && \
+    apt-get clean && \
+    rm -rf /var/lib/apt/lists/*
+
+WORKDIR /app
+# The compiled server binary.
+COPY --from=build /app/target/release/vreckan /app/vreckan
+# Web client + bundled template schema. Served from paths relative to the
+# container working directory (server/static, server/template_schema.yml).
+COPY server/ /app/server/
+
+# Persistent data tree (database, storage, SSL keys, caches, backups).
+# docker-compose bind-mounts ./vreckan-data here at runtime.
+RUN mkdir -p /data
 
 EXPOSE 443
 
-ENTRYPOINT ["python", "run_https.py"]
+ENTRYPOINT ["/app/vreckan"]
