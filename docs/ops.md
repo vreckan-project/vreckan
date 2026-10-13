@@ -22,7 +22,7 @@ Key properties of the default `docker-compose.yml`:
 
 | Setting | Value | Why |
 |---|---|---|
-| `image` | the published `vreckan` image tag (the `:latest` deployment pull follows the Rust-cutover decision in ANT-1 D3) | `build: .` is the local fallback and always builds the **Rust** image from this repo — so a checkout always runs the Rust server until the image tag is cut over |
+| `image` | the published `ghcr.io/vreckan-project/vreckan` tag — `:latest` by default; pin a versioned tag (e.g. `:v0.6.0`) and drop `build:` in a real deployment (Rust cutover complete, ANT-40) | `build: .` is the local fallback: `docker compose build` / `up --build` builds the **Rust** image from this repo and tags it under the `image:` name, so a local checkout runs the Rust server even without a registry |
 | `ports` | `443:443` | Single TLS port for API + session proxy + web client |
 | `privileged: true` | — | the server creates/manages app containers and needs broad host access (device nodes, cgroups for GPU paths) |
 | `ipc: host` | — | shared memory for the streamed apps |
@@ -70,9 +70,15 @@ docker build -t vreckan .   # multi-stage: rust:1.99-slim build → debian:trixi
 The `Dockerfile` is multi-stage:
 
 - **Build stage** — `rust:1.99-slim` (Debian trixie): `cargo build --release`
-  with BuildKit cargo-cache mounts. The only system deps are
-  `linux-libc-dev`, `pkg-config`, `libssl-dev` (needed by the `-sys` crates
-  and the native-tls stack).
+  with BuildKit cargo-cache mounts. System deps are `linux-libc-dev`,
+  `pkg-config`, `libssl-dev` (needed by the `-sys` crates and the native-tls
+  stack) plus `sccache`, which wraps `rustc` (`RUSTC_WRAPPER=sccache`) and
+  persists the compile cache across builds via a BuildKit `type=cache` mount.
+- **Test stage** — the build stage plus the `tests/` and `server/` trees: CI
+  builds `--target test` and pre-compiles `cargo test --profile test-release`
+  (thin-LTO, codegen-units=16) so the Gitea test job only executes the tests.
+  sccache serves unchanged dependency crates from its persistent cache, and the
+  job count scales with the runner's core count and a per-rustc memory budget.
 - **Runtime stage** — `debian:trixie-slim`: the compiled `vreckan` binary,
   the web client (`server/static/`), and the bundled template schema
   (`server/template_schema.yml`). No Python, no pip. TLS, SQLite, and the
@@ -85,11 +91,11 @@ self-hosted **Gitea Actions runner** does the heavy build/test/scan work.
 GitHub is the source of truth; Gitea is a mirror.
 
 - **`gitea-mirror-trigger.yml`** (the only workflow in this repo; its
-  `push`/`pull_request` triggers are temporarily disabled for the initial
-  Rust-port push):
+  `push`/`pull_request` triggers are re-enabled — they were briefly disabled
+  while the initial Rust-port push was landing):
   - *mirror-and-trigger* — force-mirrors the branch to the Gitea mirror repo
     (`scripts/mirror-to-gitea.sh`; PRs mirror to `pr/<number>`) and dispatches
-    the Gitea-side **`build-test.yml`** workflow (`scripts/trigger-gitea.sh`)
+    the Gitea-side **`build-test-rust.yml`** workflow (`scripts/trigger-gitea.sh`)
     with `branch`/`sha` inputs.
   - *bump-and-tag* — on push to `main`: reads `VERSION`; if tag
     `v<VERSION>` does not exist yet, mints a short-lived GitHub App
@@ -97,10 +103,10 @@ GitHub is the source of truth; Gitea is a mirror.
     tag (and the commit as `main`) to Gitea. **The Gitea Release workflow
     fires on that tag push** and builds + pushes the container image.
 - **Gitea-side workflows** live in the separate `vreckan/vreckan-workflow`
-  repo (not this one): `build-test.yml` (build + test + scan on the Gitea
-  runner), the **Release** workflow (tag → image → registries), and the
-  **nightly scan** workflow (§3.4). See ANT-6 for the staged enablement of
-  this flow on the Rust port.
+  repo (not this one): `build-test-rust.yml` (build + test + scan on the
+  Gitea runner), the **Release (Rust)** workflow (tag → image → registries),
+  and the **nightly scan** workflow (§3.4). See ANT-57 for the staged
+  enablement of this flow on the Rust port.
 
 ### 3.3 Registries
 
