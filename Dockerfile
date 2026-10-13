@@ -63,9 +63,23 @@ RUN --mount=type=cache,target=/usr/local/cargo/registry \
 # settings, which resolve the bundled template schema and the web client at
 # paths relative to the workdir (server/template_schema.yml,
 # server/static) — same layout as the runtime stage.
+#
+# The release test binaries are pre-compiled in this stage so the CI run
+# step only executes tests. The release profile is fat-LTO (lto=true,
+# codegen-units=1): ~24 test-crate codegens each peak at several GB of RAM,
+# and compiling them in the CI container was the long pole of the Gitea
+# test job. The BuildKit cache replays this step on subsequent runs. The
+# job count is capped the same way the workflow caps the run step (6GB of
+# host memory per rustc, clamped to [1,4]) so a memory-pressed runner
+# degrades to sequential codegen instead of OOM-killing parallel rustc.
 FROM build AS test
 COPY tests ./tests
 COPY server ./server
+RUN --mount=type=cache,target=/usr/local/cargo/registry \
+    --mount=type=cache,target=/usr/local/cargo/git \
+    JOBS=$(awk '/^MemAvailable:/{print int($2/1048576/6)}' /proc/meminfo); \
+    [ "$JOBS" -lt 1 ] && JOBS=1; [ "$JOBS" -gt 4 ] && JOBS=4; \
+    CARGO_BUILD_JOBS="$JOBS" cargo test --release --no-run
 
 FROM debian:trixie-slim
 RUN apt-get update -y && \
