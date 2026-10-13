@@ -289,6 +289,15 @@ For full disaster recovery, restore into a fresh (dropped/recreated)
 database and then start the server — the startup schema-sync reconciles
 the rest.
 
+**Full cutover procedure:** the end-to-end runbook for a running deployment —
+pre-cutover snapshot, stopping the legacy service, the dry-run and real
+migration, row-count and health verification, starting the Rust service
+against the bundled Postgres, and the rollback path — is in the
+[cutover runbook](./cutover.md). Its two helpers,
+`scripts/snapshot-sqlite.py` (a stdlib-only online backup of the SQLite
+database) and `scripts/verify-cutover.py` (independent per-table row-count
+comparison plus an `/api/health` check), are covered there step by step.
+
 ## 5. TLS
 
 - **Self-signed (default).** On first run the server generates
