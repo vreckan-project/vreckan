@@ -124,19 +124,6 @@ COLUMNS: Dict[str, List[Tuple[str, str]]] = {
         ("id", "text"),
         ("data", "json"),
     ],
-    "sessions": [
-        ("session_id", "text"),
-        ("data", "json"),
-    ],
-    "auth_tokens": [
-        ("token", "text"),
-        ("username", "text"),
-        ("expires_at", "float"),
-    ],
-    "public_shares": [
-        ("share_id", "text"),
-        ("data", "json"),
-    ],
     "app_templates": [
         ("name", "text"),
         ("settings", "json"),
@@ -162,6 +149,19 @@ COLUMNS: Dict[str, List[Tuple[str, str]]] = {
     "app_settings": [
         ("key", "text"),
         ("value", "text"),
+    ],
+    "public_shares": [
+        ("share_id", "text"),
+        ("data", "json"),
+    ],
+    "sessions": [
+        ("session_id", "text"),
+        ("data", "json"),
+    ],
+    "auth_tokens": [
+        ("token", "text"),
+        ("username", "text"),
+        ("expires_at", "float"),
     ],
 }
 
