@@ -15,12 +15,14 @@ How it works
 The schema is identical across backends. This script:
 
   1. Creates the Postgres schema (``CREATE TABLE IF NOT EXISTS``) with the
-     same tables/columns the server expects (JSON columns as ``jsonb``,
-     booleans native, ``type``/``default`` quoted as reserved words).
+     same tables/columns the server expects (JSON columns as ``json``,
+     strings as ``varchar``, booleans native, ``type``/``default`` quoted as
+     reserved words) — the exact types the server's own schema sync creates
+     on a fresh database, so a migrated DB shows no drift at startup.
   2. Reads every row of every table from the SQLite database.
   3. Replaces the contents of each Postgres table with the migrated rows
      (``DELETE`` + ``INSERT`` inside a single transaction), converting JSON
-     columns from SQLite TEXT to Postgres ``jsonb``.
+     columns from SQLite TEXT to Postgres ``json``.
 
 It is safe to re-run: each pass replaces the target tables' contents, so the
 migration is idempotent. The server does not need to be running during the
@@ -72,15 +74,15 @@ except ImportError:
 # Schema
 # ---------------------------------------------------------------------------
 # (table, [(column, kind), ...]) where kind is one of:
-#   "text"    -> text
+#   "text"    -> varchar (stored as TEXT in SQLite)
 #   "bool"    -> boolean
 #   "int"     -> integer
 #   "float"   -> double precision
-#   "json"    -> jsonb (stored as TEXT in SQLite)
+#   "json"    -> json (stored as TEXT in SQLite)
 #
 # The column set and order mirror `src/entities.rs` (SeaORM entities) and the
 # `known_columns`/`json_columns` maps in `src/db.rs`. JSON columns always hold
-# an object or array in this schema, so the TEXT -> jsonb conversion below is
+# an object or array in this schema, so the TEXT -> json conversion below is
 # unambiguous.
 
 COLUMNS: Dict[str, List[Tuple[str, str]]] = {
@@ -168,12 +170,15 @@ COLUMNS: Dict[str, List[Tuple[str, str]]] = {
 # Tables are created/migrated in a stable order (matches db.rs TABLE_ORDER).
 TABLE_ORDER: List[str] = list(COLUMNS.keys())
 
+# Postgres types. These match what the server's own SeaORM schema sync
+# creates on a fresh Postgres database (strings -> ``varchar``, JSON ->
+# ``json``), so a migrated database shows no drift at server startup.
 KIND_TO_PG = {
-    "text": "text",
+    "text": "varchar",
     "bool": "boolean",
     "int": "integer",
     "float": "double precision",
-    "json": "jsonb",
+    "json": "json",
 }
 
 PRIMARY_KEYS = {
@@ -299,7 +304,7 @@ def convert_cell(kind: str, value: Any) -> Any:
     if value is None:
         return None
     if kind == "json":
-        # SQLite stores JSON as TEXT. Pass it back as a jsonb value; an empty
+        # SQLite stores JSON as TEXT. Pass it back as a json value; an empty
         # string becomes NULL (an empty string is not valid JSON).
         if isinstance(value, (bytes, bytearray)):
             value = value.decode("utf-8", "replace")

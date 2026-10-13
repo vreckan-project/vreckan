@@ -71,6 +71,27 @@ P3 findings from the review are deferred to a later release. `VERSION` and
 `/config/ssl` E2EE key location or the previous SQLite-as-compose-default
 setup, review [docs/ops.md](./docs/ops.md) and the
 [configuration reference](./README.md).
+- **Core Rust fixes from the `ant-30` branch (ANT-30) merged into the
+  v0.6.0 tree.** Swallowed database-write errors in the global-settings,
+  SSO-config, and template-schema saves now surface as 500 instead of
+  silently reporting success; E2EE requests with a mis-sized IV get a 400
+  instead of an index panic; and the files listing validates its pagination
+  bounds (400) instead of indexing out of range.
+- **Python-era leftovers removed from the tree.** The root
+  `requirements.txt` and `pytest.ini` belonged to the FastAPI server (now in
+  the `vreckan-python` archive repo) and the old pytest suite (now a Rust
+  integration test), so both are gone. `server/` stays: the image ships
+  `server/static` (web client) and `server/template_schema.yml` (template
+  editor baseline). The "no Python in the image" claim now matches the tree.
+- **`scripts/migrate-sqlite-to-postgres.py` finalized** (it is the only
+  Python left in the repo). Its table order now matches `db.rs`
+  `TABLE_ORDER`, and its generated DDL now uses the exact column types the
+  server's own schema sync creates on a fresh Postgres (`varchar`/`json`,
+  not `text`/`jsonb`), so a migrated database boots with no schema-drift
+  warnings. It remains idempotent (safe to re-run), and `--dry-run` still
+  previews the DDL and row counts with the stdlib alone. A real run needs
+  `psycopg2-binary` — see docs/ops.md §4.1. Verified end-to-end against a
+  live `postgres:16` with a real v0.6.0 SQLite database.
 
 ## 2026-10-13 — Python-to-Rust switchover, v0.6.0 (ANT-40)
 
