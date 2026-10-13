@@ -33,14 +33,15 @@
 #    GH_APP_ID + GH_APP_KEY, so the tag is pushed by the app, not a human PAT.)
 name: Gitea Mirror + Trigger
 
-# TEMPORARILY DISABLED (2026-10-12): auto-triggers commented out so the initial
-# push of the Rust port to the new vreckan-rust repo doesn't fire the Gitea
-# mirror + build. Re-enable by uncommenting the push/pull_request triggers.
+# Re-enabled (2026-10-13, D5): the first end-to-end Gitea Rust build is
+# green, so the push/PR auto-triggers are armed again. They were commented
+# out on 2026-10-12 while the initial push of the port was landing so the
+# pre-pipeline repo state didn't fire the mirror + build.
 on:
-  # push:
-  #   branches: [main]
-  # pull_request:
-  #   branches: [main]
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
   workflow_dispatch:
 
 jobs:
