@@ -1176,3 +1176,28 @@ async fn test_launch_from_storage_persistent_storage_off() {
     assert_eq!(status, StatusCode::FORBIDDEN);
     assert_eq!(data.unwrap()["detail"], "Persistent storage is disabled for this account.");
 }
+
+// ---------------------------------------------------------------------------
+// /list pagination bounds (client-reachable panic guard)
+// ---------------------------------------------------------------------------
+
+#[tokio::test]
+async fn test_files_list_pagination_bounds_no_panic() {
+    let _root = TempDir::new();
+    let sc = admin_client(build_state(_root.path()).await).await;
+    home(&sc);
+    // Negative/zero/out-of-range `page`/`per_page` must be rejected with 400,
+    // not panic (the unclamped slice indexing panicked before the fix).
+    for qs in ["page=0", "page=-3", "per_page=0", "per_page=-2", "per_page=201"] {
+        let (status, data) = sc
+            .call("GET", &format!("/api/files/list/default?path=/&{qs}"), None)
+            .await;
+        assert_eq!(status, StatusCode::BAD_REQUEST, "{qs}: {data:?}");
+    }
+    // A large but valid page is an empty page (200), not a panic.
+    let (status, data) = sc
+        .call("GET", "/api/files/list/default?path=/&page=999999", None)
+        .await;
+    assert_eq!(status, StatusCode::OK, "{data:?}");
+    assert!(data.unwrap()["items"].as_array().unwrap().is_empty());
+}

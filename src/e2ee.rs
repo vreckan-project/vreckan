@@ -306,6 +306,12 @@ pub async fn decrypt_request_body(
         .map_err(|_| (StatusCode::BAD_REQUEST, "Failed to decrypt request".to_string()))?;
     let cipher = Aes256Gcm::new_from_slice(&aes_key)
         .map_err(|_| (StatusCode::BAD_REQUEST, "Failed to decrypt request".to_string()))?;
+    if iv.len() != 12 {
+        return Err((
+            StatusCode::BAD_REQUEST,
+            format!("IV must be exactly 12 bytes, got {}", iv.len()),
+        ));
+    }
     let mut nonce = Nonce::default();
     nonce.copy_from_slice(&iv);
     let plaintext = cipher

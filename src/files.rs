@@ -828,8 +828,17 @@ async fn list_files(
             .await
         }
     };
+    if q.page < 1 || q.per_page < 1 || q.per_page > 200 {
+        return e2ee::encrypt_response(
+            &state,
+            &headers,
+            StatusCode::BAD_REQUEST,
+            serde_json::json!({ "detail": "page must be >= 1 and per_page must be between 1 and 200" }),
+        )
+        .await;
+    }
     let total = all_items.len();
-    let start = ((q.page - 1) * q.per_page) as usize;
+    let start = (((q.page - 1) * q.per_page) as usize).min(total);
     let end = (start + q.per_page as usize).min(total);
     let paginated = &all_items[start..end];
 
