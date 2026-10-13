@@ -2,7 +2,7 @@
 
 Deployment, infrastructure, and operations reference for the Rust port.
 Build/deployment specifics follow the ANT-3 multi-stage Dockerfile + compose
-and the ANT-6 (in progress) Gitea vLLM-pattern CI/CD work.
+and the ANT-6 Gitea vLLM-pattern CI/CD work.
 
 ## 1. Deployment model
 
@@ -37,10 +37,10 @@ production Postgres deployments (see §4); with the default SQLite backend it
 can be left stopped/removed.
 
 The server binds `0.0.0.0:$VRECKAN_API_PORT` (default **443**) with TLS
-(rustls/ring). `VRECKAN_SESSION_PORT` (default 8443) is the internal
-session-proxy port; deployments that want session traffic on a separate
-published port set it and publish it — the server discovers its published
-port mappings from the Docker daemon at startup.
+(rustls/ring) and serves the API, web client, and session proxy on that
+single listener. `VRECKAN_SESSION_PORT` (default 8443) is carried-over
+metadata from the Python port, which ran the session proxy on a separate
+listener; it does not change the bind port in the Rust port.
 
 ## 2. Quick start
 
