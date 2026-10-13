@@ -1,0 +1,78 @@
+# cargo-deny policy for the vreckan dependency tree (ANT-69).
+#
+# Run `cargo deny check` to run all four checks (advisories, licenses, bans,
+# sources). This is the Rust-centric dependency-hygiene layer that neither
+# the Trivy image scan nor Grype handle well for Rust: SPDX license policy,
+# duplicate-crate dedup, a source allowlist, and advisory (vulnerability)
+# matching. It runs as a nightly gate in the workflow repo's scan-rust.yml.
+#
+# Reference: https://embarkstudios.github.io/cargo-deny/
+
+# [graph]
+# Uncomment to also cover dependencies that are only pulled in via non-default
+# feature flags. The default (all-features = false) matches how the release
+# binary is built (default features).
+# all-features = true
+
+[advisories]
+# Match Cargo.lock against the RustSec advisory DB (cloned from
+# github.com/rustsec/advisory-db; the nightly runner has outbound network).
+# By default a finding in any category (vulnerability / unsound /
+# unmaintained / yanked) is an ERROR, so any NEW advisory fails the nightly.
+# The three currently-known advisories are ignored (with reasons) because they
+# are accepted risk in this tree; drop an entry once its crate is fixed.
+ignore = [
+  # rsa 0.9.x — "Marvin Attack": a non-constant-time RSA leaks the private key
+  # through timing observable over the network. No safe upgrade exists yet
+  # (crypto-bigint migration pending; tracked in RustCrypto/RSA#626). We use
+  # rsa for offline RSA-PSS/OAEP key ops, not an attacker-observable channel.
+  { id = "RUSTSEC-2023-0071", reason = "rsa Marvin-attack timing sidechannel; no safe upgrade yet, offline key usage" },
+  # rustls-pemfile 2.2 — archived/unmaintained. Thin wrapper over
+  # rustls-pki-types (its parsing code moved there); accepted until we drop it.
+  { id = "RUSTSEC-2025-0134", reason = "rustls-pemfile archived; thin wrapper over rustls-pki-types" },
+  # unsafe-libyaml 0.2.11 — archived/unmaintained. Transitive dep of
+  # serde_yaml (itself marked +deprecated); tracked for removal, low risk.
+  { id = "RUSTSEC-2024-0449", reason = "unsafe-libyaml archived; transitive dep of serde_yaml (+deprecated)" },
+]
+
+[licenses]
+# SPDX policy: allow the common permissive licenses plus our own project
+# license (MPL-2.0) and the permissive certificate-data license
+# (CDLA-Permissive-2.0). An OR-expression passes if at least one of its
+# options is allowed, so the only copyleft in the tree (LGPL in r-efi, which
+# is OR'd with MIT/Apache) is satisfied without allowing copyleft. Any other
+# license expression is an ERROR. A 0.94 confidence threshold (stricter than
+# the 0.8 default) flags fuzzy license guesses instead of accepting them.
+confidence-threshold = 0.94
+allow = [
+  "0BSD",
+  "Apache-2.0",
+  "BSD-1-Clause",
+  "BSD-2-Clause",
+  "BSD-3-Clause",
+  "CC0-1.0",
+  "CDLA-Permissive-2.0",
+  "ISC",
+  "MIT",
+  "MIT-0",
+  "MPL-2.0",
+  "Unlicense",
+  "Unicode-3.0",
+  "Zlib",
+]
+
+[bans]
+# Surface duplicate crate versions as WARNINGS (25 crates in the current tree
+# have more than one version — see the nightly log for the list). Tighten to
+# "deny" once the major versions converge. Use `deny = [...]` for explicit
+# crate bans (e.g. to forbid a crate outright regardless of version).
+multiple-versions = "warn"
+deny = []
+
+[sources]
+# Source allowlist: only the canonical crates.io registry; no git/path deps
+# yet. Unexpected sources are WARNINGS (not errors) for now.
+allow-registry = ["https://github.com/rust-lang/crates.io-index"]
+allow-git = []
+unknown-registry = "warn"
+unknown-git = "warn"
