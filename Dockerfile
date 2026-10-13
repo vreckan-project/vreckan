@@ -82,18 +82,20 @@ RUN --mount=type=cache,target=/usr/local/cargo/registry \
 # compiles roughly in half while keeping cross-crate optimisation. sccache
 # further accelerates cold rebuilds by serving unchanged dependency crates
 # from its persistent disk cache. The BuildKit cache replays this step on
-# subsequent runs. The job count is capped the same way the workflow caps
-# the run step (6GB of host memory per rustc, clamped to [1,4]) so a
-# memory-pressed runner degrades to sequential codegen instead of
-# OOM-killing parallel rustc.
+# subsequent runs. The job count now scales with the host: bounded by the
+# core count (a 16-core runner uses all of them instead of the old hard cap
+# of 4) and by a 4GB-per-rustc memory budget (thin-LTO peaks well under the
+# fat-LTO release profile that OOM-killed parallel rustc in runs 132/133),
+# so a memory-pressed runner degrades to sequential codegen instead of OOMing.
 FROM build AS test
 COPY tests ./tests
 COPY server ./server
 RUN --mount=type=cache,target=/usr/local/cargo/registry \
     --mount=type=cache,target=/usr/local/cargo/git \
     --mount=type=volume,source=vreckan-sccache,target=/sccache \
-    JOBS=$(awk '/^MemAvailable:/{print int($2/1048576/6)}' /proc/meminfo); \
-    [ "$JOBS" -lt 1 ] && JOBS=1; [ "$JOBS" -gt 4 ] && JOBS=4; \
+    CORES=$(nproc); \
+    JOBS=$(awk '/^MemAvailable:/{print int($2/1048576/4)}' /proc/meminfo); \
+    [ "$JOBS" -lt 1 ] && JOBS=1; [ "$JOBS" -gt "$CORES" ] && JOBS=$CORES; \
     CARGO_BUILD_JOBS="$JOBS" cargo test --profile test-release --no-run
 
 FROM debian:trixie-slim
