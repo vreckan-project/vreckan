@@ -41,8 +41,10 @@ RUN apt-get update -y && \
     apt-get clean && \
     rm -rf /var/lib/apt/lists/*
 
-# sccache: shared compile cache that persists across builds via the
-# vreckan-sccache named volume (also mounted by the CI test-run step).
+# sccache: shared compile cache that persists across builds via a BuildKit
+# cache mount (the `docker build` driver's BuildKit rejects `type=volume`
+# mounts inside RUN; `type=cache` is supported). The CI test-run step also
+# mounts SCCACHE_DIR so wrapper invocations there have a writable cache.
 # On a cold rebuild (BuildKit layer cache invalidated, e.g. by a
 # source-mirror switch) the dependency crates are still served from the
 # sccache disk cache, so only changed crates are recompiled. Cuts cold
@@ -63,7 +65,7 @@ RUN --mount=type=cache,target=/usr/local/cargo/registry \
 COPY src ./src
 RUN --mount=type=cache,target=/usr/local/cargo/registry \
     --mount=type=cache,target=/usr/local/cargo/git \
-    --mount=type=volume,source=vreckan-sccache,target=/sccache \
+    --mount=type=cache,id=sccache,target=/sccache \
     cargo build --release
 
 # Test stage: the build stage plus the integration-test tree. CI builds
@@ -92,7 +94,7 @@ COPY tests ./tests
 COPY server ./server
 RUN --mount=type=cache,target=/usr/local/cargo/registry \
     --mount=type=cache,target=/usr/local/cargo/git \
-    --mount=type=volume,source=vreckan-sccache,target=/sccache \
+    --mount=type=cache,id=sccache,target=/sccache \
     CORES=$(nproc); \
     JOBS=$(awk '/^MemAvailable:/{print int($2/1048576/4)}' /proc/meminfo); \
     [ "$JOBS" -lt 1 ] && JOBS=1; [ "$JOBS" -gt "$CORES" ] && JOBS=$CORES; \
