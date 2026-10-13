@@ -8,6 +8,8 @@
 //! additionally logs in as the bootstrap admin and performs the E2EE
 //! handshake, mirroring the browser client's crypto.
 
+#![allow(dead_code)]
+
 use std::collections::HashMap;
 use std::path::PathBuf;
 
@@ -15,7 +17,7 @@ use aes_gcm::aead::{Aead, KeyInit, Payload};
 use aes_gcm::{Aes256Gcm, Nonce};
 use base64::Engine;
 use http::header;
-use http::{Request, Response, StatusCode};
+use http::{Request, StatusCode};
 use pkcs8::DecodePublicKey;
 use rsa::{Oaep, RsaPublicKey, sha2::Sha256};
 use serde_json::Value;
@@ -47,8 +49,12 @@ pub fn test_settings(root: &std::path::Path) -> Settings {
     s.server_private_key_path = format!("{}/ssl/server_key.pem", s.data_root);
     s.app_resource_path = format!("{DEAD_URL}apps.yml");
     // Point at the real bundled template schema so the template editor routes
-    // serve the full baseline (mirrors the production layout).
-    s.template_schema_path = "/home/jdee/work/vreckan/server/template_schema.yml".to_string();
+    // serve the full baseline (mirrors the production layout). The path is
+    // relative to the workdir, which is the repo root in a local checkout and
+    // /app (with server/ copied in) in the CI test image; CI may override the
+    // location with VRECKAN_TEST_TEMPLATE_SCHEMA_PATH.
+    s.template_schema_path = std::env::var("VRECKAN_TEST_TEMPLATE_SCHEMA_PATH")
+        .unwrap_or_else(|_| "server/template_schema.yml".to_string());
     s.database_url = format!("sqlite://{}?mode=rwc", root.join("test.db").to_string_lossy());
     s.oidc_enabled = false;
     s.oidc_admin_groups = String::new();
@@ -371,7 +377,17 @@ pub struct TempDir(PathBuf);
 
 impl TempDir {
     pub fn new() -> Self {
-        let dir = std::env::temp_dir().join(format!(
+        // VRECKAN_TEST_TMPDIR lets CI root the fixture tree in a directory
+        // visible to the docker daemon: the test container's own /tmp is not
+        // a valid bind source for the app containers the server launches
+        // through the mounted socket (the daemon resolves the source on its
+        // own host). Locally the default temp dir is used.
+        let root = std::env::var("VRECKAN_TEST_TMPDIR")
+            .ok()
+            .map(PathBuf::from)
+            .filter(|p| !p.as_os_str().is_empty())
+            .unwrap_or_else(std::env::temp_dir);
+        let dir = root.join(format!(
             "vreckan-rust-test-{}-{}",
             std::process::id(),
             uuid::Uuid::new_v4()

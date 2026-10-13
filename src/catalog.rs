@@ -1495,7 +1495,9 @@ pub async fn launch_common(
 
     // --- Volumes + home directory ------------------------------------------
     let mut volumes: HashMap<String, VolumeSpec> = HashMap::new();
-    let mut host_mount_path: Option<String> = None;
+    // Every branch of the chain below assigns `host_mount_path`, so no
+    // initializer (an initial `None` would be a never-read assignment).
+    let mut host_mount_path: Option<String>;
     let mut shared_files_path: Option<String> = None;
 
     let is_persistent_launch = effective_settings

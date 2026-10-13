@@ -6,7 +6,7 @@
 mod common;
 
 use common::{build_state, SecureClient, TempDir};
-use sea_orm::{ActiveModelTrait, EntityTrait};
+use sea_orm::{EntityTrait};
 use serde_json::json;
 use vreckan::catalog;
 use vreckan::entities;

@@ -630,7 +630,7 @@ async fn test_delete_home_dir() {
     // The directory is really gone from disk.
     let home = std::path::Path::new(&sc.state.settings.storage_path).join("alice").join("docs");
     assert!(!home.exists());
-    let (status, listed) = sc.call("GET", "/api/admin/people/alice/homedirs", None).await;
+    let (_status, listed) = sc.call("GET", "/api/admin/people/alice/homedirs", None).await;
     assert_eq!(listed.unwrap(), json!({ "home_dirs": [] }));
 }
 

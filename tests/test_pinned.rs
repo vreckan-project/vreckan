@@ -8,7 +8,7 @@
 mod common;
 
 use common::{build_state, SecureClient, TempDir};
-use sea_orm::{ActiveModelTrait, ColumnTrait, EntityTrait, QueryFilter};
+use sea_orm::{ColumnTrait, EntityTrait, QueryFilter};
 use serde_json::json;
 use vreckan::entities;
 
@@ -166,7 +166,7 @@ async fn test_set_default() {
         .await;
     assert_eq!(status.as_u16(), 200);
     assert_eq!(data, Some(json!({ "ok": true })));
-    let (status, listing) = sc.call("GET", "/api/pinned", None).await;
+    let (_status, listing) = sc.call("GET", "/api/pinned", None).await;
     let listing = listing.unwrap();
     let by_id: std::collections::HashMap<&str, &serde_json::Value> = listing
         .as_array()
@@ -232,7 +232,7 @@ async fn test_delete_pinned() {
         .call("DELETE", &format!("/api/pinned/{}", created["id"].as_str().unwrap()), None)
         .await;
     assert_eq!(status.as_u16(), 204);
-    let (status, listing) = sc.call("GET", "/api/pinned", None).await;
+    let (_status, listing) = sc.call("GET", "/api/pinned", None).await;
     assert_eq!(listing, Some(json!([])));
 }
 

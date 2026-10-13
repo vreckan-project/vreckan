@@ -22,6 +22,8 @@ use std::collections::HashMap;
 use std::sync::{Mutex, OnceLock};
 use std::time::Duration;
 
+use bollard::query_parameters::CreateImageOptions;
+use futures_util::StreamExt;
 use sea_orm::{ConnectionTrait, Statement};
 use vreckan::db;
 use vreckan::db::Db;
@@ -95,6 +97,18 @@ fn container_ip(ci: &bollard::models::ContainerInspectResponse) -> Option<String
 async fn spin_up_postgres() -> (String, bollard::Docker, String) {
     let client = bollard::Docker::connect_with_local_defaults()
         .expect("connect docker for postgres");
+    // Pull postgres:16 if the daemon doesn't have it yet (fresh runners);
+    // creating a container from a missing image is a hard 404.
+    if client.inspect_image("postgres:16").await.is_err() {
+        let options = CreateImageOptions {
+            from_image: Some("postgres:16".to_string()),
+            ..Default::default()
+        };
+        let mut stream = client.create_image(Some(options), None, None);
+        while let Some(event) = stream.next().await {
+            event.expect("pull postgres:16");
+        }
+    }
     // Honor VRECKAN_TEST_POSTGRES_NETWORK (mirrors the Python fixture): the
     // test container sits on the CI's shared network, so the throwaway
     // postgres must join it too or its assigned IP is unreachable.
@@ -275,7 +289,7 @@ async fn drop_pg_db(s: &PgServer, dbname: &str) {
 /// Build a fresh `AppState` against a brand-new Postgres database (mirrors
 /// `build_state` but pointed at Postgres).
 async fn build_pg_state() -> (AppState, String) {
-    let s = pg_server().await;
+    let _s = pg_server().await;
     let (d, dbname) = new_pg_db().await;
     let settings = Settings::from_env();
     let state = AppState::new(settings, d);

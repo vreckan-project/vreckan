@@ -292,7 +292,7 @@ async fn test_launch_nvidia_gpu_with_wayland_sets_dri_node() {
 #[tokio::test]
 async fn test_launch_unknown_gpu_rejected() {
     let _root = TempDir::new();
-    let mut sc = SecureClient::new(build_state(_root.path()).await);
+    let sc = SecureClient::new(build_state(_root.path()).await);
     make_app(&sc, None).await;
     user_manager::create_home_dir(&sc.state.settings, "admin", "default").unwrap();
     let settings = user_manager::get_effective_settings(&sc.state.db, "admin").await.unwrap();
@@ -329,7 +329,7 @@ async fn test_launch_unknown_gpu_rejected() {
 #[tokio::test]
 async fn test_launch_nvidia_gpu_rejected_when_unsupported() {
     let _root = TempDir::new();
-    let mut sc = SecureClient::new(build_state(_root.path()).await);
+    let sc = SecureClient::new(build_state(_root.path()).await);
     make_app(&sc, None).await;
     user_manager::create_home_dir(&sc.state.settings, "admin", "default").unwrap();
     let settings = user_manager::get_effective_settings(&sc.state.db, "admin").await.unwrap();
@@ -393,7 +393,7 @@ async fn test_launch_global_default_gpu_fallback() {
 #[tokio::test]
 async fn test_launch_denied_without_access() {
     let _root = TempDir::new();
-    let mut sc = SecureClient::new(build_state(_root.path()).await);
+    let sc = SecureClient::new(build_state(_root.path()).await);
     make_app(&sc, Some(&json!({ "users": ["alice"] }))).await;
     user_manager::create_home_dir(&sc.state.settings, "admin", "default").unwrap();
     let settings = user_manager::get_effective_settings(&sc.state.db, "admin").await.unwrap();
@@ -424,7 +424,7 @@ async fn test_launch_denied_without_access() {
 #[tokio::test]
 async fn test_launch_missing_app_404() {
     let _root = TempDir::new();
-    let mut sc = SecureClient::new(build_state(_root.path()).await);
+    let sc = SecureClient::new(build_state(_root.path()).await);
     let settings = user_manager::get_effective_settings(&sc.state.db, "admin").await.unwrap();
     sc.state.fake_provider.store(true, std::sync::atomic::Ordering::Relaxed);
     let result = catalog::launch_common(
@@ -579,7 +579,7 @@ async fn test_launch_explicit_env_vars_win_over_template() {
 #[tokio::test]
 async fn test_launch_url_env_var_mapping() {
     let _root = TempDir::new();
-    let mut sc = SecureClient::new(build_state(_root.path()).await);
+    let sc = SecureClient::new(build_state(_root.path()).await);
     let mut pc = serde_json::from_str::<Value>(DEFAULT_PROVIDER_CONFIG).unwrap();
     pc["url_env_var"] = json!("FIREFOX_CLI");
     make_app(&sc, Some(&json!({ "provider_config": pc }))).await;

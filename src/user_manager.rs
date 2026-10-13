@@ -180,14 +180,6 @@ struct ServerState {
 
 static SERVER_STATE: OnceLock<ServerState> = OnceLock::new();
 
-fn server_state() -> &'static ServerState {
-    SERVER_STATE.get_or_init(|| ServerState {
-        server_public_key_pem: None,
-        external_api_port: 8000,
-        external_session_port: 8443,
-    })
-}
-
 /// Set the server's public key for use in log messages.
 pub fn set_server_public_key(key: &str) {
     let mut state = ServerState {

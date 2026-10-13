@@ -13,9 +13,8 @@ mod common;
 
 use common::{build_state, SecureClient, TempDir};
 use http::StatusCode;
-use sea_orm::{ActiveModelTrait, ColumnTrait, EntityTrait, QueryFilter};
+use sea_orm::{ColumnTrait, EntityTrait, QueryFilter};
 use serde_json::json;
-use vreckan::user_manager;
 
 /// A valid install body (InstalledApp) for the firefox store app.
 const INSTALL_BODY: &str = r#"{
@@ -178,7 +177,7 @@ async fn test_global_settings_clear() {
         .await;
     assert_eq!(status, StatusCode::OK);
     assert_eq!(data, Some(json!({ "ok": true })));
-    let (status, data) = sc.call("GET", "/api/admin/global-settings", None).await;
+    let (_status, data) = sc.call("GET", "/api/admin/global-settings", None).await;
     assert!(data.as_ref().unwrap()["global_default_gpu"].is_null());
     let count = vreckan::entities::app_setting::Entity::find()
         .filter(vreckan::entities::app_setting::Column::Key.eq("global_default_gpu"))
@@ -207,7 +206,7 @@ async fn test_global_settings_missing_key_is_noop() {
         .await;
     assert_eq!(status, StatusCode::OK);
     assert_eq!(data, Some(json!({ "ok": true })));
-    let (status, data) = sc.call("GET", "/api/admin/global-settings", None).await;
+    let (_status, data) = sc.call("GET", "/api/admin/global-settings", None).await;
     assert_eq!(data.as_ref().unwrap()["global_default_gpu"], device);
 }
 

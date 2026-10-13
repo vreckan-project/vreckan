@@ -58,8 +58,14 @@ RUN --mount=type=cache,target=/usr/local/cargo/registry \
 # `--target test` and runs `cargo test --release` in it (with the docker
 # socket mounted for the daemon-dependent tests). The binary-only runtime
 # stage below stays free of test code.
+#
+# `server/` comes along too: the tests boot the real server with its default
+# settings, which resolve the bundled template schema and the web client at
+# paths relative to the workdir (server/template_schema.yml,
+# server/static) — same layout as the runtime stage.
 FROM build AS test
 COPY tests ./tests
+COPY server ./server
 
 FROM debian:trixie-slim
 RUN apt-get update -y && \

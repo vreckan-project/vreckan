@@ -9,7 +9,6 @@ mod common;
 use common::{build_state, SecureClient, TempDir};
 use sea_orm::{ActiveModelTrait, EntityTrait, IntoActiveModel};
 use serde_json::json;
-use vreckan::user_manager;
 
 #[tokio::test]
 async fn test_my_homedirs_requires_auth() {
@@ -41,7 +40,7 @@ async fn test_create_my_home_dir() {
         .await;
     assert_eq!(status.as_u16(), 201);
     assert_eq!(data, Some(json!({ "status": "success", "home_name": "work" })));
-    let (status, data) = sc.call("GET", "/api/homedirs", None).await;
+    let (_status, data) = sc.call("GET", "/api/homedirs", None).await;
     assert_eq!(data, Some(json!({ "home_dirs": ["work"] })));
     // The skeleton directory exists on disk under the user's storage.
     let path = std::path::Path::new(&sc.state.settings.storage_path).join("admin").join("work");
@@ -122,7 +121,7 @@ async fn test_delete_my_home_dir() {
     let (status, _) = sc.call("DELETE", "/api/homedirs/work", None).await;
     assert_eq!(status.as_u16(), 204);
     assert!(!path.exists());
-    let (status, data) = sc.call("GET", "/api/homedirs", None).await;
+    let (_status, data) = sc.call("GET", "/api/homedirs", None).await;
     assert_eq!(data, Some(json!({ "home_dirs": [] })));
 }
 

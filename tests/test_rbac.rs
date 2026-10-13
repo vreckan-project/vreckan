@@ -31,7 +31,6 @@ use vreckan::permissions;
 use vreckan::user_manager;
 
 const CLIENT_ID: &str = "vreckan-test-client";
-const CLIENT_SECRET: &str = "test-client-secret";
 
 /// Base64url-encode a big-endian byte slice without padding.
 fn b64u(bytes: &[u8]) -> String {
@@ -891,7 +890,7 @@ async fn test_full_admin_allowed_everywhere() {
 async fn test_roles_api_crud() {
     let _root = TempDir::new();
     let state = build_state(_root.path()).await;
-    let mut sc = make_logged_in_client(state.clone(), "admin", "admin1234").await;
+    let sc = make_logged_in_client(state.clone(), "admin", "admin1234").await;
     // Create.
     let (status, role) = sc
         .call(
@@ -934,7 +933,7 @@ async fn test_roles_api_crud() {
     // Delete (nothing is assigned to it).
     let (status, _) = sc.call("DELETE", "/api/admin/roles/editors", None).await;
     assert_eq!(status, StatusCode::NO_CONTENT);
-    let (status, roles) = sc.call("GET", "/api/admin/roles", None).await;
+    let (_status, roles) = sc.call("GET", "/api/admin/roles", None).await;
     let names: std::collections::HashSet<String> = roles
         .unwrap()
         .as_array()
@@ -980,7 +979,7 @@ async fn test_permissions_catalog_endpoint() {
 async fn test_people_access_endpoint() {
     let _root = TempDir::new();
     let state = build_state(_root.path()).await;
-    let mut sc = make_logged_in_client(state.clone(), "admin", "admin1234").await;
+    let sc = make_logged_in_client(state.clone(), "admin", "admin1234").await;
     // Create a user, then grant them a role + permission + group via /access.
     let (status, _) = sc
         .call("POST", "/api/admin/people", Some(&json!({ "username": "dave" })))
@@ -1094,7 +1093,7 @@ async fn test_sso_put_persists_and_overrides_env() {
     let _root = TempDir::new();
     let mut state = build_state(_root.path()).await;
     state.settings.oidc_admin_groups = "env-admin".to_string();
-    let mut sc = make_logged_in_client(state.clone(), "admin", "admin1234").await;
+    let sc = make_logged_in_client(state.clone(), "admin", "admin1234").await;
     let (status, _) = sc
         .call(
             "PUT",
@@ -1120,7 +1119,7 @@ async fn test_sso_put_persists_and_overrides_env() {
     assert_eq!(cfg.admin_groups, "vdi-admins");
     assert_eq!(cfg.user_groups, "vdi-users");
     // The source badge now reports db for the edited fields.
-    let (status, data) = sc.call("GET", "/api/admin/sso", None).await;
+    let (_status, data) = sc.call("GET", "/api/admin/sso", None).await;
     let data = data.unwrap();
     assert_eq!(data["sources"]["oidc_admin_groups"], "db");
     assert_eq!(data["values"]["oidc_admin_groups"], json!(["vdi-admins"]));
@@ -1132,7 +1131,7 @@ async fn test_sso_test_connection() {
     // A live mock IdP stands in for the provider's discovery endpoint.
     let mut idp = MockIdp::new();
     idp.start();
-    let mut state = build_state(_root.path()).await;
+    let state = build_state(_root.path()).await;
     // Point the issuer at the mock (via DB, as if saved on the SSO page), with
     // a trailing slash to exercise the endpoint's slash-stripping.
     state

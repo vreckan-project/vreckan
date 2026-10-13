@@ -21,7 +21,7 @@ mod common;
 
 use common::{build_state, SecureClient, TempDir};
 use http::StatusCode;
-use sea_orm::{ActiveModelTrait, EntityTrait};
+use sea_orm::{EntityTrait};
 use serde_json::json;
 use vreckan::catalog;
 
@@ -172,7 +172,7 @@ async fn test_create_template_overrides_existing() {
         .await;
     assert_eq!(status, StatusCode::CREATED, "{:?}", body);
     assert_eq!(body.as_ref().unwrap()["settings"], json!({ "TITLE": "Two" }));
-    let (status, templates) = sc.call("GET", "/api/admin/apps/templates", None).await;
+    let (_status, templates) = sc.call("GET", "/api/admin/apps/templates", None).await;
     let entry = templates
         .as_ref()
         .unwrap()
@@ -213,7 +213,7 @@ async fn test_delete_user_template() {
         .call("DELETE", "/api/admin/apps/templates/My%20Template", None)
         .await;
     assert_eq!(status, StatusCode::NO_CONTENT);
-    let (status, templates) = sc.call("GET", "/api/admin/apps/templates", None).await;
+    let (_status, templates) = sc.call("GET", "/api/admin/apps/templates", None).await;
     let names: Vec<&str> = templates
         .as_ref()
         .unwrap()
@@ -269,7 +269,7 @@ async fn test_builtin_template_override_and_restore() {
     sc.handshake().await;
     builtin_templates(&mut sc).await;
     // A pure built-in cannot be deleted ...
-    let (status, body) = sc.call("DELETE", "/api/admin/apps/templates/Built-In", None).await;
+    let (status, _body) = sc.call("DELETE", "/api/admin/apps/templates/Built-In", None).await;
     assert_eq!(status, StatusCode::FORBIDDEN);
     // ... but it can be overridden by a user template with the same name.
     let (status, _) = sc
@@ -441,7 +441,7 @@ async fn test_save_schema_builtin_default_tracks_yaml() {
         )
         .await;
     assert_eq!(status, StatusCode::OK, "{:?}", body);
-    let (status, schema) = sc.call("GET", "/api/admin/apps/templates/schema", None).await;
+    let (_status, schema) = sc.call("GET", "/api/admin/apps/templates/schema", None).await;
     let entry = schema
         .as_ref()
         .unwrap()["settings"]
@@ -470,7 +470,7 @@ async fn test_save_schema_empty_current_becomes_null() {
         )
         .await;
     assert_eq!(status, StatusCode::OK, "{:?}", body);
-    let (status, schema) = sc.call("GET", "/api/admin/apps/templates/schema", None).await;
+    let (_status, schema) = sc.call("GET", "/api/admin/apps/templates/schema", None).await;
     let entry = schema
         .as_ref()
         .unwrap()["settings"]
@@ -496,7 +496,7 @@ async fn test_save_schema_custom_setting_keeps_admin_default() {
         )
         .await;
     assert_eq!(status, StatusCode::OK, "{:?}", body);
-    let (status, schema) = sc.call("GET", "/api/admin/apps/templates/schema", None).await;
+    let (_status, schema) = sc.call("GET", "/api/admin/apps/templates/schema", None).await;
     let entry = schema
         .as_ref()
         .unwrap()["settings"]
@@ -524,7 +524,7 @@ async fn test_save_schema_select_options_filtered() {
         )
         .await;
     assert_eq!(status, StatusCode::OK, "{:?}", body);
-    let (status, schema) = sc.call("GET", "/api/admin/apps/templates/schema", None).await;
+    let (_status, schema) = sc.call("GET", "/api/admin/apps/templates/schema", None).await;
     let entry = schema
         .as_ref()
         .unwrap()["settings"]

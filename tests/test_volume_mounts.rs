@@ -13,7 +13,7 @@ mod common;
 
 use common::{build_state, SecureClient, TempDir};
 use http::StatusCode;
-use sea_orm::{EntityTrait, QueryTrait};
+use sea_orm::{EntityTrait};
 use serde_json::json;
 use vreckan::entities;
 

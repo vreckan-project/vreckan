@@ -17,7 +17,7 @@
 mod common;
 
 use base64::Engine;
-use common::{build_state, SecureClient, TempDir, DEAD_URL};
+use common::{build_state, SecureClient, TempDir};
 use http::StatusCode;
 use serde_json::{json, Value};
 use std::collections::HashMap;
@@ -226,7 +226,7 @@ async fn test_list_stores_seeds_default() {
 async fn test_add_store() {
     let _root = TempDir::new();
     let state = build_state(_root.path()).await;
-    let mut sc = admin_client(state).await;
+    let sc = admin_client(state).await;
     let (status, body) = sc
         .call("POST", "/api/admin/apps/stores", Some(&json!({ "name": "Test Store", "url": STORE_URL })))
         .await;
@@ -249,7 +249,7 @@ async fn test_add_store() {
 async fn test_add_store_duplicate() {
     let _root = TempDir::new();
     let state = build_state(_root.path()).await;
-    let mut sc = admin_client(state).await;
+    let sc = admin_client(state).await;
     let (status, _) = sc
         .call("POST", "/api/admin/apps/stores", Some(&json!({ "name": "Test Store", "url": STORE_URL })))
         .await;
@@ -269,7 +269,7 @@ async fn test_add_store_duplicate() {
 async fn test_add_store_malformed_body() {
     let _root = TempDir::new();
     let state = build_state(_root.path()).await;
-    let mut sc = admin_client(state).await;
+    let sc = admin_client(state).await;
     // Missing the required 'url' field: the unguarded-parse bug used to
     // surface as a 500; the fix maps it to a 422.
     let (status, body) = sc
@@ -293,7 +293,7 @@ async fn test_delete_store_unknown() {
 async fn test_delete_store() {
     let _root = TempDir::new();
     let state = build_state(_root.path()).await;
-    let mut sc = admin_client(state).await;
+    let sc = admin_client(state).await;
     let (status, _) = sc
         .call("POST", "/api/admin/apps/stores", Some(&json!({ "name": "Test Store", "url": STORE_URL })))
         .await;
@@ -466,7 +466,7 @@ async fn test_available_apps_poisoned_cache_refetches() {
 async fn test_install_app_malformed_body() {
     let _root = TempDir::new();
     let state = build_state(_root.path()).await;
-    let mut sc = admin_client(state).await;
+    let sc = admin_client(state).await;
     let mut body = install_body("app-1", "Firefox", "lscr.io/linuxserver/firefox:latest");
     body["provider_config"]["image"] = Value::Null;
     let (status, resp) = sc
@@ -480,7 +480,7 @@ async fn test_install_app_malformed_body() {
 async fn test_update_installed_app_unknown() {
     let _root = TempDir::new();
     let state = build_state(_root.path()).await;
-    let mut sc = admin_client(state).await;
+    let sc = admin_client(state).await;
     let (status, body) = sc
         .call(
             "PUT",
@@ -496,7 +496,7 @@ async fn test_update_installed_app_unknown() {
 async fn test_update_installed_app_id_mismatch() {
     let _root = TempDir::new();
     let state = build_state(_root.path()).await;
-    let mut sc = admin_client(state).await;
+    let sc = admin_client(state).await;
     sc.state.pull_noop.store(true, std::sync::atomic::Ordering::Relaxed);
     let (status, _) = sc
         .call(
@@ -522,7 +522,7 @@ async fn test_update_installed_app_id_mismatch() {
 async fn test_update_installed_app_malformed_body() {
     let _root = TempDir::new();
     let state = build_state(_root.path()).await;
-    let mut sc = admin_client(state).await;
+    let sc = admin_client(state).await;
     sc.state.pull_noop.store(true, std::sync::atomic::Ordering::Relaxed);
     let (status, _) = sc
         .call(
@@ -567,7 +567,7 @@ async fn test_check_app_update_unknown() {
 async fn test_check_app_update_no_remote() {
     let _root = TempDir::new();
     let state = build_state(_root.path()).await;
-    let mut sc = admin_client(state).await;
+    let sc = admin_client(state).await;
     sc.state.pull_noop.store(true, std::sync::atomic::Ordering::Relaxed);
     // The image's registry cannot be resolved (.invalid is reserved for
     // exactly this), so the daemon reports no digest and the endpoint
@@ -596,7 +596,7 @@ async fn test_check_app_update_no_remote() {
 async fn test_check_all_updates() {
     let _root = TempDir::new();
     let state = build_state(_root.path()).await;
-    let mut sc = admin_client(state).await;
+    let sc = admin_client(state).await;
     // Fake the Docker provider (deterministic digests) and no-op the pull.
     sc.state.fake_provider.store(true, std::sync::atomic::Ordering::Relaxed);
     sc.state.pull_noop.store(true, std::sync::atomic::Ordering::Relaxed);
@@ -635,7 +635,7 @@ async fn test_check_all_updates() {
 async fn test_check_all_updates_empty() {
     let _root = TempDir::new();
     let state = build_state(_root.path()).await;
-    let mut sc = admin_client(state).await;
+    let sc = admin_client(state).await;
     sc.state.fake_provider.store(true, std::sync::atomic::Ordering::Relaxed);
     let (status, data) = sc
         .call("POST", "/api/admin/apps/installed/check_all_updates", None)
@@ -648,7 +648,7 @@ async fn test_check_all_updates_empty() {
 async fn test_pull_all_latest() {
     let _root = TempDir::new();
     let state = build_state(_root.path()).await;
-    let mut sc = admin_client(state).await;
+    let sc = admin_client(state).await;
     sc.state.fake_provider.store(true, std::sync::atomic::Ordering::Relaxed);
     sc.state.pull_noop.store(true, std::sync::atomic::Ordering::Relaxed);
     sc.call(
@@ -691,7 +691,7 @@ async fn test_pull_all_latest() {
 async fn test_pull_all_latest_already_queued() {
     let _root = TempDir::new();
     let state = build_state(_root.path()).await;
-    let mut sc = admin_client(state).await;
+    let sc = admin_client(state).await;
     sc.state.fake_provider.store(true, std::sync::atomic::Ordering::Relaxed);
     sc.state.pull_noop.store(true, std::sync::atomic::Ordering::Relaxed);
     sc.call(
@@ -723,7 +723,7 @@ async fn test_pull_all_latest_already_queued() {
 async fn test_create_meta_app() {
     let _root = TempDir::new();
     let state = build_state(_root.path()).await;
-    let mut sc = admin_client(state).await;
+    let sc = admin_client(state).await;
     sc.state.pull_noop.store(true, std::sync::atomic::Ordering::Relaxed);
     let (status, base) = sc
         .call(
@@ -769,7 +769,7 @@ async fn test_create_meta_app() {
 async fn test_create_meta_app_missing_base() {
     let _root = TempDir::new();
     let state = build_state(_root.path()).await;
-    let mut sc = admin_client(state).await;
+    let sc = admin_client(state).await;
     let (status, body) = sc
         .call(
             "POST",
@@ -791,7 +791,7 @@ async fn test_create_meta_app_missing_base() {
 async fn test_create_meta_app_malformed_body() {
     let _root = TempDir::new();
     let state = build_state(_root.path()).await;
-    let mut sc = admin_client(state).await;
+    let sc = admin_client(state).await;
     let (status, body) = sc
         .call("POST", "/api/admin/apps/meta", Some(&json!({ "name": "X" })))
         .await;
@@ -803,7 +803,7 @@ async fn test_create_meta_app_malformed_body() {
 async fn test_create_meta_app_invalid_logo() {
     let _root = TempDir::new();
     let state = build_state(_root.path()).await;
-    let mut sc = admin_client(state).await;
+    let sc = admin_client(state).await;
     sc.state.pull_noop.store(true, std::sync::atomic::Ordering::Relaxed);
     let (status, _) = sc
         .call(
@@ -859,7 +859,7 @@ async fn test_app_icon_missing() {
 async fn test_app_icon_serves_saved_icon() {
     let _root = TempDir::new();
     let state = build_state(_root.path()).await;
-    let mut sc = admin_client(state).await;
+    let sc = admin_client(state).await;
     sc.state.pull_noop.store(true, std::sync::atomic::Ordering::Relaxed);
     let (status, _) = sc
         .call(
@@ -902,7 +902,7 @@ async fn test_app_icon_serves_saved_icon() {
 async fn test_launch_meta_customize_unknown_app() {
     let _root = TempDir::new();
     let state = build_state(_root.path()).await;
-    let mut sc = admin_client(state).await;
+    let sc = admin_client(state).await;
     let (status, body) = sc
         .call("POST", "/api/admin/launch/meta_customize", Some(&json!({ "application_id": "ghost" })))
         .await;
@@ -914,7 +914,7 @@ async fn test_launch_meta_customize_unknown_app() {
 async fn test_launch_meta_customize_non_meta_app() {
     let _root = TempDir::new();
     let state = build_state(_root.path()).await;
-    let mut sc = admin_client(state).await;
+    let sc = admin_client(state).await;
     sc.state.pull_noop.store(true, std::sync::atomic::Ordering::Relaxed);
     let (status, _) = sc
         .call(
@@ -935,7 +935,7 @@ async fn test_launch_meta_customize_non_meta_app() {
 async fn test_launch_meta_customize_malformed_body() {
     let _root = TempDir::new();
     let state = build_state(_root.path()).await;
-    let mut sc = admin_client(state).await;
+    let sc = admin_client(state).await;
     let (status, body) = sc
         .call("POST", "/api/admin/launch/meta_customize", Some(&json!({ "wrong_field": 1 })))
         .await;

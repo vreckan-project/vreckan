@@ -935,7 +935,10 @@ async fn room_websocket(
         // `room_connections` is dropped — and that happens in
         // `cleanup_disconnect` below. A plain `join!` would hang waiting for
         // `to_client` to finish on its own. (Same fix as the session proxy.)
-        from_client.await;
+        // The read task's own errors (a broken read half) already end the loop,
+        // so an Err here only means the task panicked or was cancelled —
+        // nothing more to do than drop it.
+        let _ = from_client.await;
         to_client.abort();
 
         // Cleanup on disconnect (use the closure-owned originals; the `_clone`
