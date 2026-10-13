@@ -34,7 +34,7 @@ release notes and the image tag always agree.
    mirror repo.
 3. **Gitea Release workflow** (in the `vreckan/vreckan-workflow` repo) fires
    on the tag push to the mirror: builds the image on the self-hosted runner
-   and pushes it to **GHCR** (`ghcr.io/vreckan-project/vreckan-rust`) and the
+    and pushes it to **GHCR** (`ghcr.io/vreckan-project/vreckan`) and the
    **Gitea registry**, with the versioned tag and `latest`.
 4. **Post-release check.** Verify the tag exists on GitHub, the image tags
    are present in the registry, and the compose file's

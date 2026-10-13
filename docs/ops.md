@@ -45,8 +45,8 @@ port mappings from the Docker daemon at startup.
 ## 2. Quick start
 
 ```bash
-git clone https://github.com/vreckan-project/vreckan-rust.git
-cd vreckan-rust
+git clone https://github.com/vreckan-project/vreckan.git
+cd vreckan
 cp .env.example .env    # edit to taste (OIDC, Let's Encrypt, ...)
 docker compose up -d
 ```
@@ -60,7 +60,7 @@ password.
 Local build instead of pulling the image:
 
 ```bash
-docker build -t vreckan-rust .   # multi-stage: rust:1.99-slim build → debian:trixie-slim runtime
+docker build -t vreckan .   # multi-stage: rust:1.99-slim build → debian:trixie-slim runtime
 ```
 
 ## 3. Image build, registries, and the CI/CD flow
@@ -104,11 +104,9 @@ GitHub is the source of truth; Gitea is a mirror.
 
 ### 3.3 Registries
 
-- **GHCR** — `ghcr.io/vreckan-project/vreckan-rust` is the Rust port's
-  registry; every release publishes a versioned tag (`:v<VERSION>`) alongside
-  `:latest`. The Python port's image (`ghcr.io/vreckan-project/vreckan`)
-  remains the compose deployment target until the explicit Rust cutover
-  (ANT-1 D3).
+- **GHCR** — `ghcr.io/vreckan-project/vreckan` is the registry; every release
+  publishes a versioned tag (`:v<VERSION>`) alongside `:latest`, and the
+  compose file's `image:` tag points at it (Rust cutover complete, ANT-40).
 - **Gitea registry** — the Release workflow also pushes to the self-hosted
   Gitea package registry for air-gapped/on-prem pulls.
 - The compose file's `image:` tag is set by the cutover decision; `build: .`
