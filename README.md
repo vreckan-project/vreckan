@@ -108,7 +108,7 @@ The Vreckan server is configured entirely through `VRECKAN_*` environment variab
 | Environment Variable | Description | Default Value |
 | --- | --- | --- |
 | `VRECKAN_LOG_LEVEL` | Logging level (e.g., DEBUG, INFO, WARNING). | `INFO` |
-| `VRECKAN_API_PORT` | Port the server binds with TLS. The entrypoint reads this directly and defaults to `443` when it is unset; the `api_port` setting itself defaults to `8000`. | `443` (bind) / `8000` (setting) |
+| `VRECKAN_API_PORT` | Port the server binds with TLS. The entrypoint reads this directly and defaults to `443` when it is unset. The `api_port` entry on the admin Settings page is carried-over metadata from the Python port (default `8000`); it does not affect the bind port. | `443` |
 | `VRECKAN_SESSION_PORT` | Published-port metadata for session-proxy traffic (carried over from the Python port; in the Rust port the session proxy is served on the same listener). | `8443` |
 | `VRECKAN_DATABASE_URL` | Full override of the configuration-database URL (sqlx format). When empty, the URL is built from the `VRECKAN_DB_*` settings below. | *(empty)* |
 | `VRECKAN_APP_RESOURCE_PATH` | URL for the YAML file defining default available applications. | `https://raw.githubusercontent.com/linuxserver/sealskin-apps/refs/heads/master/apps.yml` |

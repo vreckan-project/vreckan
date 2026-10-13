@@ -32,9 +32,9 @@ cp .env.example .env</code></pre>
       <tr><th>Variable</th><th>Description</th><th>Default</th></tr>
     </thead>
     <tbody>
-      <tr><td><code>VRECKAN_API_PORT</code></td><td>Port the server listens on (TLS). The <code>run_https.py</code> entrypoint defaults to <code>443</code> when unset.</td><td><code>443</code></td></tr>
-      <tr><td><code>VRECKAN_SESSION_PORT</code></td><td>Internal port for session-proxy traffic; the server discovers its published host mapping from Docker at startup.</td><td><code>8443</code></td></tr>
-      <tr><td><code>VRECKAN_DATABASE_URL</code></td><td>Configuration database. SQLite by default; point at PostgreSQL for production.</td><td><code>sqlite+aiosqlite:////data/vreckan.db</code></td></tr>
+      <tr><td><code>VRECKAN_API_PORT</code></td><td>Port the server listens on (TLS). The Rust server entrypoint reads this directly and defaults to <code>443</code> when unset.</td><td><code>443</code></td></tr>
+      <tr><td><code>VRECKAN_SESSION_PORT</code></td><td>Carried-over metadata from the Python port; in the Rust port the session proxy is served on the same listener as the API (the bind port above).</td><td><code>8443</code></td></tr>
+      <tr><td><code>VRECKAN_DATABASE_URL</code></td><td>Configuration database. SQLite by default; point at PostgreSQL for production.</td><td>*(empty)* — SQLite file at <code>/data/vreckan.db</code></td></tr>
       <tr><td><code>VRECKAN_STORAGE_PATH</code></td><td>Base directory for user home directories.</td><td><code>/data/storage</code></td></tr>
       <tr><td><code>VRECKAN_LOG_LEVEL</code></td><td>Logging level (DEBUG, INFO, WARNING, ERROR).</td><td><code>INFO</code></td></tr>
     </tbody>
