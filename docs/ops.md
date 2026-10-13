@@ -148,11 +148,43 @@ Backends are selected with `VRECKAN_DB_BACKEND`:
 
 | Backend | How to configure | Notes |
 |---|---|---|
-| `sqlite` (default) | nothing — file at `VRECKAN_DB_PATH` (default `{data_root}/vreckan.db`) | zero-setup; fine for single-host deployments |
-| `postgres` | `VRECKAN_DB_BACKEND=postgres` + `VRECKAN_DB_HOST` / `VRECKAN_DB_PORT` / `VRECKAN_DB_USER` / `VRECKAN_DB_PASS` / `VRECKAN_DB_NAME` — or just point at the bundled compose `postgres` service: `VRECKAN_DB_BACKEND=postgres VRECKAN_DB_HOST=postgres` (the compose service runs `postgres:16` with user/db `vreckan`, password `vreckan`) | recommended for production; the default credentials in the compose file should be changed |
+| `sqlite` (bare-binary default) | nothing — file at `VRECKAN_DB_PATH` (default `{data_root}/vreckan.db`) | zero-setup; the default when running the server directly (no compose) |
+| `postgres` (compose default) | `VRECKAN_DB_BACKEND=postgres` + `VRECKAN_DB_HOST` / `VRECKAN_DB_PORT` / `VRECKAN_DB_USER` / `VRECKAN_DB_PASS` / `VRECKAN_DB_NAME` — or just point at the bundled compose `postgres` service: `VRECKAN_DB_BACKEND=postgres VRECKAN_DB_HOST=postgres` (the compose service runs `postgres:16` with user/db `vreckan`, password `vreckan`) | recommended for production; the default credentials in the compose file should be changed |
 | `mysql` | same pattern (`VRECKAN_DB_BACKEND=mysql`, default port 3306, default user `root`) | MariaDB also accepted |
 
 `VRECKAN_DATABASE_URL` overrides everything with an explicit sqlx-format URL.
+
+**Deployment default.** As of v0.6.0 the `docker-compose.yml` in this repo
+points the server at the bundled `postgres` service out of the box: the
+`vreckan-http` service sets
+`VRECKAN_DATABASE_URL=postgres://vreckan:vreckan@postgres:5432/vreckan` (with
+`${VRECKAN_DB_USER:-vreckan}` / `${VRECKAN_DB_PASS:-vreckan}` /
+`${VRECKAN_DB_NAME:-vreckan}` defaults) and only starts once that service is
+healthy. The bare-binary default remains SQLite, so a deployment that does not
+use this compose file is unchanged. To use your own Postgres (or to fall back
+to SQLite) set `VRECKAN_DATABASE_URL` in `.env` — the `${VAR:-default}` form
+keeps `.env` as the override source while Postgres is the out-of-the-box
+default.
+
+### 4.1 Cutting over an existing SQLite deployment
+
+`scripts/migrate-sqlite-to-postgres.py` moves an existing SQLite configuration
+database onto a Postgres database, so a deployment that ran on SQLite up to
+v0.5.0 can be cut over to the v0.6.0 Postgres default without re-seeding users
+and settings. It creates the Postgres schema (idempotently), then replaces each
+table's contents with the migrated rows (JSON columns move from SQLite TEXT to
+`jsonb`). It is safe to re-run. The server should be stopped during the
+cut-over; it needs Python 3.8+ (stdlib `sqlite3`) and `psycopg2`
+(`pip install psycopg2-binary`) only for a real run — `--dry-run` previews the
+DDL and row counts with the stdlib alone.
+
+```bash
+# preview (no Postgres needed)
+python3 scripts/migrate-sqlite-to-postgres.py --dry-run
+
+# run it (defaults from VRECKAN_SQLITE_PATH / VRECKAN_DATABASE_URL)
+python3 scripts/migrate-sqlite-to-postgres.py
+```
 
 **Backups:** the admin UI can create a backup (tar.gz of the data tree + a
 logical JSON dump in table order) and restore it, including a chunked

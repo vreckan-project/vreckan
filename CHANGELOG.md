@@ -9,6 +9,25 @@ is committed normally in `vreckan-rust`. The changelog is the authoritative
 record of what shipped in each release — see
 [`docs/release.md`](./docs/release.md) for the conventions.
 
+## 2026-10-13 — Python-to-Rust switchover, v0.6.0 (ANT-40)
+
+- **v0.6.0 release.** `VERSION` and `Cargo.toml` bumped to 0.6.0; the
+  switchover cuts the deployment over from the Python/FastAPI server to the
+  Rust (axum/SeaORM) server.
+- **Postgres is now the default deployment database.** `docker-compose.yml`
+  bundles a `postgres:16` service and points the server at it by default via
+  `VRECKAN_DATABASE_URL`; the service is health-gated so the server only
+  starts once it is ready. Override in `.env` to use your own Postgres or to
+  fall back to SQLite. See [docs/ops.md §4](./docs/ops.md).
+- **SQLite → Postgres migration tool.** New `scripts/migrate-sqlite-to-postgres.py`
+  moves an existing SQLite configuration database onto a Postgres database so
+  a running deployment can be cut over without re-seeding users and settings.
+  Idempotent (safe to re-run); `--dry-run` previews the DDL and row counts
+  without touching the target.
+- **Repo switchover.** The Rust port becomes the primary code in `vreckan`;
+  the legacy Python server moves to the `vreckan-python` archive repo (its
+  GitHub Actions workflows are disabled there).
+
 ## 2026-10-12 — Rust port kickoff (ANT-1)
 
 - **Initial Rust port of the server** — the Python/FastAPI/uvicorn server is

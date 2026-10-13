@@ -1,12 +1,12 @@
 name: vreckan
+
 services:
   vreckan-http:
-    # Deployment pull stays on the Python image for now (ANT-1 D3: cutover
-    # deferred to a later explicit change). The Rust image is built by the
-    # multi-stage Dockerfile and served by CI/registry once cut over.
-    # `build: .` is the local fallback: `docker compose build` (or
-    # `up --build`) builds the Rust image from this repo and tags it under
-    # the image name above, so it can be run locally without a registry.
+    # The Rust image built by the multi-stage Dockerfile. `build: .` is the
+    # local fallback: `docker compose build` (or `up --build`) builds it from
+    # this repo and tags it under the image name, so it runs locally without a
+    # registry. A real deployment points `image:` at the registry-published
+    # tag (see docs/ops.md) and drops `build:`.
     image: ghcr.io/vreckan-project/vreckan:latest
     build:
       context: .
@@ -16,6 +16,15 @@ services:
     working_dir: /app
     ports:
       - "443:443"
+    # Defaults to the bundled Postgres service below. Override VRECKAN_DATABASE_URL
+    # (or VRECKAN_DB_USER/PASS/NAME) in `.env` to point elsewhere or to use
+    # SQLite. The `${VAR:-default}` form keeps `.env` as the override source
+    # while postgres is the out-of-the-box default.
+    environment:
+      - VRECKAN_DATABASE_URL=${VRECKAN_DATABASE_URL:-postgres://${VRECKAN_DB_USER:-vreckan}:${VRECKAN_DB_PASS:-vreckan}@postgres:5432/${VRECKAN_DB_NAME:-vreckan}}
+    depends_on:
+      postgres:
+        condition: service_healthy
     env_file:
       - .env
     privileged: true
@@ -29,20 +38,21 @@ services:
       - ./vreckan-data:/data
       - /var/run/docker.sock:/var/run/docker.sock
       - /dev/dri:/dev/dri
+
   postgres:
     image: postgres:16
     container_name: vreckan-postgres
     restart: unless-stopped
     environment:
-      POSTGRES_USER: vreckan
-      POSTGRES_PASSWORD: vreckan
-      POSTGRES_DB: vreckan
+      POSTGRES_USER: ${VRECKAN_DB_USER:-vreckan}
+      POSTGRES_PASSWORD: ${VRECKAN_DB_PASS:-vreckan}
+      POSTGRES_DB: ${VRECKAN_DB_NAME:-vreckan}
     ports:
       - "5432:5432"
     volumes:
       - ./vreckan-postgres-data:/var/lib/postgresql/data
     healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U vreckan -d vreckan"]
+      test: ["CMD-SHELL", "pg_isready -U ${VRECKAN_DB_USER:-vreckan} -d ${VRECKAN_DB_NAME:-vreckan}"]
       interval: 5s
       timeout: 5s
       retries: 12
