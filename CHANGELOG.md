@@ -5,7 +5,7 @@ The full fork analysis — what was removed, rewritten, and added relative to th
 upstream tree — lives in [`HISTORY.md`](./HISTORY.md). This changelog tracks
 development *after* the fork, newest first. The Python-era entries below date
 from the squashed git history of the original fork; the Rust-port era (2026-10)
-is committed normally in `vreckan-rust`. The changelog is the authoritative
+is committed normally in `vreckan`. The changelog is the authoritative
 record of what shipped in each release — see
 [`docs/release.md`](./docs/release.md) for the conventions.
 

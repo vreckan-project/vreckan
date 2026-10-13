@@ -1,10 +1,10 @@
 # Vreckan
 
-> **Vreckan is a hard fork of [SealSkin](https://github.com/linuxserver/docker-sealskin).** It continues the project under a new name with a leaner codebase and its own roadmap. The server has been rewritten in Rust (see [REWRITE_EVALUATION.md](./REWRITE_EVALUATION.md) and [docs/port-status.md](./docs/port-status.md)). Project homepage: [vreckanproject.com](https://vreckanproject.com) · Server source: [github.com/vreckan-project/vreckan-rust](https://github.com/vreckan-project/vreckan-rust) · Original (Python): [github.com/vreckan-project/vreckan](https://github.com/vreckan-project/vreckan)
+> **Vreckan is a hard fork of [SealSkin](https://github.com/linuxserver/docker-sealskin).** It continues the project under a new name with a leaner codebase and its own roadmap. The server has been rewritten in Rust (see [REWRITE_EVALUATION.md](./REWRITE_EVALUATION.md) and [docs/port-status.md](./docs/port-status.md)). Project homepage: [vreckanproject.com](https://vreckanproject.com) · Server source: [github.com/vreckan-project/vreckan](https://github.com/vreckan-project/vreckan) (this repo) · Original (Python): [github.com/vreckan-project/vreckan-python](https://github.com/vreckan-project/vreckan-python)
 
 Vreckan is a self-hosted, client-server platform that enables users to run powerful, containerized desktop applications streamed directly to a web browser. A built-in web client provides the interface for launching applications, managing files, and, for administrators, managing the platform. Everything runs in the browser, so there is nothing to install.
 
-Get the server [HERE](https://github.com/vreckan-project/vreckan-rust)
+Get the server [HERE](https://github.com/vreckan-project/vreckan)
 
 ## Primary Functions
 
@@ -68,8 +68,8 @@ The interaction between the web client and the server follows a secure and orche
 The recommended deployment is the pre-built container image:
 
 ```bash
-git clone --depth 1 https://github.com/vreckan-project/vreckan-rust.git
-cd vreckan-rust
+git clone --depth 1 https://github.com/vreckan-project/vreckan.git
+cd vreckan
 cp .env.example .env   # edit to taste (OIDC, Let's Encrypt, ...)
 docker compose up -d
 ```
