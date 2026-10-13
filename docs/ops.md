@@ -193,7 +193,101 @@ python3 scripts/migrate-sqlite-to-postgres.py
 **Backups:** the admin UI can create a backup (tar.gz of the data tree + a
 logical JSON dump in table order) and restore it, including a chunked
 restore flow for large archives; `VRECKAN_BACKUP_RETENTION` prunes old
-archives. Take a backup before upgrading the image.
+archives. Take a backup before upgrading the image. For a native
+`pg_dump`-based Postgres backup with dated-dump rotation, see §4.2.
+
+### 4.2 Postgres backup and restore (`scripts/backup-postgres.sh`)
+
+The admin-UI archives of §4.1 snapshot the data tree (plus a logical JSON
+dump of the database). For a server-independent, cron-friendly database
+backup, `scripts/backup-postgres.sh` writes a native PostgreSQL
+custom-format dump (`pg_dump -Fc`) of the vreckan database as a dated file
+(`vreckan-postgres-YYYYmmdd-HHMMSS.dump`) and keeps only the newest
+`VRECKAN_BACKUP_RETENTION` of them (0 = keep all; the script's default is
+14).
+
+**Configuration.** The script reads the same database configuration as the
+server (§4): `VRECKAN_DATABASE_URL` (postgres:// URL, wins over the
+discrete vars), or `VRECKAN_DB_BACKEND` / `VRECKAN_DB_HOST` /
+`VRECKAN_DB_PORT` / `VRECKAN_DB_USER` / `VRECKAN_DB_PASS` /
+`VRECKAN_DB_NAME`. Run it with the same environment the server uses — for
+a compose deployment, source the same `.env` first:
+
+```bash
+set -a; . ./.env; set +a
+```
+
+Execution picks the lightest available path:
+
+- **Bundled compose Postgres** — when the `vreckan-postgres` container
+  (`VRECKAN_POSTGRES_CONTAINER` to rename) is present and the target host
+  is local, `pg_dump`/`pg_restore` run inside it via `docker exec`. No
+  Postgres client is needed on the host, and the container's own
+  `POSTGRES_USER`/`POSTGRES_PASSWORD`/`POSTGRES_DB` initialization values
+  are used when the operator did not override the URL.
+- **External Postgres / no container** — the host's `pg_dump` /
+  `pg_restore` are used (install `postgresql-client`), connecting to the
+  configured host/port with the configured credentials.
+
+**Where dumps go.** `VRECKAN_BACKUP_DIR` (default
+`${VRECKAN_DATA_ROOT:-.}/backups`). For a compose deployment set it to the
+*host* path of the `vreckan-data` mount (e.g.
+`VRECKAN_BACKUP_DIR=./vreckan-data/backups`) so the dated dumps live next
+to the admin-UI archives and a snapshot of the `vreckan-data` volume
+covers both.
+
+**Usage:**
+
+```bash
+scripts/backup-postgres.sh backup      # write a dated dump, rotate to the
+                                        # retention count
+scripts/backup-postgres.sh list        # stored dumps, newest first
+scripts/backup-postgres.sh restore vreckan-postgres-YYYYmmdd-HHMMSS.dump
+#   FILE is a path, or a name inside VRECKAN_BACKUP_DIR. Stop the vreckan
+#   server first (it re-syncs the schema on startup). The default
+#   --clean --if-exists drops and recreates the dumped objects;
+#   --no-clean restores over the existing schema.
+```
+
+**Scheduling.** Cron (daily at 03:17):
+
+```cron
+17 3 * * * cd /opt/vreckan && set -a && . ./.env && set +a && ./scripts/backup-postgres.sh backup >> /var/log/vreckan-backup.log 2>&1
+```
+
+or a systemd timer:
+
+```ini
+# /etc/systemd/system/vreckan-backup.service
+[Unit]
+Description=Vreckan Postgres backup
+[Service]
+Type=oneshot
+WorkingDirectory=/opt/vreckan
+EnvironmentFile=/opt/vreckan/.env
+ExecStart=/opt/vreckan/scripts/backup-postgres.sh backup
+```
+
+```ini
+# /etc/systemd/system/vreckan-backup.timer
+[Unit]
+Description=Daily Vreckan Postgres backup
+[Timer]
+OnCalendar=daily
+Persistent=true
+[Install]
+WantedBy=timers.target
+```
+
+(`systemctl enable --now vreckan-backup.timer`.)
+
+**Restoring elsewhere.** Because the dump is a standard `pg_dump -Fc`
+archive it restores to *any* Postgres 11+ cluster: point
+`VRECKAN_DATABASE_URL` at the new cluster and run
+`scripts/backup-postgres.sh restore FILE` (or use `pg_restore` directly).
+For full disaster recovery, restore into a fresh (dropped/recreated)
+database and then start the server — the startup schema-sync reconciles
+the rest.
 
 **Full cutover procedure:** the end-to-end runbook for a running deployment —
 pre-cutover snapshot, stopping the legacy service, the dry-run and real
