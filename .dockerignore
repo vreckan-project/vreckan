@@ -7,9 +7,7 @@
 .env
 # Previous build outputs must never leak into the context.
 target/
-# Python-era leftovers still present in the tree during the port.
-requirements.txt
-pytest.ini
+# Python-era leftovers that may still be present in the tree.
 __pycache__/
 **/__pycache__/
 *.pyc

@@ -89,7 +89,27 @@ setup, review [docs/ops.md](./docs/ops.md) and the
   without touching the target.
 - **Repo switchover.** The Rust port becomes the primary code in `vreckan`;
   the legacy Python server moves to the `vreckan-python` archive repo (its
-  GitHub Actions workflows are disabled there).
+  GitHub Actions workflows are disabled there). Only the web client
+  (`server/static/`) and the bundled template schema
+  (`server/template_schema.yml`) remain of the old tree; the Python-era
+  root files `pytest.ini` / `requirements.txt` no longer exist (the one
+  remaining Python file is the migration tool in `scripts/`).
+- **Final Rust deployment image + CI/CD (ANT-41/ANT-43/ANT-57).** The
+  `Dockerfile` is multi-stage: a `rust:1.99-slim` build stage (sccache-wrapped
+  `rustc`, BuildKit cache mounts), a test stage that pre-compiles
+  `cargo test --profile test-release`, and a `debian:trixie-slim` runtime
+  (no Python in the image). CI is the GitHub-light/Gitea-heavy pattern:
+  `gitea-mirror-trigger.yml` mirrors main/PRs to the Gitea mirror and
+  dispatches `build-test-rust.yml` on the self-hosted runner; the `v0.6.0`
+  tag push fires the Gitea Release workflow, which publishes
+  `ghcr.io/vreckan-project/vreckan:v0.6.0` alongside `:latest` (and to the
+  Gitea registry). See [docs/ops.md §3](./docs/ops.md).
+- **Docs finalized for the v0.6.0 state (ANT-47).** `README.md`,
+  `docs/ops.md`, the `site/docs/` project-site pages, and the
+  `HISTORY.md` cross-references were reconciled with the final switchover
+  state (Postgres-default compose, final CI/CD flow, the `vreckan-python`
+  archive); `docs/api.md`, `docs/release.md`, and `docs/port-status.md`
+  were checked and needed no changes.
 
 ## 2026-10-12 — Rust port kickoff (ANT-1)
 

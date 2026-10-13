@@ -30,7 +30,7 @@ The server is a single Rust binary (axum + tokio; SeaORM on SQLite, Postgres, or
 
 The server terminates TLS itself and listens on a single endpoint: `0.0.0.0:$VRECKAN_API_PORT` (default **443**). In the Rust port both planes are served on that one listener; the `api_port` / `session_port` settings are carried over from the Python port as published-port metadata.
 
-All durable configuration (users, groups, applications, sessions, tokens, shares, templates) lives in a database — SQLite by default, PostgreSQL or MySQL for production — rather than config files.
+All durable configuration (users, groups, applications, sessions, tokens, shares, templates) lives in a database — the bundled compose deployment defaults to the included `postgres` service (PostgreSQL), the server's built-in default is SQLite, and MySQL is supported — rather than config files.
 
 ### Vreckan Web Client
 
@@ -77,10 +77,11 @@ docker compose up -d
 This runs the server with TLS on port 443, a persistent `vreckan-data`
 bind mount, Docker-socket access for the app containers, and DRI/GPU device
 pass-through (see [docs/ops.md](./docs/ops.md)). The compose file's `image:`
-tag follows the Rust-cutover decision (ANT-1 D3); `build: .` always builds
-the Rust image from this repo when the tag is not present, so a local build
-runs the Rust server either way. Versioned image tags (e.g. `:v0.4.2`) are
-published alongside `latest` for every release — see the
+tag points at the published `ghcr.io/vreckan-project/vreckan` tag (Rust
+cutover complete, ANT-40); `build: .` is the local fallback — it always
+builds the Rust image from this repo when the tag is not present, so a local
+checkout runs the Rust server either way. Versioned image tags (e.g.
+`:v0.6.0`) are published alongside `latest` for every release — see the
 [release process](./docs/release.md).
 
 To run from source instead (e.g. for development): install the Rust toolchain
