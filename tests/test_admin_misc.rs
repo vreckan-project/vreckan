@@ -514,3 +514,62 @@ async fn test_pull_latest_idle_app() {
         Some("queued")
     );
 }
+
+// ---------------------------------------------------------------------------
+// Swallowed DB writes: a failing configuration database must surface as a
+// 500, not `ok: true` (mirrors the Python handlers, where a DB error raises
+// out of the endpoint).
+// ---------------------------------------------------------------------------
+
+#[tokio::test]
+async fn test_global_settings_db_write_failure_returns_500() {
+    let _root = TempDir::new();
+    let mut sc = SecureClient::new(build_state(_root.path()).await);
+    sc.http.login("admin", "admin1234").await;
+    sc.handshake().await;
+    let device = gpu_device(&sc).await;
+    // Simulate a configuration-database outage for the write path.
+    sc.state.db.fail_writes.store(true, std::sync::atomic::Ordering::Relaxed);
+    let (status, data) = sc
+        .call(
+            "POST",
+            "/api/admin/global-settings",
+            Some(&json!({ "global_default_gpu": device })),
+        )
+        .await;
+    assert_eq!(status, StatusCode::INTERNAL_SERVER_ERROR, "{:?}", data);
+    assert!(data.as_ref().unwrap().get("detail").is_some(), "{:?}", data);
+    assert_ne!(data.as_ref().unwrap().get("ok"), Some(&json!(true)));
+    // The in-memory value must not have moved either (no partial success).
+    assert_eq!(sc.state.global_default_gpu.read().await.as_deref(), None);
+}
+
+#[tokio::test]
+async fn test_sso_save_db_write_failure_returns_500() {
+    let _root = TempDir::new();
+    let mut sc = SecureClient::new(build_state(_root.path()).await);
+    sc.http.login("admin", "admin1234").await;
+    sc.handshake().await;
+    sc.state.db.fail_writes.store(true, std::sync::atomic::Ordering::Relaxed);
+    let (status, data) = sc
+        .call(
+            "PUT",
+            "/api/admin/sso",
+            Some(&json!({
+                "oidc_enabled": true,
+                "oidc_issuer": "https://idp.example/o/app/",
+                "oidc_client_id": "cid",
+                "oidc_client_secret": "",
+                "oidc_redirect_uri": "",
+                "oidc_scopes": "openid email profile",
+                "oidc_allow_signup": true,
+                "oidc_state_ttl_seconds": 600,
+                "oidc_admin_groups": ["vdi-admins"],
+                "oidc_user_groups": ["vdi-users"],
+            })),
+        )
+        .await;
+    assert_eq!(status, StatusCode::INTERNAL_SERVER_ERROR, "{:?}", data);
+    assert!(data.as_ref().unwrap().get("detail").is_some(), "{:?}", data);
+    assert_ne!(data.as_ref().unwrap().get("ok"), Some(&json!(true)));
+}
