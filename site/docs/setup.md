@@ -45,6 +45,7 @@ cp .env.example .env</code></pre>
   <p>The repository's <code>docker-compose.yml</code> runs the server with TLS on port 443, mounts a persistent <code>vreckan-data</code> volume, and connects to the Docker daemon. It uses the pre-built image by default:</p>
   <pre><code>docker compose up -d</code></pre>
   <p>On first run the server creates a default <code>admin</code> account (bootstrap password <code>admin1234</code>, configurable via <code>VRECKAN_BOOTSTRAP_ADMIN_*</code>) and prints the credentials to the logs (<code>docker compose logs</code>). Change the password after your first login.</p>
+  <p>Since v0.6.1 the server process runs <strong>non-root</strong> (no <code>privileged</code> container): it reaches the Docker daemon through the host's <code>docker</code> group, and a one-shot step in the compose file takes ownership of <code>vreckan-data</code> (UID/GID 1000) before first boot, so no manual <code>chown</code> is needed on fresh installs or when upgrading from v0.5.x.</p>
 
   <div class="callout tip">
     <strong>Prefer to build from source?</strong> Swap the <code>image:</code> line in <code>docker-compose.yml</code> for a <code>build: .</code> directive (the bundled <code>Dockerfile</code>), or build manually: <code>docker build -t vreckan .</code>
@@ -63,5 +64,6 @@ VRECKAN_LE_CLOUDFLARE_TOKEN=your-cloudflare-api-token</code></pre>
   <p>Two auth methods are supported: <code>dns-cloudflare</code> (Cloudflare DNS-01 — works behind a reverse proxy) and <code>http-01</code> (the ACME server fetches from your domain over HTTP). Renewal is automatic: the server checks every <code>VRECKAN_LE_RENEW_CHECK_HOURS</code> hours and renews within <code>VRECKAN_LE_RENEW_BEFORE_DAYS</code> days of expiry.</p>
 
   <h2>PostgreSQL (optional)</h2>
-  <p>The default is a SQLite file in the <code>vreckan-data</code> volume, which is perfect for most setups. For a production deployment with multiple users, the bundled <code>docker-compose.yml</code> already includes a <code>postgres</code> service — just set <code>VRECKAN_DATABASE_URL</code> in your <code>.env</code> to <code>postgresql+asyncpg://vreckan:vreckan@postgres:5432/vreckan</code> and restart.</p>
+  <p>The default is a SQLite file in the <code>vreckan-data</code> volume, which is perfect for most setups. For a production deployment with multiple users, the bundled <code>docker-compose.yml</code> already includes a <code>postgres</code> service — just set <code>VRECKAN_DATABASE_URL</code> in your <code>.env</code> to <code>postgres://vreckan:vreckan@postgres:5432/vreckan</code> and restart.</p>
+  <p>Since v0.6.1 that service's host port is published on the host <strong>loopback interface only</strong> (<code>127.0.0.1:5432</code>) by default — the server reaches it over the internal compose network either way. Set <code>VRECKAN_POSTGRES_PORT=5432</code> to publish it on every interface again, or change the default <code>vreckan</code>/<code>vreckan</code> credentials with <code>VRECKAN_DB_USER</code>/<code>VRECKAN_DB_PASS</code>.</p>
 </div>

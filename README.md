@@ -131,10 +131,23 @@ same 13-table schema is created and migrated idempotently on every start).
 | `VRECKAN_DB_PASS` | Database password (postgres/mysql). | *(empty)* |
 | `VRECKAN_DB_NAME` | Database name (postgres/mysql). | `vreckan` |
 | `VRECKAN_DB_PATH` | SQLite database file path. | `{data_root}/vreckan.db` |
+| `VRECKAN_POSTGRES_PORT` | Host port the bundled compose Postgres is published on; loopback-only by default (the server reaches it over the internal compose network either way). Set to `5432` to publish on every interface, or drop the `ports` entry in `docker-compose.yml` to disable host publication. | `127.0.0.1:5432` |
+| `VRECKAN_ALLOW_DEFAULT_DB_CREDS` | Escape hatch for the default-credentials guard (P2-6): unset/empty makes the server log a warning when it starts on the default `vreckan`/`vreckan` Postgres credentials; `1`/`true` silences it; `refuse`/`strict`/`fail` stops startup. Only fires when the resolved DB URL carries the default credentials. | *(empty → warn)* |
 
-The default compose setup includes a `postgres:16` service; to use it set
-`VRECKAN_DB_BACKEND=postgres` and `VRECKAN_DB_HOST=postgres` in `.env`
-(see [docs/ops.md](./docs/ops.md)).
+The default compose setup points the server at the bundled `postgres:16`
+service out of the box (Postgres is the v0.6.0 deployment default; the
+bare-binary default remains SQLite). Since v0.6.1 that service is published
+on the host loopback interface only by default (`VRECKAN_POSTGRES_PORT`) —
+set it to `5432` to expose Postgres on every interface again
+(see [docs/ops.md](./docs/ops.md) §4). Starting against the default
+`vreckan`/`vreckan` credentials logs a warning by default and can be
+silenced or made fatal with `VRECKAN_ALLOW_DEFAULT_DB_CREDS` (P2-6).
+
+### Docker (app-container provider)
+
+| Environment Variable | Description | Default Value |
+| --- | --- | --- |
+| `VRECKAN_DOCKER_GROUP` | Name or GID of the host group that owns `/var/run/docker.sock`. Since v0.6.1 the server process runs non-root (UID/GID 1000) and reaches the host daemon through this group instead of `privileged: true`; the default compose also keeps the `devices: /dev/dri` + `group_add: 990, 44` GPU passthrough. Override the group only for daemons whose group is not named `docker` (see [docs/ops.md](./docs/ops.md) §6). | `docker` |
 
 ### Storage & paths
 
@@ -153,7 +166,7 @@ All persistent data lives under the data root (`VRECKAN_DATA_ROOT`, default `/da
 | `VRECKAN_APP_STORE_CACHE_PATH` | Path to cache app store YAML files. | `/data/app_stores_cache` |
 | `VRECKAN_BACKUPS_PATH` | Directory for backup archives. | `/data/backups` |
 | `VRECKAN_BACKUP_RETENTION` | Number of backup archives to keep; 0 keeps all. | `0` |
-| `VRECKAN_PUID` | Default User ID to run containers as. | `1000` |
+| `VRECKAN_PUID` | Default User ID to run containers as. The server's own process also runs as UID/GID 1000 (non-root since v0.6.1), so server-created and container-owned files under `/data` share ownership. | `1000` |
 | `VRECKAN_PGID` | Default Group ID to run containers as. | `1000` |
 
 ### Authentication & sessions

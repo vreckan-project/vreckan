@@ -1,6 +1,21 @@
 name: vreckan
 
 services:
+  # One-shot ownership fix for the ./vreckan-data bind mount (ANT-81, P1-1).
+  # The server now runs as UID/GID 1000 (non-root), but Docker creates a
+  # missing bind-mount directory as root:root, so a first boot on a fresh
+  # host (or an upgrade from the old root-running v0.5.x image) would find a
+  # /data it cannot write. This service chowns the tree to 1000:1000 once
+  # per `docker compose up`; vreckan-http waits for it to complete. It is a
+  # no-op (fast walk) on hosts where the tree is already owned by 1000.
+  data-perms:
+    image: alpine:3.21
+    container_name: vreckan-data-perms
+    restart: "no"
+    command: sh -c "chown -R 1000:1000 /data"
+    volumes:
+      - ./vreckan-data:/data
+
   vreckan-http:
     # The Rust image built by the multi-stage Dockerfile. `build: .` is the
     # local fallback: `docker compose build` (or `up --build`) builds it from
@@ -25,15 +40,31 @@ services:
     depends_on:
       postgres:
         condition: service_healthy
+      # The one-shot chown of ./vreckan-data must finish before the first
+      # non-root boot writes to /data (ANT-81, P1-1).
+      data-perms:
+        condition: service_completed_successfully
     env_file:
       - .env
-    privileged: true
+    # P1-1 (ANT-81): the server process runs non-root inside the image
+    # (USER vreckan, UID/GID 1000), so `privileged: true` is no longer
+    # required. The host-side work — creating app containers, GPU setup — is
+    # done by the Docker daemon over the socket, not by this process, so no
+    # capabilities are granted by default. If a specific app-container
+    # feature turns out to need one, add it here as a targeted `cap_add`
+    # entry (see docs/ops.md §6) instead of going back to privileged.
     ipc: host
     devices:
       - /dev/dri:/dev/dri
     group_add:
       - "990"
       - "44"
+      # Non-root access to the host Docker socket: the socket is owned
+      # root:docker mode 660, so the server process reaches the daemon
+      # through the host's docker group. VRECKAN_DOCKER_GROUP takes the group
+      # name or GID for hosts whose daemon group is not named `docker`
+      # (rootless setups, custom installs); see docs/ops.md §6.
+      - "${VRECKAN_DOCKER_GROUP:-docker}"
     volumes:
       - ./vreckan-data:/data
       - /var/run/docker.sock:/var/run/docker.sock
@@ -47,8 +78,14 @@ services:
       POSTGRES_USER: ${VRECKAN_DB_USER:-vreckan}
       POSTGRES_PASSWORD: ${VRECKAN_DB_PASS:-vreckan}
       POSTGRES_DB: ${VRECKAN_DB_NAME:-vreckan}
+    # P2-6 (ANT-90): published on the host loopback interface only by
+    # default (was: every interface in v0.6.0). The server reaches the
+    # database over the internal compose network, so no host publication
+    # is required. Set VRECKAN_POSTGRES_PORT=5432 to publish on every
+    # interface, or comment out the ports entry to disable host
+    # publication entirely.
     ports:
-      - "5432:5432"
+      - "${VRECKAN_POSTGRES_PORT:-127.0.0.1:5432}:5432"
     volumes:
       - ./vreckan-postgres-data:/var/lib/postgresql/data
     healthcheck:
