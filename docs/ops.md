@@ -73,6 +73,12 @@ ownership step is needed — on a fresh host and when upgrading from a
 v0.5.x deployment (whose data tree was written by the old root-running
 image), the first `up` after pulling the new image takes ownership over.
 
+Brute-force protection on `/api/auth/login`: per (client IP, username) pair,
+`VRECKAN_LOGIN_MAX_ATTEMPTS` (default 5) failed attempts within
+`VRECKAN_LOGIN_LOCKOUT_SECONDS` (default 900 s) lock the pair out for the
+same window (HTTP 429, fail closed); lockout events are logged at `warn`
+and a successful login clears the pair.
+
 Local build instead of pulling the image:
 
 ```bash

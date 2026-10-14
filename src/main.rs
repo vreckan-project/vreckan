@@ -117,7 +117,10 @@ async fn main() -> anyhow::Result<()> {
         .await
         .map_err(anyhow::Error::msg)?;
     axum_server::tls_rustls::bind_rustls(addr, config)
-        .serve(app.into_make_service())
+        // ConnectInfo exposes the client address to handlers (the login
+        // rate limiter keys on it); `X-Forwarded-For` still takes precedence
+        // when a reverse proxy is in front.
+        .serve(app.into_make_service_with_connect_info::<std::net::SocketAddr>())
         .await
         .map_err(anyhow::Error::msg)?;
 
