@@ -5,6 +5,7 @@
 //! (`main.rs`) so the integration test suite can import the modules directly,
 //! mirroring the Python layout where `tests/` imports `server.*`.
 
+pub mod acme;
 pub mod admin;
 pub mod app;
 pub mod auth;

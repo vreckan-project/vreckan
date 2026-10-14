@@ -77,7 +77,8 @@ pub const SETTING_DEFINITIONS: &[SettingDef] = &[
     SettingDef { name: "login_max_attempts", type_: "int", default: "5", help: "Failed logins from one (client IP, username) pair within the lockout window before the pair is temporarily locked out. 0 disables the limiter." },
     SettingDef { name: "login_lockout_seconds", type_: "int", default: "900", help: "Length of the failed-login window and of the temporary lockout (seconds)." },
     // --- Let's Encrypt (certbot) ---
-    SettingDef { name: "le_enabled", type_: "bool", default: "false", help: "Issue Let's Encrypt certificates via certbot. When off, the server uses a self-signed certificate." },
+    SettingDef { name: "le_enabled", type_: "bool", default: "false", help: "Issue ACME (Let's Encrypt / ZeroSSL / Google) certificates. When off, the server uses a self-signed certificate." },
+    SettingDef { name: "le_ca", type_: "str", default: "letsencrypt", help: "The ACME certificate authority to use: 'letsencrypt' (default), 'zerossl', or 'google'. Only letsencrypt honours le_staging (staging vs production)." },
     SettingDef { name: "le_domains", type_: "str", default: "", help: "Comma-separated domain(s) to issue certificates for." },
     SettingDef { name: "le_auth", type_: "str", default: "dns-cloudflare", help: "ACME challenge method: 'dns-cloudflare' (Cloudflare DNS-01) or 'http-01'." },
     SettingDef { name: "le_cloudflare_email", type_: "str", default: "", help: "Account email for Let's Encrypt (used with Cloudflare DNS auth)." },
@@ -86,6 +87,10 @@ pub const SETTING_DEFINITIONS: &[SettingDef] = &[
     SettingDef { name: "le_auto_renew", type_: "bool", default: "true", help: "Automatically renew Let's Encrypt certificates in the background." },
     SettingDef { name: "le_renew_check_hours", type_: "int", default: "6", help: "How often to check for certificate renewal (in hours)." },
     SettingDef { name: "le_renew_before_days", type_: "int", default: "30", help: "Renew the certificate when it expires within this many days." },
+    SettingDef { name: "le_backend", type_: "str", default: "acmex", help: "ACME issuance backend: 'acmex' (native in-process client, default) or 'certbot' (legacy sidecar container)." },
+    SettingDef { name: "le_dns_provider", type_: "str", default: "cloudflare", help: "DNS-01 provider used for validation when le_auth is not 'http-01': cloudflare, route53, digitalocean, linode, azure, google, alibaba, godaddy, tencent, huawei, cloudns." },
+    SettingDef { name: "le_cloudflare_zone_id", type_: "str", default: "", help: "Cloudflare zone ID for the domain's zone. Leave blank to auto-discover it from the API token." },
+    SettingDef { name: "le_dns_provider_config", type_: "str", default: "", help: "JSON object with credentials for the selected DNS provider (e.g. {\"hosted_zone_id\":\"Z...\"} for route53, {\"api_token\":\"...\",\"domain\":\"example.com\"} for digitalocean)." },
 ];
 
 /// Parse a raw string into a setting value according to its declared type.
@@ -160,6 +165,7 @@ pub struct Settings {
     pub login_max_attempts: i64,
     pub login_lockout_seconds: i64,
     pub le_enabled: bool,
+    pub le_ca: String,
     pub le_domains: String,
     pub le_auth: String,
     pub le_cloudflare_email: String,
@@ -168,6 +174,10 @@ pub struct Settings {
     pub le_auto_renew: bool,
     pub le_renew_check_hours: i64,
     pub le_renew_before_days: i64,
+    pub le_backend: String,
+    pub le_dns_provider: String,
+    pub le_cloudflare_zone_id: String,
+    pub le_dns_provider_config: String,
 }
 
 impl Settings {
@@ -236,6 +246,7 @@ impl Settings {
             login_max_attempts: get_int("login_max_attempts"),
             login_lockout_seconds: get_int("login_lockout_seconds"),
             le_enabled: get_bool("le_enabled"),
+            le_ca: get("le_ca"),
             le_domains: get("le_domains"),
             le_auth: get("le_auth"),
             le_cloudflare_email: get("le_cloudflare_email"),
@@ -244,6 +255,10 @@ impl Settings {
             le_auto_renew: get_bool("le_auto_renew"),
             le_renew_check_hours: get_int("le_renew_check_hours"),
             le_renew_before_days: get_int("le_renew_before_days"),
+            le_backend: get("le_backend"),
+            le_dns_provider: get("le_dns_provider"),
+            le_cloudflare_zone_id: get("le_cloudflare_zone_id"),
+            le_dns_provider_config: get("le_dns_provider_config"),
         }
     }
 
@@ -306,6 +321,7 @@ impl Settings {
             "login_max_attempts" => self.login_max_attempts.to_string(),
             "login_lockout_seconds" => self.login_lockout_seconds.to_string(),
             "le_enabled" => self.le_enabled.to_string(),
+            "le_ca" => self.le_ca.clone(),
             "le_domains" => self.le_domains.clone(),
             "le_auth" => self.le_auth.clone(),
             "le_cloudflare_email" => self.le_cloudflare_email.clone(),
@@ -314,6 +330,10 @@ impl Settings {
             "le_auto_renew" => self.le_auto_renew.to_string(),
             "le_renew_check_hours" => self.le_renew_check_hours.to_string(),
             "le_renew_before_days" => self.le_renew_before_days.to_string(),
+            "le_backend" => self.le_backend.clone(),
+            "le_dns_provider" => self.le_dns_provider.clone(),
+            "le_cloudflare_zone_id" => self.le_cloudflare_zone_id.clone(),
+            "le_dns_provider_config" => self.le_dns_provider_config.clone(),
             _ => return None,
         })
     }

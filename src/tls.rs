@@ -29,7 +29,7 @@ pub async fn select_cert(state: &AppState) -> Result<(Vec<u8>, Vec<u8>)> {
     // the *effective* config (DB-over-env) before calling `ensure_le_cert`.
     let cfg = le_certbot::effective_le_config(state).await;
     if cfg.le_enabled {
-        let status = le_certbot::ensure_le_cert(&cfg).await;
+        let status = le_certbot::ensure_le_cert(&cfg, false).await;
         if status.get("present").and_then(|v| v.as_bool()).unwrap_or(false)
             && status.get("valid").and_then(|v| v.as_bool()).unwrap_or(false)
         {

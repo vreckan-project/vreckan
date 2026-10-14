@@ -82,6 +82,17 @@ rustls = { version = "0.23", features = ["ring"] }
 rustls-pemfile = "2"
 x509-cert = "0.3"
 rcgen = "0.14"
+# Native ACME client (replaces the certbot sidecar container for Let's
+# Encrypt issuance; see `src/acme.rs` and `src/le_certbot.rs`). Default crypto
+# is aws-lc-rs (already in the tree via rcgen). DNS-01 providers are feature
+# gated — Cloudflare is the default; the rest are available for users who
+# manage DNS elsewhere (ANT-128). `zerossl-ca`/`google-ca` add those CAs.
+acmex = { version = "0.8", features = [
+  "dns-cloudflare", "dns-route53", "dns-digitalocean", "dns-linode",
+  "dns-azure", "dns-google", "dns-alibaba", "dns-godaddy",
+  "dns-tencent", "dns-huawei", "dns-cloudns",
+  "zerossl-ca", "google-ca",
+] }
 
 # Logging
 tracing = "0.1"

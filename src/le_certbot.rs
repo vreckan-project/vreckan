@@ -80,6 +80,7 @@ pub fn host_cert_dir() -> String {
 #[derive(Clone, Debug)]
 pub struct LeConfig {
     pub le_enabled: bool,
+    pub le_ca: String,
     pub le_domains: String,
     pub le_auth: String,
     pub le_staging: bool,
@@ -88,6 +89,10 @@ pub struct LeConfig {
     pub le_auto_renew: bool,
     pub le_renew_check_hours: i64,
     pub le_renew_before_days: i64,
+    pub le_backend: String,
+    pub le_dns_provider: String,
+    pub le_cloudflare_zone_id: String,
+    pub le_dns_provider_config: String,
 }
 
 /// Build the *effective* LE settings (``app_settings`` DB override → env →
@@ -96,6 +101,8 @@ pub async fn effective_le_config(state: &AppState) -> LeConfig {
     let s = &state.settings;
     let db = &state.db;
     let le_enabled = s.get_setting(db, "le_enabled").await.as_bool().unwrap_or(false);
+    let le_ca = s.get_setting(db, "le_ca").await.as_str().unwrap_or("").to_string();
+    let le_ca = if le_ca.is_empty() { "letsencrypt".to_string() } else { le_ca };
     let le_domains = s.get_setting(db, "le_domains").await.as_str().unwrap_or("").to_string();
     let le_auth_raw = s.get_setting(db, "le_auth").await.as_str().unwrap_or("").to_string();
     let le_auth = if le_auth_raw.is_empty() {
@@ -109,8 +116,15 @@ pub async fn effective_le_config(state: &AppState) -> LeConfig {
     let le_auto_renew = s.get_setting(db, "le_auto_renew").await.as_bool().unwrap_or(false);
     let le_renew_check_hours = s.get_setting(db, "le_renew_check_hours").await.as_i64().unwrap_or(0);
     let le_renew_before_days = s.get_setting(db, "le_renew_before_days").await.as_i64().unwrap_or(0);
+    let le_backend = s.get_setting(db, "le_backend").await.as_str().unwrap_or("").to_string();
+    let le_backend = if le_backend.is_empty() { "acmex".to_string() } else { le_backend };
+    let le_dns_provider = s.get_setting(db, "le_dns_provider").await.as_str().unwrap_or("").to_string();
+    let le_dns_provider = if le_dns_provider.is_empty() { "cloudflare".to_string() } else { le_dns_provider };
+    let le_cloudflare_zone_id = s.get_setting(db, "le_cloudflare_zone_id").await.as_str().unwrap_or("").to_string();
+    let le_dns_provider_config = s.get_setting(db, "le_dns_provider_config").await.as_str().unwrap_or("").to_string();
     LeConfig {
         le_enabled,
+        le_ca,
         le_domains,
         le_auth,
         le_staging,
@@ -119,7 +133,51 @@ pub async fn effective_le_config(state: &AppState) -> LeConfig {
         le_auto_renew,
         le_renew_check_hours,
         le_renew_before_days,
+        le_backend,
+        le_dns_provider,
+        le_cloudflare_zone_id,
+        le_dns_provider_config,
     }
+}
+
+/// Parse the `le_dns_provider_config` JSON string into a `Value` (defaulting
+/// to an empty object on any parse error).
+fn provider_config_value(raw: &str) -> Value {
+    if raw.trim().is_empty() {
+        return serde_json::json!({});
+    }
+    serde_json::from_str::<Value>(raw).unwrap_or(serde_json::json!({}))
+}
+
+/// Build the ACME issuance arguments from an effective config, including the
+/// DNS provider registry for the selected provider. Returns `Err` when the
+/// provider could not be built (e.g. missing credentials).
+async fn build_issue_args(cfg: &LeConfig) -> Result<crate::acme::IssueArgs, String> {
+    let domains: Vec<String> = cfg
+        .le_domains
+        .split(',')
+        .map(|d| d.trim().to_string())
+        .filter(|d| !d.is_empty())
+        .collect();
+    let primary = domains.first().cloned().unwrap_or_default();
+    let registry = crate::acme::build_provider_registry(&crate::acme::AcmeDnsConfig {
+        provider: &cfg.le_dns_provider,
+        cloudflare_token: cfg.le_cloudflare_token.clone(),
+        cloudflare_zone_id: cfg.le_cloudflare_zone_id.clone(),
+        cloudflare_email: cfg.le_cloudflare_email.clone(),
+        domain: primary.clone(),
+        provider_config: &provider_config_value(&cfg.le_dns_provider_config),
+    })
+    .await?;
+    Ok(crate::acme::IssueArgs {
+        ca: &cfg.le_ca,
+        staging: cfg.le_staging,
+        email: &cfg.le_cloudflare_email,
+        auth: &cfg.le_auth,
+        provider: &cfg.le_dns_provider,
+        domains,
+        registry,
+    })
 }
 
 /// A minimal, injectable Docker client surface — just the calls
@@ -427,7 +485,11 @@ fn random_suffix() -> String {
 
 /// Startup: make sure a valid Let's Encrypt certificate exists. Mirrors
 /// `ensure_le_cert`. Returns a status dict plus an `issued` flag.
-pub async fn ensure_le_cert(cfg: &LeConfig) -> Value {
+///
+/// When `force` is true (the admin "Issue/Renew Now" button), a currently
+/// valid certificate is (re)issued anyway; otherwise a valid cert short-
+/// circuits and nothing happens (the original "button did nothing" complaint).
+pub async fn ensure_le_cert(cfg: &LeConfig, force: bool) -> Value {
     let domains: Vec<String> = cfg
         .le_domains
         .split(',')
@@ -452,7 +514,7 @@ pub async fn ensure_le_cert(cfg: &LeConfig) -> Value {
         return result;
     }
     let status = cert_status(&domains);
-    if status.get("valid").and_then(|v| v.as_bool()).unwrap_or(false) {
+    if !force && status.get("valid").and_then(|v| v.as_bool()).unwrap_or(false) {
         info!(
             "LE certificate valid until {} ({}d).",
             status.get("expiry").and_then(|v| v.as_str()).unwrap_or("?"),
@@ -465,7 +527,23 @@ pub async fn ensure_le_cert(cfg: &LeConfig) -> Value {
         }
         return result;
     }
-    // (Re)issue.
+    // (Re)issue — native acmex backend by default, certbot as a fallback.
+    if cfg.le_backend == "certbot" {
+        ensure_le_cert_certbot(cfg).await
+    } else {
+        ensure_le_cert_acmex(cfg, &status).await
+    }
+}
+
+/// Legacy certbot-container issuance path (used when `le_backend=certbot`).
+async fn ensure_le_cert_certbot(cfg: &LeConfig) -> Value {
+    let domains: Vec<String> = cfg
+        .le_domains
+        .split(',')
+        .map(|d| d.trim().to_string())
+        .filter(|d| !d.is_empty())
+        .collect();
+    let status = cert_status(&domains);
     if cfg.le_auth != "http-01" {
         if cfg.le_cloudflare_token.is_empty() {
             warn!("LE DNS-01 enabled but Cloudflare API token not set.");
@@ -490,10 +568,54 @@ pub async fn ensure_le_cert(cfg: &LeConfig) -> Value {
     let result = run_certbot(client.as_ref(), &args, LE_VOLUME, 300).await;
     let status = cert_status(&domains);
     let issued = result.get("ok").and_then(|v| v.as_bool()).unwrap_or(false);
+    let logs = status
+        .get("logs")
+        .and_then(|v| v.as_str())
+        .map(|s| s.to_string());
     let mut result = status;
     if let Some(obj) = result.as_object_mut() {
         obj.insert("issued".into(), Value::Bool(issued));
         obj.insert("enabled".into(), Value::Bool(true));
+        if let Some(logs) = logs {
+            obj.insert("logs".into(), Value::String(logs));
+        }
+    }
+    result
+}
+
+/// Native acmex issuance path (the default backend).
+async fn ensure_le_cert_acmex(cfg: &LeConfig, status: &Value) -> Value {
+    let domains: Vec<String> = cfg
+        .le_domains
+        .split(',')
+        .map(|d| d.trim().to_string())
+        .filter(|d| !d.is_empty())
+        .collect();
+    let args = match build_issue_args(cfg).await {
+        Ok(a) => a,
+        Err(e) => {
+            warn!("acmex issuance not configured: {e}");
+            let mut result = status.clone();
+            if let Some(obj) = result.as_object_mut() {
+                obj.insert("issued".into(), Value::Bool(false));
+                obj.insert("enabled".into(), Value::Bool(true));
+                obj.insert("error".into(), Value::String(e));
+            }
+            return result;
+        }
+    };
+    let r = crate::acme::issue_certificate(&args).await;
+    let status = cert_status(&domains);
+    let mut result = status;
+    if let Some(obj) = result.as_object_mut() {
+        obj.insert("issued".into(), Value::Bool(r.ok));
+        obj.insert("enabled".into(), Value::Bool(true));
+        if !r.logs.is_empty() {
+            obj.insert("logs".into(), Value::String(r.logs));
+        }
+        if let Some(err) = r.error {
+            obj.insert("error".into(), Value::String(err));
+        }
     }
     result
 }
@@ -530,6 +652,22 @@ pub async fn renew_le_cert(cfg: &LeConfig) -> Value {
         }
         return result;
     }
+    if cfg.le_backend == "certbot" {
+        renew_le_cert_certbot(cfg).await
+    } else {
+        renew_le_cert_acmex(cfg, &status).await
+    }
+}
+
+/// Legacy certbot-container renewal path (used when `le_backend=certbot`).
+async fn renew_le_cert_certbot(cfg: &LeConfig) -> Value {
+    let domains: Vec<String> = cfg
+        .le_domains
+        .split(',')
+        .map(|d| d.trim().to_string())
+        .filter(|d| !d.is_empty())
+        .collect();
+    let status = cert_status(&domains);
     if cfg.le_auth != "http-01" {
         if cfg.le_cloudflare_token.is_empty() {
             warn!("LE DNS-01 enabled but Cloudflare API token not set.");
@@ -556,11 +694,57 @@ pub async fn renew_le_cert(cfg: &LeConfig) -> Value {
     let result = run_certbot(client.as_ref(), &args, LE_VOLUME, 300).await;
     let status = cert_status(&domains);
     let renewed = result.get("ok").and_then(|v| v.as_bool()).unwrap_or(false);
+    let logs = status
+        .get("logs")
+        .and_then(|v| v.as_str())
+        .map(|s| s.to_string());
     let mut result = status;
     if let Some(obj) = result.as_object_mut() {
         obj.insert("renewed".into(), Value::Bool(renewed));
         obj.insert("due".into(), Value::Bool(true));
         obj.insert("enabled".into(), Value::Bool(true));
+        if let Some(logs) = logs {
+            obj.insert("logs".into(), Value::String(logs));
+        }
+    }
+    result
+}
+
+/// Native acmex renewal path (the default backend).
+async fn renew_le_cert_acmex(cfg: &LeConfig, status: &Value) -> Value {
+    let domains: Vec<String> = cfg
+        .le_domains
+        .split(',')
+        .map(|d| d.trim().to_string())
+        .filter(|d| !d.is_empty())
+        .collect();
+    let args = match build_issue_args(cfg).await {
+        Ok(a) => a,
+        Err(e) => {
+            warn!("acmex renewal not configured: {e}");
+            let mut result = status.clone();
+            if let Some(obj) = result.as_object_mut() {
+                obj.insert("renewed".into(), Value::Bool(false));
+                obj.insert("due".into(), Value::Bool(true));
+                obj.insert("enabled".into(), Value::Bool(true));
+                obj.insert("error".into(), Value::String(e));
+            }
+            return result;
+        }
+    };
+    let r = crate::acme::issue_certificate(&args).await;
+    let status = cert_status(&domains);
+    let mut result = status;
+    if let Some(obj) = result.as_object_mut() {
+        obj.insert("renewed".into(), Value::Bool(r.ok));
+        obj.insert("due".into(), Value::Bool(true));
+        obj.insert("enabled".into(), Value::Bool(true));
+        if !r.logs.is_empty() {
+            obj.insert("logs".into(), Value::String(r.logs));
+        }
+        if let Some(err) = r.error {
+            obj.insert("error".into(), Value::String(err));
+        }
     }
     result
 }

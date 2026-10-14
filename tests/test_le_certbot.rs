@@ -251,6 +251,7 @@ fn le_paths() -> LePaths {
 fn default_cfg() -> le_certbot::LeConfig {
     le_certbot::LeConfig {
         le_enabled: true,
+        le_ca: "letsencrypt".to_string(),
         le_domains: "example.com,www.example.com".to_string(),
         le_auth: "dns-cloudflare".to_string(),
         le_staging: false,
@@ -259,6 +260,13 @@ fn default_cfg() -> le_certbot::LeConfig {
         le_auto_renew: true,
         le_renew_check_hours: 6,
         le_renew_before_days: 30,
+        // The existing tests drive the legacy certbot path (via the fake
+        // Docker client), so the default test config targets certbot. New
+        // acmex-path tests override this.
+        le_backend: "certbot".to_string(),
+        le_dns_provider: "cloudflare".to_string(),
+        le_cloudflare_zone_id: String::new(),
+        le_dns_provider_config: String::new(),
     }
 }
 
@@ -514,7 +522,7 @@ async fn test_ensure_le_cert_disabled() {
     cfg.le_enabled = false;
     let client = Arc::new(FakeClient::new(0, "ok", None));
     *le_certbot::FAKE_CERTBOT_CLIENT.lock().unwrap() = Some(client.clone());
-    let result = le_certbot::ensure_le_cert(&cfg).await;
+    let result = le_certbot::ensure_le_cert(&cfg, false).await;
     *le_certbot::FAKE_CERTBOT_CLIENT.lock().unwrap() = None;
     assert_eq!(result["enabled"], false);
     assert_eq!(result["issued"], false);
@@ -527,7 +535,7 @@ async fn test_ensure_le_cert_no_domains() {
     cfg.le_domains = "".to_string();
     let client = FakeClient::new(0, "ok", None);
     *le_certbot::FAKE_CERTBOT_CLIENT.lock().unwrap() = Some(Arc::new(client));
-    let result = le_certbot::ensure_le_cert(&cfg).await;
+    let result = le_certbot::ensure_le_cert(&cfg, false).await;
     *le_certbot::FAKE_CERTBOT_CLIENT.lock().unwrap() = None;
     assert_eq!(result["enabled"], true);
     assert_eq!(result["issued"], false);
@@ -539,7 +547,7 @@ async fn test_ensure_le_cert_issues_when_missing() {
     let cfg = default_cfg();
     let client = Arc::new(FakeClient::new(0, "ok", None));
     *le_certbot::FAKE_CERTBOT_CLIENT.lock().unwrap() = Some(client.clone());
-    let result = le_certbot::ensure_le_cert(&cfg).await;
+    let result = le_certbot::ensure_le_cert(&cfg, false).await;
     *le_certbot::FAKE_CERTBOT_CLIENT.lock().unwrap() = None;
     assert_eq!(result["enabled"], true);
     assert_eq!(result["issued"], true);
@@ -555,7 +563,7 @@ async fn test_ensure_le_cert_skips_when_valid() {
     let cfg = default_cfg();
     let client = Arc::new(FakeClient::new(0, "ok", None));
     *le_certbot::FAKE_CERTBOT_CLIENT.lock().unwrap() = Some(client.clone());
-    let result = le_certbot::ensure_le_cert(&cfg).await;
+    let result = le_certbot::ensure_le_cert(&cfg, false).await;
     *le_certbot::FAKE_CERTBOT_CLIENT.lock().unwrap() = None;
     assert_eq!(result["issued"], false);
     // No certbot run was needed (the cert is still valid).

@@ -125,6 +125,8 @@ fn default_false() -> bool {
 #[derive(Deserialize)]
 struct CertificateConfigRequest {
     le_enabled: bool,
+    #[serde(default = "default_le_ca")]
+    le_ca: String,
     #[serde(default)]
     le_domains: Vec<String>,
     #[serde(default = "default_le_auth")]
@@ -141,10 +143,27 @@ struct CertificateConfigRequest {
     le_renew_check_hours: i64,
     #[serde(default = "default_renew_days")]
     le_renew_before_days: i64,
+    #[serde(default = "default_le_backend")]
+    le_backend: String,
+    #[serde(default = "default_le_dns_provider")]
+    le_dns_provider: String,
+    #[serde(default)]
+    le_cloudflare_zone_id: String,
+    #[serde(default)]
+    le_dns_provider_config: String,
 }
 
+fn default_le_ca() -> String {
+    "letsencrypt".to_string()
+}
 fn default_le_auth() -> String {
     "dns-cloudflare".to_string()
+}
+fn default_le_backend() -> String {
+    "acmex".to_string()
+}
+fn default_le_dns_provider() -> String {
+    "cloudflare".to_string()
 }
 fn default_renew_hours() -> i64 {
     6
@@ -402,6 +421,7 @@ const SSO_SETTING_FIELDS: &[&str] = &[
 /// The Let's Encrypt setting field names (for the per-field source report).
 const LE_SETTING_FIELDS: &[&str] = &[
     "le_enabled",
+    "le_ca",
     "le_domains",
     "le_auth",
     "le_cloudflare_email",
@@ -410,6 +430,10 @@ const LE_SETTING_FIELDS: &[&str] = &[
     "le_auto_renew",
     "le_renew_check_hours",
     "le_renew_before_days",
+    "le_backend",
+    "le_dns_provider",
+    "le_cloudflare_zone_id",
+    "le_dns_provider_config",
 ];
 
 /// Report where a setting's current value comes from: `"db"` when a value is
@@ -934,6 +958,7 @@ async fn get_certificates(
     let token = cfg.le_cloudflare_token.clone();
     let values = serde_json::json!({
         "le_enabled": cfg.le_enabled,
+        "le_ca": cfg.le_ca,
         "le_domains": domains,
         "le_auth": cfg.le_auth,
         "le_cloudflare_email": cfg.le_cloudflare_email,
@@ -944,6 +969,10 @@ async fn get_certificates(
         "le_auto_renew": cfg.le_auto_renew,
         "le_renew_check_hours": cfg.le_renew_check_hours,
         "le_renew_before_days": cfg.le_renew_before_days,
+        "le_backend": cfg.le_backend,
+        "le_dns_provider": cfg.le_dns_provider,
+        "le_cloudflare_zone_id": cfg.le_cloudflare_zone_id,
+        "le_dns_provider_config": cfg.le_dns_provider_config,
     });
     let mut sources = serde_json::Map::new();
     for name in LE_SETTING_FIELDS {
@@ -954,6 +983,7 @@ async fn get_certificates(
         "values": values,
         "sources": Value::Object(sources),
         "status": status,
+        "dns_providers": crate::acme::dns_provider_choices(),
     });
     e2ee::encrypt_response(&state, &headers, StatusCode::OK, value).await
 }
@@ -1010,6 +1040,7 @@ async fn save_certificates(
     };
     let payload: HashMap<&str, String> = HashMap::from([
         ("le_enabled", if req.le_enabled { "true" } else { "false" }.to_string()),
+        ("le_ca", if req.le_ca.trim().is_empty() { "letsencrypt".to_string() } else { req.le_ca.trim().to_string() }),
         ("le_domains", req.le_domains.iter().map(|d| d.trim()).filter(|d| !d.is_empty()).collect::<Vec<_>>().join(",")),
         ("le_auth", if req.le_auth.trim().is_empty() { "dns-cloudflare".to_string() } else { req.le_auth.trim().to_string() }),
         ("le_cloudflare_email", req.le_cloudflare_email.trim().to_string()),
@@ -1018,6 +1049,10 @@ async fn save_certificates(
         ("le_auto_renew", if req.le_auto_renew { "true" } else { "false" }.to_string()),
         ("le_renew_check_hours", req.le_renew_check_hours.to_string()),
         ("le_renew_before_days", req.le_renew_before_days.to_string()),
+        ("le_backend", if req.le_backend.trim().is_empty() { "acmex".to_string() } else { req.le_backend.trim().to_string() }),
+        ("le_dns_provider", if req.le_dns_provider.trim().is_empty() { "cloudflare".to_string() } else { req.le_dns_provider.trim().to_string() }),
+        ("le_cloudflare_zone_id", req.le_cloudflare_zone_id.trim().to_string()),
+        ("le_dns_provider_config", req.le_dns_provider_config.trim().to_string()),
     ]);
     for name in LE_SETTING_FIELDS {
         let value = match payload.get(*name) {
@@ -1093,16 +1128,12 @@ async fn renew_certificates(
         )
         .await;
     }
-    let status = crate::le_certbot::cert_status(&domains);
-    if status.get("valid").and_then(|v| v.as_bool()).unwrap_or(false) {
-        let mut result = status;
-        if let Some(obj) = result.as_object_mut() {
-            obj.insert("issued".into(), Value::Bool(false));
-            obj.insert("renewed".into(), Value::Bool(false));
-        }
-        return e2ee::encrypt_response(&state, &headers, StatusCode::OK, result).await;
-    }
-    let result = crate::le_certbot::ensure_le_cert(&cfg).await;
+    // The "Issue/Renew Now" button always attempts (re)issuance, even when a
+    // valid certificate already exists — `force` bypasses the "already valid"
+    // short-circuit that previously made the button appear to do nothing.
+    // The returned object carries `issued`/`renewed` plus human-readable
+    // `logs`/`error` so the UI can explain what happened.
+    let result = crate::le_certbot::ensure_le_cert(&cfg, true).await;
     let mut result = result;
     if let Some(obj) = result.as_object_mut() {
         let issued = obj.get("issued").and_then(|v| v.as_bool()).unwrap_or(false);
