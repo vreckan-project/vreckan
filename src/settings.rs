@@ -405,6 +405,40 @@ impl Settings {
             url.to_string()
         }
     }
+
+    /// Extract the `user:pass` userinfo from a sqlx database URL, or `None`
+    /// when the URL carries no `@`-separated credentials (e.g. the
+    /// `postgres://localhost:5432/db` form, which has nothing to compare
+    /// against the default).
+    fn extract_url_creds(url: &str) -> Option<(String, String)> {
+        let after_scheme = url.split("://").nth(1)?;
+        let at = after_scheme.rfind('@')?;
+        let userinfo = &after_scheme[..at];
+        let mut parts = userinfo.splitn(2, ':');
+        let user = parts.next().unwrap_or("").to_string();
+        let pass = parts.next().unwrap_or("").to_string();
+        Some((user, pass))
+    }
+
+    /// Whether the resolved database connection uses the bundled Postgres
+    /// service's default `vreckan`/`vreckan` credentials (ANT-45, P2-6).
+    ///
+    /// The compose `VRECKAN_DATABASE_URL` default injects exactly these
+    /// credentials when `.env` is left at defaults, leaving the database that
+    /// holds every password hash and auth token reachable with trivially
+    /// guessable creds. This inspects the *resolved* URL (an explicit
+    /// `VRECKAN_DATABASE_URL`, or one assembled from the `db_*` settings), so
+    /// it catches every deployment path that ends up on the defaults.
+    pub fn uses_default_postgres_creds(&self) -> bool {
+        let url = self.build_database_url();
+        if !url.starts_with("postgres://") {
+            return false;
+        }
+        match Self::extract_url_creds(&url) {
+            Some((user, pass)) => user == "vreckan" && pass == "vreckan",
+            None => false,
+        }
+    }
 }
 
 /// A lazily-built, process-wide copy of the env/default settings. Handlers
@@ -414,4 +448,36 @@ impl Settings {
 pub fn global_settings() -> &'static Settings {
     static SETTINGS: OnceLock<Settings> = OnceLock::new();
     SETTINGS.get_or_init(Settings::from_env)
+}
+
+/// How the server reacts when it starts against Postgres with the default
+/// `vreckan`/`vreckan` credentials (ANT-45, P2-6), selected by the
+/// `VRECKAN_ALLOW_DEFAULT_DB_CREDS` escape hatch.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum DefaultDbCredsPolicy {
+    /// Log a prominent warning and continue starting (the default).
+    Warn,
+    /// The operator explicitly opted in; start silently.
+    Silent,
+    /// Fail startup — for hardened deployments that must not run on defaults.
+    Refuse,
+}
+
+/// Resolve the `VRECKAN_ALLOW_DEFAULT_DB_CREDS` escape hatch into a
+/// [`DefaultDbCredsPolicy`].
+///
+/// - unset/empty → [`DefaultDbCredsPolicy::Warn`] (a loud warning)
+/// - `1` / `true` / `yes` / `on` / `silent` / `allow` → [`DefaultDbCredsPolicy::Silent`]
+/// - `refuse` / `strict` / `fail` → [`DefaultDbCredsPolicy::Refuse`] (fail-fast)
+pub fn default_db_creds_policy() -> DefaultDbCredsPolicy {
+    let raw = std::env::var("VRECKAN_ALLOW_DEFAULT_DB_CREDS")
+        .ok()
+        .map(|s| s.trim().to_ascii_lowercase());
+    match raw.as_deref() {
+        Some(v) if matches!(v, "1" | "true" | "yes" | "on" | "silent" | "allow") => {
+            DefaultDbCredsPolicy::Silent
+        }
+        Some(v) if matches!(v, "refuse" | "strict" | "fail") => DefaultDbCredsPolicy::Refuse,
+        _ => DefaultDbCredsPolicy::Warn,
+    }
 }
