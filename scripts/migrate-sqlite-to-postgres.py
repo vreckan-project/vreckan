@@ -207,8 +207,6 @@ def build_ddl(table: str) -> str:
             d += " PRIMARY KEY"
         elif not _nullable(table, col, kind):
             d += " NOT NULL"
-            if col in defaults:
-                d += f" DEFAULT {defaults[col]}"
         defs.append(d)
     return f"CREATE TABLE IF NOT EXISTS {q(table)} ({', '.join(defs)})"
 
@@ -351,7 +349,12 @@ def run(args: argparse.Namespace) -> int:
             print(build_ddl(table) + ";")
         return 0
 
-    pg = psycopg2.connect(pg_dsn)
+    try:
+        pg = psycopg2.connect(pg_dsn)
+    except Exception as exc:  # noqa: BLE001 - scrub the DSN, then re-raise
+        # psycopg2's error message (and therefore the traceback) can contain
+        # the full DSN including the password; re-raise with the masked form.
+        raise type(exc)(str(exc).replace(pg_dsn, mask_dsn(pg_dsn))) from exc
     pg.autocommit = False
     try:
         cur = pg.cursor()
