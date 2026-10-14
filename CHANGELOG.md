@@ -9,6 +9,69 @@ is committed normally in `vreckan`. The changelog is the authoritative
 record of what shipped in each release — see
 [`docs/release.md`](./docs/release.md) for the conventions.
 
+## 2026-10-14 — Post-release security fixes, v0.6.1 (ANT-80/81/87/88/89/90)
+
+Post-release hardening of the v0.6.0 switchover, from the ANT-45 security
+review. All eight fixes are merged to `main` and verified by QA (P1 wave on
+ANT-82, P2 wave + full regression on ANT-91); no functional regressions. The
+P3 findings from the review are deferred to a later release. `VERSION` and
+`Cargo.toml` bumped to 0.6.1.
+
+- **Non-root container (P1-1, ANT-81).** The server process now runs as a
+  dedicated non-root user (`vreckan`, UID/GID 1000); the default
+  `docker-compose.yml` drops `privileged: true`. It still binds 443 (via a
+  `cap_net_bind_service` file capability on the binary) and reaches the host
+  Docker daemon through the host `docker` group instead of blanket
+  privileges. A one-shot `data-perms` service chowns the `vreckan-data`
+  volume to UID/GID 1000 on every `docker compose up`, so no manual `chown`
+  is needed on fresh installs or when upgrading from v0.5.x. Set
+  `VRECKAN_DOCKER_GROUP` if your daemon's socket group is not named `docker`.
+- **First-boot admin must change password (P1-2, ANT-80).** The bootstrap
+  `admin` account is now flagged *must-change-password*, so the web client
+  prompts for a new password at first sign-in. The first-run log no longer
+  prints a *configured* bootstrap password (only the well-known `admin1234`
+  default). A new `VRECKAN_DEFAULT_PASSWORD_POLICY` (`allow` | `warn`
+  (default) | `reject`) controls how a login with the literal `admin1234` is
+  treated while that flag is still set.
+- **E2EE server key persisted (P2-1, ANT-87).** The E2EE server RSA key now
+  defaults to the persistent data root — `VRECKAN_SERVER_PRIVATE_KEY_PATH` is
+  `/data/ssl/server_key.pem`, written `0600` — instead of the ephemeral
+  `/config/ssl/`. It now survives container recreation; previously a
+  re-created container generated a fresh key and forced every client to
+  re-pair.
+- **Cloudflare ACME token written 0600 (P2-2, ANT-87).** The Cloudflare
+  DNS-01 token file the server writes for certbot
+  (`/data/le/cloudflare.ini`) is now tightened to `0600`, so the plaintext
+  token is owner read/write only.
+- **Migration script masks DSN credentials (P2-3, ANT-88).**
+  `scripts/migrate-sqlite-to-postgres.py` now masks the `user:pass` userinfo
+  when it prints the target DSN and scrubs it out of connection-error
+  tracebacks, so credentials no longer leak into logs.
+- **Backup hygiene (P2-4, ANT-88).** Config-DB backup archives are written
+  `0600`; the in-archive database dump excludes live session tokens
+  (`auth_tokens`) so a restore leaves in-flight logins untouched; and the
+  default archive retention changes from keep-all to 7
+  (`VRECKAN_BACKUP_RETENTION`).
+- **Login rate limiting (P2-5, ANT-89).** `POST /api/auth/login` now
+  rate-limits per (client IP, username): `VRECKAN_LOGIN_MAX_ATTEMPTS`
+  (default 5) failures within `VRECKAN_LOGIN_LOCKOUT_SECONDS` (default 900 s)
+  lock the pair out with HTTP 429 for the same window (fail closed). A
+  successful login clears the pair; `0` disables the limiter.
+- **Postgres loopback-only + default-creds guard (P2-6, ANT-90).** The
+  bundled Postgres service is now published on the host loopback interface
+  only by default (`127.0.0.1:5432`) — the server reaches it over the
+  internal compose network either way; set `VRECKAN_POSTGRES_PORT=5432` to
+  expose it on every interface again. Starting against the default
+  `vreckan`/`vreckan` credentials logs a warning by default;
+  `VRECKAN_ALLOW_DEFAULT_DB_CREDS` (`1` to silence, `refuse` to fail startup)
+  controls the guard.
+
+**Upgrading:** pull the new image and `docker compose up -d` — the
+`data-perms` service handles ownership automatically. If you rely on the old
+`/config/ssl` E2EE key location or the previous SQLite-as-compose-default
+setup, review [docs/ops.md](./docs/ops.md) and the
+[configuration reference](./README.md).
+
 ## 2026-10-13 — Python-to-Rust switchover, v0.6.0 (ANT-40)
 
 - **v0.6.0 release.** `VERSION` and `Cargo.toml` bumped to 0.6.0; the
