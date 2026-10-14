@@ -72,6 +72,7 @@ pub const SETTING_DEFINITIONS: &[SettingDef] = &[
     // --- Bootstrap admin ---
     SettingDef { name: "bootstrap_admin_username", type_: "str", default: "admin", help: "Username of the admin account created on first run (when no admin exists yet)." },
     SettingDef { name: "bootstrap_admin_password", type_: "str", default: "admin1234", help: "Initial password for the bootstrap admin account; change it after first login." },
+    SettingDef { name: "default_password_policy", type_: "str", default: "warn", help: "Policy for a login with the literal default password 'admin1234' while the account is still marked must-change: 'allow' (dev/test), 'warn' (log a warning), or 'reject' (fail the login)." },
     // --- Let's Encrypt (certbot) ---
     SettingDef { name: "le_enabled", type_: "bool", default: "false", help: "Issue Let's Encrypt certificates via certbot. When off, the server uses a self-signed certificate." },
     SettingDef { name: "le_domains", type_: "str", default: "", help: "Comma-separated domain(s) to issue certificates for." },
@@ -152,6 +153,7 @@ pub struct Settings {
     pub oidc_require_signature: bool,
     pub bootstrap_admin_username: String,
     pub bootstrap_admin_password: String,
+    pub default_password_policy: String,
     pub le_enabled: bool,
     pub le_domains: String,
     pub le_auth: String,
@@ -225,6 +227,7 @@ impl Settings {
             oidc_require_signature: get_bool("oidc_require_signature"),
             bootstrap_admin_username: get("bootstrap_admin_username"),
             bootstrap_admin_password: get("bootstrap_admin_password"),
+            default_password_policy: get("default_password_policy"),
             le_enabled: get_bool("le_enabled"),
             le_domains: get("le_domains"),
             le_auth: get("le_auth"),
@@ -292,6 +295,7 @@ impl Settings {
             "oidc_require_signature" => self.oidc_require_signature.to_string(),
             "bootstrap_admin_username" => self.bootstrap_admin_username.clone(),
             "bootstrap_admin_password" => self.bootstrap_admin_password.clone(),
+            "default_password_policy" => self.default_password_policy.clone(),
             "le_enabled" => self.le_enabled.to_string(),
             "le_domains" => self.le_domains.clone(),
             "le_auth" => self.le_auth.clone(),

@@ -59,9 +59,13 @@ docker compose up -d
 
 First run: a self-signed certificate is generated under `/data/ssl`, the
 database is created, and a bootstrap `admin` account is seeded (default
-`admin` / `admin1234`, configurable via `VRECKAN_BOOTSTRAP_ADMIN_*`, printed
-to the server logs). Sign in at `https://<your-server>/` and change the
-password.
+`admin` / `admin1234`, configurable via `VRECKAN_BOOTSTRAP_ADMIN_*`). The
+account is marked *must-change-password*: the web client prompts for a new
+password on first login, and a login with the literal default `admin1234` is
+logged at `warn` unless `VRECKAN_DEFAULT_PASSWORD_POLICY` says otherwise
+(`allow` / `warn` / `reject`). The startup log names the username but prints
+the password value only when the well-known default is in use. Sign in at
+`https://<your-server>/` and change the password.
 
 The one-shot `data-perms` service chowns `./vreckan-data` to UID/GID 1000 on
 every `docker compose up` before the server starts (see §7), so no manual

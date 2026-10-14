@@ -28,6 +28,11 @@ pub mod user {
         pub is_sso: bool,
         pub settings: Option<Json>,
         pub password_hash: Option<String>,
+        /// True while the account still carries its initial (bootstrap)
+        /// password; the web UI forces a change on first login. Cleared by
+        /// any explicit password change.
+        #[sea_orm(default_value = false)]
+        pub must_change_password: bool,
         pub sso_groups: Option<Json>,
         pub roles: Option<Json>,
         pub permissions: Option<Json>,

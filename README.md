@@ -96,7 +96,7 @@ The binary reads the same `VRECKAN_*` environment variables; point
 
 ### 2. Web Client Access
 1.  Open the server's web address in any modern browser (for example, `https://<your-server>/`).
-2.  Sign in. On first run the server creates a default `admin` account (bootstrap password `admin1234`, configurable via `VRECKAN_BOOTSTRAP_ADMIN_*`) and prints the credentials to the server logs. Change the password after your first login. If OIDC/SSO is configured, you can sign in via the provider instead.
+2.  Sign in. On first run the server creates a default `admin` account (bootstrap password `admin1234`, configurable via `VRECKAN_BOOTSTRAP_ADMIN_*`). The account is marked *must-change-password*, so the web client prompts for a new password on first login; the startup log names the username (and the well-known default password only when it is in use) rather than printing a configured one. If OIDC/SSO is configured, you can sign in via the provider instead.
 3.  Use the web client to launch applications, manage files, and, if you are an administrator, manage users, groups, and applications.
 
 ## Configuration
@@ -179,7 +179,8 @@ All persistent data lives under the data root (`VRECKAN_DATA_ROOT`, default `/da
 | `VRECKAN_SHARE_CLEANUP_INTERVAL_SECONDS` | How often to run the cleanup job for expired shares (in seconds). | `600` |
 | `VRECKAN_SERVER_PRIVATE_KEY_PATH` | Path to the server private key PEM file (used for the E2EE handshake). | `/config/ssl/server_key.pem` |
 | `VRECKAN_BOOTSTRAP_ADMIN_USERNAME` | Username of the admin account created on first run (when no admin exists yet). | `admin` |
-| `VRECKAN_BOOTSTRAP_ADMIN_PASSWORD` | Initial password for the bootstrap admin account; change it after first login. | `admin1234` |
+| `VRECKAN_BOOTSTRAP_ADMIN_PASSWORD` | Initial password for the bootstrap admin account; the account is marked must-change-password until the first change. | `admin1234` |
+| `VRECKAN_DEFAULT_PASSWORD_POLICY` | Policy for logging in with the literal default password `admin1234` while the account is still marked must-change: `allow`, `warn`, or `reject`. | `warn` |
 
 ### OIDC / SSO
 
