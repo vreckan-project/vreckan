@@ -538,3 +538,25 @@ async fn test_save_schema_select_options_filtered() {
     // ... and the built-in baseline is restored regardless.
     assert_eq!(entry["default"], "-1");
 }
+
+/// A failing configuration database must surface as a 500, not `ok: true`
+/// (mirrors the Python endpoint, where a DB error raises out of the handler).
+#[tokio::test]
+async fn test_save_schema_db_write_failure_returns_500() {
+    let _root = TempDir::new();
+    let mut sc = SecureClient::new(build_state(_root.path()).await);
+    sc.http.login("admin", "admin1234").await;
+    sc.handshake().await;
+    // Simulate a configuration-database outage for the write path.
+    sc.state.db.fail_writes.store(true, std::sync::atomic::Ordering::Relaxed);
+    let (status, body) = sc
+        .call(
+            "POST",
+            "/api/admin/apps/templates/schema",
+            Some(&json!({ "settings": [{ "name": "ONLY_ONE", "label": "Only One", "type": "text", "default": "x" }] })),
+        )
+        .await;
+    assert_eq!(status, StatusCode::INTERNAL_SERVER_ERROR, "{:?}", body);
+    assert!(body.as_ref().unwrap().get("detail").is_some(), "{:?}", body);
+    assert_ne!(body.as_ref().unwrap().get("ok"), Some(&json!(true)));
+}

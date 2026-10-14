@@ -58,6 +58,10 @@ pub struct Db {
     pub conn: DatabaseConnection,
     /// The backend dialect name: "sqlite", "postgres", or "mysql".
     pub dialect: String,
+    /// Integration-test hook: when `true`, writes report a simulated outage
+    /// (lets tests exercise the DB-error paths without a second backend).
+    /// Production code leaves it `false`.
+    pub fail_writes: std::sync::Arc<std::sync::atomic::AtomicBool>,
 }
 
 /// Detect the backend from a sqlx URL scheme.
@@ -103,7 +107,11 @@ pub async fn connect(url: &str) -> Result<Db, sea_orm::DbErr> {
     }
 
     info!("Configuration database ready ({dialect})");
-    Ok(Db { conn, dialect })
+    Ok(Db {
+        conn,
+        dialect,
+        fail_writes: std::sync::Arc::new(std::sync::atomic::AtomicBool::new(false)),
+    })
 }
 
 impl Db {
@@ -149,6 +157,11 @@ impl Db {
 
     /// Insert or update a single `app_settings` row.
     pub async fn set_app_setting(&self, key: &str, value: &str) -> Result<(), sea_orm::DbErr> {
+        if self.fail_writes.load(std::sync::atomic::Ordering::Relaxed) {
+            return Err(sea_orm::DbErr::Custom(
+                "simulated write failure (test hook)".to_string(),
+            ));
+        }
         let am = entities::app_setting::ActiveModel {
             key: ActiveValue::Set(key.to_string()),
             value: ActiveValue::Set(value.to_string()),

@@ -215,8 +215,10 @@ database onto a Postgres database, so a deployment that ran on SQLite up to
 v0.5.0 can be cut over to the v0.6.0 Postgres default without re-seeding users
 and settings. It creates the Postgres schema (idempotently), then replaces each
 table's contents with the migrated rows (JSON columns move from SQLite TEXT to
-`jsonb`). It is safe to re-run. The server should be stopped during the
-cut-over; it needs Python 3.8+ (stdlib `sqlite3`) and `psycopg2`
+Postgres `json`, the type the server itself uses). It is safe to re-run. The server should be stopped during the
+cut-over. It is the only remaining Python in the repository (the server
+itself is a single Rust binary with no Python in the image), and it needs
+Python 3.8+ (stdlib `sqlite3`) and `psycopg2`
 (`pip install psycopg2-binary`) only for a real run — `--dry-run` previews the
 DDL and row counts with the stdlib alone.
 
