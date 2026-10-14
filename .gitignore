@@ -32,3 +32,5 @@ site/_site/
 site/Gemfile.lock
 
 codeto*
+.tc-cargo/
+.tc-rustup/

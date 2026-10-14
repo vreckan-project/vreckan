@@ -26,7 +26,7 @@ use axum::routing::{get, post, put};
 use axum::{Json, Router};
 use base64::Engine;
 use jwks::Jwks;
-use rand::RngCore;
+use rand::Rng;
 use sea_orm::{ActiveModelTrait, ActiveValue, ConnectionTrait, DbErr, EntityTrait};
 use serde::{Deserialize, Serialize};
 use tracing::{debug, info, warn};

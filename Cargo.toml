@@ -1,6 +1,6 @@
 [package]
 name = "vreckan"
-version = "0.6.1"
+version = "0.6.2"
 edition = "2021"
 description = "Vreckan server (Rust port of the Python/FastAPI server)"
 # MPL-2.0 to match the upstream SealSkin fork this project derives from (see
@@ -16,8 +16,8 @@ path = "src/main.rs"
 [dependencies]
 # HTTP server + routing
 axum = { version = "0.8", features = ["macros", "query", "json", "multipart", "ws", "http2", "form"] }
-axum-extra = { version = "0.10", features = ["cookie"] }
-axum-server = { version = "0.7", features = ["tls-rustls"] }
+axum-extra = { version = "0.12", features = ["cookie"] }
+axum-server = { version = "0.8", features = ["tls-rustls"] }
 axum-reverse-proxy = "2.2"
 tokio = { version = "1", features = ["full"] }
 hyper = { version = "1", features = ["full"] }
@@ -44,8 +44,8 @@ serde_yaml = "0.9"
 ring = "0.17"
 argon2 = "0.6"
 sha2 = "0.10"
-base64 = "0.22"
-rand = "0.9"
+base64 = "0.23"
+rand = "0.10"
 # E2EE handshake: RSA-PSS (server identity) + RSA-OAEP (session-key wrap).
 # `sha2` is not a default feature of `rsa`, so enable it explicitly.
 rsa = { version = "0.9", features = ["sha2"] }
@@ -54,9 +54,9 @@ aes-gcm = "0.11"
 # Key encoding (PKCS#8 private key load, SPKI public-key PEM).
 pkcs8 = "0.10"
 spki = "0.7"
-der = "0.7"
+der = "0.8"
 # `rsa 0.9` is built against `rand_core 0.6`; use its `OsRng` for one-time
-# server-key generation (our `rand 0.9` uses `rand_core 0.9`, a different
+# server-key generation (our `rand 0.10` uses `rand_core 0.10`, a different
 # trait version, so it can't be passed to `rsa` directly).
 rand_core = { version = "0.6", features = ["getrandom"] }
 
@@ -71,7 +71,7 @@ jsonwebtoken = "10"
 bollard = "0.21"
 
 # Outbound HTTP (app stores, health checks, OIDC transport)
-reqwest = { version = "0.12", default-features = false, features = ["json", "stream", "rustls-tls"] }
+reqwest = { version = "0.13", default-features = false, features = ["json", "stream", "rustls", "form"] }
 
 # Backup / restore
 tar = "0.4"
@@ -80,8 +80,8 @@ flate2 = "1"
 # TLS / certs
 rustls = { version = "0.23", features = ["ring"] }
 rustls-pemfile = "2"
-x509-cert = "0.2"
-rcgen = "0.13"
+x509-cert = "0.3"
+rcgen = "0.14"
 
 # Logging
 tracing = "0.1"

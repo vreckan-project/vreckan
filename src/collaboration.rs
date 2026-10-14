@@ -20,6 +20,7 @@ use axum::Router;
 use base64::Engine;
 use futures_util::{SinkExt, StreamExt};
 use rand::Rng;
+use rand::RngExt;
 use serde::Deserialize;
 use serde_json::Value;
 use tracing::{info, warn};
@@ -282,7 +283,6 @@ async fn collaborative_room(
 
     let nonce = {
         let mut buf = [0u8; 16];
-        use rand::RngCore;
         rand::rng().fill_bytes(&mut buf);
         base64::engine::general_purpose::STANDARD.encode(buf)
     };
@@ -782,7 +782,6 @@ async fn room_websocket(
     };
     let public_id = {
         let mut buf = [0u8; 4];
-        use rand::RngCore;
         rand::rng().fill_bytes(&mut buf);
         hex::encode(buf)
     };
@@ -1033,7 +1032,6 @@ async fn route_message(
             }
             let message_id = format!("{now_ms}-{}", {
                 let mut buf = [0u8; 4];
-                use rand::RngCore;
                 rand::rng().fill_bytes(&mut buf);
                 hex::encode(buf)
             });

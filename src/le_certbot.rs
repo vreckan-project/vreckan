@@ -29,7 +29,7 @@ use bollard::query_parameters::{CreateContainerOptions, LogsOptions, RemoveConta
 use bollard::Docker;
 use der::Decode;
 use futures_util::{Stream, StreamExt};
-use rand::RngCore;
+use rand::Rng;
 use serde_json::Value;
 use tracing::{info, warn};
 
@@ -227,7 +227,7 @@ pub fn cert_expiry(cert_path: &str) -> Option<i64> {
     let mut reader = std::io::Cursor::new(pem);
     let cert = rustls_pemfile::certs(&mut reader).next()?.ok()?;
     let x509 = x509_cert::Certificate::from_der(cert.as_ref()).ok()?;
-    let not_after = x509.tbs_certificate.validity.not_after;
+    let not_after = x509.tbs_certificate().validity().not_after;
     Some(not_after.to_unix_duration().as_secs() as i64)
 }
 
