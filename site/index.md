@@ -56,7 +56,7 @@ description: Vreckan streams powerful, containerized desktop applications to any
     <div class="arch-node">
       <div class="role">Server</div>
       <h3>Vreckan Server</h3>
-      <p>The central hub for management, orchestration, and traffic proxying. A single HTTPS endpoint serves both the <strong>encrypted API</strong> (control plane) and a <strong>secure reverse proxy</strong> for live app traffic (data plane), so app containers are never directly exposed.</p>
+      <p>A single Rust binary (axum + SeaORM) that is the central hub for management, orchestration, and traffic proxying. A single HTTPS endpoint serves both the <strong>encrypted API</strong> (control plane) and a <strong>secure reverse proxy</strong> for live app traffic (data plane), so app containers are never directly exposed.</p>
     </div>
   </div>
 </section>

@@ -16,7 +16,7 @@ description: Answers to the most common questions about running and using Vrecka
 
   <div class="faq-item">
     <h3>What's the difference between Vreckan and SealSkin?</h3>
-    <p>Vreckan is a hard fork of <a href="https://github.com/linuxserver/docker-sealskin">SealSkin</a>. It continues the project under a new name with a leaner codebase and its own roadmap — including a database-backed configuration store, a full admin UI, SSO, and built-in Let's Encrypt.</p>
+    <p>Vreckan is a hard fork of <a href="https://github.com/linuxserver/docker-sealskin">SealSkin</a>. It continues the project under a new name with a leaner codebase and its own roadmap — including a database-backed configuration store, a full admin UI, SSO, and built-in Let's Encrypt. As of v0.6.0 the server is a Rust rewrite (axum + SeaORM); the original Python server is preserved in the <a href="https://github.com/vreckan-project/vreckan-python">vreckan-python</a> archive repo.</p>
   </div>
 
   <div class="faq-item">
@@ -41,7 +41,7 @@ description: Answers to the most common questions about running and using Vrecka
 
   <div class="faq-item">
     <h3>SQLite or PostgreSQL?</h3>
-    <p>SQLite (the default) is ideal for development and single-user setups. For a production deployment with multiple users, run the bundled PostgreSQL service and point <code>VRECKAN_DATABASE_URL</code> at it. Both are fully supported and tested.</p>
+    <p>Both are fully supported and tested. The bundled <code>docker-compose.yml</code> ships a <code>postgres:16</code> service and uses it by default — the right choice for production deployments with multiple users. When running the server binary directly, SQLite is the default and is ideal for development and single-user setups. Switch backends with <code>VRECKAN_DATABASE_URL</code> (or the <code>VRECKAN_DB_*</code> settings).</p>
   </div>
 
   <div class="faq-item">
