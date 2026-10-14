@@ -217,11 +217,20 @@ python3 scripts/migrate-sqlite-to-postgres.py --dry-run
 python3 scripts/migrate-sqlite-to-postgres.py
 ```
 
+The target DSN is printed with its `user:pass` userinfo masked
+(`postgres://***:***@host:5432/db`), and a connection failure is re-raised
+with the DSN scrubbed, so the credentials do not leak into logs or
+tracebacks.
+
 **Backups:** the admin UI can create a backup (tar.gz of the data tree + a
 logical JSON dump in table order) and restore it, including a chunked
-restore flow for large archives; `VRECKAN_BACKUP_RETENTION` prunes old
-archives. Take a backup before upgrading the image. For a native
-`pg_dump`-based Postgres backup with dated-dump rotation, see §4.2.
+restore flow for large archives. Archives (and the in-archive
+`db_dump.json`) are written `0600`, because the dump carries
+`users.password_hash`; live session tokens (`auth_tokens`) are excluded
+from the dump, so a restore never drops or resurrects in-flight logins.
+`VRECKAN_BACKUP_RETENTION` prunes old archives (default: keep 7). Take a
+backup before upgrading the image. For a native `pg_dump`-based Postgres
+backup with dated-dump rotation, see §4.2.
 
 ### 4.2 Postgres backup and restore (`scripts/backup-postgres.sh`)
 

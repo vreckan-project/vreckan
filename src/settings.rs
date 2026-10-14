@@ -49,7 +49,7 @@ pub const SETTING_DEFINITIONS: &[SettingDef] = &[
     SettingDef { name: "pgid", type_: "int", default: "1000", help: "Default Group ID to run containers as." },
     SettingDef { name: "data_root", type_: "str", default: "/data", help: "Root of the persistent data tree (database, storage, caches, backups)." },
     SettingDef { name: "backups_path", type_: "str", default: "/data/backups", help: "Directory for backup archives." },
-    SettingDef { name: "backup_retention", type_: "int", default: "0", help: "Number of backup archives to keep; 0 keeps all." },
+    SettingDef { name: "backup_retention", type_: "int", default: "7", help: "Number of backup archives to keep; 0 keeps all." },
     SettingDef { name: "storage_path", type_: "str", default: "/data/storage", help: "Base directory for user home directories." },
     SettingDef { name: "app_icons_path", type_: "str", default: "/data/storage/vreckan_app_icons", help: "Directory for storing custom-uploaded application icons." },
     SettingDef { name: "home_templates_path", type_: "str", default: "/data/storage/vreckan_home_templates", help: "Base directory for meta-app home directory templates." },

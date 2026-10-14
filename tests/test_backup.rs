@@ -19,6 +19,9 @@ use base64::Engine;
 use common::{build_state, SecureClient, TempDir};
 use http::StatusCode;
 use serde_json::json;
+use sea_orm::EntityTrait;
+use std::io::Read;
+use std::os::unix::fs::PermissionsExt;
 use vreckan::backup_manager;
 use vreckan::user_manager;
 
@@ -498,4 +501,108 @@ async fn test_backup_retention_prunes_old_backups() {
     assert_eq!(names, vec![third_name.clone()]);
     assert!(backup_path(&sc, &third_name).exists());
     assert!(!backup_path(&sc, &first_name).exists());
+}
+
+// ---------------------------------------------------------------------------
+// P2-4: backup secrets handling
+// ---------------------------------------------------------------------------
+
+/// Extract the `db_dump.json` member of a backup archive and parse it.
+fn read_dump_from_archive(raw: &[u8]) -> serde_json::Value {
+    let mut gz = flate2::read::GzDecoder::new(std::io::Cursor::new(raw));
+    let mut archive = tar::Archive::new(&mut gz);
+    for entry in archive.entries().unwrap() {
+        let mut entry = entry.unwrap();
+        if entry.path().unwrap().file_name().unwrap() == "db_dump.json" {
+            let mut buf = Vec::new();
+            entry.read_to_end(&mut buf).unwrap();
+            return serde_json::from_slice(&buf).unwrap();
+        }
+    }
+    panic!("db_dump.json not in archive");
+}
+
+#[tokio::test]
+async fn test_backup_archive_is_0600() {
+    let _root = TempDir::new();
+    let mut sc = SecureClient::new(build_state(_root.path()).await);
+    sc.http.login("admin", "admin1234").await;
+    sc.handshake().await;
+    let (status, body) = sc
+        .call("POST", "/api/admin/backup/create", Some(&json!({ "include_user_data": false })))
+        .await;
+    assert_eq!(status, StatusCode::CREATED, "{body:?}");
+    let name = body.as_ref().unwrap()["name"].as_str().unwrap().to_string();
+    let mode = std::fs::metadata(backup_path(&sc, &name))
+        .unwrap()
+        .permissions()
+        .mode()
+        & 0o777;
+    assert_eq!(mode, 0o600);
+}
+
+#[tokio::test]
+async fn test_backup_dump_excludes_auth_tokens() {
+    let _root = TempDir::new();
+    let mut sc = SecureClient::new(build_state(_root.path()).await);
+    // A live login leaves an auth_tokens row in the configuration DB.
+    sc.http.login("admin", "admin1234").await;
+    sc.handshake().await;
+    let (status, body) = sc
+        .call("POST", "/api/admin/backup/create", Some(&json!({ "include_user_data": false })))
+        .await;
+    assert_eq!(status, StatusCode::CREATED, "{body:?}");
+    let name = body.as_ref().unwrap()["name"].as_str().unwrap().to_string();
+    let dump = read_dump_from_archive(&std::fs::read(backup_path(&sc, &name)).unwrap());
+    let tables = dump["tables"].as_object().expect("tables object");
+    // Live session tokens are excluded from the snapshot ...
+    assert!(!tables.contains_key("auth_tokens"), "{tables:?}");
+    // ... while the rest of the schema (including users) is preserved.
+    assert!(tables.contains_key("users"));
+    // The in-archive dump itself is owner-only too.
+    let mut gz = flate2::read::GzDecoder::new(std::io::Cursor::new(
+        std::fs::read(backup_path(&sc, &name)).unwrap(),
+    ));
+    let mut archive = tar::Archive::new(&mut gz);
+    for entry in archive.entries().unwrap() {
+        let mut entry = entry.unwrap();
+        if entry.path().unwrap().file_name().unwrap() == "db_dump.json" {
+            let mode = entry.header().mode().map(|m| m & 0o777).unwrap_or(0);
+            assert_eq!(mode, 0o600);
+        }
+    }
+}
+
+#[tokio::test]
+async fn test_db_dump_restore_preserves_live_auth_tokens() {
+    let _root = TempDir::new();
+    let mut sc = SecureClient::new(build_state(_root.path()).await);
+    sc.http.login("admin", "admin1234").await;
+    // The login persisted an auth_tokens row.
+    let token_rows =
+        vreckan::entities::auth_token::Entity::find()
+            .all(&sc.state.db.conn)
+            .await
+            .unwrap();
+    assert!(!token_rows.is_empty());
+    // Round-trip a dump: the new-style dump excludes auth_tokens, and the
+    // restore must leave the live token rows untouched.
+    let dump_path = sc.state.settings.data_root.clone() + "/dump_roundtrip.json";
+    sc.state.db.dump(&dump_path).await.unwrap();
+    let before = vreckan::entities::auth_token::Entity::find()
+        .all(&sc.state.db.conn)
+        .await
+        .unwrap()
+        .len();
+    sc.state.db.restore(&dump_path).await.unwrap();
+    let after = vreckan::entities::auth_token::Entity::find()
+        .all(&sc.state.db.conn)
+        .await
+        .unwrap();
+    assert_eq!(after.len(), before);
+    assert_eq!(
+        after.iter().map(|r| r.token.clone()).collect::<Vec<_>>(),
+        token_rows.iter().map(|r| r.token.clone()).collect::<Vec<_>>()
+    );
+    let _ = std::fs::remove_file(&dump_path);
 }
