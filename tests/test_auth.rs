@@ -339,3 +339,266 @@ async fn test_custom_bootstrap_password_not_flagged_by_policy() {
         .await;
     assert_eq!(resp.status.as_u16(), 200);
 }
+// ---------------------------------------------------------------------------
+
+#[tokio::test]
+async fn test_login_rate_limit_locks_after_max_failures() {
+    let _root = TempDir::new();
+    let tc = TestClient::new(build_state(_root.path()).await);
+    // Default limiter: 5 failed attempts within the window.
+    for _ in 0..5 {
+        let resp = tc
+            .post_json(
+                "/api/auth/login",
+                &json!({ "username": "admin", "password": "nope" }),
+            )
+            .await;
+        assert_eq!(resp.status.as_u16(), 401);
+    }
+    // The next attempt fails closed even with the correct password.
+    let resp = tc
+        .post_json(
+            "/api/auth/login",
+            &json!({ "username": "admin", "password": "admin1234" }),
+        )
+        .await;
+    assert_eq!(resp.status.as_u16(), 429);
+}
+
+#[tokio::test]
+async fn test_login_rate_limit_success_resets_counter() {
+    let _root = TempDir::new();
+    let mut tc = TestClient::new(build_state(_root.path()).await);
+    for _ in 0..4 {
+        assert_eq!(
+            tc.post_json(
+                "/api/auth/login",
+                &json!({ "username": "admin", "password": "nope" })
+            )
+            .await
+            .status
+            .as_u16(),
+            401
+        );
+    }
+    // A successful login clears the pair's counters ...
+    assert_eq!(tc.login("admin", "admin1234").await.status.as_u16(), 200);
+    // ... so four more misses do not trigger a lockout.
+    for _ in 0..4 {
+        assert_eq!(
+            tc.post_json(
+                "/api/auth/login",
+                &json!({ "username": "admin", "password": "nope" })
+            )
+            .await
+            .status
+            .as_u16(),
+            401
+        );
+    }
+    assert_eq!(tc.login("admin", "admin1234").await.status.as_u16(), 200);
+}
+
+#[tokio::test]
+async fn test_login_rate_limit_buckets_per_username() {
+    let _root = TempDir::new();
+    let tc = TestClient::new(build_state(_root.path()).await);
+    for _ in 0..5 {
+        tc.post_json(
+            "/api/auth/login",
+            &json!({ "username": "ghost1", "password": "nope" }),
+        )
+        .await;
+    }
+    // ghost1 is now locked out (even with the right password it would 429).
+    // Four misses for a *different* username must not be affected ...
+    for _ in 0..4 {
+        assert_eq!(
+            tc.post_json(
+                "/api/auth/login",
+                &json!({ "username": "ghost2", "password": "nope" })
+            )
+            .await
+            .status
+            .as_u16(),
+            401
+        );
+    }
+    // ... and the fifth miss records the pair at the threshold (a plain 401,
+    // like any other miss) ...
+    assert_eq!(
+        tc.post_json(
+            "/api/auth/login",
+            &json!({ "username": "ghost2", "password": "nope" })
+        )
+        .await
+        .status
+        .as_u16(),
+        401
+    );
+    // ... after which ghost2 is locked out on its own, not via ghost1's bucket.
+    assert_eq!(
+        tc.post_json(
+            "/api/auth/login",
+            &json!({ "username": "ghost2", "password": "nope" })
+        )
+        .await
+        .status
+        .as_u16(),
+        429
+    );
+}
+
+#[tokio::test]
+async fn test_login_rate_limit_buckets_per_ip() {
+    let _root = TempDir::new();
+    let tc = TestClient::new(build_state(_root.path()).await);
+    let mut h1 = std::collections::HashMap::new();
+    h1.insert("X-Forwarded-For".to_string(), "1.2.3.4".to_string());
+    let mut h2 = std::collections::HashMap::new();
+    h2.insert("X-Forwarded-For".to_string(), "5.6.7.8".to_string());
+    // Five misses from the first address lock only that (ip, username) pair;
+    // the same username from a second address stays under the threshold.
+    for _ in 0..5 {
+        tc.request(
+            "POST",
+            "/api/auth/login",
+            Some(json!({ "username": "admin", "password": "nope" }).to_string().into_bytes()),
+            Some("application/json"),
+            &h1,
+        )
+        .await;
+    }
+    for _ in 0..5 {
+        let resp = tc
+            .request(
+                "POST",
+                "/api/auth/login",
+                Some(json!({ "username": "admin", "password": "nope" }).to_string().into_bytes()),
+                Some("application/json"),
+                &h2,
+            )
+            .await;
+        assert_eq!(resp.status.as_u16(), 401);
+    }
+}
+
+#[tokio::test]
+async fn test_login_rate_limit_window_resets_not_compounds() {
+    let _root = TempDir::new();
+    let state = build_state(_root.path()).await;
+    let ref_state = state.clone();
+    let mut tc = TestClient::new(state);
+    // Four failures inside the window (the default threshold is five).
+    for _ in 0..4 {
+        let resp = tc
+            .post_json(
+                "/api/auth/login",
+                &json!({ "username": "admin", "password": "nope" }),
+            )
+            .await;
+        assert_eq!(resp.status.as_u16(), 401);
+    }
+    // Simulate the window expiring: rewind the pair's window start.
+    let now = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .unwrap()
+        .as_secs_f64();
+    {
+        let mut map = ref_state.login_attempts.write().await;
+        let w = map
+            .get_mut("unknown:admin")
+            .expect("the pair was recorded");
+        w.window_start = now - 10_000.0;
+    }
+    // The window resets rather than compounding: four more failures (eight
+    // in total) still sit below the threshold ...
+    for _ in 0..4 {
+        let resp = tc
+            .post_json(
+                "/api/auth/login",
+                &json!({ "username": "admin", "password": "nope" }),
+            )
+            .await;
+        assert_eq!(resp.status.as_u16(), 401);
+    }
+    // ... so the pair is not locked out and the correct password logs in.
+    assert_eq!(tc.login("admin", "admin1234").await.status.as_u16(), 200);
+}
+
+#[tokio::test]
+async fn test_login_rate_limit_lockout_expires() {
+    let _root = TempDir::new();
+    let state = build_state(_root.path()).await;
+    let ref_state = state.clone();
+    let mut tc = TestClient::new(state);
+    // Lock the pair out: five failures (the default threshold).
+    for _ in 0..5 {
+        let resp = tc
+            .post_json(
+                "/api/auth/login",
+                &json!({ "username": "admin", "password": "nope" }),
+            )
+            .await;
+        assert_eq!(resp.status.as_u16(), 401);
+    }
+    // While locked out the pair fails closed: even the correct password
+    // gets 429.
+    let resp = tc
+        .post_json(
+            "/api/auth/login",
+            &json!({ "username": "admin", "password": "admin1234" }),
+        )
+        .await;
+    assert_eq!(resp.status.as_u16(), 429);
+    // Simulate the lockout elapsing: the lock is over and the failure
+    // window is stale.
+    let now = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .unwrap()
+        .as_secs_f64();
+    {
+        let mut map = ref_state.login_attempts.write().await;
+        let w = map
+            .get_mut("unknown:admin")
+            .expect("the pair was recorded");
+        w.locked_until = now - 1.0;
+        w.window_start = now - 10_000.0;
+    }
+    // The pair is evaluated again: a miss is a plain 401, not 429 ...
+    let resp = tc
+        .post_json(
+            "/api/auth/login",
+            &json!({ "username": "admin", "password": "nope" }),
+        )
+        .await;
+    assert_eq!(resp.status.as_u16(), 401);
+    // ... and the correct password logs in.
+    assert_eq!(tc.login("admin", "admin1234").await.status.as_u16(), 200);
+}
+
+#[tokio::test]
+async fn test_login_rate_limit_disabled_via_zero() {
+    let _root = TempDir::new();
+    let mut tc = TestClient::new(
+        build_state_with(
+            _root.path(),
+            |s| {
+                s.login_max_attempts = 0;
+            },
+        )
+        .await,
+    );
+    // More misses than the default threshold never lock the pair out ...
+    for _ in 0..7 {
+        let resp = tc
+            .post_json(
+                "/api/auth/login",
+                &json!({ "username": "admin", "password": "nope" }),
+            )
+            .await;
+        assert_eq!(resp.status.as_u16(), 401);
+    }
+    // ... and the correct password still logs in.
+    assert_eq!(tc.login("admin", "admin1234").await.status.as_u16(), 200);
+}

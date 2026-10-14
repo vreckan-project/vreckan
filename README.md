@@ -181,6 +181,8 @@ All persistent data lives under the data root (`VRECKAN_DATA_ROOT`, default `/da
 | `VRECKAN_BOOTSTRAP_ADMIN_USERNAME` | Username of the admin account created on first run (when no admin exists yet). | `admin` |
 | `VRECKAN_BOOTSTRAP_ADMIN_PASSWORD` | Initial password for the bootstrap admin account; the account is marked must-change-password until the first change. | `admin1234` |
 | `VRECKAN_DEFAULT_PASSWORD_POLICY` | Policy for logging in with the literal default password `admin1234` while the account is still marked must-change: `allow`, `warn`, or `reject`. | `warn` |
+| `VRECKAN_LOGIN_MAX_ATTEMPTS` | Failed logins from one (client IP, username) pair within the lockout window before a temporary lockout. 0 disables the limiter. | `5` |
+| `VRECKAN_LOGIN_LOCKOUT_SECONDS` | Length of the failed-login window and of the temporary lockout (seconds). Lockout events are logged at `warn`. | `900` |
 
 ### OIDC / SSO
 

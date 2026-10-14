@@ -29,7 +29,7 @@ use jwks::Jwks;
 use rand::RngCore;
 use sea_orm::{ActiveModelTrait, ActiveValue, ConnectionTrait, DbErr, EntityTrait};
 use serde::{Deserialize, Serialize};
-use tracing::{info, warn};
+use tracing::{debug, info, warn};
 
 use crate::entities;
 use crate::permissions;
@@ -439,23 +439,147 @@ fn user_error_response(e: UserError) -> Response {
         .into_response()
 }
 
+/// The client's remote address as seen by the server: the `ConnectInfo`
+/// extension added by `into_make_service_with_connect_info` in `main.rs`, or
+/// `None` (unproxied local clients and direct-router test harnesses). Infallible
+/// so the handler works on a plain router too.
+#[derive(Clone, Copy, Debug, Default)]
+struct RemoteAddr(Option<std::net::SocketAddr>);
+
+impl<S: Send + Sync> axum::extract::FromRequestParts<S> for RemoteAddr {
+    type Rejection = std::convert::Infallible;
+    async fn from_request_parts(
+        parts: &mut axum::http::request::Parts,
+        _state: &S,
+    ) -> Result<Self, Self::Rejection> {
+        Ok(Self(
+            parts
+                .extensions
+                .get::<axum::extract::ConnectInfo<std::net::SocketAddr>>()
+                .map(|c| c.0),
+        ))
+    }
+}
+
+/// The client's IP for login rate limiting: the leftmost `X-Forwarded-For`
+/// entry (set by the reverse proxy), falling back to the direct connection
+/// address, then to a shared `"unknown"` bucket (unproxied local clients and
+/// test harnesses).
+fn client_ip(headers: &HeaderMap, remote: Option<std::net::SocketAddr>) -> String {
+    if let Some(v) = headers.get(axum::http::HeaderName::from_static("x-forwarded-for")) {
+        if let Ok(s) = v.to_str() {
+            if let Some(first) = s.split(',').next() {
+                let first = first.trim();
+                if !first.is_empty() {
+                    return first.to_string();
+                }
+            }
+        }
+    }
+    if let Some(addr) = remote {
+        return addr.ip().to_string();
+    }
+    "unknown".to_string()
+}
+
+/// Record a failed login for the (IP, username) pair, starting (and logging)
+/// a lockout once the pair's failure count reaches the configured maximum.
+async fn record_login_failure(
+    state: &AppState,
+    key: &str,
+    now: f64,
+    window_secs: f64,
+    max_attempts: i64,
+) {
+    let mut map = state.login_attempts.write().await;
+    let w = map.entry(key.to_string()).or_default();
+    if w.window_start == 0.0 {
+        w.window_start = now;
+    }
+    w.fails += 1;
+    if max_attempts > 0 && w.fails >= max_attempts as u32 {
+        w.locked_until = now + window_secs;
+        warn!(
+            "login rate limit: {} locked out for {}s after {} failed attempts",
+            key,
+            window_secs as i64,
+            w.fails
+        );
+    }
+}
+
 /// `POST /api/auth/login` — authenticate with a username/password and issue a
 /// server token. Sets an HttpOnly cookie (and returns the token in the
 /// `X-Auth-Token` header) so both browser cookie flows and explicit Bearer
 /// clients work.
+///
+/// Brute-force protection: per (client IP, username) pair, `login_max_attempts`
+/// failed attempts within the `login_lockout_seconds` window lock the pair
+/// out for the same window (fail closed with 429). The miss that reaches the
+/// threshold is a plain 401 like any other miss; every attempt after it —
+/// correct password included — gets 429 until the lockout elapses. The window
+/// resets rather than compounds, and a successful login clears the pair.
 async fn login(
     State(state): State<AppState>,
     headers: HeaderMap,
+    RemoteAddr(remote): RemoteAddr,
     Json(req): Json<LoginRequest>,
 ) -> Response {
+    let ip = client_ip(&headers, remote);
+    let key = format!("{ip}:{}", req.username);
+    let now = now_secs();
+    let max_attempts = state.settings.login_max_attempts;
+    let window_secs = state.settings.login_lockout_seconds.max(1) as f64;
+    if max_attempts > 0 {
+        let mut map = state.login_attempts.write().await;
+        // Opportunistic prune so the map stays bounded on long-lived servers.
+        if map.len() > 4096 {
+            map.retain(|_, w| w.locked_until > now || now - w.window_start < window_secs);
+        }
+        let w = match map.get_mut(&key) {
+            Some(w) => w,
+            None => {
+                map.insert(key.clone(), crate::state::LoginAttemptWindow { window_start: now, ..Default::default() });
+                map.get_mut(&key).unwrap()
+            }
+        };
+        if w.window_start == 0.0 || now - w.window_start > window_secs {
+            w.fails = 0;
+            w.window_start = now;
+        }
+        if w.locked_until > now {
+            debug!("login rate limit: {} still locked out (until +{}s)", key, (w.locked_until - now) as i64);
+            return json_error(
+                StatusCode::TOO_MANY_REQUESTS,
+                "Too many failed login attempts; try again in a few minutes.",
+            );
+        }
+        if w.fails >= max_attempts as u32 {
+            w.locked_until = now + window_secs;
+            warn!(
+                "login rate limit: {} locked out for {}s after {} failed attempts",
+                key,
+                window_secs as i64,
+                w.fails
+            );
+            return json_error(
+                StatusCode::TOO_MANY_REQUESTS,
+                "Too many failed login attempts; try again in a few minutes.",
+            );
+        }
+    }
     // argon2 is a hard dependency in the Rust port, so the Python
     // `_HAS_ARGON2` 503 check is always satisfied here.
-    if !user_manager::verify_password(&state.db, &req.username, &req.password)
+    let ok = user_manager::verify_password(&state.db, &req.username, &req.password)
         .await
-        .unwrap_or(false)
-    {
+        .unwrap_or(false);
+    if !ok {
+        record_login_failure(&state, &key, now, window_secs, max_attempts).await;
         // Do not leak whether the account exists.
         return json_error(StatusCode::UNAUTHORIZED, "Invalid username or password.");
+    }
+    if max_attempts > 0 {
+        state.login_attempts.write().await.remove(&key);
     }
     let user = match user_manager::get_user(&state.db, &req.username).await {
         Ok(Some(u)) => u,
