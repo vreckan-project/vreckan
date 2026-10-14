@@ -16,7 +16,7 @@ path = "src/main.rs"
 [dependencies]
 # HTTP server + routing
 axum = { version = "0.8", features = ["macros", "query", "json", "multipart", "ws", "http2", "form"] }
-axum-extra = { version = "0.10", features = ["cookie"] }
+axum-extra = { version = "0.12", features = ["cookie"] }
 axum-server = { version = "0.7", features = ["tls-rustls"] }
 axum-reverse-proxy = "2.2"
 tokio = { version = "1", features = ["full"] }
