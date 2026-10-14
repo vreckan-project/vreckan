@@ -9,6 +9,46 @@ is committed normally in `vreckan`. The changelog is the authoritative
 record of what shipped in each release — see
 [`docs/release.md`](./docs/release.md) for the conventions.
 
+## 2026-10-14 — Dependency bumps, v0.6.2 (ANT-118)
+
+Batch dependency bump and version release. All bumps were QA-validated for
+breaking changes before landing; no operator-visible behavior changes.
+`VERSION` and `Cargo.toml` bumped to 0.6.2.
+
+- **`aes-gcm` 0.10 → 0.11** (merged separately as PR #23 before this batch).
+  The E2EE `Aes256Gcm` handshake API is unchanged; the removed 0.10-only items
+  (`std`/`stream` features, `C_MAX`, `AeadInPlace`) are unreferenced in our code.
+- **`axum-extra` 0.10 → 0.12.** We enable only the `cookie` feature; no
+  `axum_extra` import exists in our Rust source (cookies are parsed/built
+  manually in `src/auth.rs`), so the 0.12 breaking changes (opt-in features,
+  `option_layer` body mapping, `async-stream` removal) do not apply.
+- **`axum-server` 0.7 → 0.8.** The `tls_rustls::RustlsConfig::from_pem` and
+  `bind_rustls` / `.serve(...)` call sites in `src/main.rs` are unchanged.
+- **`base64` 0.22 → 0.23.** The `base64::engine::general_purpose` API
+  (`STANDARD.encode/decode`, `URL_SAFE_NO_PAD.encode/decode`) is unchanged.
+- **`reqwest` 0.12 → 0.13.** The feature flag name changed
+  (`rustls-tls` → `rustls`); the `form` feature was added explicitly.
+  The `default-features = false` + named-feature pattern is otherwise
+  unchanged.
+- **`rand` 0.9 → 0.10.** In 0.10 the `RngCore` trait was split: `fill_bytes`
+  moved to a new `RngExt` sub-trait, and the unified `Rng` trait now
+  re-exports both. All seven `use rand::RngCore` imports were updated to
+  `use rand::Rng`; one additional `use rand::RngExt` was added where
+  `fill_bytes` is called on the result of `rand::rng()`.
+- **`der` 0.7 → 0.8.** Part of the RustCrypto ecosystem; the `der::Decode`
+  import in `src/le_certbot.rs` is unchanged.
+- **`x509-cert` 0.2 → 0.3.** The public-field access pattern
+  (`cert.tbs_certificate.validity.not_after`) changed to method calls
+  (`cert.tbs_certificate().validity().not_after()`); the single call site in
+  `src/le_certbot.rs` was updated accordingly.
+- **`rcgen` 0.13 → 0.14.** Used for the self-signed cert fallback in the
+  Let's Encrypt / certbot flow; the API we call is unchanged.
+
+**Deferred** (awaiting ecosystem releases): `rsa` 0.10 (currently pre-release
+`0.10.0-rc.19`), which would in turn unblock `pkcs8` 0.11, `spki` 0.8,
+`sha2` 0.11, and `der` 0.8 → 0.9. `jsonwebtoken` 10 → 11 is blocked on the
+`jwks` crate ecosystem.
+
 ## 2026-10-14 — Post-release security fixes, v0.6.1 (ANT-80/81/87/88/89/90)
 
 Post-release hardening of the v0.6.0 switchover, from the ANT-45 security
