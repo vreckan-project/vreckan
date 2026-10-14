@@ -149,6 +149,8 @@ silenced or made fatal with `VRECKAN_ALLOW_DEFAULT_DB_CREDS` (P2-6).
 | --- | --- | --- |
 | `VRECKAN_DOCKER_GROUP` | Name or GID of the host group that owns `/var/run/docker.sock`. Since v0.6.1 the server process runs non-root (UID/GID 1000) and reaches the host daemon through this group instead of `privileged: true`; the default compose also keeps the `devices: /dev/dri` + `group_add: 990, 44` GPU passthrough. Override the group only for daemons whose group is not named `docker` (see [docs/ops.md](./docs/ops.md) §6). | `docker` |
 
+The compose file also runs a one-shot `data-perms` service that chowns the `vreckan-data` volume to UID/GID 1000 before the server starts, so no manual `chown` is needed on fresh installs or when upgrading from a v0.5.x deployment.
+
 ### Storage & paths
 
 All persistent data lives under the data root (`VRECKAN_DATA_ROOT`, default `/data` — the `vreckan-data` volume in the default compose setup).
@@ -165,7 +167,7 @@ All persistent data lives under the data root (`VRECKAN_DATA_ROOT`, default `/da
 | `VRECKAN_AUTOSTART_CACHE_PATH` | Path to cache autostart scripts. | `/data/autostart_cache` |
 | `VRECKAN_APP_STORE_CACHE_PATH` | Path to cache app store YAML files. | `/data/app_stores_cache` |
 | `VRECKAN_BACKUPS_PATH` | Directory for backup archives. | `/data/backups` |
-| `VRECKAN_BACKUP_RETENTION` | Number of backup archives to keep; 0 keeps all. Archives are written `0600` (owner read/write). | `7` |
+| `VRECKAN_BACKUP_RETENTION` | Number of backup archives to keep; 0 keeps all. Archives are written `0600` (owner read/write); the in-archive database dump excludes live session tokens (`auth_tokens`) so a restore leaves in-flight logins untouched. | `7` |
 | `VRECKAN_PUID` | Default User ID to run containers as. The server's own process also runs as UID/GID 1000 (non-root since v0.6.1), so server-created and container-owned files under `/data` share ownership. | `1000` |
 | `VRECKAN_PGID` | Default Group ID to run containers as. | `1000` |
 
@@ -177,12 +179,12 @@ All persistent data lives under the data root (`VRECKAN_DATA_ROOT`, default `/da
 | `VRECKAN_AUTH_COOKIE_NAME` | Name of the web-login authentication cookie. | `vreckan_auth` |
 | `VRECKAN_AUTH_TOKEN_TTL_SECONDS` | Lifetime (in seconds) of a server-issued web authentication token/cookie. | `28800` |
 | `VRECKAN_SHARE_CLEANUP_INTERVAL_SECONDS` | How often to run the cleanup job for expired shares (in seconds). | `600` |
-| `VRECKAN_SERVER_PRIVATE_KEY_PATH` | Path to the server private key PEM file (used for the E2EE handshake). | `/config/ssl/server_key.pem` |
+| `VRECKAN_SERVER_PRIVATE_KEY_PATH` | Path to the server E2EE RSA key PEM file (used for the E2EE handshake). Written `0600`; defaults to the persistent data root so the key survives container recreation (it was previously ephemeral under `/config`). | `/data/ssl/server_key.pem` |
 | `VRECKAN_BOOTSTRAP_ADMIN_USERNAME` | Username of the admin account created on first run (when no admin exists yet). | `admin` |
 | `VRECKAN_BOOTSTRAP_ADMIN_PASSWORD` | Initial password for the bootstrap admin account; the account is marked must-change-password until the first change. | `admin1234` |
 | `VRECKAN_DEFAULT_PASSWORD_POLICY` | Policy for logging in with the literal default password `admin1234` while the account is still marked must-change: `allow`, `warn`, or `reject`. | `warn` |
-| `VRECKAN_LOGIN_MAX_ATTEMPTS` | Failed logins from one (client IP, username) pair within the lockout window before a temporary lockout. 0 disables the limiter. | `5` |
-| `VRECKAN_LOGIN_LOCKOUT_SECONDS` | Length of the failed-login window and of the temporary lockout (seconds). Lockout events are logged at `warn`. | `900` |
+| `VRECKAN_LOGIN_MAX_ATTEMPTS` | Failed logins from one (client IP, username) pair within the lockout window before a temporary lockout (HTTP 429, fail closed); a successful login clears the pair. 0 disables the limiter. | `5` |
+| `VRECKAN_LOGIN_LOCKOUT_SECONDS` | Length of the failed-login window and of the temporary lockout (seconds). Counters are in-memory only (a restart resets them); lockout events are logged at `warn`. | `900` |
 
 ### OIDC / SSO
 
@@ -217,6 +219,8 @@ These settings can also be edited from the admin UI's Certificates page (a value
 | `VRECKAN_LE_AUTO_RENEW` | Automatically renew Let's Encrypt certificates in the background. | `True` |
 | `VRECKAN_LE_RENEW_CHECK_HOURS` | How often to check for certificate renewal (in hours). | `6` |
 | `VRECKAN_LE_RENEW_BEFORE_DAYS` | Renew the certificate when it expires within this many days. | `30` |
+
+When `VRECKAN_LE_AUTH=dns-cloudflare`, the server writes the Cloudflare API token to `/data/le/cloudflare.ini` (mode `0600`) for the certbot container; the token is stored plaintext there, so the file is owner read/write only (ANT-45 P2-2).
 
 ## Documentation
 

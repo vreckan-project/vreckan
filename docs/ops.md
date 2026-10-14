@@ -77,7 +77,8 @@ Brute-force protection on `/api/auth/login`: per (client IP, username) pair,
 `VRECKAN_LOGIN_MAX_ATTEMPTS` (default 5) failed attempts within
 `VRECKAN_LOGIN_LOCKOUT_SECONDS` (default 900 s) lock the pair out for the
 same window (HTTP 429, fail closed); lockout events are logged at `warn`
-and a successful login clears the pair.
+and a successful login clears the pair. Counters are in-memory only, so a
+server restart resets them.
 
 Local build instead of pulling the image:
 
@@ -363,6 +364,10 @@ comparison plus an `/api/health` check), are covered there step by step.
     launched via the Docker socket, so the server image itself stays
     certbot-free. Until a valid LE certificate exists, the server falls back
     to the self-signed one.
+  - With `dns-cloudflare`, the Cloudflare API token is written to
+    `/data/le/cloudflare.ini` (mode `0600`) for the certbot container; the
+    token is stored plaintext there, so the file is owner read/write only
+    (ANT-45 P2-2).
 
 ## 6. Host privileges & devices (docker-sock, DRI, groups)
 
@@ -437,22 +442,20 @@ already owned by 1000. Upgrading from a v0.5.x deployment (data written by
 the old root-running image) is handled by the first `up` on the new image.
 If you point `VRECKAN_DATA_ROOT` elsewhere, apply the same ownership there.
 
-**Volume layout (v0.6.1, ANT-81).** This deployment persists state in a
-single `/data` bind mount (`./vreckan-data`). That is a deliberate
+**Volume layout (v0.6.1, ANT-81 / ANT-87).** This deployment persists state
+in a single `/data` bind mount (`./vreckan-data`). That is a deliberate
 deviation from the SealSkin reference, which bind-mounts *both* `/config`
-and `/storage` and keeps the E2EE server key at `/config/ssl/`. Here
-`/config` is an **ephemeral, image-owned** directory inside the server
-container: the first-boot E2EE server key
-(`/config/ssl/server_key.pem`, the `server_private_key_path` default) is
-generated there and lost when the container is recreated — the code-layer
-fix ANT-45 P2-1 (tracked in ANT-87) moves that key under `/data/ssl/`,
-after which `/config` carries no durable state and the single-`/data`
-layout becomes self-sufficient. Until then, treat a lost E2EE key as a
-forced client re-pairing, not a data loss. The self-signed TLS certificate
-already lives in the persistent tree (`/data/ssl/`). If you prefer the
-reference layout, bind-mount a second volume at `/config` in
-`docker-compose.yml` — the image pre-creates and owns the directory, so no
-other change is needed.
+and `/storage` and keeps the E2EE server key at `/config/ssl/`. Since
+v0.6.1 the E2EE server key defaults to the persistent data root —
+`VRECKAN_SERVER_PRIVATE_KEY_PATH` is `/data/ssl/server_key.pem`, written
+`0600` (ANT-45 P2-1) — so it survives container recreation and no longer
+forces a client re-pair when the container is re-created. `/config` is now
+a purely **ephemeral, image-owned** directory inside the server container
+and carries no durable state, so the single-`/data` layout is
+self-sufficient. The self-signed TLS certificate also lives in the
+persistent tree (`/data/ssl/`). If you prefer the reference layout,
+bind-mount a second volume at `/config` in `docker-compose.yml` — the image
+pre-creates and owns the directory, so no other change is needed.
 
 ```
 /data
@@ -463,10 +466,11 @@ other change is needed.
 │   ├── vreckan_app_icons/     custom app icons
 │   ├── vreckan_home_templates/ meta-app home-dir templates
 │   └── vreckan_public/        publicly shared files
-├── ssl/                       TLS certs: self-signed (vreckan_dev.*) and Let's Encrypt
+├── ssl/                       TLS certs: self-signed (vreckan_dev.*) and Let's Encrypt; also the E2EE server key (server_key.pem, 0600)
+├── le/                        Let's Encrypt certbot material; cloudflare.ini (DNS-01 token, 0600)
 ├── autostart_cache/           cached autostart scripts
 ├── app_stores_cache/          cached app-store YAML files
-└── backups/                   backup archives
+└── backups/                   backup archives (0600)
 ```
 
 ## 8. Observability
