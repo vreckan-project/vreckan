@@ -249,6 +249,7 @@ fn known_columns(table: &str) -> Vec<&'static str> {
             "is_sso",
             "settings",
             "password_hash",
+            "must_change_password",
             "sso_groups",
             "roles",
             "permissions",

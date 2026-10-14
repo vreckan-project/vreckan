@@ -377,6 +377,9 @@ pub struct MeResponse {
     pub active: bool,
     pub has_password: bool,
     pub is_sso: bool,
+    /// True while the account still carries its initial (bootstrap)
+    /// password; the client should force a password change on first login.
+    pub must_change_password: bool,
     /// The user's effective (merged) settings object.
     pub settings: serde_json::Value,
     /// The user's effective (expanded) permission set.
@@ -408,6 +411,7 @@ async fn me_response(
         active,
         has_password: has_pw,
         is_sso: user.is_sso,
+        must_change_password: user.must_change_password,
         settings: effective.clone(),
         permissions,
         roles: user.roles.clone(),
@@ -457,6 +461,27 @@ async fn login(
         Ok(Some(u)) => u,
         _ => return json_error(StatusCode::UNAUTHORIZED, "Invalid username or password."),
     };
+    // The default-password policy applies only while the account still
+    // carries its initial (bootstrap) password: the login succeeded, so the
+    // presented password is by definition the initial one.
+    if user.must_change_password
+        && req.password == user_manager::DEFAULT_BOOTSTRAP_PASSWORD
+    {
+        let policy = state.settings.default_password_policy.to_lowercase();
+        match policy.as_str() {
+            "allow" => {}
+            "reject" => {
+                return json_error(
+                    StatusCode::UNAUTHORIZED,
+                    "Still using the default bootstrap password; change it.",
+                );
+            }
+            _ => warn!(
+                "User '{}' logged in with the default bootstrap password (policy: warn).",
+                req.username
+            ),
+        }
+    }
     let effective = match user_manager::get_effective_settings(&state.db, &req.username).await {
         Ok(e) => e,
         Err(e) => return user_error_response(e),
