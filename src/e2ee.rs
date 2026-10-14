@@ -23,6 +23,7 @@
 //! the E2EE handshake proves server identity, not user identity, so it cannot
 //! be gated by the very session it establishes.
 
+use std::os::unix::fs::PermissionsExt;
 use std::sync::OnceLock;
 
 use aes_gcm::aead::{Aead, KeyInit, Payload};
@@ -66,8 +67,13 @@ static SERVER_PUBLIC_KEY_PEM: OnceLock<String> = OnceLock::new();
 /// `run_https::_ensure_server_key` plus the `api` import-time key load.
 ///
 /// The key is a 2048-bit RSA key stored as unencrypted PKCS#8 PEM at
-/// `settings.server_private_key_path`. If the file is missing a fresh key is
-/// generated and written there, so a first run "just works".
+/// `settings.server_private_key_path` (default: under the persistent data
+/// root, so it survives container recreation). The file is written
+/// `0600` — owner read/write only. The key is *not* encrypted at rest; on a
+/// multi-user host restrict access to the data root (the non-root container
+/// user owns the file, so the `0600` mode is enforced by that same user).
+/// If the file is missing a fresh key is generated and written there, so a
+/// first run "just works".
 pub fn init_server_key(settings: &Settings) -> anyhow::Result<()> {
     let path = std::path::PathBuf::from(&settings.server_private_key_path);
     if !path.exists() {
@@ -77,7 +83,34 @@ pub fn init_server_key(settings: &Settings) -> anyhow::Result<()> {
             std::fs::create_dir_all(parent)?;
         }
         std::fs::write(&path, &pem)?;
+        // Owner-only, since the key is unencrypted. Written by the runtime
+        // (non-root) user, so ownership is already correct.
+        let _ = std::fs::set_permissions(
+            &path,
+            std::os::unix::fs::PermissionsExt::from_mode(0o600),
+        );
         info!("generated new E2EE server key at {}", path.display());
+    } else if let Ok(prev) = std::fs::metadata(&path) {
+        // Best effort: tighten a pre-existing key (e.g. one left at default
+        // permissions by an older version) without failing boot.
+        let mode = prev.permissions().mode() & 0o777;
+        if mode != 0o600 {
+            match std::fs::set_permissions(
+                &path,
+                std::os::unix::fs::PermissionsExt::from_mode(0o600),
+            ) {
+                Ok(()) => info!(
+                    "tightened E2EE server key permissions to 0600 at {}",
+                    path.display()
+                ),
+                Err(e) => warn!(
+                    "could not tighten E2EE server key permissions at {}: {} (expected 0600, found {:o})",
+                    path.display(),
+                    e,
+                    mode
+                ),
+            }
+        }
     }
     let pem = std::fs::read_to_string(&path)?;
     let key = RsaPrivateKey::from_pkcs8_pem(&pem)?;

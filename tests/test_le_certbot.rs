@@ -10,6 +10,7 @@
 
 mod common;
 
+use std::os::unix::fs::PermissionsExt;
 use std::sync::{Arc, Mutex};
 
 use async_trait::async_trait;
@@ -775,5 +776,26 @@ async fn test_certificates_renew_issues() {
     assert_eq!(data.expect("body")["issued"], true);
     let calls = fake.run_calls();
     assert_eq!(calls[0].1[0], "certonly");
+    let _ = paths;
+}
+
+// ---------------------------------------------------------------------------
+// P2-2: Cloudflare credentials file permissions
+// ---------------------------------------------------------------------------
+
+#[tokio::test]
+async fn test_cloudflare_ini_written_0600() {
+    let paths = le_paths();
+    let written =
+        le_certbot::write_cloudflare_credentials("admin@example.com", "cf-token-123");
+    assert_eq!(written, format!("{}/cloudflare.ini", paths.volume));
+    let mode = std::fs::metadata(&written)
+        .expect("cloudflare.ini exists")
+        .permissions()
+        .mode()
+        & 0o777;
+    assert_eq!(mode, 0o600);
+    // The token really is in the file (plaintext), hence the tight mode.
+    assert!(std::fs::read_to_string(&written).unwrap().contains("cf-token-123"));
     let _ = paths;
 }
