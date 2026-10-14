@@ -60,7 +60,7 @@ pub fn test_settings(root: &std::path::Path) -> Settings {
     s.oidc_admin_groups = String::new();
     s.oidc_user_groups = String::new();
     s.auto_update_apps = false;
-    s.le_enabled = false;
+    s.acme_enabled = false;
     s
 }
 

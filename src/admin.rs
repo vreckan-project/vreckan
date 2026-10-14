@@ -8,7 +8,7 @@
 //! say, only `admin.apps` can manage apps but not accounts. The frontend
 //! mirrors this by only showing the admin sections the caller has permission
 //! for. The `/certificates/*` and `/backup/*` route groups are added by
-//! `le_certbot.rs` and `backup_manager.rs` respectively.
+//! `le.rs` and `backup_manager.rs` respectively.
 
 use std::collections::HashMap;
 
@@ -119,50 +119,45 @@ fn default_false() -> bool {
     false
 }
 
-/// The Certificates page's save payload. `le_domains` is sent as an array; it
+/// The Certificates page's save payload. `acme_domains` is sent as an array; it
 /// is stored comma-joined. The Cloudflare token is only overwritten when a
 /// non-empty value is posted.
 #[derive(Deserialize)]
 struct CertificateConfigRequest {
-    le_enabled: bool,
-    #[serde(default = "default_le_ca")]
-    le_ca: String,
+    acme_enabled: bool,
+    #[serde(default = "default_acme_ca")]
+    acme_ca: String,
     #[serde(default)]
-    le_domains: Vec<String>,
-    #[serde(default = "default_le_auth")]
-    le_auth: String,
+    acme_domains: Vec<String>,
+    #[serde(default = "default_acme_auth")]
+    acme_auth: String,
     #[serde(default)]
-    le_cloudflare_email: String,
+    acme_cloudflare_email: String,
     #[serde(default)]
-    le_cloudflare_token: String,
+    acme_cloudflare_token: String,
     #[serde(default)]
-    le_staging: bool,
+    acme_staging: bool,
     #[serde(default = "default_true")]
-    le_auto_renew: bool,
+    acme_auto_renew: bool,
     #[serde(default = "default_renew_hours")]
-    le_renew_check_hours: i64,
+    acme_renew_check_hours: i64,
     #[serde(default = "default_renew_days")]
-    le_renew_before_days: i64,
-    #[serde(default = "default_le_backend")]
-    le_backend: String,
-    #[serde(default = "default_le_dns_provider")]
-    le_dns_provider: String,
+    acme_renew_before_days: i64,
+    #[serde(default = "default_acme_dns_provider")]
+    acme_dns_provider: String,
     #[serde(default)]
-    le_cloudflare_zone_id: String,
+    acme_cloudflare_zone_id: String,
     #[serde(default)]
-    le_dns_provider_config: String,
+    acme_dns_provider_config: String,
 }
 
-fn default_le_ca() -> String {
+fn default_acme_ca() -> String {
     "letsencrypt".to_string()
 }
-fn default_le_auth() -> String {
+fn default_acme_auth() -> String {
     "dns-cloudflare".to_string()
 }
-fn default_le_backend() -> String {
-    "acmex".to_string()
-}
-fn default_le_dns_provider() -> String {
+fn default_acme_dns_provider() -> String {
     "cloudflare".to_string()
 }
 fn default_renew_hours() -> i64 {
@@ -419,21 +414,20 @@ const SSO_SETTING_FIELDS: &[&str] = &[
 ];
 
 /// The Let's Encrypt setting field names (for the per-field source report).
-const LE_SETTING_FIELDS: &[&str] = &[
-    "le_enabled",
-    "le_ca",
-    "le_domains",
-    "le_auth",
-    "le_cloudflare_email",
-    "le_cloudflare_token",
-    "le_staging",
-    "le_auto_renew",
-    "le_renew_check_hours",
-    "le_renew_before_days",
-    "le_backend",
-    "le_dns_provider",
-    "le_cloudflare_zone_id",
-    "le_dns_provider_config",
+const ACME_SETTING_FIELDS: &[&str] = &[
+    "acme_enabled",
+    "acme_ca",
+    "acme_domains",
+    "acme_auth",
+    "acme_cloudflare_email",
+    "acme_cloudflare_token",
+    "acme_staging",
+    "acme_auto_renew",
+    "acme_renew_check_hours",
+    "acme_renew_before_days",
+    "acme_dns_provider",
+    "acme_cloudflare_zone_id",
+    "acme_dns_provider_config",
 ];
 
 /// Report where a setting's current value comes from: `"db"` when a value is
@@ -947,38 +941,37 @@ async fn get_certificates(
         .await;
     }
     // The *effective* config (DB-over-env-over-default), mirroring Python's
-    // `get_certificates` which reads via `le_certbot.effective_le_config()`.
-    let cfg = crate::le_certbot::effective_le_config(&state).await;
+    // `get_certificates` which reads via `le.effective_acme_config()`.
+    let cfg = crate::le::effective_acme_config(&state).await;
     let domains: Vec<String> = cfg
-        .le_domains
+        .acme_domains
         .split(',')
         .map(|d| d.trim().to_string())
         .filter(|d| !d.is_empty())
         .collect();
-    let token = cfg.le_cloudflare_token.clone();
+    let token = cfg.acme_cloudflare_token.clone();
     let values = serde_json::json!({
-        "le_enabled": cfg.le_enabled,
-        "le_ca": cfg.le_ca,
-        "le_domains": domains,
-        "le_auth": cfg.le_auth,
-        "le_cloudflare_email": cfg.le_cloudflare_email,
-        "le_cloudflare_token": "",
+        "acme_enabled": cfg.acme_enabled,
+        "acme_ca": cfg.acme_ca,
+        "acme_domains": domains,
+        "acme_auth": cfg.acme_auth,
+        "acme_cloudflare_email": cfg.acme_cloudflare_email,
+        "acme_cloudflare_token": "",
         "token_set": !token.is_empty(),
         "token_length": token.len(),
-        "le_staging": cfg.le_staging,
-        "le_auto_renew": cfg.le_auto_renew,
-        "le_renew_check_hours": cfg.le_renew_check_hours,
-        "le_renew_before_days": cfg.le_renew_before_days,
-        "le_backend": cfg.le_backend,
-        "le_dns_provider": cfg.le_dns_provider,
-        "le_cloudflare_zone_id": cfg.le_cloudflare_zone_id,
-        "le_dns_provider_config": cfg.le_dns_provider_config,
+        "acme_staging": cfg.acme_staging,
+        "acme_auto_renew": cfg.acme_auto_renew,
+        "acme_renew_check_hours": cfg.acme_renew_check_hours,
+        "acme_renew_before_days": cfg.acme_renew_before_days,
+        "acme_dns_provider": cfg.acme_dns_provider,
+        "acme_cloudflare_zone_id": cfg.acme_cloudflare_zone_id,
+        "acme_dns_provider_config": cfg.acme_dns_provider_config,
     });
     let mut sources = serde_json::Map::new();
-    for name in LE_SETTING_FIELDS {
+    for name in ACME_SETTING_FIELDS {
         sources.insert((*name).to_string(), Value::String(setting_source(&state, name).await));
     }
-    let status = crate::le_certbot::cert_status(&domains);
+    let status = crate::le::cert_status(&domains);
     let value = serde_json::json!({
         "values": values,
         "sources": Value::Object(sources),
@@ -1039,33 +1032,32 @@ async fn save_certificates(
         }
     };
     let payload: HashMap<&str, String> = HashMap::from([
-        ("le_enabled", if req.le_enabled { "true" } else { "false" }.to_string()),
-        ("le_ca", if req.le_ca.trim().is_empty() { "letsencrypt".to_string() } else { req.le_ca.trim().to_string() }),
-        ("le_domains", req.le_domains.iter().map(|d| d.trim()).filter(|d| !d.is_empty()).collect::<Vec<_>>().join(",")),
-        ("le_auth", if req.le_auth.trim().is_empty() { "dns-cloudflare".to_string() } else { req.le_auth.trim().to_string() }),
-        ("le_cloudflare_email", req.le_cloudflare_email.trim().to_string()),
-        ("le_cloudflare_token", req.le_cloudflare_token.clone()),
-        ("le_staging", if req.le_staging { "true" } else { "false" }.to_string()),
-        ("le_auto_renew", if req.le_auto_renew { "true" } else { "false" }.to_string()),
-        ("le_renew_check_hours", req.le_renew_check_hours.to_string()),
-        ("le_renew_before_days", req.le_renew_before_days.to_string()),
-        ("le_backend", if req.le_backend.trim().is_empty() { "acmex".to_string() } else { req.le_backend.trim().to_string() }),
-        ("le_dns_provider", if req.le_dns_provider.trim().is_empty() { "cloudflare".to_string() } else { req.le_dns_provider.trim().to_string() }),
-        ("le_cloudflare_zone_id", req.le_cloudflare_zone_id.trim().to_string()),
-        ("le_dns_provider_config", req.le_dns_provider_config.trim().to_string()),
+        ("acme_enabled", if req.acme_enabled { "true" } else { "false" }.to_string()),
+        ("acme_ca", if req.acme_ca.trim().is_empty() { "letsencrypt".to_string() } else { req.acme_ca.trim().to_string() }),
+        ("acme_domains", req.acme_domains.iter().map(|d| d.trim()).filter(|d| !d.is_empty()).collect::<Vec<_>>().join(",")),
+        ("acme_auth", if req.acme_auth.trim().is_empty() { "dns-cloudflare".to_string() } else { req.acme_auth.trim().to_string() }),
+        ("acme_cloudflare_email", req.acme_cloudflare_email.trim().to_string()),
+        ("acme_cloudflare_token", req.acme_cloudflare_token.clone()),
+        ("acme_staging", if req.acme_staging { "true" } else { "false" }.to_string()),
+        ("acme_auto_renew", if req.acme_auto_renew { "true" } else { "false" }.to_string()),
+        ("acme_renew_check_hours", req.acme_renew_check_hours.to_string()),
+        ("acme_renew_before_days", req.acme_renew_before_days.to_string()),
+        ("acme_dns_provider", if req.acme_dns_provider.trim().is_empty() { "cloudflare".to_string() } else { req.acme_dns_provider.trim().to_string() }),
+        ("acme_cloudflare_zone_id", req.acme_cloudflare_zone_id.trim().to_string()),
+        ("acme_dns_provider_config", req.acme_dns_provider_config.trim().to_string()),
     ]);
-    for name in LE_SETTING_FIELDS {
+    for name in ACME_SETTING_FIELDS {
         let value = match payload.get(*name) {
             Some(v) => v.clone(),
             None => continue,
         };
-        if *name == "le_cloudflare_token" && value.is_empty() {
+        if *name == "acme_cloudflare_token" && value.is_empty() {
             // Blank token = "leave the existing one"; skip the write.
             continue;
         }
         let env_var = format!("VRECKAN_{}", name.to_uppercase());
         if let Err(e) = state.db.set_app_setting(&env_var, &value).await {
-            warn!("Failed to save LE setting {name}: {e}");
+            warn!("Failed to save ACME setting {name}: {e}");
         }
     }
     e2ee::encrypt_response(&state, &headers, StatusCode::OK, serde_json::json!({ "ok": true })).await
@@ -1102,19 +1094,19 @@ async fn renew_certificates(
         .await;
     }
     // The *effective* config (DB-over-env-over-default), mirroring Python's
-    // `renew_certificates` which reads via `le_certbot.effective_le_config()`.
-    let cfg = crate::le_certbot::effective_le_config(&state).await;
-    if !cfg.le_enabled {
+    // `renew_certificates` which reads via `le.effective_acme_config()`.
+    let cfg = crate::le::effective_acme_config(&state).await;
+    if !cfg.acme_enabled {
         return e2ee::encrypt_response(
             &state,
             &headers,
             StatusCode::BAD_REQUEST,
-            serde_json::json!({ "detail": "Let's Encrypt is not enabled." }),
+            serde_json::json!({ "detail": "ACME is not enabled." }),
         )
         .await;
     }
     let domains: Vec<String> = cfg
-        .le_domains
+        .acme_domains
         .split(',')
         .map(|d| d.trim().to_string())
         .filter(|d| !d.is_empty())
@@ -1133,7 +1125,7 @@ async fn renew_certificates(
     // short-circuit that previously made the button appear to do nothing.
     // The returned object carries `issued`/`renewed` plus human-readable
     // `logs`/`error` so the UI can explain what happened.
-    let result = crate::le_certbot::ensure_le_cert(&cfg, true).await;
+    let result = crate::le::ensure_acme_cert(&cfg, true).await;
     let mut result = result;
     if let Some(obj) = result.as_object_mut() {
         let issued = obj.get("issued").and_then(|v| v.as_bool()).unwrap_or(false);

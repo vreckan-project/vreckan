@@ -1,13 +1,12 @@
 //! Copyright (c) 2026 Antitux Networks LLC. SPDX-License-Identifier: MPL-2.0
 //! Native ACME issuance via the [`acmex`] crate.
 //!
-//! This replaces the certbot sidecar container (`le_certbot.rs`) for Let's
-//! Encrypt issuance. It drives the ACME v2 protocol in-process: it registers
-//! (or reuses a persisted) account, creates an order, fulfils the challenge
-//! (DNS-01 by default, or HTTP-01), and writes the resulting certificate
-//! chain + key into the same `/data/le` layout certbot used
-//! (`live/{primary}/cert.pem` + `privkey.pem`), so `le_certbot::cert_status`
-//! and `tls::select_cert` keep working unchanged.
+//! This replaces the legacy certbot sidecar container for issuance. It drives
+//! the ACME v2 protocol in-process: it registers (or reuses a persisted)
+//! account, creates an order, fulfils the challenge (DNS-01 by default, or
+//! HTTP-01), and writes the resulting certificate chain + key into the
+//! app's `/data/le` layout (`live/{primary}/cert.pem` + `privkey.pem`), so
+//! `le::cert_status` and `tls::select_cert` keep working unchanged.
 //!
 //! DNS-01 is routed through a small provider registry so a user can choose
 //! any of the DNS providers acmex ships (Cloudflare is the default; Route53,
@@ -475,7 +474,7 @@ async fn discover_cloudflare_zone(token: &str, domain: &str) -> Result<String, S
 
 /// The on-disk location of the persisted ACME account key.
 pub fn account_key_path() -> String {
-    format!("{}/acme-account.key", crate::le_certbot::app_cert_dir())
+    format!("{}/acme-account.key", crate::le::app_cert_dir())
 }
 
 /// Load the persisted ACME account key, or generate and persist a new one.
@@ -578,7 +577,7 @@ pub async fn issue_certificate(args: &IssueArgs<'_>) -> AcmeIssueResult {
             let primary = args.domains.first().cloned().unwrap_or_default();
             let live = format!(
                 "{}/live/{primary}",
-                crate::le_certbot::app_cert_dir()
+                crate::le::app_cert_dir()
             );
             if let Err(e) = std::fs::create_dir_all(&live) {
                 return AcmeIssueResult {
