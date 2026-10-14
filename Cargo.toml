@@ -50,7 +50,7 @@ rand = "0.9"
 # `sha2` is not a default feature of `rsa`, so enable it explicitly.
 rsa = { version = "0.9", features = ["sha2"] }
 # E2EE payload: AES-256-GCM with the session id as AAD.
-aes-gcm = "0.10"
+aes-gcm = "0.11"
 # Key encoding (PKCS#8 private key load, SPKI public-key PEM).
 pkcs8 = "0.10"
 spki = "0.7"
