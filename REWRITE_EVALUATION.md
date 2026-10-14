@@ -1,7 +1,10 @@
 # Vreckan → Rust: Rewrite Evaluation
 
-Independent assessment of rewriting the Vreckan **server** (currently Python /
-FastAPI / uvicorn, ~12,211 LOC across 21 files) to **Rust**. The web client
+Independent assessment of rewriting the Vreckan **server** (then Python /
+FastAPI / uvicorn, ~12,211 LOC across 21 files) to **Rust**. The assessment
+describes the pre-switchover state; the Rust port it recommends became the
+primary implementation in v0.6.0 (ANT-40), and the Python server moved to the
+`vreckan-python` archive repo. The web client
 (~6,758 LOC of framework-free JS + 16 i18n bundles) is served as static files
 and does not need to change. It only talks to the server over HTTP/WS and does
 its own E2EE crypto in the browser via WebCrypto.

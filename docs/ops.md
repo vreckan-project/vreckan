@@ -153,7 +153,7 @@ mention the base-image bump (see [release process](./release.md)).
 
 ### 3.5 Self-hosted Gitea runner
 
-The Gitea runner that executes `build-test.yml` / Release needs:
+The Gitea runner that executes `build-test-rust.yml` / Release needs:
 
 - Gitea with the **Actions** feature enabled; a runner registered with a
   `self-hosted` label.
@@ -176,7 +176,7 @@ Backends are selected with `VRECKAN_DB_BACKEND`:
 | Backend | How to configure | Notes |
 |---|---|---|
 | `sqlite` (bare-binary default) | nothing — file at `VRECKAN_DB_PATH` (default `{data_root}/vreckan.db`) | zero-setup; the default when running the server directly (no compose) |
-| `postgres` (compose default) | `VRECKAN_DB_BACKEND=postgres` + `VRECKAN_DB_HOST` / `VRECKAN_DB_PORT` / `VRECKAN_DB_USER` / `VRECKAN_DB_PASS` / `VRECKAN_DB_NAME` — or just point at the bundled compose `postgres` service: `VRECKAN_DB_BACKEND=postgres VRECKAN_DB_HOST=postgres` (the compose service runs `postgres:16` with user/db `vreckan`, password `vreckan`) | recommended for production; the default credentials in the compose file should be changed |
+| `postgres` (compose default) | nothing — the default compose file presets `VRECKAN_DATABASE_URL` to the bundled `postgres` service (`postgres:16`, user/db `vreckan`, password `vreckan`). For your own Postgres, set `VRECKAN_DB_BACKEND=postgres` + `VRECKAN_DB_HOST` / `VRECKAN_DB_PORT` / `VRECKAN_DB_USER` / `VRECKAN_DB_PASS` / `VRECKAN_DB_NAME`, or simply override `VRECKAN_DATABASE_URL` in `.env` | recommended for production; the default credentials in the compose file should be changed |
 | `mysql` | same pattern (`VRECKAN_DB_BACKEND=mysql`, default port 3306, default user `root`) | MariaDB also accepted |
 
 `VRECKAN_DATABASE_URL` overrides everything with an explicit sqlx-format URL.

@@ -174,7 +174,13 @@ its own self-contained `translation.js`.
 > entrypoint is now just `python run_https.py`), and the three compose files were
 > consolidated into a single `docker-compose.yml` (image-based, TLS on 443, with
 > a bundled `postgres` service). `docker-compose.prod.yml` and
-> `docker-compose.test.yml` no longer exist.
+> `docker-compose.test.yml` no longer exist. In the **v0.6.0 switchover** that
+> Python `Dockerfile` was then replaced by the multi-stage **Rust** image (see
+> the [2026-10-13 CHANGELOG entry](./CHANGELOG.md) and
+> [ops.md §3.1](./docs/ops.md)); the consolidated `docker-compose.yml` is the
+> final v0.6.0 deployment file, with the bundled `postgres` service as the
+> default database ([ops.md §4](./docs/ops.md)), and `dev-container.sh` left
+> the root with the rest of the Python tree.
 
 ---
 
