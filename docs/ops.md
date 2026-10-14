@@ -95,8 +95,13 @@ The `Dockerfile` is multi-stage:
 - **Build stage** — `rust:1.99-slim` (Debian trixie): `cargo build --release`
   with BuildKit cargo-cache mounts. System deps are `linux-libc-dev`,
   `pkg-config`, `libssl-dev` (needed by the `-sys` crates and the native-tls
-  stack) plus `sccache`, which wraps `rustc` (`RUSTC_WRAPPER=sccache`) and
-  persists the compile cache across builds via a BuildKit `type=cache` mount.
+  stack) plus `cmake`, `make`, and `golang` (needed by the FIPS variant of
+  aws-lc, `aws-lc-fips-sys`, which acmex pulls in via `aws-lc-rs/fips` and
+  builds from source through its CMake project — its FIPS build requires Go
+  for the FIPSTools integrity utilities and Perl, which ships with the rust
+  base image) and `sccache`, which wraps `rustc` (`RUSTC_WRAPPER=sccache`)
+  and persists the compile cache across builds via a BuildKit `type=cache`
+  mount. See the per-package justifications in the `Dockerfile`.
 - **Test stage** — the build stage plus the `tests/` and `server/` trees: CI
   builds `--target test` and pre-compiles `cargo test --profile test-release`
   (thin-LTO, codegen-units=16) so the Gitea test job only executes the tests.
@@ -107,7 +112,52 @@ The `Dockerfile` is multi-stage:
   (`server/template_schema.yml`). No Python, no pip. TLS, SQLite, and the
   client are all self-contained.
 
-### 3.2 The vLLM-style split (GitHub light, Gitea heavy)
+### 3.2 Standard local build & test (for engineers)
+
+Build and test **inside the standard image**, not a bare local toolchain —
+it is the same container CI and the deploy use (verified for the full acmex
+feature set: 11 DNS-01 providers + Let's Encrypt/ZeroSSL/Google CAs,
+ANT-128/ANT-152). A hand-installed local `gcc`/`cmake` setup drifts from it.
+
+```sh
+# One command builds the whole tree (build stage) and pre-compiles the test
+# binaries (test stage) in the standard container:
+docker build --target test -f Dockerfile -t vreckan:local .
+
+# Run the full suite in it, the same way the Gitea CI test job does:
+HOST_TMP=$(mktemp -d /tmp/vreckan-tests.XXXXXX)
+docker run --rm \
+  --shm-size=2gb \
+  -v /var/run/docker.sock:/var/run/docker.sock \
+  -v "$HOST_TMP:/tmp/vreckan-tests" \
+  -e VRECKAN_TEST_TMPDIR=/tmp/vreckan-tests \
+  --entrypoint cargo vreckan:local test --profile test-release
+rm -rf "$HOST_TMP"
+```
+
+The three run flags mirror the CI test job: the docker socket lets the
+daemon-dependent tests (Tier 5 docker launch, the postgres fixture) reach a
+real daemon; `VRECKAN_TEST_TMPDIR` must point at a directory **visible to
+that daemon** — the server bind-mounts the test's throwaway data dirs into
+the app containers it launches, and the daemon resolves the source on its
+own host (the test container's own `/tmp` is not one); `--shm-size=2gb`
+keeps the LTO compile and the postgres fixture off the 64MB default
+`/dev/shm`.
+
+For fast source iteration without the test tree, build only the build stage
+and run it with your `src/` mounted in:
+
+```sh
+docker build --target build -f Dockerfile -t vreckan:build .
+docker run --rm -it -v "$PWD/src:/app/src" vreckan:build \
+  sh -c 'cargo build --release'
+```
+
+The deploy (docker-compose `build: .`) and the CI PR gate build the same
+`Dockerfile` stages, so anything that builds here builds everywhere (§3.3,
+§3.6).
+
+### 3.3 The vLLM-style split (GitHub light, Gitea heavy)
 
 CI follows the vLLM/Gitea pattern: GitHub Actions do the cheap parts, a
 self-hosted **Gitea Actions runner** does the heavy build/test/scan work.
@@ -128,10 +178,10 @@ GitHub is the source of truth; Gitea is a mirror.
 - **Gitea-side workflows** live in the separate `vreckan/vreckan-workflow`
   repo (not this one): `build-test-rust.yml` (build + test + scan on the
   Gitea runner), the **Release (Rust)** workflow (tag → image → registries),
-  and the **nightly scan** workflow (§3.4). See ANT-57 for the staged
+  and the **nightly scan** workflow (§3.5). See ANT-57 for the staged
   enablement of this flow on the Rust port.
 
-### 3.3 Registries
+### 3.4 Registries
 
 - **GHCR** — `ghcr.io/vreckan-project/vreckan` is the registry; every release
   publishes a versioned tag (`:v<VERSION>`) alongside `:latest`, and the
@@ -141,7 +191,7 @@ GitHub is the source of truth; Gitea is a mirror.
 - The compose file's `image:` tag is set by the cutover decision; `build: .`
   always builds the Rust image locally when the tag is not present.
 
-### 3.4 Base-image pinning (`.base-image-digest`)
+### 3.5 Base-image pinning (`.base-image-digest`)
 
 `.base-image-digest` pins the digest of the **build** base image
 (`rust:1.99-slim`). The nightly scan workflow compares the live registry
@@ -151,7 +201,7 @@ runtime base (`debian:trixie-slim`) is a fixed tag and is not part of the
 digest convention. When a digest re-point lands, the release notes should
 mention the base-image bump (see [release process](./release.md)).
 
-### 3.5 Self-hosted Gitea runner
+### 3.6 Self-hosted Gitea runner
 
 The Gitea runner that executes `build-test-rust.yml` / Release needs:
 

@@ -29,18 +29,34 @@
 FROM rust:1.99-slim AS build
 WORKDIR /app
 
-# System deps needed by the -sys crates in the tree (gcc, libc6-dev and
-# ca-certificates already ship with rust:slim):
+# System deps needed by the -sys crates in the tree (gcc, libc6-dev,
+# ca-certificates and perl already ship with rust:slim):
 #   linux-libc-dev   — kernel UAPI headers, required by the C code bundled
 #                      with libsqlite3-sys and aws-lc-sys
 #   pkg-config +
 #   libssl-dev       — system OpenSSL for openssl-sys (the native-tls
 #                      provider pulled in via openid/jwks -> reqwest)
+#   cmake + make     — acmex (ANT-128) pulls aws-lc-rs with the `fips`
+#                      feature, which builds the FIPS variant of aws-lc
+#                      (aws-lc-fips-sys) from source via its CMake project.
+#                      Unlike the non-FIPS aws-lc-sys (which builds from
+#                      pre-generated sources with the bundled cc builder) the
+#                      FIPS crate always uses the CMake builder — its build
+#                      script disables the prebuilt path for FIPS builds —
+#                      so cmake + make are hard requirements.
+#   golang           — the same FIPS build compiles the FIPSTools
+#                      delocate/inject_hash utilities with Go during CMake
+#                      (AWS-LC's CMakeLists FATALs when Go is missing in a
+#                      FIPS build); perl, the other FIPS requirement, already
+#                      ships with the rust base image.
 RUN apt-get update -y && \
     DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends \
       linux-libc-dev \
       pkg-config \
       libssl-dev \
+      cmake \
+      make \
+      golang \
       sccache && \
     apt-get clean && \
     rm -rf /var/lib/apt/lists/*
