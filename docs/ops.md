@@ -11,12 +11,16 @@ serves the web client, runs the API, terminates TLS, and manages the
 per-session application containers through the host's Docker daemon.
 
 ```
-Browser ──HTTPS:443──▶ vreckan-http (privileged)
-                          │  /var/run/docker.sock ──▶ Docker daemon
-                          │  /dev/dri, group_add 990/44 (GPU/DRI3)
-                          ▼
-                    app containers (created on demand, on the host network)
+Browser ──HTTPS:443──▶ vreckan-http (UID 1000, non-root)
+                           │  /var/run/docker.sock ──▶ Docker daemon
+                           │  /dev/dri, group_add 990/44/docker (GPU/DRI3)
+                           ▼
+                     app containers (created on demand, on the host network)
 ```
+
+Since v0.6.1 the `vreckan-http` container runs its server process as a
+dedicated non-root user (`vreckan`, UID/GID 1000 — see §6) instead of root
+with `privileged: true` (ANT-81, P1-1).
 
 Key properties of the default `docker-compose.yml`:
 
@@ -24,17 +28,17 @@ Key properties of the default `docker-compose.yml`:
 |---|---|---|
 | `image` | the published `ghcr.io/vreckan-project/vreckan` tag — `:latest` by default; pin a versioned tag (e.g. `:v0.6.0`) and drop `build:` in a real deployment (Rust cutover complete, ANT-40) | `build: .` is the local fallback: `docker compose build` / `up --build` builds the **Rust** image from this repo and tags it under the `image:` name, so a local checkout runs the Rust server even without a registry |
 | `ports` | `443:443` | Single TLS port for API + session proxy + web client |
-| `privileged: true` | — | the server creates/manages app containers and needs broad host access (device nodes, cgroups for GPU paths) |
+| non-root `USER` in the image | UID/GID 1000 | the server process no longer runs as root; the only capability it needs is `cap_net_bind_service` (a file capability on the binary, so the default port 443 binds on any host) because all host-side work (app-container creation, GPU setup) is done by the Docker daemon over the socket (§6) |
 | `ipc: host` | — | shared memory for the streamed apps |
 | `devices: /dev/dri:/dev/dri` | — | DRI3 render-node passthrough for GPU-accelerated apps |
-| `group_add: 990, 44` | — | host `video` (990) and `input` (44) groups so the server process can open DRI nodes and propagate render-node access to app containers |
+| `group_add: 990, 44, ${VRECKAN_DOCKER_GROUP:-docker}` | — | host `video` (990) and `input` (44) groups so the server process can open DRI nodes and propagate render-node access to app containers; the `docker` group gives the non-root process access to the host socket (override the name/GID with `VRECKAN_DOCKER_GROUP`) |
 | `volumes: ./vreckan-data:/data` | — | all durable state (DB, storage, SSL, caches, backups) in one bind mount |
 | `volumes: /var/run/docker.sock:/var/run/docker.sock` | — | Docker Engine API access (the `bollard` client speaks to the daemon over this socket) |
+| `data-perms` service + `depends_on` | — | one-shot `chown -R 1000:1000` of `./vreckan-data` before first boot, so the non-root server can write to a bind mount that Docker created root-owned (§7) |
 | `env_file: .env` | — | `VRECKAN_*` configuration (see the [README](../README.md) configuration tables and `.env.example`) |
 
-An optional **`postgres:16`** service is included in the compose file for
-production Postgres deployments (see §4); with the default SQLite backend it
-can be left stopped/removed.
+The **`postgres:16`** service is included in the compose file and is the
+v0.6.0 default database (see §4).
 
 The server binds `0.0.0.0:$VRECKAN_API_PORT` (default **443**) with TLS
 (rustls/ring) and serves the API, web client, and session proxy on that
@@ -56,6 +60,12 @@ database is created, and a bootstrap `admin` account is seeded (default
 `admin` / `admin1234`, configurable via `VRECKAN_BOOTSTRAP_ADMIN_*`, printed
 to the server logs). Sign in at `https://<your-server>/` and change the
 password.
+
+The one-shot `data-perms` service chowns `./vreckan-data` to UID/GID 1000 on
+every `docker compose up` before the server starts (see §7), so no manual
+ownership step is needed — on a fresh host and when upgrading from a
+v0.5.x deployment (whose data tree was written by the old root-running
+image), the first `up` after pulling the new image takes ownership over.
 
 Local build instead of pulling the image:
 
@@ -320,21 +330,93 @@ comparison plus an `/api/health` check), are covered there step by step.
 
 ## 6. Host privileges & devices (docker-sock, DRI, groups)
 
+Since v0.6.1 the `vreckan-http` container runs its server process as a
+dedicated non-root user (`vreckan`, UID/GID 1000) and no longer uses
+`privileged: true` (ANT-81, P1-1). The split:
+
+- **What the server process itself needs** — bind
+  `0.0.0.0:$VRECKAN_API_PORT` (default **443**, a privileged port below
+  1024), read `/sys` and `/proc`, write under `/data` and `/config`
+  (image-owned or chowned, see §7), and talk to the host Docker daemon over
+  the socket. The only capability involved is `cap_net_bind_service`,
+  granted as a **file capability on the `vreckan` binary** in the image
+  (like nginx's unprivileged image), so the bind works on any host —
+  including ones that set `net.ipv4.ip_unprivileged_port_start=1024`
+  (RHEL/SUSE) — without a compose-level `cap_add`. Everything else needs no
+  capabilities.
+- **What the daemon does for it** — creating/inspecting/stopping app
+  containers and the transient certbot container, plus the host-side parts
+  of GPU/cgroup setup, all happen in the (root) Docker daemon, so they no
+  longer need this container to be privileged. If a specific app-container
+  feature turns out to require a capability on the *server container*, add
+  it as a targeted `cap_add` entry in `docker-compose.yml` (test thoroughly)
+  instead of restoring `privileged: true`.
+
+**Socket strategy (v0.6.1, ANT-81 P1-1).** The default deployment keeps the
+**raw `/var/run/docker.sock`** — the same choice the SealSkin reference
+deployment makes — with the container's access scoped to the host `docker`
+group instead of `privileged: true`. The blast radius of the raw socket is
+that of the daemon's API surface: a compromised *server process* can
+create/inspect/stop containers and read container logs, which on a standard
+host is equivalent to root (a container created with a host root bind mount
+escapes). It is *no longer* an automatic root upgrade via `privileged`, and
+it is the minimum surface needed for the feature set: the server creates
+app containers **with device mounts and `group_add`** (that is how a
+DRI3/GPU app gets its render node — a scoped `docker-socket-proxy` must
+allow those container-creation fields or GPU app launches silently break),
+runs the transient certbot container, and discovers its own published port
+mappings. If you want to restrict the API surface, run
+`vreckan-http` against a scoped socket proxy (e.g. `docker-socket-proxy`
+with `POST /containers/create`, `GET/POST /containers/...`, `POST
+/containers/.../start|stop|kill` and network/image reads allowed) or a
+rootless Docker context — both are drop-in because the server only speaks
+the standard Engine API over the mounted socket path.
+
 | Privilege | What it does | When you can drop it |
 |---|---|---|
-| `privileged: true` | broad host access for the server (needed for some container-creation paths and GPU setups) | can be relaxed to specific capabilities if you are certain which app-container features you use; test thoroughly |
-| `/var/run/docker.sock` | the server talks to the Docker Engine API to create/inspect/stop app containers and to run the transient certbot container | required unless you run a dedicated provider; a restricted socket proxy (e.g. rootless docker context) is a possible hardening |
-| `/dev/dri:/dev/dri` + `group_add: 990` (video) | DRI3 render-node passthrough: GPU-accelerated apps render through the host GPU; the server detects render nodes (and their group ids) at startup and propagates device + supplementary GIDs into app containers | drop if no GPU apps are used |
+| `group_add: 990` (video) | DRI3 render-node passthrough: GPU-accelerated apps render through the host GPU; the server detects render nodes (and their group ids) at startup and propagates device + supplementary GIDs into app containers | drop if no GPU apps are used |
 | `group_add: 44` (input) | host `input` group so Uinput-based input devices work inside app containers | drop if no app needs it |
+| `group_add: ${VRECKAN_DOCKER_GROUP:-docker}` | the non-root server process reaches the host Docker socket (owned `root:docker`, mode 660) through the host's docker group — the replacement for `privileged: true`'s blanket access | set `VRECKAN_DOCKER_GROUP` to the group name or GID when the daemon's group is not named `docker`; a scoped socket proxy (e.g. `docker-socket-proxy`) or a rootless docker context is the further-hardening option if you want to restrict the API surface |
+| `/var/run/docker.sock` | the server talks to the Docker Engine API to create/inspect/stop app containers and to run the transient certbot container — raw socket by default (see the strategy paragraph above) | required unless you run a dedicated provider; the server degrades gracefully at boot if the socket is missing or inaccessible (logs a warning, app launches and self-inspection are disabled) |
+| `/dev/dri:/dev/dri` | render-node device passthrough for GPU-accelerated apps (paired with the `video` group above) | drop if no GPU apps are used |
 | `ipc: host` | shared memory for streamed desktop apps | keep unless you have tested the apps without it |
 
 App containers also run with a default identity of `VRECKAN_PUID` /
-`VRECKAN_PGID` (both default 1000) for file ownership in the storage tree.
+`VRECKAN_PGID` (both default 1000) for file ownership in the storage tree —
+the same UID/GID as the server's non-root user, so the server and the apps
+it spawns share ownership of the `/data/storage` tree.
 
 ## 7. Data layout (`/data`)
 
 Everything durable lives under the data root (`VRECKAN_DATA_ROOT`, default
-`/data` — the `vreckan-data` bind mount):
+`/data` — the `vreckan-data` bind mount).
+
+**Ownership (v0.6.1, ANT-81 P1-1).** The server runs as UID/GID 1000, so
+everything it writes under `/data` (and the host path behind the bind
+mount) is owned by 1000:1000. Docker creates a missing `./vreckan-data`
+directory as root:root, so the compose file includes the one-shot
+`data-perms` service (`chown -R 1000:1000`) which `vreckan-http` waits for;
+it runs on every `docker compose up` and is a cheap no-op once the tree is
+already owned by 1000. Upgrading from a v0.5.x deployment (data written by
+the old root-running image) is handled by the first `up` on the new image.
+If you point `VRECKAN_DATA_ROOT` elsewhere, apply the same ownership there.
+
+**Volume layout (v0.6.1, ANT-81).** This deployment persists state in a
+single `/data` bind mount (`./vreckan-data`). That is a deliberate
+deviation from the SealSkin reference, which bind-mounts *both* `/config`
+and `/storage` and keeps the E2EE server key at `/config/ssl/`. Here
+`/config` is an **ephemeral, image-owned** directory inside the server
+container: the first-boot E2EE server key
+(`/config/ssl/server_key.pem`, the `server_private_key_path` default) is
+generated there and lost when the container is recreated — the code-layer
+fix ANT-45 P2-1 (tracked in ANT-87) moves that key under `/data/ssl/`,
+after which `/config` carries no durable state and the single-`/data`
+layout becomes self-sufficient. Until then, treat a lost E2EE key as a
+forced client re-pairing, not a data loss. The self-signed TLS certificate
+already lives in the persistent tree (`/data/ssl/`). If you prefer the
+reference layout, bind-mount a second volume at `/config` in
+`docker-compose.yml` — the image pre-creates and owns the directory, so no
+other change is needed.
 
 ```
 /data

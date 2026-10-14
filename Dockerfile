@@ -8,7 +8,11 @@
 #                      (kept out of prod)
 #   stage 3 (runtime): debian:trixie-slim — the compiled `vreckan` binary
 #                      + the web client (server/static/) + the bundled
-#                      template schema (server/template_schema.yml).
+#                      template schema (server/template_schema.yml). The
+#                      process runs as the non-root `vreckan` user
+#                      (UID/GID 1000) with `cap_net_bind_service` file
+#                      capability so it can bind the default port 443 —
+#                      see the runtime stage below (ANT-81, P1-1).
 #
 # No Python, no pip, no site-packages, no starlette testclient patch — the
 # server is one Rust binary; TLS (ring/rustls), sqlite, and the web client
@@ -115,9 +119,39 @@ COPY --from=build /app/target/release/vreckan /app/vreckan
 # container working directory (server/static, server/template_schema.yml).
 COPY server/ /app/server/
 
-# Persistent data tree (database, storage, SSL keys, caches, backups).
-# docker-compose bind-mounts ./vreckan-data here at runtime.
-RUN mkdir -p /data
+# The server runs as a dedicated non-root user (ANT-81, P1-1). UID/GID 1000
+# matches the PUID/PGID the server uses for the app containers it spawns, so
+# files it creates in the /data bind mount are owned by the same id those
+# containers run as. `useradd`/`groupadd` ship with the Debian base (passwd
+# is an Essential package); nologin keeps `docker exec` out by default.
+RUN groupadd --gid 1000 vreckan && \
+    useradd --uid 1000 --gid vreckan --home-dir /app --shell /usr/sbin/nologin vreckan && \
+    # /data: the persistent data tree. docker-compose bind-mounts
+    # ./vreckan-data here at runtime; the image-owned copy is what runs when
+    # the image is booted without a volume (e.g. the CI smoke test).
+    # /config: the non-persistent config tree — first-boot writes (the E2EE
+    # server key at /config/ssl) must succeed non-root in both modes. (P2-1
+    # moves the key under /data; until then /config must exist and be owned
+    # by the runtime user.)
+    mkdir -p /data /config && \
+    chown -R vreckan:vreckan /data /config
+
+# The server binds 0.0.0.0:$VRECKAN_API_PORT (default 443), and ports below
+# 1024 are privileged by default. Whether a non-root process may bind them
+# depends on the host's net.ipv4.ip_unprivileged_port_start sysctl (0 on
+# most kernels/Debian, 1024 on RHEL/SUSE), so grant CAP_NET_BIND_SERVICE
+# directly on the binary — the same pattern nginx's unprivileged image uses.
+# That keeps the compose file free of a blanket `cap_add` (docs/ops.md §6).
+RUN apt-get update -y && \
+    DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends \
+      libcap2-bin && \
+    setcap 'cap_net_bind_service=+ep' /app/vreckan && \
+    apt-get clean && \
+    rm -rf /var/lib/apt/lists/*
+
+# Switch to the runtime user after every root-only step (P1-1): a compromised
+# server process no longer runs as root in the container.
+USER vreckan
 
 EXPOSE 443
 
