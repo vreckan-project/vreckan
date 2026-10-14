@@ -18,7 +18,7 @@ use axum::routing::{delete, get, post};
 use axum::{Json, Router};
 use base64::Engine;
 use bollard::Docker;
-use rand::RngCore;
+use rand::Rng;
 use sea_orm::{ActiveValue, EntityTrait};
 use serde::{Deserialize, Serialize};
 use serde_json::Value;

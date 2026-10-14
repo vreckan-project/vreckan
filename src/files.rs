@@ -2185,7 +2185,7 @@ fn render_password_page(share_id: &str, error_message: &str, status: StatusCode)
     let template_path = crate::static_files::static_dir().join("public_password.html");
     let nonce = {
         let mut buf = [0u8; 16];
-        use rand::RngCore;
+        use rand::Rng;
         rand::rng().fill_bytes(&mut buf);
         base64::engine::general_purpose::STANDARD.encode(buf)
     };

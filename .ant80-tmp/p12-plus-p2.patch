@@ -1,0 +1,1301 @@
+diff --git a/.env.example b/.env.example
+index 7d69081..1dd7da8 100755
+--- a/.env.example
++++ b/.env.example
+@@ -61,3 +61,27 @@ VRECKAN_LOG_LEVEL=INFO
+ # How often to check for renewal (hours) and how close to expiry to renew (days).
+ #VRECKAN_LE_RENEW_CHECK_HOURS=6
+ #VRECKAN_LE_RENEW_BEFORE_DAYS=30
++
++# --- Optional: security overrides (read directly by the server) --------------
++# Not referenced as ${VAR} in docker-compose.yml, but they still reach the
++# container via `env_file` and are read by the server itself.
++#
++# While the bootstrap admin account is still marked must-change-password,
++# how to treat a login with the literal default password admin1234:
++# allow | warn (default) | reject
++#VRECKAN_DEFAULT_PASSWORD_POLICY=warn
++#
++# Brute-force limiter on /api/auth/login: failed logins per (client IP,
++# username) pair within the window before a temporary lockout (HTTP 429,
++# logged at warn). 0 disables the limiter.
++#VRECKAN_LOGIN_MAX_ATTEMPTS=5
++#VRECKAN_LOGIN_LOCKOUT_SECONDS=900
++#
++# How many of the newest backup archives to keep (0 keeps all); archives are
++# written 0600.
++#VRECKAN_BACKUP_RETENTION=7
++#
++# E2EE server RSA key (unencrypted PKCS#8 PEM, written 0600). The default
++# lives under the persistent data root so the key survives container
++# recreation; point it elsewhere if your layout differs.
++#VRECKAN_SERVER_PRIVATE_KEY_PATH=/data/ssl/server_key.pem
+diff --git a/README.md b/README.md
+index 55bac1c..e6bf043 100755
+--- a/README.md
++++ b/README.md
+@@ -96,7 +96,7 @@ The binary reads the same `VRECKAN_*` environment variables; point
+ 
+ ### 2. Web Client Access
+ 1.  Open the server's web address in any modern browser (for example, `https://<your-server>/`).
+-2.  Sign in. On first run the server creates a default `admin` account (bootstrap password `admin1234`, configurable via `VRECKAN_BOOTSTRAP_ADMIN_*`) and prints the credentials to the server logs. Change the password after your first login. If OIDC/SSO is configured, you can sign in via the provider instead.
++2.  Sign in. On first run the server creates a default `admin` account (bootstrap password `admin1234`, configurable via `VRECKAN_BOOTSTRAP_ADMIN_*`). The account is marked *must-change-password*, so the web client prompts for a new password on first login; the startup log names the username (and the well-known default password only when it is in use) rather than printing a configured one. If OIDC/SSO is configured, you can sign in via the provider instead.
+ 3.  Use the web client to launch applications, manage files, and, if you are an administrator, manage users, groups, and applications.
+ 
+ ## Configuration
+@@ -152,7 +152,7 @@ All persistent data lives under the data root (`VRECKAN_DATA_ROOT`, default `/da
+ | `VRECKAN_AUTOSTART_CACHE_PATH` | Path to cache autostart scripts. | `/data/autostart_cache` |
+ | `VRECKAN_APP_STORE_CACHE_PATH` | Path to cache app store YAML files. | `/data/app_stores_cache` |
+ | `VRECKAN_BACKUPS_PATH` | Directory for backup archives. | `/data/backups` |
+-| `VRECKAN_BACKUP_RETENTION` | Number of backup archives to keep; 0 keeps all. | `0` |
++| `VRECKAN_BACKUP_RETENTION` | Number of backup archives to keep; 0 keeps all. Archives are written `0600` (owner read/write). | `7` |
+ | `VRECKAN_PUID` | Default User ID to run containers as. | `1000` |
+ | `VRECKAN_PGID` | Default Group ID to run containers as. | `1000` |
+ 
+@@ -164,9 +164,12 @@ All persistent data lives under the data root (`VRECKAN_DATA_ROOT`, default `/da
+ | `VRECKAN_AUTH_COOKIE_NAME` | Name of the web-login authentication cookie. | `vreckan_auth` |
+ | `VRECKAN_AUTH_TOKEN_TTL_SECONDS` | Lifetime (in seconds) of a server-issued web authentication token/cookie. | `28800` |
+ | `VRECKAN_SHARE_CLEANUP_INTERVAL_SECONDS` | How often to run the cleanup job for expired shares (in seconds). | `600` |
+-| `VRECKAN_SERVER_PRIVATE_KEY_PATH` | Path to the server private key PEM file (used for the E2EE handshake). | `/config/ssl/server_key.pem` |
++| `VRECKAN_SERVER_PRIVATE_KEY_PATH` | Path to the server private key PEM file (used for the E2EE handshake). Written `0600`; the default lives under the data root so the key persists across container recreation. | `/data/ssl/server_key.pem` |
+ | `VRECKAN_BOOTSTRAP_ADMIN_USERNAME` | Username of the admin account created on first run (when no admin exists yet). | `admin` |
+-| `VRECKAN_BOOTSTRAP_ADMIN_PASSWORD` | Initial password for the bootstrap admin account; change it after first login. | `admin1234` |
++| `VRECKAN_BOOTSTRAP_ADMIN_PASSWORD` | Initial password for the bootstrap admin account; the account is marked must-change-password until the first change. | `admin1234` |
++| `VRECKAN_DEFAULT_PASSWORD_POLICY` | Policy for logging in with the literal default password `admin1234` while the account is still marked must-change: `allow`, `warn`, or `reject`. | `warn` |
++| `VRECKAN_LOGIN_MAX_ATTEMPTS` | Failed logins from one (client IP, username) pair within the lockout window before a temporary lockout. 0 disables the limiter. | `5` |
++| `VRECKAN_LOGIN_LOCKOUT_SECONDS` | Length of the failed-login window and of the temporary lockout (seconds). Lockout events are logged at `warn`. | `900` |
+ 
+ ### OIDC / SSO
+ 
+diff --git a/docs/ops.md b/docs/ops.md
+index 055b1c8..eea0163 100644
+--- a/docs/ops.md
++++ b/docs/ops.md
+@@ -51,11 +51,22 @@ cp .env.example .env    # edit to taste (OIDC, Let's Encrypt, ...)
+ docker compose up -d
+ ```
+ 
+-First run: a self-signed certificate is generated under `/data/ssl`, the
+-database is created, and a bootstrap `admin` account is seeded (default
+-`admin` / `admin1234`, configurable via `VRECKAN_BOOTSTRAP_ADMIN_*`, printed
+-to the server logs). Sign in at `https://<your-server>/` and change the
+-password.
++First run: a self-signed certificate is generated under `/data/ssl` (the
++E2EE server key is written there too, `0600`, and persists across container
++recreation because `/data` is the bind mount), the database is created, and
++a bootstrap `admin` account is seeded (default `admin` / `admin1234`,
++configurable via `VRECKAN_BOOTSTRAP_ADMIN_*`). The account is marked
++*must-change-password*: the web client prompts for a new password on first
++login, and a login with the literal default `admin1234` is logged at
++`warn` unless `VRECKAN_DEFAULT_PASSWORD_POLICY` says otherwise
++(`allow` / `warn` / `reject`). The startup log names the username but prints
++the password value only when the well-known default is in use.
++
++Brute-force protection on `/api/auth/login`: per (client IP, username) pair,
++`VRECKAN_LOGIN_MAX_ATTEMPTS` (default 5) failed attempts within
++`VRECKAN_LOGIN_LOCKOUT_SECONDS` (default 900 s) lock the pair out for the
++same window (HTTP 429, fail closed); lockout events are logged at `warn`
++and a successful login clears the pair.
+ 
+ Local build instead of pulling the image:
+ 
+@@ -190,11 +201,20 @@ python3 scripts/migrate-sqlite-to-postgres.py --dry-run
+ python3 scripts/migrate-sqlite-to-postgres.py
+ ```
+ 
++The target DSN is printed with its `user:pass` userinfo masked
++(`postgres://***:***@host:5432/db`), and a connection failure is re-raised
++with the DSN scrubbed, so the credentials do not leak into logs or
++tracebacks.
++
+ **Backups:** the admin UI can create a backup (tar.gz of the data tree + a
+ logical JSON dump in table order) and restore it, including a chunked
+-restore flow for large archives; `VRECKAN_BACKUP_RETENTION` prunes old
+-archives. Take a backup before upgrading the image. For a native
+-`pg_dump`-based Postgres backup with dated-dump rotation, see §4.2.
++restore flow for large archives. Archives (and the in-archive
++`db_dump.json`) are written `0600`, because the dump carries
++`users.password_hash`; live session tokens (`auth_tokens`) are excluded
++from the dump, so a restore never drops or resurrects in-flight logins.
++`VRECKAN_BACKUP_RETENTION` prunes old archives (default: keep 7). Take a
++backup before upgrading the image. For a native `pg_dump`-based Postgres
++backup with dated-dump rotation, see §4.2.
+ 
+ ### 4.2 Postgres backup and restore (`scripts/backup-postgres.sh`)
+ 
+diff --git a/scripts/migrate-sqlite-to-postgres.py b/scripts/migrate-sqlite-to-postgres.py
+index c03685a..0174168 100755
+--- a/scripts/migrate-sqlite-to-postgres.py
++++ b/scripts/migrate-sqlite-to-postgres.py
+@@ -50,6 +50,7 @@ from __future__ import annotations
+ 
+ import argparse
+ import os
++import re
+ import sqlite3
+ import sys
+ from typing import Any, Dict, List, Optional, Tuple
+@@ -89,6 +90,7 @@ COLUMNS: Dict[str, List[Tuple[str, str]]] = {
+         ("is_sso", "bool"),
+         ("settings", "json"),
+         ("password_hash", "text"),
++        ("must_change_password", "bool"),
+         ("sso_groups", "json"),
+         ("roles", "json"),
+         ("permissions", "json"),
+@@ -196,9 +198,61 @@ def q(ident: str) -> str:
+     return '"' + ident.replace('"', '""') + '"'
+ 
+ 
++# ``DEFAULT`` literals for non-nullable columns that carry an entity default
++# (mirrors the ``#[sea_orm(default_value = ...)]`` attributes in
++# ``src/entities.rs``). A source row omits a column when the source database
++# predates it (e.g. a pre-v0.6.1 SQLite database has no
++# ``users.must_change_password``); the INSERT then leaves the column out and
++# the target column must fall back to this default instead of tripping the
++# NOT NULL constraint.
++COLUMN_DEFAULTS: Dict[str, Dict[str, str]] = {
++    "users": {
++        "is_admin": "FALSE",
++        "is_sso": "FALSE",
++        "must_change_password": "FALSE",
++    },
++    "groups": {
++        "settings": "'{}'::jsonb",
++    },
++    "roles": {
++        "description": "''",
++        "permissions": "'[]'::jsonb",
++        "is_builtin": "FALSE",
++    },
++    "volume_mounts": {
++        "host_path": "''",
++        "container_path": "''",
++        "read_only": "FALSE",
++        "scope": "'none'",
++        "target": "''",
++    },
++    "app_templates": {
++        "settings": "'{}'::jsonb",
++    },
++    "template_schema_settings": {
++        "sort_order": "0",
++        "label": "''",
++        "description": "''",
++        "category": "'general'",
++        "type": "'text'",
++        "default": "''",
++        "docker": "FALSE",
++        "options": "'[]'::jsonb",
++    },
++    "pinned_behaviors": {
++        "created_at": "0.0",
++        "data": "'{}'::jsonb",
++    },
++    "app_settings": {
++        "value": "''",
++    },
++}
++
++
+ def build_ddl(table: str) -> str:
+     cols = COLUMNS[table]
+     pk = PRIMARY_KEYS[table]
++    defaults = COLUMN_DEFAULTS.get(table, {})
+     defs = []
+     for col, kind in cols:
+         d = f"{q(col)} {KIND_TO_PG[kind]}"
+@@ -206,6 +260,8 @@ def build_ddl(table: str) -> str:
+             d += " PRIMARY KEY"
+         elif not _nullable(table, col, kind):
+             d += " NOT NULL"
++            if col in defaults:
++                d += f" DEFAULT {defaults[col]}"
+         defs.append(d)
+     return f"CREATE TABLE IF NOT EXISTS {q(table)} ({', '.join(defs)})"
+ 
+@@ -225,6 +281,19 @@ def _nullable(table: str, col: str, kind: str) -> bool:
+ # ---------------------------------------------------------------------------
+ # Conversion helpers
+ # ---------------------------------------------------------------------------
++_DSN_USERINFO_RE = re.compile(r"//[^@/]+@")
++
++
++def mask_dsn(dsn: str) -> str:
++    """Mask the ``user:pass`` userinfo in a DSN's netloc for logging.
++
++    Replaces only the userinfo component (``//user:pass@``) so the host,
++    port, and database name stay readable: ``postgres://user:pass@h:5432/db``
++    becomes ``postgres://***:***@h:5432/db``.
++    """
++    return _DSN_USERINFO_RE.sub("//***:***@", dsn, count=1) if "@" in dsn else dsn
++
++
+ def convert_cell(kind: str, value: Any) -> Any:
+     """Map a SQLite cell onto the Postgres parameter type for a column kind."""
+     if value is None:
+@@ -303,8 +372,7 @@ def run(args: argparse.Namespace) -> int:
+ 
+     print(f"Source SQLite : {sqlite_path}")
+     if pg_dsn:
+-        shown = pg_dsn.replace("://", "://***:***@", 1) if "://" in pg_dsn else pg_dsn
+-        print(f"Target Postgres: {shown}")
++        print(f"Target Postgres: {mask_dsn(pg_dsn)}")
+ 
+     sq = sqlite3.connect(sqlite_path)
+     sq.row_factory = None
+@@ -336,7 +404,12 @@ def run(args: argparse.Namespace) -> int:
+             print(build_ddl(table) + ";")
+         return 0
+ 
+-    pg = psycopg2.connect(pg_dsn)
++    try:
++        pg = psycopg2.connect(pg_dsn)
++    except Exception as exc:  # noqa: BLE001 - scrub the DSN, then re-raise
++        # psycopg2's error message (and therefore the traceback) can contain
++        # the full DSN including the password; re-raise with the masked form.
++        raise type(exc)(str(exc).replace(pg_dsn, mask_dsn(pg_dsn))) from exc
+     pg.autocommit = False
+     try:
+         cur = pg.cursor()
+diff --git a/site/docs/setup.md b/site/docs/setup.md
+index f4212eb..44c8d31 100644
+--- a/site/docs/setup.md
++++ b/site/docs/setup.md
+@@ -44,7 +44,7 @@ cp .env.example .env</code></pre>
+   <h2>3. Run it</h2>
+   <p>The repository's <code>docker-compose.yml</code> runs the server with TLS on port 443, mounts a persistent <code>vreckan-data</code> volume, and connects to the Docker daemon. It uses the pre-built image by default:</p>
+   <pre><code>docker compose up -d</code></pre>
+-  <p>On first run the server creates a default <code>admin</code> account (bootstrap password <code>admin1234</code>, configurable via <code>VRECKAN_BOOTSTRAP_ADMIN_*</code>) and prints the credentials to the logs (<code>docker compose logs</code>). Change the password after your first login.</p>
++  <p>On first run the server creates a default <code>admin</code> account (bootstrap password <code>admin1234</code>, configurable via <code>VRECKAN_BOOTSTRAP_ADMIN_*</code>). The account is marked must-change-password, so the web client prompts you for a new password at first sign-in; the startup log (<code>docker compose logs</code>) names the username but only prints the well-known default password, not a configured one.</p>
+ 
+   <div class="callout tip">
+     <strong>Prefer to build from source?</strong> Swap the <code>image:</code> line in <code>docker-compose.yml</code> for a <code>build: .</code> directive (the bundled <code>Dockerfile</code>), or build manually: <code>docker build -t vreckan .</code>
+@@ -60,7 +60,7 @@ VRECKAN_LE_DOMAINS=example.com,www.example.com
+ VRECKAN_LE_AUTH=dns-cloudflare
+ VRECKAN_LE_CLOUDFLARE_EMAIL=you@example.com
+ VRECKAN_LE_CLOUDFLARE_TOKEN=your-cloudflare-api-token</code></pre>
+-  <p>Two auth methods are supported: <code>dns-cloudflare</code> (Cloudflare DNS-01 — works behind a reverse proxy) and <code>http-01</code> (the ACME server fetches from your domain over HTTP). Renewal is automatic: the server checks every <code>VRECKAN_LE_RENEW_CHECK_HOURS</code> hours and renews within <code>VRECKAN_LE_RENEW_BEFORE_DAYS</code> days of expiry.</p>
++  <p>Two auth methods are supported: <code>dns-cloudflare</code> (Cloudflare DNS-01 — works behind a reverse proxy) and <code>http-01</code> (the ACME server fetches from your domain over HTTP). Renewal is automatic: the server checks every <code>VRECKAN_LE_RENEW_CHECK_HOURS</code> hours and renews within <code>VRECKAN_LE_RENEW_BEFORE_DAYS</code> days of expiry. The Cloudflare token is persisted for the transient certbot container in <code>/data/le/cloudflare.ini</code>, written <code>0600</code> (owner read/write only) since it is stored in plaintext.</p>
+ 
+   <h2>PostgreSQL (optional)</h2>
+   <p>The default is a SQLite file in the <code>vreckan-data</code> volume, which is perfect for most setups. For a production deployment with multiple users, the bundled <code>docker-compose.yml</code> already includes a <code>postgres</code> service — just set <code>VRECKAN_DATABASE_URL</code> in your <code>.env</code> to <code>postgresql+asyncpg://vreckan:vreckan@postgres:5432/vreckan</code> and restart.</p>
+diff --git a/src/auth.rs b/src/auth.rs
+index b96d17d..ffa7bec 100644
+--- a/src/auth.rs
++++ b/src/auth.rs
+@@ -29,7 +29,7 @@ use jwks::Jwks;
+ use rand::RngCore;
+ use sea_orm::{ActiveModelTrait, ActiveValue, ConnectionTrait, DbErr, EntityTrait};
+ use serde::{Deserialize, Serialize};
+-use tracing::{info, warn};
++use tracing::{debug, info, warn};
+ 
+ use crate::entities;
+ use crate::permissions;
+@@ -377,6 +377,9 @@ pub struct MeResponse {
+     pub active: bool,
+     pub has_password: bool,
+     pub is_sso: bool,
++    /// True while the account still carries its initial (bootstrap)
++    /// password; the client should force a password change on first login.
++    pub must_change_password: bool,
+     /// The user's effective (merged) settings object.
+     pub settings: serde_json::Value,
+     /// The user's effective (expanded) permission set.
+@@ -408,6 +411,7 @@ async fn me_response(
+         active,
+         has_password: has_pw,
+         is_sso: user.is_sso,
++        must_change_password: user.must_change_password,
+         settings: effective.clone(),
+         permissions,
+         roles: user.roles.clone(),
+@@ -435,28 +439,171 @@ fn user_error_response(e: UserError) -> Response {
+         .into_response()
+ }
+ 
++/// The client's remote address as seen by the server: the `ConnectInfo`
++/// extension added by `into_make_service_with_connect_info` in `main.rs`, or
++/// `None` (unproxied local clients and direct-router test harnesses). Infallible
++/// so the handler works on a plain router too.
++#[derive(Clone, Copy, Debug, Default)]
++struct RemoteAddr(Option<std::net::SocketAddr>);
++
++impl<S: Send + Sync> axum::extract::FromRequestParts<S> for RemoteAddr {
++    type Rejection = std::convert::Infallible;
++    async fn from_request_parts(
++        parts: &mut axum::http::request::Parts,
++        _state: &S,
++    ) -> Result<Self, Self::Rejection> {
++        Ok(Self(
++            parts
++                .extensions
++                .get::<axum::extract::ConnectInfo<std::net::SocketAddr>>()
++                .map(|c| c.0),
++        ))
++    }
++}
++
++/// The client's IP for login rate limiting: the leftmost `X-Forwarded-For`
++/// entry (set by the reverse proxy), falling back to the direct connection
++/// address, then to a shared `"unknown"` bucket (unproxied local clients and
++/// test harnesses).
++fn client_ip(headers: &HeaderMap, remote: Option<std::net::SocketAddr>) -> String {
++    if let Some(v) = headers.get(axum::http::HeaderName::from_static("x-forwarded-for")) {
++        if let Ok(s) = v.to_str() {
++            if let Some(first) = s.split(',').next() {
++                let first = first.trim();
++                if !first.is_empty() {
++                    return first.to_string();
++                }
++            }
++        }
++    }
++    if let Some(addr) = remote {
++        return addr.ip().to_string();
++    }
++    "unknown".to_string()
++}
++
++/// Record a failed login for the (IP, username) pair, starting (and logging)
++/// a lockout once the pair's failure count reaches the configured maximum.
++async fn record_login_failure(
++    state: &AppState,
++    key: &str,
++    now: f64,
++    window_secs: f64,
++    max_attempts: i64,
++) {
++    let mut map = state.login_attempts.write().await;
++    let w = map.entry(key.to_string()).or_default();
++    if w.window_start == 0.0 {
++        w.window_start = now;
++    }
++    w.fails += 1;
++    if max_attempts > 0 && w.fails >= max_attempts as u32 {
++        w.locked_until = now + window_secs;
++        warn!(
++            "login rate limit: {} locked out for {}s after {} failed attempts",
++            key,
++            window_secs as i64,
++            w.fails
++        );
++    }
++}
++
+ /// `POST /api/auth/login` — authenticate with a username/password and issue a
+ /// server token. Sets an HttpOnly cookie (and returns the token in the
+ /// `X-Auth-Token` header) so both browser cookie flows and explicit Bearer
+ /// clients work.
++///
++/// Brute-force protection: per (client IP, username) pair, `login_max_attempts`
++/// failed attempts within the `login_lockout_seconds` window lock the pair
++/// out for the same window (fail closed with 429). A successful login clears
++/// the pair's counters.
+ async fn login(
+     State(state): State<AppState>,
+     headers: HeaderMap,
++    RemoteAddr(remote): RemoteAddr,
+     Json(req): Json<LoginRequest>,
+ ) -> Response {
++    let ip = client_ip(&headers, remote);
++    let key = format!("{ip}:{}", req.username);
++    let now = now_secs();
++    let max_attempts = state.settings.login_max_attempts;
++    let window_secs = state.settings.login_lockout_seconds.max(1) as f64;
++    if max_attempts > 0 {
++        let mut map = state.login_attempts.write().await;
++        // Opportunistic prune so the map stays bounded on long-lived servers.
++        if map.len() > 4096 {
++            map.retain(|_, w| w.locked_until > now || now - w.window_start < window_secs);
++        }
++        let w = match map.get_mut(&key) {
++            Some(w) => w,
++            None => {
++                map.insert(key.clone(), crate::state::LoginAttemptWindow { window_start: now, ..Default::default() });
++                map.get_mut(&key).unwrap()
++            }
++        };
++        if w.window_start == 0.0 || now - w.window_start > window_secs {
++            w.fails = 0;
++            w.window_start = now;
++        }
++        if w.locked_until > now {
++            debug!("login rate limit: {} still locked out (until +{}s)", key, (w.locked_until - now) as i64);
++            return json_error(
++                StatusCode::TOO_MANY_REQUESTS,
++                "Too many failed login attempts; try again in a few minutes.",
++            );
++        }
++        if w.fails >= max_attempts as u32 {
++            w.locked_until = now + window_secs;
++            warn!(
++                "login rate limit: {} locked out for {}s after {} failed attempts",
++                key,
++                window_secs as i64,
++                w.fails
++            );
++            return json_error(
++                StatusCode::TOO_MANY_REQUESTS,
++                "Too many failed login attempts; try again in a few minutes.",
++            );
++        }
++    }
+     // argon2 is a hard dependency in the Rust port, so the Python
+     // `_HAS_ARGON2` 503 check is always satisfied here.
+-    if !user_manager::verify_password(&state.db, &req.username, &req.password)
++    let ok = user_manager::verify_password(&state.db, &req.username, &req.password)
+         .await
+-        .unwrap_or(false)
+-    {
++        .unwrap_or(false);
++    if !ok {
++        record_login_failure(&state, &key, now, window_secs, max_attempts).await;
+         // Do not leak whether the account exists.
+         return json_error(StatusCode::UNAUTHORIZED, "Invalid username or password.");
+     }
++    if max_attempts > 0 {
++        state.login_attempts.write().await.remove(&key);
++    }
+     let user = match user_manager::get_user(&state.db, &req.username).await {
+         Ok(Some(u)) => u,
+         _ => return json_error(StatusCode::UNAUTHORIZED, "Invalid username or password."),
+     };
++    // The default-password policy applies only while the account still
++    // carries its initial (bootstrap) password: the login succeeded, so the
++    // presented password is by definition the initial one.
++    if user.must_change_password
++        && req.password == user_manager::DEFAULT_BOOTSTRAP_PASSWORD
++    {
++        let policy = state.settings.default_password_policy.to_lowercase();
++        match policy.as_str() {
++            "allow" => {}
++            "reject" => {
++                return json_error(
++                    StatusCode::UNAUTHORIZED,
++                    "Still using the default bootstrap password; change it.",
++                );
++            }
++            _ => warn!(
++                "User '{}' logged in with the default bootstrap password (policy: warn).",
++                req.username
++            ),
++        }
++    }
+     let effective = match user_manager::get_effective_settings(&state.db, &req.username).await {
+         Ok(e) => e,
+         Err(e) => return user_error_response(e),
+diff --git a/src/backup_manager.rs b/src/backup_manager.rs
+index b4bf734..4c72e11 100644
+--- a/src/backup_manager.rs
++++ b/src/backup_manager.rs
+@@ -222,6 +222,13 @@ pub async fn create_backup(
+         }
+         let file = std::fs::File::create(&path)
+             .map_err(|e| BackupError(format!("Could not create backup file: {e}")))?;
++        // The archive contains a configuration-database dump (password
++        // hashes) and SSL material: owner read/write only, created by the
++        // runtime (non-root) user.
++        let _ = std::fs::set_permissions(
++            &path,
++            std::os::unix::fs::PermissionsExt::from_mode(0o600),
++        );
+         let mut gz = GzEncoder::new(file, Compression::default());
+         let mut builder = Builder::new(&mut gz);
+         for (abs_path, arcname) in &entries {
+diff --git a/src/db.rs b/src/db.rs
+index 25f5465..c5d5f2f 100644
+--- a/src/db.rs
++++ b/src/db.rs
+@@ -169,10 +169,19 @@ impl Db {
+     ///
+     /// The format is `{"version": 1, "tables": {"users": [ {...}, ... ], ...}}`
+     /// which lets the same backup be restored onto SQLite, Postgres, or MySQL.
++    ///
++    /// The `auth_tokens` table is excluded: its rows are live session tokens
++    /// held as the plaintext primary key, and active tokens are intentionally
++    /// not part of a backup (a restore leaves in-flight sessions untouched).
++    /// The dump file is written `0600` (owner read/write only) because
++    /// `users.password_hash` is included.
+     pub async fn dump(&self, dest_path: &str) -> Result<(), sea_orm::DbErr> {
+         let backend = self.conn.get_database_backend();
+         let mut tables = serde_json::Map::new();
+         for table in TABLE_ORDER {
++            if table == "auth_tokens" {
++                continue;
++            }
+             let rows = self
+                 .conn
+                 .query_all_raw(Statement::from_string(backend, &format!("SELECT * FROM {table}")))
+@@ -186,6 +195,10 @@ impl Db {
+         let data = serde_json::json!({ "version": 1, "tables": tables });
+         std::fs::write(dest_path, data.to_string())
+             .map_err(|e| sea_orm::DbErr::Custom(e.to_string()))?;
++        let _ = std::fs::set_permissions(
++            dest_path,
++            std::os::unix::fs::PermissionsExt::from_mode(0o600),
++        );
+         info!("Wrote configuration database snapshot to {dest_path}");
+         Ok(())
+     }
+@@ -205,6 +218,13 @@ impl Db {
+         let backend = self.conn.get_database_backend();
+         let txn = self.conn.begin().await?;
+         for table in TABLE_ORDER {
++            let has_entry = tables.get(table).is_some();
++            // New-style dumps exclude `auth_tokens` (live session tokens); a
++            // missing entry means the live token table must be left untouched.
++            // Older dumps always carry the key, restoring the snapshot as-is.
++            if table == "auth_tokens" && !has_entry {
++                continue;
++            }
+             txn.execute_raw(Statement::from_string(backend, &format!("DELETE FROM {table}")))
+                 .await?;
+             if let Some(rows) = tables.get(table).and_then(|v| v.as_array()) {
+@@ -229,6 +249,7 @@ fn known_columns(table: &str) -> Vec<&'static str> {
+             "is_sso",
+             "settings",
+             "password_hash",
++            "must_change_password",
+             "sso_groups",
+             "roles",
+             "permissions",
+diff --git a/src/entities.rs b/src/entities.rs
+index f77be00..75438f2 100644
+--- a/src/entities.rs
++++ b/src/entities.rs
+@@ -28,6 +28,11 @@ pub mod user {
+         pub is_sso: bool,
+         pub settings: Option<Json>,
+         pub password_hash: Option<String>,
++        /// True while the account still carries its initial (bootstrap)
++        /// password; the web UI forces a change on first login. Cleared by
++        /// any explicit password change.
++        #[sea_orm(default_value = false)]
++        pub must_change_password: bool,
+         pub sso_groups: Option<Json>,
+         pub roles: Option<Json>,
+         pub permissions: Option<Json>,
+diff --git a/src/main.rs b/src/main.rs
+index d31c58d..a4ba930 100644
+--- a/src/main.rs
++++ b/src/main.rs
+@@ -93,7 +93,10 @@ async fn main() -> anyhow::Result<()> {
+         .await
+         .map_err(anyhow::Error::msg)?;
+     axum_server::tls_rustls::bind_rustls(addr, config)
+-        .serve(app.into_make_service())
++        // ConnectInfo exposes the client address to handlers (the login
++        // rate limiter keys on it); `X-Forwarded-For` still takes precedence
++        // when a reverse proxy is in front.
++        .serve(app.into_make_service_with_connect_info::<std::net::SocketAddr>())
+         .await
+         .map_err(anyhow::Error::msg)?;
+ 
+diff --git a/src/settings.rs b/src/settings.rs
+index 986d792..2a3353a 100644
+--- a/src/settings.rs
++++ b/src/settings.rs
+@@ -49,7 +49,7 @@ pub const SETTING_DEFINITIONS: &[SettingDef] = &[
+     SettingDef { name: "pgid", type_: "int", default: "1000", help: "Default Group ID to run containers as." },
+     SettingDef { name: "data_root", type_: "str", default: "/data", help: "Root of the persistent data tree (database, storage, caches, backups)." },
+     SettingDef { name: "backups_path", type_: "str", default: "/data/backups", help: "Directory for backup archives." },
+-    SettingDef { name: "backup_retention", type_: "int", default: "0", help: "Number of backup archives to keep; 0 keeps all." },
++    SettingDef { name: "backup_retention", type_: "int", default: "7", help: "Number of backup archives to keep; 0 keeps all." },
+     SettingDef { name: "storage_path", type_: "str", default: "/data/storage", help: "Base directory for user home directories." },
+     SettingDef { name: "app_icons_path", type_: "str", default: "/data/storage/vreckan_app_icons", help: "Directory for storing custom-uploaded application icons." },
+     SettingDef { name: "home_templates_path", type_: "str", default: "/data/storage/vreckan_home_templates", help: "Base directory for meta-app home directory templates." },
+@@ -72,6 +72,10 @@ pub const SETTING_DEFINITIONS: &[SettingDef] = &[
+     // --- Bootstrap admin ---
+     SettingDef { name: "bootstrap_admin_username", type_: "str", default: "admin", help: "Username of the admin account created on first run (when no admin exists yet)." },
+     SettingDef { name: "bootstrap_admin_password", type_: "str", default: "admin1234", help: "Initial password for the bootstrap admin account; change it after first login." },
++    SettingDef { name: "default_password_policy", type_: "str", default: "warn", help: "Policy for a login with the literal default password 'admin1234' while the account is still marked must-change: 'allow' (dev/test), 'warn' (log a warning), or 'reject' (fail the login)." },
++    // --- Login rate limiting ---
++    SettingDef { name: "login_max_attempts", type_: "int", default: "5", help: "Failed logins from one (client IP, username) pair within the lockout window before the pair is temporarily locked out. 0 disables the limiter." },
++    SettingDef { name: "login_lockout_seconds", type_: "int", default: "900", help: "Length of the failed-login window and of the temporary lockout (seconds)." },
+     // --- Let's Encrypt (certbot) ---
+     SettingDef { name: "le_enabled", type_: "bool", default: "false", help: "Issue Let's Encrypt certificates via certbot. When off, the server uses a self-signed certificate." },
+     SettingDef { name: "le_domains", type_: "str", default: "", help: "Comma-separated domain(s) to issue certificates for." },
+@@ -152,6 +156,9 @@ pub struct Settings {
+     pub oidc_require_signature: bool,
+     pub bootstrap_admin_username: String,
+     pub bootstrap_admin_password: String,
++    pub default_password_policy: String,
++    pub login_max_attempts: i64,
++    pub login_lockout_seconds: i64,
+     pub le_enabled: bool,
+     pub le_domains: String,
+     pub le_auth: String,
+@@ -225,6 +232,9 @@ impl Settings {
+             oidc_require_signature: get_bool("oidc_require_signature"),
+             bootstrap_admin_username: get("bootstrap_admin_username"),
+             bootstrap_admin_password: get("bootstrap_admin_password"),
++            default_password_policy: get("default_password_policy"),
++            login_max_attempts: get_int("login_max_attempts"),
++            login_lockout_seconds: get_int("login_lockout_seconds"),
+             le_enabled: get_bool("le_enabled"),
+             le_domains: get("le_domains"),
+             le_auth: get("le_auth"),
+@@ -292,6 +302,9 @@ impl Settings {
+             "oidc_require_signature" => self.oidc_require_signature.to_string(),
+             "bootstrap_admin_username" => self.bootstrap_admin_username.clone(),
+             "bootstrap_admin_password" => self.bootstrap_admin_password.clone(),
++            "default_password_policy" => self.default_password_policy.clone(),
++            "login_max_attempts" => self.login_max_attempts.to_string(),
++            "login_lockout_seconds" => self.login_lockout_seconds.to_string(),
+             "le_enabled" => self.le_enabled.to_string(),
+             "le_domains" => self.le_domains.clone(),
+             "le_auth" => self.le_auth.clone(),
+diff --git a/src/state.rs b/src/state.rs
+index 3b401db..d82aff8 100644
+--- a/src/state.rs
++++ b/src/state.rs
+@@ -38,6 +38,18 @@ pub struct DownloadTokenRecord {
+     pub expires_at: f64,
+ }
+ 
++/// Login-attempt accounting for one (client IP, username) pair, used by the
++/// brute-force limiter on `/api/auth/login`.
++#[derive(Clone, Debug, Default)]
++pub struct LoginAttemptWindow {
++    /// Failed attempts recorded in the current window.
++    pub fails: u32,
++    /// Wall-clock start (unix seconds) of the current failure window.
++    pub window_start: f64,
++    /// While nonzero, the pair is locked out until this time (unix seconds).
++    pub locked_until: f64,
++}
++
+ /// The shared application state, passed to every axum handler.
+ #[derive(Clone)]
+ pub struct AppState {
+@@ -51,6 +63,9 @@ pub struct AppState {
+     pub crypto_sessions: Arc<RwLock<HashMap<String, Vec<u8>>>>,
+     /// Web-login auth tokens, keyed by the opaque token string.
+     pub auth_tokens: Arc<RwLock<HashMap<String, AuthTokenRecord>>>,
++    /// Login-attempt windows for the brute-force limiter, keyed by
++    /// "ip:username". In-memory only: a server restart clears the counters.
++    pub login_attempts: Arc<RwLock<HashMap<String, LoginAttemptWindow>>>,
+     /// In-flight OIDC authorization states, keyed by the opaque `state` string.
+     pub oidc_states: Arc<RwLock<HashMap<String, OidcStateRecord>>>,
+     /// Short-lived public-share download tokens.
+@@ -117,6 +132,7 @@ impl AppState {
+             sessions: Arc::new(RwLock::new(HashMap::new())),
+             crypto_sessions: Arc::new(RwLock::new(HashMap::new())),
+             auth_tokens: Arc::new(RwLock::new(HashMap::new())),
++            login_attempts: Arc::new(RwLock::new(HashMap::new())),
+             oidc_states: Arc::new(RwLock::new(HashMap::new())),
+             download_tokens: Arc::new(RwLock::new(HashMap::new())),
+             pull_progress: Arc::new(Mutex::new(HashMap::new())),
+diff --git a/src/user_manager.rs b/src/user_manager.rs
+index 52829e7..ef89f87 100644
+--- a/src/user_manager.rs
++++ b/src/user_manager.rs
+@@ -111,6 +111,9 @@ pub struct UserRecord {
+     pub settings: Option<serde_json::Value>,
+     /// argon2id hash of the web-login password (None if unset).
+     pub password_hash: Option<String>,
++    /// True while the account still carries its initial (bootstrap)
++    /// password; cleared by any explicit password change.
++    pub must_change_password: bool,
+     /// Provider (IdP) groups the SSO user belongs to.
+     pub sso_groups: Vec<String>,
+     /// Roles assigned directly to the user.
+@@ -286,6 +289,7 @@ pub struct UserFields {
+     pub is_sso: Option<bool>,
+     pub settings: Option<serde_json::Value>,
+     pub password_hash: Option<String>,
++    pub must_change_password: Option<bool>,
+     pub sso_groups: Option<Vec<String>>,
+     pub roles: Option<Vec<String>>,
+     pub permissions: Option<Vec<String>>,
+@@ -314,6 +318,7 @@ pub async fn db_save_user_row(
+             is_sso: ActiveValue::NotSet,
+             settings: ActiveValue::NotSet,
+             password_hash: ActiveValue::NotSet,
++            must_change_password: ActiveValue::NotSet,
+             sso_groups: ActiveValue::NotSet,
+             roles: ActiveValue::NotSet,
+             permissions: ActiveValue::NotSet,
+@@ -332,6 +337,9 @@ pub async fn db_save_user_row(
+     if let Some(v) = &fields.password_hash {
+         am.password_hash = ActiveValue::Set(Some(v.clone()));
+     }
++    if let Some(v) = fields.must_change_password {
++        am.must_change_password = ActiveValue::Set(v);
++    }
+     if let Some(v) = &fields.sso_groups {
+         am.sso_groups = ActiveValue::Set(Some(serde_json::to_value(v).unwrap_or_default()));
+     }
+@@ -353,6 +361,7 @@ pub async fn db_save_user_row(
+         || fields.is_sso.is_some()
+         || fields.settings.is_some()
+         || fields.password_hash.is_some()
++        || fields.must_change_password.is_some()
+         || fields.sso_groups.is_some()
+         || fields.roles.is_some()
+         || fields.permissions.is_some()
+@@ -366,6 +375,7 @@ pub async fn db_save_user_row(
+                         entities::user::Column::IsSso,
+                         entities::user::Column::Settings,
+                         entities::user::Column::PasswordHash,
++                        entities::user::Column::MustChangePassword,
+                         entities::user::Column::SsoGroups,
+                         entities::user::Column::Roles,
+                         entities::user::Column::Permissions,
+@@ -396,6 +406,7 @@ async fn db_delete_user_row(conn: &DatabaseConnection, username: &str) -> Result
+         is_sso: ActiveValue::NotSet,
+         settings: ActiveValue::NotSet,
+         password_hash: ActiveValue::NotSet,
++        must_change_password: ActiveValue::NotSet,
+         sso_groups: ActiveValue::NotSet,
+         roles: ActiveValue::NotSet,
+         permissions: ActiveValue::NotSet,
+@@ -478,6 +489,7 @@ async fn db_set_password(
+             is_sso: ActiveValue::NotSet,
+             settings: ActiveValue::NotSet,
+             password_hash: ActiveValue::NotSet,
++            must_change_password: ActiveValue::NotSet,
+             sso_groups: ActiveValue::NotSet,
+             roles: ActiveValue::NotSet,
+             permissions: ActiveValue::NotSet,
+@@ -485,6 +497,11 @@ async fn db_set_password(
+         },
+     };
+     am.password_hash = ActiveValue::Set(password_hash.map(String::from));
++    // A freshly set password is no longer the bootstrap default: clear the
++    // must-change flag (a cleared password leaves the flag untouched).
++    if password_hash.is_some() {
++        am.must_change_password = ActiveValue::Set(false);
++    }
+ 
+     let backend = conn.get_database_backend();
+     let stmt = entities::user::Entity::insert(am)
+@@ -574,11 +591,16 @@ async fn role_permissions(
+     Ok(role.map(|r| json_str_list(Some(r.permissions))).unwrap_or_default())
+ }
+ 
++/// The well-known default bootstrap password (the code default of
++/// `bootstrap_admin_password`).
++pub const DEFAULT_BOOTSTRAP_PASSWORD: &str = "admin1234";
++
+ /// Bootstrap a default admin account in the database on first run.
+ ///
+-/// The default admin is seeded with a well-known bootstrap password which is
+-/// logged once at first run; the admin is expected to change it after first
+-/// login. No key material is generated — web login is password-based.
++/// The default admin is seeded with a bootstrap password and marked
++/// `must_change_password` so the client forces a change on first login. The
++/// log line names the username but deliberately avoids printing the password
++/// value (only the well-known default is named, since it is public knowledge).
+ pub async fn generate_default_admin(db: &Db, settings: &Settings) -> Result<(), DbErr> {
+     let conn = &db.conn;
+     // If any admin already exists, do nothing.
+@@ -596,7 +618,7 @@ pub async fn generate_default_admin(db: &Db, settings: &Settings) -> Result<(),
+         settings.bootstrap_admin_username.clone()
+     };
+     let bootstrap_password = if settings.bootstrap_admin_password.is_empty() {
+-        "admin1234".to_string()
++        DEFAULT_BOOTSTRAP_PASSWORD.to_string()
+     } else {
+         settings.bootstrap_admin_password.clone()
+     };
+@@ -611,6 +633,9 @@ pub async fn generate_default_admin(db: &Db, settings: &Settings) -> Result<(),
+         is_sso: ActiveValue::NotSet,
+         settings: ActiveValue::Set(None),
+         password_hash: ActiveValue::Set(Some(password_hash)),
++        // The account starts with its initial password: force a change on
++        // first login.
++        must_change_password: ActiveValue::Set(true),
+         sso_groups: ActiveValue::NotSet,
+         roles: ActiveValue::NotSet,
+         permissions: ActiveValue::NotSet,
+@@ -624,10 +649,17 @@ pub async fn generate_default_admin(db: &Db, settings: &Settings) -> Result<(),
+     db.set_app_setting("VRECKAN_BOOTSTRAP_ADMIN_USERNAME", &admin_username)
+         .await?;
+ 
+-    warn!(
+-        "No admin users found. Created default '{}' admin with bootstrap password '{}' — change it after first login.",
+-        admin_username, bootstrap_password
+-    );
++    if bootstrap_password == DEFAULT_BOOTSTRAP_PASSWORD {
++        warn!(
++            "No admin users found. Created default '{}' admin with the well-known default bootstrap password '{}' — change it after first login.",
++            admin_username, DEFAULT_BOOTSTRAP_PASSWORD
++        );
++    } else {
++        warn!(
++            "No admin users found. Created default '{}' admin with a configured bootstrap password — change it after first login.",
++            admin_username
++        );
++    }
+     Ok(())
+ }
+ 
+@@ -837,6 +869,7 @@ fn model_to_user_record(m: entities::user::Model) -> UserRecord {
+         is_sso: m.is_sso,
+         settings: m.settings,
+         password_hash: m.password_hash,
++        must_change_password: m.must_change_password,
+         sso_groups: json_str_list(m.sso_groups),
+         roles: json_str_list(m.roles),
+         permissions: json_str_list(m.permissions),
+diff --git a/tests/common/mod.rs b/tests/common/mod.rs
+index 094e763..603d273 100644
+--- a/tests/common/mod.rs
++++ b/tests/common/mod.rs
+@@ -75,7 +75,17 @@ pub async fn connect_db(root: &std::path::Path) -> vreckan::db::Db {
+ /// Build a fresh `AppState` for a test: throwaway dirs, fresh DB, bootstrap
+ /// admin + roles seeded (mirrors the Python lifespan startup).
+ pub async fn build_state(root: &std::path::Path) -> AppState {
+-    let settings = test_settings(root);
++    build_state_with(root, |_| {}).await
++}
++
++/// Like `build_state`, but lets the test mutate the `Settings` before the
++/// state is built (e.g. to flip a policy flag).
++pub async fn build_state_with(
++    root: &std::path::Path,
++    mutate: impl FnOnce(&mut vreckan::settings::Settings),
++) -> AppState {
++    let mut settings = test_settings(root);
++    mutate(&mut settings);
+     // Mirror the lifespan startup: create the persistent data directories
+     // (storage, public storage, uploads, icons, home templates, ...).
+     for p in [
+diff --git a/tests/test_admin_misc.rs b/tests/test_admin_misc.rs
+index 1730fd6..0cca0e0 100644
+--- a/tests/test_admin_misc.rs
++++ b/tests/test_admin_misc.rs
+@@ -267,6 +267,7 @@ async fn test_sso_groups_observed() {
+             is_sso: sea_orm::ActiveValue::Set(true),
+             settings: sea_orm::ActiveValue::Set(Some(json!({}))),
+             password_hash: sea_orm::ActiveValue::Set(None),
++            must_change_password: sea_orm::ActiveValue::NotSet,
+             sso_groups: sea_orm::ActiveValue::Set(Some(groups)),
+             roles: sea_orm::ActiveValue::Set(Some(json!([]))),
+             permissions: sea_orm::ActiveValue::Set(Some(json!([]))),
+@@ -281,10 +282,11 @@ async fn test_sso_groups_observed() {
+     let am = vreckan::entities::user::ActiveModel {
+         username: sea_orm::ActiveValue::Set("local".to_string()),
+         is_admin: sea_orm::ActiveValue::Set(false),
+-        is_sso: sea_orm::ActiveValue::Set(false),
+-        settings: sea_orm::ActiveValue::Set(Some(json!({}))),
+-        password_hash: sea_orm::ActiveValue::Set(Some("x".to_string())),
+-        sso_groups: sea_orm::ActiveValue::Set(Some(json!(["should-not-appear"]))),
++            is_sso: sea_orm::ActiveValue::Set(false),
++            settings: sea_orm::ActiveValue::Set(Some(json!({}))),
++            password_hash: sea_orm::ActiveValue::Set(Some("x".to_string())),
++            must_change_password: sea_orm::ActiveValue::NotSet,
++            sso_groups: sea_orm::ActiveValue::Set(Some(json!(["should-not-appear"]))),
+         roles: sea_orm::ActiveValue::Set(Some(json!([]))),
+         permissions: sea_orm::ActiveValue::Set(Some(json!([]))),
+         groups: sea_orm::ActiveValue::Set(Some(json!([]))),
+diff --git a/tests/test_auth.rs b/tests/test_auth.rs
+index cbe1bb0..5103d61 100644
+--- a/tests/test_auth.rs
++++ b/tests/test_auth.rs
+@@ -5,7 +5,7 @@
+ 
+ mod common;
+ 
+-use common::{build_state, SecureClient, TempDir};
++use common::{build_state, build_state_with, SecureClient, TempDir, TestClient};
+ use serde_json::json;
+ use vreckan::user_manager;
+ 
+@@ -247,3 +247,281 @@ async fn test_admin_only_endpoint_rejects_regular_user() {
+     let (status, _) = sc.call("POST", "/api/admin/data", Some(&json!({}))).await;
+     assert_eq!(status.as_u16(), 403);
+ }
++
++// ---------------------------------------------------------------------------
++// P1-2: bootstrap admin must-change flag + default-password policy
++// ---------------------------------------------------------------------------
++
++#[tokio::test]
++async fn test_bootstrap_admin_flag_on_first_login() {
++    let _root = TempDir::new();
++    let mut tc = TestClient::new(build_state(_root.path()).await);
++    assert_eq!(tc.login("admin", "admin1234").await.status.as_u16(), 200);
++    let me = tc.get("/api/auth/me").await;
++    assert_eq!(me.status.as_u16(), 200);
++    assert_eq!(me.json()["must_change_password"], true);
++}
++
++#[tokio::test]
++async fn test_change_password_clears_must_change_flag() {
++    let _root = TempDir::new();
++    let mut tc = TestClient::new(build_state(_root.path()).await);
++    tc.login("admin", "admin1234").await;
++    let resp = tc
++        .post_json(
++            "/api/auth/change_password",
++            &json!({ "old_password": "admin1234", "new_password": "freshpass1" }),
++        )
++        .await;
++    assert_eq!(resp.status.as_u16(), 200);
++    let me = tc.get("/api/auth/me").await;
++    assert_eq!(me.status.as_u16(), 200);
++    assert_eq!(me.json()["must_change_password"], false);
++    // The changed password works on a fresh session too.
++    tc.post_json("/api/auth/logout", &json!({})).await;
++    tc.auth_cookie = None;
++    assert_eq!(tc.login("admin", "freshpass1").await.status.as_u16(), 200);
++}
++
++#[tokio::test]
++async fn test_default_password_policy_reject() {
++    let _root = TempDir::new();
++    let tc = TestClient::new(
++        build_state_with(_root.path(), |s| {
++            s.default_password_policy = "reject".to_string();
++        })
++        .await,
++    );
++    let resp = tc
++        .post_json(
++            "/api/auth/login",
++            &json!({ "username": "admin", "password": "admin1234" }),
++        )
++        .await;
++    assert_eq!(resp.status.as_u16(), 401);
++}
++
++#[tokio::test]
++async fn test_default_password_policy_allow() {
++    let _root = TempDir::new();
++    let tc = TestClient::new(
++        build_state_with(_root.path(), |s| {
++            s.default_password_policy = "allow".to_string();
++        })
++        .await,
++    );
++    let resp = tc
++        .post_json(
++            "/api/auth/login",
++            &json!({ "username": "admin", "password": "admin1234" }),
++        )
++        .await;
++    assert_eq!(resp.status.as_u16(), 200);
++}
++
++#[tokio::test]
++async fn test_custom_bootstrap_password_not_flagged_by_policy() {
++    // The policy only fires on the *literal* default password; a configured
++    // bootstrap password logs in with the must-change flag set but policy-warn
++    // semantics (200 under the default "warn" policy).
++    let _root = TempDir::new();
++    let tc = TestClient::new(
++        build_state_with(_root.path(), |s| {
++            s.bootstrap_admin_password = "seededpw123".to_string();
++        })
++        .await,
++    );
++    let resp = tc
++        .post_json(
++            "/api/auth/login",
++            &json!({ "username": "admin", "password": "seededpw123" }),
++        )
++        .await;
++    assert_eq!(resp.status.as_u16(), 200);
++}
++
++// ---------------------------------------------------------------------------
++// P2-5: brute-force / rate limiting on /api/auth/login
++// ---------------------------------------------------------------------------
++
++#[tokio::test]
++async fn test_login_rate_limit_locks_after_max_failures() {
++    let _root = TempDir::new();
++    let tc = TestClient::new(build_state(_root.path()).await);
++    // Default limiter: 5 failed attempts within the window.
++    for _ in 0..5 {
++        let resp = tc
++            .post_json(
++                "/api/auth/login",
++                &json!({ "username": "admin", "password": "nope" }),
++            )
++            .await;
++        assert_eq!(resp.status.as_u16(), 401);
++    }
++    // The next attempt fails closed even with the correct password.
++    let resp = tc
++        .post_json(
++            "/api/auth/login",
++            &json!({ "username": "admin", "password": "admin1234" }),
++        )
++        .await;
++    assert_eq!(resp.status.as_u16(), 429);
++}
++
++#[tokio::test]
++async fn test_login_rate_limit_success_resets_counter() {
++    let _root = TempDir::new();
++    let mut tc = TestClient::new(build_state(_root.path()).await);
++    for _ in 0..4 {
++        assert_eq!(
++            tc.post_json(
++                "/api/auth/login",
++                &json!({ "username": "admin", "password": "nope" })
++            )
++            .await
++            .status
++            .as_u16(),
++            401
++        );
++    }
++    // A successful login clears the pair's counters ...
++    assert_eq!(tc.login("admin", "admin1234").await.status.as_u16(), 200);
++    // ... so four more misses do not trigger a lockout.
++    for _ in 0..4 {
++        assert_eq!(
++            tc.post_json(
++                "/api/auth/login",
++                &json!({ "username": "admin", "password": "nope" })
++            )
++            .await
++            .status
++            .as_u16(),
++            401
++        );
++    }
++    assert_eq!(tc.login("admin", "admin1234").await.status.as_u16(), 200);
++}
++
++#[tokio::test]
++async fn test_login_rate_limit_buckets_per_username() {
++    let _root = TempDir::new();
++    let tc = TestClient::new(build_state(_root.path()).await);
++    for _ in 0..5 {
++        tc.post_json(
++            "/api/auth/login",
++            &json!({ "username": "ghost1", "password": "nope" }),
++        )
++        .await;
++    }
++    // ghost1 is now locked out (even with the right password it would 429).
++    // Four misses for a *different* username must not be affected ...
++    for _ in 0..4 {
++        assert_eq!(
++            tc.post_json(
++                "/api/auth/login",
++                &json!({ "username": "ghost2", "password": "nope" })
++            )
++            .await
++            .status
++            .as_u16(),
++            401
++        );
++    }
++    // ... and the fifth miss locks out ghost2 only.
++    assert_eq!(
++        tc.post_json(
++            "/api/auth/login",
++            &json!({ "username": "ghost2", "password": "nope" })
++        )
++        .await
++        .status
++        .as_u16(),
++        429
++    );
++}
++
++#[tokio::test]
++async fn test_login_rate_limit_buckets_per_ip() {
++    let _root = TempDir::new();
++    let tc = TestClient::new(build_state(_root.path()).await);
++    let mut h1 = std::collections::HashMap::new();
++    h1.insert("X-Forwarded-For".to_string(), "1.2.3.4".to_string());
++    let mut h2 = std::collections::HashMap::new();
++    h2.insert("X-Forwarded-For".to_string(), "5.6.7.8".to_string());
++    // Five misses from the first address lock only that (ip, username) pair;
++    // the same username from a second address stays under the threshold.
++    for _ in 0..5 {
++        tc.request(
++            "POST",
++            "/api/auth/login",
++            Some(json!({ "username": "admin", "password": "nope" }).to_string().into_bytes()),
++            Some("application/json"),
++            &h1,
++        )
++        .await;
++    }
++    for _ in 0..5 {
++        let resp = tc
++            .request(
++                "POST",
++                "/api/auth/login",
++                Some(json!({ "username": "admin", "password": "nope" }).to_string().into_bytes()),
++                Some("application/json"),
++                &h2,
++            )
++            .await;
++        assert_eq!(resp.status.as_u16(), 401);
++    }
++}
++
++// ---------------------------------------------------------------------------
++// P2-1: E2EE server key location + permissions
++// ---------------------------------------------------------------------------
++
++#[tokio::test]
++async fn test_e2ee_key_default_path_under_data_root() {
++    let def = vreckan::settings::SETTING_DEFINITIONS
++        .iter()
++        .find(|d| d.name == "server_private_key_path")
++        .expect("server_private_key_path definition");
++    assert_eq!(def.default, "/data/ssl/server_key.pem");
++}
++
++#[tokio::test]
++async fn test_e2ee_key_created_with_0600() {
++    let _root = TempDir::new();
++    let state = build_state(_root.path()).await;
++    let mode = std::fs::metadata(&state.settings.server_private_key_path)
++        .expect("server key exists")
++        .permissions()
++        .mode()
++        & 0o777;
++    assert_eq!(mode, 0o600);
++}
++
++#[tokio::test]
++async fn test_e2ee_key_existing_file_tightened_to_0600() {
++    let _root = TempDir::new();
++    let mut s = common::test_settings(_root.path());
++    // Pre-create the key at loose (0644) permissions, as an older version
++    // would have left it.
++    let key = rsa::RsaPrivateKey::new(&mut rand_core::OsRng, 2048).unwrap();
++    let pem = key.to_pkcs8_pem(pkcs8::LineEnding::LF).unwrap().to_string();
++    let parent = std::path::Path::new(&s.server_private_key_path)
++        .parent()
++        .unwrap();
++    std::fs::create_dir_all(parent).unwrap();
++    std::fs::write(&s.server_private_key_path, &pem).unwrap();
++    std::fs::set_permissions(
++        &s.server_private_key_path,
++        std::os::unix::fs::PermissionsExt::from_mode(0o644),
++    )
++    .unwrap();
++    vreckan::e2ee::init_server_key(&s).unwrap();
++    let mode = std::fs::metadata(&s.server_private_key_path)
++        .unwrap()
++        .permissions()
++        .mode()
++        & 0o777;
++    assert_eq!(mode, 0o600);
++}
+diff --git a/tests/test_backup.rs b/tests/test_backup.rs
+index dfa8a20..52626b7 100644
+--- a/tests/test_backup.rs
++++ b/tests/test_backup.rs
+@@ -499,3 +499,107 @@ async fn test_backup_retention_prunes_old_backups() {
+     assert!(backup_path(&sc, &third_name).exists());
+     assert!(!backup_path(&sc, &first_name).exists());
+ }
++
++// ---------------------------------------------------------------------------
++// P2-4: backup secrets handling
++// ---------------------------------------------------------------------------
++
++/// Extract the `db_dump.json` member of a backup archive and parse it.
++fn read_dump_from_archive(raw: &[u8]) -> serde_json::Value {
++    let mut gz = flate2::read::GzDecoder::new(std::io::Cursor::new(raw));
++    let mut archive = tar::Archive::new(&mut gz);
++    for entry in archive.entries().unwrap() {
++        let mut entry = entry.unwrap();
++        if entry.path().unwrap().file_name().unwrap() == "db_dump.json" {
++            let mut buf = Vec::new();
++            entry.read_to_end(&mut buf).unwrap();
++            return serde_json::from_slice(&buf).unwrap();
++        }
++    }
++    panic!("db_dump.json not in archive");
++}
++
++#[tokio::test]
++async fn test_backup_archive_is_0600() {
++    let _root = TempDir::new();
++    let mut sc = SecureClient::new(build_state(_root.path()).await);
++    sc.http.login("admin", "admin1234").await;
++    sc.handshake().await;
++    let (status, body) = sc
++        .call("POST", "/api/admin/backup/create", Some(&json!({ "include_user_data": false })))
++        .await;
++    assert_eq!(status, StatusCode::CREATED, "{body:?}");
++    let name = body.as_ref().unwrap()["name"].as_str().unwrap().to_string();
++    let mode = std::fs::metadata(backup_path(&sc, &name))
++        .unwrap()
++        .permissions()
++        .mode()
++        & 0o777;
++    assert_eq!(mode, 0o600);
++}
++
++#[tokio::test]
++async fn test_backup_dump_excludes_auth_tokens() {
++    let _root = TempDir::new();
++    let mut sc = SecureClient::new(build_state(_root.path()).await);
++    // A live login leaves an auth_tokens row in the configuration DB.
++    sc.http.login("admin", "admin1234").await;
++    sc.handshake().await;
++    let (status, body) = sc
++        .call("POST", "/api/admin/backup/create", Some(&json!({ "include_user_data": false })))
++        .await;
++    assert_eq!(status, StatusCode::CREATED, "{body:?}");
++    let name = body.as_ref().unwrap()["name"].as_str().unwrap().to_string();
++    let dump = read_dump_from_archive(&std::fs::read(backup_path(&sc, &name)).unwrap());
++    let tables = dump["tables"].as_object().expect("tables object");
++    // Live session tokens are excluded from the snapshot ...
++    assert!(!tables.contains_key("auth_tokens"), "{tables:?}");
++    // ... while the rest of the schema (including users) is preserved.
++    assert!(tables.contains_key("users"));
++    // The in-archive dump itself is owner-only too.
++    let mut gz = flate2::read::GzDecoder::new(std::io::Cursor::new(
++        std::fs::read(backup_path(&sc, &name)).unwrap(),
++    ));
++    let mut archive = tar::Archive::new(&mut gz);
++    for entry in archive.entries().unwrap() {
++        let mut entry = entry.unwrap();
++        if entry.path().unwrap().file_name().unwrap() == "db_dump.json" {
++            let mode = entry.header().entry_mode().unwrap_or(0) & 0o777;
++            assert_eq!(mode, 0o600);
++        }
++    }
++}
++
++#[tokio::test]
++async fn test_db_dump_restore_preserves_live_auth_tokens() {
++    let _root = TempDir::new();
++    let mut sc = SecureClient::new(build_state(_root.path()).await);
++    sc.http.login("admin", "admin1234").await;
++    // The login persisted an auth_tokens row.
++    let token_rows =
++        vreckan::entities::auth_token::Entity::find()
++            .all(&sc.state.db.conn)
++            .await
++            .unwrap();
++    assert!(!token_rows.is_empty());
++    // Round-trip a dump: the new-style dump excludes auth_tokens, and the
++    // restore must leave the live token rows untouched.
++    let dump_path = sc.state.settings.data_root.clone() + "/dump_roundtrip.json";
++    sc.state.db.dump(&dump_path).await.unwrap();
++    let before = vreckan::entities::auth_token::Entity::find()
++        .all(&sc.state.db.conn)
++        .await
++        .unwrap()
++        .len();
++    sc.state.db.restore(&dump_path).await.unwrap();
++    let after = vreckan::entities::auth_token::Entity::find()
++        .all(&sc.state.db.conn)
++        .await
++        .unwrap();
++    assert_eq!(after.len(), before);
++    assert_eq!(
++        after.iter().map(|r| r.token.clone()).collect::<Vec<_>>(),
++        token_rows.iter().map(|r| r.token.clone()).collect::<Vec<_>>()
++    );
++    let _ = std::fs::remove_file(&dump_path);
++}

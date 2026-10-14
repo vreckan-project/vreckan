@@ -447,4 +447,4 @@ impl Drop for TempDir {
 }
 
 // Re-export for convenience in test files.
-pub use rand::RngCore;
+pub use rand::Rng;
