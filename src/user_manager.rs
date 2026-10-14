@@ -111,6 +111,9 @@ pub struct UserRecord {
     pub settings: Option<serde_json::Value>,
     /// argon2id hash of the web-login password (None if unset).
     pub password_hash: Option<String>,
+    /// True while the account still carries its initial (bootstrap)
+    /// password; cleared by any explicit password change.
+    pub must_change_password: bool,
     /// Provider (IdP) groups the SSO user belongs to.
     pub sso_groups: Vec<String>,
     /// Roles assigned directly to the user.
@@ -286,6 +289,7 @@ pub struct UserFields {
     pub is_sso: Option<bool>,
     pub settings: Option<serde_json::Value>,
     pub password_hash: Option<String>,
+    pub must_change_password: Option<bool>,
     pub sso_groups: Option<Vec<String>>,
     pub roles: Option<Vec<String>>,
     pub permissions: Option<Vec<String>>,
@@ -314,6 +318,7 @@ pub async fn db_save_user_row(
             is_sso: ActiveValue::NotSet,
             settings: ActiveValue::NotSet,
             password_hash: ActiveValue::NotSet,
+            must_change_password: ActiveValue::NotSet,
             sso_groups: ActiveValue::NotSet,
             roles: ActiveValue::NotSet,
             permissions: ActiveValue::NotSet,
@@ -331,6 +336,9 @@ pub async fn db_save_user_row(
     }
     if let Some(v) = &fields.password_hash {
         am.password_hash = ActiveValue::Set(Some(v.clone()));
+    }
+    if let Some(v) = fields.must_change_password {
+        am.must_change_password = ActiveValue::Set(v);
     }
     if let Some(v) = &fields.sso_groups {
         am.sso_groups = ActiveValue::Set(Some(serde_json::to_value(v).unwrap_or_default()));
@@ -353,6 +361,7 @@ pub async fn db_save_user_row(
         || fields.is_sso.is_some()
         || fields.settings.is_some()
         || fields.password_hash.is_some()
+        || fields.must_change_password.is_some()
         || fields.sso_groups.is_some()
         || fields.roles.is_some()
         || fields.permissions.is_some()
@@ -366,6 +375,7 @@ pub async fn db_save_user_row(
                         entities::user::Column::IsSso,
                         entities::user::Column::Settings,
                         entities::user::Column::PasswordHash,
+                        entities::user::Column::MustChangePassword,
                         entities::user::Column::SsoGroups,
                         entities::user::Column::Roles,
                         entities::user::Column::Permissions,
@@ -396,6 +406,7 @@ async fn db_delete_user_row(conn: &DatabaseConnection, username: &str) -> Result
         is_sso: ActiveValue::NotSet,
         settings: ActiveValue::NotSet,
         password_hash: ActiveValue::NotSet,
+        must_change_password: ActiveValue::NotSet,
         sso_groups: ActiveValue::NotSet,
         roles: ActiveValue::NotSet,
         permissions: ActiveValue::NotSet,
@@ -478,6 +489,7 @@ async fn db_set_password(
             is_sso: ActiveValue::NotSet,
             settings: ActiveValue::NotSet,
             password_hash: ActiveValue::NotSet,
+            must_change_password: ActiveValue::NotSet,
             sso_groups: ActiveValue::NotSet,
             roles: ActiveValue::NotSet,
             permissions: ActiveValue::NotSet,
@@ -485,6 +497,11 @@ async fn db_set_password(
         },
     };
     am.password_hash = ActiveValue::Set(password_hash.map(String::from));
+    // A freshly set password is no longer the bootstrap default: clear the
+    // must-change flag (a cleared password leaves the flag untouched).
+    if password_hash.is_some() {
+        am.must_change_password = ActiveValue::Set(false);
+    }
 
     let backend = conn.get_database_backend();
     let stmt = entities::user::Entity::insert(am)
@@ -495,6 +512,7 @@ async fn db_set_password(
                     entities::user::Column::IsSso,
                     entities::user::Column::Settings,
                     entities::user::Column::PasswordHash,
+                    entities::user::Column::MustChangePassword,
                     entities::user::Column::SsoGroups,
                     entities::user::Column::Roles,
                     entities::user::Column::Permissions,
@@ -574,11 +592,16 @@ async fn role_permissions(
     Ok(role.map(|r| json_str_list(Some(r.permissions))).unwrap_or_default())
 }
 
+/// The well-known default bootstrap password (the code default of
+/// `bootstrap_admin_password`).
+pub const DEFAULT_BOOTSTRAP_PASSWORD: &str = "admin1234";
+
 /// Bootstrap a default admin account in the database on first run.
 ///
-/// The default admin is seeded with a well-known bootstrap password which is
-/// logged once at first run; the admin is expected to change it after first
-/// login. No key material is generated — web login is password-based.
+/// The default admin is seeded with a bootstrap password and marked
+/// `must_change_password` so the client forces a change on first login. The
+/// log line names the username but deliberately avoids printing the password
+/// value (only the well-known default is named, since it is public knowledge).
 pub async fn generate_default_admin(db: &Db, settings: &Settings) -> Result<(), DbErr> {
     let conn = &db.conn;
     // If any admin already exists, do nothing.
@@ -596,7 +619,7 @@ pub async fn generate_default_admin(db: &Db, settings: &Settings) -> Result<(), 
         settings.bootstrap_admin_username.clone()
     };
     let bootstrap_password = if settings.bootstrap_admin_password.is_empty() {
-        "admin1234".to_string()
+        DEFAULT_BOOTSTRAP_PASSWORD.to_string()
     } else {
         settings.bootstrap_admin_password.clone()
     };
@@ -611,6 +634,9 @@ pub async fn generate_default_admin(db: &Db, settings: &Settings) -> Result<(), 
         is_sso: ActiveValue::NotSet,
         settings: ActiveValue::Set(None),
         password_hash: ActiveValue::Set(Some(password_hash)),
+        // The account starts with its initial password: force a change on
+        // first login.
+        must_change_password: ActiveValue::Set(true),
         sso_groups: ActiveValue::NotSet,
         roles: ActiveValue::NotSet,
         permissions: ActiveValue::NotSet,
@@ -624,10 +650,17 @@ pub async fn generate_default_admin(db: &Db, settings: &Settings) -> Result<(), 
     db.set_app_setting("VRECKAN_BOOTSTRAP_ADMIN_USERNAME", &admin_username)
         .await?;
 
-    warn!(
-        "No admin users found. Created default '{}' admin with bootstrap password '{}' — change it after first login.",
-        admin_username, bootstrap_password
-    );
+    if bootstrap_password == DEFAULT_BOOTSTRAP_PASSWORD {
+        warn!(
+            "No admin users found. Created default '{}' admin with the well-known default bootstrap password '{}' — change it after first login.",
+            admin_username, DEFAULT_BOOTSTRAP_PASSWORD
+        );
+    } else {
+        warn!(
+            "No admin users found. Created default '{}' admin with a configured bootstrap password — change it after first login.",
+            admin_username
+        );
+    }
     Ok(())
 }
 
@@ -837,6 +870,7 @@ fn model_to_user_record(m: entities::user::Model) -> UserRecord {
         is_sso: m.is_sso,
         settings: m.settings,
         password_hash: m.password_hash,
+        must_change_password: m.must_change_password,
         sso_groups: json_str_list(m.sso_groups),
         roles: json_str_list(m.roles),
         permissions: json_str_list(m.permissions),

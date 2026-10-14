@@ -89,6 +89,7 @@ COLUMNS: Dict[str, List[Tuple[str, str]]] = {
         ("is_sso", "bool"),
         ("settings", "json"),
         ("password_hash", "text"),
+        ("must_change_password", "bool"),
         ("sso_groups", "json"),
         ("roles", "json"),
         ("permissions", "json"),
@@ -196,9 +197,61 @@ def q(ident: str) -> str:
     return '"' + ident.replace('"', '""') + '"'
 
 
+# ``DEFAULT`` literals for non-nullable columns that carry an entity default
+# (mirrors the ``#[sea_orm(default_value = ...)]`` attributes in
+# ``src/entities.rs``). A source row omits a column when the source database
+# predates it (e.g. a pre-v0.6.1 SQLite database has no
+# ``users.must_change_password``); the INSERT then leaves the column out and
+# the target column must fall back to this default instead of tripping the
+# NOT NULL constraint.
+COLUMN_DEFAULTS: Dict[str, Dict[str, str]] = {
+    "users": {
+        "is_admin": "FALSE",
+        "is_sso": "FALSE",
+        "must_change_password": "FALSE",
+    },
+    "groups": {
+        "settings": "'{}'::jsonb",
+    },
+    "roles": {
+        "description": "''",
+        "permissions": "'[]'::jsonb",
+        "is_builtin": "FALSE",
+    },
+    "volume_mounts": {
+        "host_path": "''",
+        "container_path": "''",
+        "read_only": "FALSE",
+        "scope": "'none'",
+        "target": "''",
+    },
+    "app_templates": {
+        "settings": "'{}'::jsonb",
+    },
+    "template_schema_settings": {
+        "sort_order": "0",
+        "label": "''",
+        "description": "''",
+        "category": "'general'",
+        "type": "'text'",
+        "default": "''",
+        "docker": "FALSE",
+        "options": "'[]'::jsonb",
+    },
+    "pinned_behaviors": {
+        "created_at": "0.0",
+        "data": "'{}'::jsonb",
+    },
+    "app_settings": {
+        "value": "''",
+    },
+}
+
+
 def build_ddl(table: str) -> str:
     cols = COLUMNS[table]
     pk = PRIMARY_KEYS[table]
+    defaults = COLUMN_DEFAULTS.get(table, {})
     defs = []
     for col, kind in cols:
         d = f"{q(col)} {KIND_TO_PG[kind]}"
@@ -206,6 +259,8 @@ def build_ddl(table: str) -> str:
             d += " PRIMARY KEY"
         elif not _nullable(table, col, kind):
             d += " NOT NULL"
+            if col in defaults:
+                d += f" DEFAULT {defaults[col]}"
         defs.append(d)
     return f"CREATE TABLE IF NOT EXISTS {q(table)} ({', '.join(defs)})"
 

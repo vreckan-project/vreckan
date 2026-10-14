@@ -5,7 +5,7 @@
 
 mod common;
 
-use common::{build_state, SecureClient, TempDir};
+use common::{build_state, build_state_with, SecureClient, TempDir, TestClient};
 use serde_json::json;
 use vreckan::user_manager;
 
@@ -246,4 +246,96 @@ async fn test_admin_only_endpoint_rejects_regular_user() {
     sc.handshake().await;
     let (status, _) = sc.call("POST", "/api/admin/data", Some(&json!({}))).await;
     assert_eq!(status.as_u16(), 403);
+}
+
+// ---------------------------------------------------------------------------
+// P1-2: bootstrap admin must-change flag + default-password policy
+// ---------------------------------------------------------------------------
+
+#[tokio::test]
+async fn test_bootstrap_admin_flag_on_first_login() {
+    let _root = TempDir::new();
+    let mut tc = TestClient::new(build_state(_root.path()).await);
+    assert_eq!(tc.login("admin", "admin1234").await.status.as_u16(), 200);
+    let me = tc.get("/api/auth/me").await;
+    assert_eq!(me.status.as_u16(), 200);
+    assert_eq!(me.json()["must_change_password"], true);
+}
+
+#[tokio::test]
+async fn test_change_password_clears_must_change_flag() {
+    let _root = TempDir::new();
+    let mut tc = TestClient::new(build_state(_root.path()).await);
+    tc.login("admin", "admin1234").await;
+    let resp = tc
+        .post_json(
+            "/api/auth/change_password",
+            &json!({ "old_password": "admin1234", "new_password": "freshpass1" }),
+        )
+        .await;
+    assert_eq!(resp.status.as_u16(), 200);
+    let me = tc.get("/api/auth/me").await;
+    assert_eq!(me.status.as_u16(), 200);
+    assert_eq!(me.json()["must_change_password"], false);
+    // The changed password works on a fresh session too.
+    tc.post_json("/api/auth/logout", &json!({})).await;
+    tc.auth_cookie = None;
+    assert_eq!(tc.login("admin", "freshpass1").await.status.as_u16(), 200);
+}
+
+#[tokio::test]
+async fn test_default_password_policy_reject() {
+    let _root = TempDir::new();
+    let tc = TestClient::new(
+        build_state_with(_root.path(), |s| {
+            s.default_password_policy = "reject".to_string();
+        })
+        .await,
+    );
+    let resp = tc
+        .post_json(
+            "/api/auth/login",
+            &json!({ "username": "admin", "password": "admin1234" }),
+        )
+        .await;
+    assert_eq!(resp.status.as_u16(), 401);
+}
+
+#[tokio::test]
+async fn test_default_password_policy_allow() {
+    let _root = TempDir::new();
+    let tc = TestClient::new(
+        build_state_with(_root.path(), |s| {
+            s.default_password_policy = "allow".to_string();
+        })
+        .await,
+    );
+    let resp = tc
+        .post_json(
+            "/api/auth/login",
+            &json!({ "username": "admin", "password": "admin1234" }),
+        )
+        .await;
+    assert_eq!(resp.status.as_u16(), 200);
+}
+
+#[tokio::test]
+async fn test_custom_bootstrap_password_not_flagged_by_policy() {
+    // The policy only fires on the *literal* default password; a configured
+    // bootstrap password logs in with the must-change flag set but policy-warn
+    // semantics (200 under the default "warn" policy).
+    let _root = TempDir::new();
+    let tc = TestClient::new(
+        build_state_with(_root.path(), |s| {
+            s.bootstrap_admin_password = "seededpw123".to_string();
+        })
+        .await,
+    );
+    let resp = tc
+        .post_json(
+            "/api/auth/login",
+            &json!({ "username": "admin", "password": "seededpw123" }),
+        )
+        .await;
+    assert_eq!(resp.status.as_u16(), 200);
 }

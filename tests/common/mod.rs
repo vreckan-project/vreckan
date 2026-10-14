@@ -75,7 +75,17 @@ pub async fn connect_db(root: &std::path::Path) -> vreckan::db::Db {
 /// Build a fresh `AppState` for a test: throwaway dirs, fresh DB, bootstrap
 /// admin + roles seeded (mirrors the Python lifespan startup).
 pub async fn build_state(root: &std::path::Path) -> AppState {
-    let settings = test_settings(root);
+    build_state_with(root, |_| {}).await
+}
+
+/// Like `build_state`, but lets the test mutate the `Settings` before the
+/// state is built (e.g. to flip a policy flag).
+pub async fn build_state_with(
+    root: &std::path::Path,
+    mutate: impl FnOnce(&mut vreckan::settings::Settings),
+) -> AppState {
+    let mut settings = test_settings(root);
+    mutate(&mut settings);
     // Mirror the lifespan startup: create the persistent data directories
     // (storage, public storage, uploads, icons, home templates, ...).
     for p in [

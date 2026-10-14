@@ -44,7 +44,7 @@ cp .env.example .env</code></pre>
   <h2>3. Run it</h2>
   <p>The repository's <code>docker-compose.yml</code> runs the server with TLS on port 443, mounts a persistent <code>vreckan-data</code> volume, and connects to the Docker daemon. It uses the pre-built image by default:</p>
   <pre><code>docker compose up -d</code></pre>
-  <p>On first run the server creates a default <code>admin</code> account (bootstrap password <code>admin1234</code>, configurable via <code>VRECKAN_BOOTSTRAP_ADMIN_*</code>) and prints the credentials to the logs (<code>docker compose logs</code>). Change the password after your first login.</p>
+  <p>On first run the server creates a default <code>admin</code> account (bootstrap password <code>admin1234</code>, configurable via <code>VRECKAN_BOOTSTRAP_ADMIN_*</code>). The account is marked must-change-password, so the web client prompts you for a new password at first sign-in; the startup log (<code>docker compose logs</code>) names the username but only prints the well-known default password, not a configured one.</p>
   <p>Since v0.6.1 the server process runs <strong>non-root</strong> (no <code>privileged</code> container): it reaches the Docker daemon through the host's <code>docker</code> group, and a one-shot step in the compose file takes ownership of <code>vreckan-data</code> (UID/GID 1000) before first boot, so no manual <code>chown</code> is needed on fresh installs or when upgrading from v0.5.x.</p>
 
   <div class="callout tip">
