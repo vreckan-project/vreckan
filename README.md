@@ -132,9 +132,15 @@ same 13-table schema is created and migrated idempotently on every start).
 | `VRECKAN_DB_NAME` | Database name (postgres/mysql). | `vreckan` |
 | `VRECKAN_DB_PATH` | SQLite database file path. | `{data_root}/vreckan.db` |
 
-The default compose setup includes a `postgres:16` service; to use it set
-`VRECKAN_DB_BACKEND=postgres` and `VRECKAN_DB_HOST=postgres` in `.env`
-(see [docs/ops.md](./docs/ops.md)).
+The default compose setup points the server at the bundled `postgres:16`
+service out of the box (Postgres is the v0.6.0 deployment default; the
+bare-binary default remains SQLite; see [docs/ops.md](./docs/ops.md) §4).
+
+### Docker (app-container provider)
+
+| Environment Variable | Description | Default Value |
+| --- | --- | --- |
+| `VRECKAN_DOCKER_GROUP` | Name or GID of the host group that owns `/var/run/docker.sock`. Since v0.6.1 the server process runs non-root (UID/GID 1000) and reaches the host daemon through this group instead of `privileged: true`; the default compose also keeps the `devices: /dev/dri` + `group_add: 990, 44` GPU passthrough. Override the group only for daemons whose group is not named `docker` (see [docs/ops.md](./docs/ops.md) §6). | `docker` |
 
 ### Storage & paths
 
@@ -153,7 +159,7 @@ All persistent data lives under the data root (`VRECKAN_DATA_ROOT`, default `/da
 | `VRECKAN_APP_STORE_CACHE_PATH` | Path to cache app store YAML files. | `/data/app_stores_cache` |
 | `VRECKAN_BACKUPS_PATH` | Directory for backup archives. | `/data/backups` |
 | `VRECKAN_BACKUP_RETENTION` | Number of backup archives to keep; 0 keeps all. | `0` |
-| `VRECKAN_PUID` | Default User ID to run containers as. | `1000` |
+| `VRECKAN_PUID` | Default User ID to run containers as. The server's own process also runs as UID/GID 1000 (non-root since v0.6.1), so server-created and container-owned files under `/data` share ownership. | `1000` |
 | `VRECKAN_PGID` | Default Group ID to run containers as. | `1000` |
 
 ### Authentication & sessions

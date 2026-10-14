@@ -45,6 +45,7 @@ cp .env.example .env</code></pre>
   <p>The repository's <code>docker-compose.yml</code> runs the server with TLS on port 443, mounts a persistent <code>vreckan-data</code> volume, and connects to the Docker daemon. It uses the pre-built image by default:</p>
   <pre><code>docker compose up -d</code></pre>
   <p>On first run the server creates a default <code>admin</code> account (bootstrap password <code>admin1234</code>, configurable via <code>VRECKAN_BOOTSTRAP_ADMIN_*</code>) and prints the credentials to the logs (<code>docker compose logs</code>). Change the password after your first login.</p>
+  <p>Since v0.6.1 the server process runs <strong>non-root</strong> (no <code>privileged</code> container): it reaches the Docker daemon through the host's <code>docker</code> group, and a one-shot step in the compose file takes ownership of <code>vreckan-data</code> (UID/GID 1000) before first boot, so no manual <code>chown</code> is needed on fresh installs or when upgrading from v0.5.x.</p>
 
   <div class="callout tip">
     <strong>Prefer to build from source?</strong> Swap the <code>image:</code> line in <code>docker-compose.yml</code> for a <code>build: .</code> directive (the bundled <code>Dockerfile</code>), or build manually: <code>docker build -t vreckan .</code>
