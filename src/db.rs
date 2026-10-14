@@ -169,10 +169,19 @@ impl Db {
     ///
     /// The format is `{"version": 1, "tables": {"users": [ {...}, ... ], ...}}`
     /// which lets the same backup be restored onto SQLite, Postgres, or MySQL.
+    ///
+    /// The `auth_tokens` table is excluded: its rows are live session tokens
+    /// held as the plaintext primary key, and active tokens are intentionally
+    /// not part of a backup (a restore leaves in-flight sessions untouched).
+    /// The dump file is written `0600` (owner read/write only) because
+    /// `users.password_hash` is included.
     pub async fn dump(&self, dest_path: &str) -> Result<(), sea_orm::DbErr> {
         let backend = self.conn.get_database_backend();
         let mut tables = serde_json::Map::new();
         for table in TABLE_ORDER {
+            if table == "auth_tokens" {
+                continue;
+            }
             let rows = self
                 .conn
                 .query_all_raw(Statement::from_string(backend, &format!("SELECT * FROM {table}")))
@@ -186,6 +195,10 @@ impl Db {
         let data = serde_json::json!({ "version": 1, "tables": tables });
         std::fs::write(dest_path, data.to_string())
             .map_err(|e| sea_orm::DbErr::Custom(e.to_string()))?;
+        let _ = std::fs::set_permissions(
+            dest_path,
+            std::os::unix::fs::PermissionsExt::from_mode(0o600),
+        );
         info!("Wrote configuration database snapshot to {dest_path}");
         Ok(())
     }
@@ -205,6 +218,13 @@ impl Db {
         let backend = self.conn.get_database_backend();
         let txn = self.conn.begin().await?;
         for table in TABLE_ORDER {
+            let has_entry = tables.get(table).is_some();
+            // New-style dumps exclude `auth_tokens` (live session tokens); a
+            // missing entry means the live token table must be left untouched.
+            // Older dumps always carry the key, restoring the snapshot as-is.
+            if table == "auth_tokens" && !has_entry {
+                continue;
+            }
             txn.execute_raw(Statement::from_string(backend, &format!("DELETE FROM {table}")))
                 .await?;
             if let Some(rows) = tables.get(table).and_then(|v| v.as_array()) {

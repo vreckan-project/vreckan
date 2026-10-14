@@ -165,7 +165,7 @@ All persistent data lives under the data root (`VRECKAN_DATA_ROOT`, default `/da
 | `VRECKAN_AUTOSTART_CACHE_PATH` | Path to cache autostart scripts. | `/data/autostart_cache` |
 | `VRECKAN_APP_STORE_CACHE_PATH` | Path to cache app store YAML files. | `/data/app_stores_cache` |
 | `VRECKAN_BACKUPS_PATH` | Directory for backup archives. | `/data/backups` |
-| `VRECKAN_BACKUP_RETENTION` | Number of backup archives to keep; 0 keeps all. | `0` |
+| `VRECKAN_BACKUP_RETENTION` | Number of backup archives to keep; 0 keeps all. Archives are written `0600` (owner read/write). | `7` |
 | `VRECKAN_PUID` | Default User ID to run containers as. The server's own process also runs as UID/GID 1000 (non-root since v0.6.1), so server-created and container-owned files under `/data` share ownership. | `1000` |
 | `VRECKAN_PGID` | Default Group ID to run containers as. | `1000` |
 

@@ -50,6 +50,7 @@ from __future__ import annotations
 
 import argparse
 import os
+import re
 import sqlite3
 import sys
 from typing import Any, Dict, List, Optional, Tuple
@@ -280,6 +281,19 @@ def _nullable(table: str, col: str, kind: str) -> bool:
 # ---------------------------------------------------------------------------
 # Conversion helpers
 # ---------------------------------------------------------------------------
+_DSN_USERINFO_RE = re.compile(r"//[^@/]+@")
+
+
+def mask_dsn(dsn: str) -> str:
+    """Mask the ``user:pass`` userinfo in a DSN's netloc for logging.
+
+    Replaces only the userinfo component (``//user:pass@``) so the host,
+    port, and database name stay readable: ``postgres://user:pass@h:5432/db``
+    becomes ``postgres://***:***@h:5432/db``.
+    """
+    return _DSN_USERINFO_RE.sub("//***:***@", dsn, count=1) if "@" in dsn else dsn
+
+
 def convert_cell(kind: str, value: Any) -> Any:
     """Map a SQLite cell onto the Postgres parameter type for a column kind."""
     if value is None:
@@ -358,8 +372,7 @@ def run(args: argparse.Namespace) -> int:
 
     print(f"Source SQLite : {sqlite_path}")
     if pg_dsn:
-        shown = pg_dsn.replace("://", "://***:***@", 1) if "://" in pg_dsn else pg_dsn
-        print(f"Target Postgres: {shown}")
+        print(f"Target Postgres: {mask_dsn(pg_dsn)}")
 
     sq = sqlite3.connect(sqlite_path)
     sq.row_factory = None
@@ -391,7 +404,12 @@ def run(args: argparse.Namespace) -> int:
             print(build_ddl(table) + ";")
         return 0
 
-    pg = psycopg2.connect(pg_dsn)
+    try:
+        pg = psycopg2.connect(pg_dsn)
+    except Exception as exc:  # noqa: BLE001 - scrub the DSN, then re-raise
+        # psycopg2's error message (and therefore the traceback) can contain
+        # the full DSN including the password; re-raise with the masked form.
+        raise type(exc)(str(exc).replace(pg_dsn, mask_dsn(pg_dsn))) from exc
     pg.autocommit = False
     try:
         cur = pg.cursor()

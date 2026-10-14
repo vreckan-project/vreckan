@@ -222,6 +222,13 @@ pub async fn create_backup(
         }
         let file = std::fs::File::create(&path)
             .map_err(|e| BackupError(format!("Could not create backup file: {e}")))?;
+        // The archive contains a configuration-database dump (password
+        // hashes) and SSL material: owner read/write only, created by the
+        // runtime (non-root) user.
+        let _ = std::fs::set_permissions(
+            &path,
+            std::os::unix::fs::PermissionsExt::from_mode(0o600),
+        );
         let mut gz = GzEncoder::new(file, Compression::default());
         let mut builder = Builder::new(&mut gz);
         for (abs_path, arcname) in &entries {
