@@ -350,6 +350,12 @@ async fn test_ensure_acme_cert_force_reissues_valid() {
     let result = le::ensure_acme_cert(&cfg, true).await;
     assert_eq!(result["issued"], true);
     assert_eq!(fake.calls().len(), 1);
+    // A successful (re)issue surfaces its human-readable `logs` in the result.
+    assert_eq!(
+        result["logs"],
+        json!("fake acmex: issued"),
+        "issued run should surface logs"
+    );
 }
 
 #[tokio::test]
@@ -377,6 +383,8 @@ async fn test_ensure_acme_cert_acmex_error() {
         .as_str()
         .unwrap()
         .contains("DNS challenge timed out"));
+    // Even on failure the issuer's logs are surfaced, alongside the error.
+    assert_eq!(result["logs"], json!("fake acmex: failed"), "failed run should still surface logs");
 }
 
 #[tokio::test]
@@ -427,6 +435,12 @@ async fn test_renew_acme_cert_due_and_renews() {
     assert_eq!(result["due"], true);
     assert_eq!(result["renewed"], true);
     assert_eq!(fake.calls().len(), 1);
+    // A renewal also surfaces its `logs` in the returned status.
+    assert_eq!(
+        result["logs"],
+        json!("fake acmex: issued"),
+        "renew run should surface logs"
+    );
 }
 
 #[tokio::test]
