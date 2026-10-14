@@ -78,8 +78,14 @@ services:
       POSTGRES_USER: ${VRECKAN_DB_USER:-vreckan}
       POSTGRES_PASSWORD: ${VRECKAN_DB_PASS:-vreckan}
       POSTGRES_DB: ${VRECKAN_DB_NAME:-vreckan}
+    # P2-6 (ANT-90): published on the host loopback interface only by
+    # default (was: every interface in v0.6.0). The server reaches the
+    # database over the internal compose network, so no host publication
+    # is required. Set VRECKAN_POSTGRES_PORT=5432 to publish on every
+    # interface, or comment out the ports entry to disable host
+    # publication entirely.
     ports:
-      - "5432:5432"
+      - "${VRECKAN_POSTGRES_PORT:-127.0.0.1:5432}:5432"
     volumes:
       - ./vreckan-postgres-data:/var/lib/postgresql/data
     healthcheck:

@@ -28,6 +28,30 @@ async fn main() -> anyhow::Result<()> {
         .init();
 
     let settings = Settings::from_env();
+
+    // P2-6 (ANT-90): guard against the bundled Postgres' default vreckan/
+    // vreckan credentials before connecting (see `uses_default_postgres_creds`
+    // and `default_db_creds_policy`). Runs before any DB/schema work so a
+    // `Refuse` policy fails fast on the startup path.
+    if settings.uses_default_postgres_creds() {
+        match vreckan::settings::default_db_creds_policy() {
+            vreckan::settings::DefaultDbCredsPolicy::Silent => {}
+            vreckan::settings::DefaultDbCredsPolicy::Warn => tracing::warn!(
+                "using the bundled Postgres default credentials vreckan/vreckan; \
+                 set VRECKAN_DB_PASS (or VRECKAN_DATABASE_URL) to change them, or \
+                 VRECKAN_ALLOW_DEFAULT_DB_CREDS=1 to silence this (ANT-45 P2-6)"
+            ),
+            vreckan::settings::DefaultDbCredsPolicy::Refuse => {
+                return Err(anyhow::anyhow!(
+                    "the server is using the bundled Postgres default credentials \
+                     (vreckan/vreckan) and VRECKAN_ALLOW_DEFAULT_DB_CREDS=refuse \
+                     is set; set a real password, or set \
+                     VRECKAN_ALLOW_DEFAULT_DB_CREDS=1 to start anyway (ANT-45 P2-6)"
+                ))
+            }
+        }
+    }
+
     ensure_data_dirs(&settings);
 
     // Load (or generate on first run) the E2EE server RSA key. Mirrors the

@@ -38,7 +38,9 @@ Key properties of the default `docker-compose.yml`:
 | `env_file: .env` | — | `VRECKAN_*` configuration (see the [README](../README.md) configuration tables and `.env.example`) |
 
 The **`postgres:16`** service is included in the compose file and is the
-v0.6.0 default database (see §4).
+v0.6.0 default database (see §4); since v0.6.1 its host port is published
+on loopback only (`127.0.0.1:5432`) instead of every interface (ANT-90,
+P2-6).
 
 The server binds `0.0.0.0:$VRECKAN_API_PORT` (default **443**) with TLS
 (rustls/ring) and serves the API, web client, and session proxy on that
@@ -179,6 +181,21 @@ use this compose file is unchanged. To use your own Postgres (or to fall back
 to SQLite) set `VRECKAN_DATABASE_URL` in `.env` — the `${VAR:-default}` form
 keeps `.env` as the override source while Postgres is the out-of-the-box
 default.
+
+**Host exposure (v0.6.1, ANT-90 P2-6).** The bundled service is no longer
+published on every host interface: its `ports` entry defaults to
+`${VRECKAN_POSTGRES_PORT:-127.0.0.1:5432}:5432`, i.e. host loopback only. The
+server reaches the database over the internal compose network either way. Set
+`VRECKAN_POSTGRES_PORT=5432` in `.env` to publish on every interface again, or
+comment out the `ports` entry to disable host publication entirely. The
+default `vreckan`/`vreckan` credentials still apply unless overridden
+(`VRECKAN_DB_USER`/`VRECKAN_DB_PASS`); since v0.6.1 the server reacts to
+starting against those defaults (ANT-45, P2-6). By default it logs a prominent
+warning; the `VRECKAN_ALLOW_DEFAULT_DB_CREDS` escape hatch selects the
+behaviour — unset/empty warns, `1`/`true` silences the warning once the
+defaults are knowingly accepted, and `refuse`/`strict`/`fail` stops the server
+from starting. The guard only fires when the *resolved* database URL actually
+carries the default `vreckan`/`vreckan` credentials.
 
 ### 4.1 Cutting over an existing SQLite deployment
 
