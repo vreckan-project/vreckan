@@ -971,7 +971,7 @@ async fn get_certificates(
     for name in ACME_SETTING_FIELDS {
         sources.insert((*name).to_string(), Value::String(setting_source(&state, name).await));
     }
-    let status = crate::le::cert_status(&domains);
+    let status = crate::le::cert_status(&state, &domains).await;
     let value = serde_json::json!({
         "values": values,
         "sources": Value::Object(sources),
@@ -1125,7 +1125,7 @@ async fn renew_certificates(
     // short-circuit that previously made the button appear to do nothing.
     // The returned object carries `issued`/`renewed` plus human-readable
     // `logs`/`error` so the UI can explain what happened.
-    let result = crate::le::ensure_acme_cert(&cfg, true).await;
+    let result = crate::le::ensure_acme_cert(&state, &cfg, true).await;
     let mut result = result;
     if let Some(obj) = result.as_object_mut() {
         let issued = obj.get("issued").and_then(|v| v.as_bool()).unwrap_or(false);

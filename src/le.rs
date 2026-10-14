@@ -8,8 +8,11 @@
 //! client** (`acme.rs`) — the only issuance backend (the legacy certbot
 //! Docker sidecar has been retired).
 //!
-//! Certificates live in the app's `/data/le` storage (the `live/{primary}/`
-//! layout shared with the retired certbot flow) and persist across restarts.
+//! The issued certificate (cert chain + private key + metadata) lives in the
+//! config **database** as the source of truth and persists across restarts; a
+//! best-effort mirror is also written to the app's `/data/le` storage (the
+//! `live/{primary}/` layout shared with the retired certbot flow) for
+//! backward compatibility.
 
 use std::sync::{Arc, Mutex};
 
@@ -228,32 +231,95 @@ fn cert_paths(domains: &[String]) -> Option<(String, String, String)> {
     None
 }
 
-/// Parse a PEM certificate and return its notAfter as a Unix timestamp
-/// (seconds), or `None` if it cannot be read/parsed. Mirrors `cert_expiry`.
-pub fn cert_expiry(cert_path: &str) -> Option<i64> {
-    let pem = std::fs::read(cert_path).ok()?;
-    let mut reader = std::io::Cursor::new(pem);
+/// Parse a PEM certificate (held in memory) and return its notAfter as a Unix
+/// timestamp (seconds), or `None` if it cannot be parsed.
+pub fn acme_cert_expiry_from_pem(pem: &str) -> Option<i64> {
+    let mut reader = std::io::Cursor::new(pem.as_bytes());
     let cert = rustls_pemfile::certs(&mut reader).next()?.ok()?;
     let x509 = x509_cert::Certificate::from_der(cert.as_ref()).ok()?;
     let not_after = x509.tbs_certificate().validity().not_after;
     Some(not_after.to_unix_duration().as_secs() as i64)
 }
 
-/// Describe the current certificate for the given domains. Mirrors
-/// `cert_status`.
-pub fn cert_status(domains: &[String]) -> Value {
-    let Some((cert, key, base)) = cert_paths(domains) else {
-        return serde_json::json!({
-            "present": false,
-            "source": null,
-            "cert": null,
-            "key": null,
-            "expiry": null,
-            "days_remaining": null,
-            "valid": false,
-        });
-    };
-    let exp = cert_expiry(&cert);
+/// Parse a PEM certificate on disk and return its notAfter as a Unix
+/// timestamp (seconds), or `None` if it cannot be read/parsed.
+pub fn cert_expiry(cert_path: &str) -> Option<i64> {
+    let pem = std::fs::read(cert_path).ok()?;
+    acme_cert_expiry_from_pem(&String::from_utf8_lossy(&pem))
+}
+
+/// A persisted ACME certificate record — the source of truth for the issued
+/// bundle, stored in the config database.
+#[derive(Clone, Debug)]
+pub struct AcmeCertRecord {
+    /// The full certificate chain PEM.
+    pub cert_pem: String,
+    /// The private key PEM.
+    pub key_pem: String,
+    /// The CA that issued the cert (`letsencrypt` / `zerossl` / `google`).
+    pub ca: String,
+    /// Comma-separated domains covered by the cert.
+    pub domains: String,
+    /// notAfter as a Unix timestamp (seconds), when parseable.
+    pub expires: Option<i64>,
+}
+
+/// Read the persisted ACME cert record from the config DB. Returns `None` when
+/// no certificate has been persisted yet. The DB is the source of truth.
+pub async fn acme_cert_record(state: &AppState) -> Option<AcmeCertRecord> {
+    let db = &state.db;
+    let cert_pem = db
+        .get_app_setting("VRECKAN_ACME_CERT_PEM")
+        .await
+        .ok()
+        .flatten()?;
+    if cert_pem.trim().is_empty() {
+        return None;
+    }
+    let key_pem = db
+        .get_app_setting("VRECKAN_ACME_KEY_PEM")
+        .await
+        .ok()
+        .flatten()
+        .unwrap_or_default();
+    let ca = db
+        .get_app_setting("VRECKAN_ACME_CERT_CA")
+        .await
+        .ok()
+        .flatten()
+        .unwrap_or_default();
+    let domains = db
+        .get_app_setting("VRECKAN_ACME_CERT_DOMAINS")
+        .await
+        .ok()
+        .flatten()
+        .unwrap_or_default();
+    let expires = db
+        .get_app_setting("VRECKAN_ACME_CERT_EXPIRES")
+        .await
+        .ok()
+        .flatten()
+        .and_then(|s| s.trim().parse::<i64>().ok());
+    Some(AcmeCertRecord { cert_pem, key_pem, ca, domains, expires })
+}
+
+/// Persist an ACME cert record to the config DB (the source of truth). Uses the
+/// existing `app_settings` store; a `None` expiry is stored as an empty string
+/// and read back as `None`.
+pub async fn acme_persist_cert(state: &AppState, rec: &AcmeCertRecord) {
+    let db = &state.db;
+    let _ = db.set_app_setting("VRECKAN_ACME_CERT_PEM", &rec.cert_pem).await;
+    let _ = db.set_app_setting("VRECKAN_ACME_KEY_PEM", &rec.key_pem).await;
+    let _ = db.set_app_setting("VRECKAN_ACME_CERT_CA", &rec.ca).await;
+    let _ = db.set_app_setting("VRECKAN_ACME_CERT_DOMAINS", &rec.domains).await;
+    let expires = rec.expires.map(|e| e.to_string()).unwrap_or_default();
+    let _ = db.set_app_setting("VRECKAN_ACME_CERT_EXPIRES", &expires).await;
+}
+
+/// Build the `cert_status` JSON body from a resolved expiry. `cert`/`key`
+/// carry either the PEM content (DB source) or the on-disk path (disk
+/// fallback); the `source` label tells the caller which.
+fn status_json(source: &str, cert: &str, key: &str, exp: Option<i64>) -> Value {
     let now = std::time::SystemTime::now()
         .duration_since(std::time::UNIX_EPOCH)
         .map(|d| d.as_secs() as i64)
@@ -262,7 +328,6 @@ pub fn cert_status(domains: &[String]) -> Value {
         Some(e) => (Some((e - now) / 86400), e > now),
         None => (None, false),
     };
-    let source = if base == host_cert_dir() { "host" } else { "app" };
     let expiry = exp.map(|e| {
         chrono::DateTime::from_timestamp(e, 0)
             .map(|dt| dt.to_rfc3339())
@@ -279,6 +344,35 @@ pub fn cert_status(domains: &[String]) -> Value {
     })
 }
 
+/// Describe the current certificate for the given domains. The config DB is
+/// the source of truth: a persisted record is returned first (cert / key as
+/// PEM content, `source` = `"acme_db"`). When nothing is persisted yet, the
+/// disk layout (`/etc/letsencrypt`, then `/data/le`) is used as a migration
+/// fallback (cert / key as on-disk paths, `source` = `"host"`/`"app"`).
+/// Mirrors `cert_status`.
+pub async fn cert_status(state: &AppState, domains: &[String]) -> Value {
+    if let Some(rec) = acme_cert_record(state).await {
+        if !rec.cert_pem.is_empty() {
+            return status_json("acme_db", &rec.cert_pem, &rec.key_pem, rec.expires);
+        }
+    }
+    match cert_paths(domains) {
+        Some((cert, key, base)) => {
+            let source = if base == host_cert_dir() { "host" } else { "app" };
+            status_json(source, &cert, &key, cert_expiry(&cert))
+        }
+        None => serde_json::json!({
+            "present": false,
+            "source": null,
+            "cert": null,
+            "key": null,
+            "expiry": null,
+            "days_remaining": null,
+            "valid": false,
+        }),
+    }
+}
+
 /// True when the cert should be renewed: it is present and expires within
 /// `renew_before_days` days (or is already expired). Mirrors `needs_renewal`.
 pub fn needs_renewal(days_remaining: Option<i64>, renew_before_days: i64) -> bool {
@@ -293,7 +387,7 @@ pub fn needs_renewal(days_remaining: Option<i64>, renew_before_days: i64) -> boo
 /// "Issue/Renew Now" button), a currently valid certificate is (re)issued
 /// anyway; otherwise a valid cert short-circuits and nothing happens (the
 /// original "button did nothing" complaint).
-pub async fn ensure_acme_cert(cfg: &AcmeConfig, force: bool) -> Value {
+pub async fn ensure_acme_cert(state: &AppState, cfg: &AcmeConfig, force: bool) -> Value {
     let domains: Vec<String> = cfg
         .acme_domains
         .split(',')
@@ -301,7 +395,7 @@ pub async fn ensure_acme_cert(cfg: &AcmeConfig, force: bool) -> Value {
         .filter(|d| !d.is_empty())
         .collect();
     if !cfg.acme_enabled {
-        let mut result = cert_status(&domains);
+        let mut result = cert_status(state, &domains).await;
         if let Some(obj) = result.as_object_mut() {
             obj.insert("issued".into(), Value::Bool(false));
             obj.insert("enabled".into(), Value::Bool(false));
@@ -310,14 +404,14 @@ pub async fn ensure_acme_cert(cfg: &AcmeConfig, force: bool) -> Value {
     }
     if domains.is_empty() {
         warn!("ACME enabled but no domains configured (acme_domains).");
-        let mut result = cert_status(&domains);
+        let mut result = cert_status(state, &domains).await;
         if let Some(obj) = result.as_object_mut() {
             obj.insert("issued".into(), Value::Bool(false));
             obj.insert("enabled".into(), Value::Bool(true));
         }
         return result;
     }
-    let status = cert_status(&domains);
+    let status = cert_status(state, &domains).await;
     if !force && status.get("valid").and_then(|v| v.as_bool()).unwrap_or(false) {
         info!(
             "ACME certificate valid until {} ({}d).",
@@ -331,12 +425,13 @@ pub async fn ensure_acme_cert(cfg: &AcmeConfig, force: bool) -> Value {
         }
         return result;
     }
-    run_acme_issue(cfg, &status).await
+    run_acme_issue(state, cfg, &status).await
 }
 
 /// Native acmex issuance: build the issue args (including the DNS provider
-/// registry), run the ACME order (or the test seam), and report the outcome.
-async fn run_acme_issue(cfg: &AcmeConfig, status: &Value) -> Value {
+/// registry), run the ACME order (or the test seam), persist the bundle to the
+/// config DB, and report the outcome.
+async fn run_acme_issue(state: &AppState, cfg: &AcmeConfig, status: &Value) -> Value {
     let domains: Vec<String> = cfg
         .acme_domains
         .split(',')
@@ -366,7 +461,24 @@ async fn run_acme_issue(cfg: &AcmeConfig, status: &Value) -> Value {
         Some(issuer) => issuer.issue(&args).await,
         None => crate::acme::issue_certificate(&args).await,
     };
-    let status = cert_status(&domains);
+    // Persist the issued bundle to the config DB (the source of truth) before
+    // re-reading the status, so the read-back reflects the new cert.
+    if r.ok {
+        if let (Some(cert_pem), Some(key_pem)) = (r.cert_pem.as_ref(), r.key_pem.as_ref()) {
+            acme_persist_cert(
+                state,
+                &AcmeCertRecord {
+                    cert_pem: cert_pem.clone(),
+                    key_pem: key_pem.clone(),
+                    ca: cfg.acme_ca.clone(),
+                    domains: cfg.acme_domains.clone(),
+                    expires: acme_cert_expiry_from_pem(cert_pem),
+                },
+            )
+            .await;
+        }
+    }
+    let status = cert_status(state, &domains).await;
     let mut result = status;
     if let Some(obj) = result.as_object_mut() {
         obj.insert("issued".into(), Value::Bool(r.ok));
@@ -382,7 +494,7 @@ async fn run_acme_issue(cfg: &AcmeConfig, status: &Value) -> Value {
 }
 
 /// Background renewal: renew the cert if it is within the renewal window.
-pub async fn renew_acme_cert(cfg: &AcmeConfig) -> Value {
+pub async fn renew_acme_cert(state: &AppState, cfg: &AcmeConfig) -> Value {
     let domains: Vec<String> = cfg
         .acme_domains
         .split(',')
@@ -390,7 +502,7 @@ pub async fn renew_acme_cert(cfg: &AcmeConfig) -> Value {
         .filter(|d| !d.is_empty())
         .collect();
     if !cfg.acme_enabled || domains.is_empty() {
-        let mut result = cert_status(&domains);
+        let mut result = cert_status(state, &domains).await;
         if let Some(obj) = result.as_object_mut() {
             obj.insert("renewed".into(), Value::Bool(false));
             obj.insert("due".into(), Value::Bool(false));
@@ -398,7 +510,7 @@ pub async fn renew_acme_cert(cfg: &AcmeConfig) -> Value {
         }
         return result;
     }
-    let status = cert_status(&domains);
+    let status = cert_status(state, &domains).await;
     let due = needs_renewal(
         status.get("days_remaining").and_then(|v| v.as_i64()),
         cfg.acme_renew_before_days,
@@ -412,12 +524,12 @@ pub async fn renew_acme_cert(cfg: &AcmeConfig) -> Value {
         }
         return result;
     }
-    run_acme_renew(cfg, &status).await
+    run_acme_renew(state, cfg, &status).await
 }
 
 /// Native acmex renewal: build the issue args and run the ACME order (or the
-/// test seam), reporting the outcome.
-async fn run_acme_renew(cfg: &AcmeConfig, status: &Value) -> Value {
+/// test seam), persist the bundle to the config DB, and report the outcome.
+async fn run_acme_renew(state: &AppState, cfg: &AcmeConfig, status: &Value) -> Value {
     let domains: Vec<String> = cfg
         .acme_domains
         .split(',')
@@ -448,7 +560,24 @@ async fn run_acme_renew(cfg: &AcmeConfig, status: &Value) -> Value {
         Some(issuer) => issuer.issue(&args).await,
         None => crate::acme::issue_certificate(&args).await,
     };
-    let status = cert_status(&domains);
+    // Persist the renewed bundle to the config DB (the source of truth) before
+    // re-reading the status, so the read-back reflects the renewed cert.
+    if r.ok {
+        if let (Some(cert_pem), Some(key_pem)) = (r.cert_pem.as_ref(), r.key_pem.as_ref()) {
+            acme_persist_cert(
+                state,
+                &AcmeCertRecord {
+                    cert_pem: cert_pem.clone(),
+                    key_pem: key_pem.clone(),
+                    ca: cfg.acme_ca.clone(),
+                    domains: cfg.acme_domains.clone(),
+                    expires: acme_cert_expiry_from_pem(cert_pem),
+                },
+            )
+            .await;
+        }
+    }
+    let status = cert_status(state, &domains).await;
     let mut result = status;
     if let Some(obj) = result.as_object_mut() {
         obj.insert("renewed".into(), Value::Bool(r.ok));
@@ -478,7 +607,7 @@ pub async fn background_acme_renewal_job(state: AppState) {
             tokio::time::sleep(std::time::Duration::from_secs(300)).await;
             continue;
         }
-        let result = renew_acme_cert(&cfg).await;
+        let result = renew_acme_cert(&state, &cfg).await;
         if result.get("due").and_then(|v| v.as_bool()).unwrap_or(false) {
             info!(
                 "ACME certificate renewal {} ({}d remaining).",

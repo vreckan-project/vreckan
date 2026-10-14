@@ -128,18 +128,25 @@ struct IssueCall {
 
 /// A scripted ACME issuer for tests: returns a fixed ok/error and records the
 /// args it was called with (so tests can assert on the CA / auth / provider /
-/// token selection). Replaces the legacy fake Docker client.
+/// token selection). Replaces the legacy fake Docker client. On success it
+/// returns a real self-signed cert/key PEM (generated once up front) so the
+/// DB persistence + read-back paths are exercised with parseable certs.
 struct FakeAcmeIssuer {
     ok: bool,
     error: Option<String>,
+    cert_pem: String,
+    key_pem: String,
     calls: Arc<Mutex<Vec<IssueCall>>>,
 }
 
 impl FakeAcmeIssuer {
     fn ok_issuer() -> Arc<Self> {
+        let (cert_pem, key_pem) = make_cert("example.com", 90);
         Arc::new(Self {
             ok: true,
             error: None,
+            cert_pem,
+            key_pem,
             calls: Arc::new(Mutex::new(Vec::new())),
         })
     }
@@ -147,6 +154,8 @@ impl FakeAcmeIssuer {
         Arc::new(Self {
             ok: false,
             error: Some(e.to_string()),
+            cert_pem: String::new(),
+            key_pem: String::new(),
             calls: Arc::new(Mutex::new(Vec::new())),
         })
     }
@@ -172,12 +181,16 @@ impl le::AcmeIssuer for FakeAcmeIssuer {
                 ok: true,
                 logs: "fake acmex: issued".to_string(),
                 error: None,
+                cert_pem: Some(self.cert_pem.clone()),
+                key_pem: Some(self.key_pem.clone()),
             }
         } else {
             vreckan::acme::AcmeIssueResult {
                 ok: false,
                 logs: "fake acmex: failed".to_string(),
                 error: self.error.clone(),
+                cert_pem: None,
+                key_pem: None,
             }
         }
     }
@@ -221,7 +234,8 @@ async fn test_needs_renewal() {
 #[tokio::test]
 async fn test_cert_status_absent() {
     let _paths = le_paths();
-    let status = le::cert_status(&["example.com".into()]);
+    let state = build_state(TempDir::new().path()).await;
+    let status = le::cert_status(&state, &["example.com".into()]).await;
     assert_eq!(status["present"], false);
     assert_eq!(status["valid"], false);
     assert!(status["days_remaining"].is_null());
@@ -231,7 +245,8 @@ async fn test_cert_status_absent() {
 async fn test_cert_status_present_valid() {
     let paths = le_paths();
     write_cert_tree(std::path::Path::new(&paths.app), "example.com", 90);
-    let status = le::cert_status(&["example.com".into()]);
+    let state = build_state(TempDir::new().path()).await;
+    let status = le::cert_status(&state, &["example.com".into()]).await;
     assert_eq!(status["present"], true);
     assert_eq!(status["source"], "app");
     assert_eq!(status["valid"], true);
@@ -244,7 +259,8 @@ async fn test_cert_status_present_valid() {
 async fn test_cert_status_expired() {
     let paths = le_paths();
     write_cert_tree(std::path::Path::new(&paths.app), "example.com", -5);
-    let status = le::cert_status(&["example.com".into()]);
+    let state = build_state(TempDir::new().path()).await;
+    let status = le::cert_status(&state, &["example.com".into()]).await;
     assert_eq!(status["present"], true);
     assert_eq!(status["valid"], false);
     assert!(status["days_remaining"].as_i64().expect("days") < 0);
@@ -256,7 +272,8 @@ async fn test_cert_status_host_preferred() {
     // A cert in both the host and app paths: the host one wins.
     write_cert_tree(std::path::Path::new(&paths.host), "example.com", 90);
     write_cert_tree(std::path::Path::new(&paths.app), "example.com", 90);
-    let status = le::cert_status(&["example.com".into()]);
+    let state = build_state(TempDir::new().path()).await;
+    let status = le::cert_status(&state, &["example.com".into()]).await;
     assert_eq!(status["source"], "host");
     assert!(status["cert"].as_str().unwrap().starts_with(&paths.host));
 }
@@ -286,14 +303,122 @@ async fn test_cert_expiry_missing_file() {
     assert!(le::cert_expiry(path.to_string_lossy().as_ref()).is_none());
 }
 
+// --- config DB persistence (source of truth) ---------------------------------
+#[tokio::test]
+async fn test_acme_cert_record_none_when_unset() {
+    let state = build_state(TempDir::new().path()).await;
+    assert!(le::acme_cert_record(&state).await.is_none());
+}
+
+#[tokio::test]
+async fn test_acme_persist_cert_round_trips() {
+    let state = build_state(TempDir::new().path()).await;
+    let (cert_pem, key_pem) = make_cert("example.com", 90);
+    le::acme_persist_cert(
+        &state,
+        &le::AcmeCertRecord {
+            cert_pem: cert_pem.clone(),
+            key_pem: key_pem.clone(),
+            ca: "letsencrypt".to_string(),
+            domains: "example.com,www.example.com".to_string(),
+            expires: Some(1234567890),
+        },
+    )
+    .await;
+    let rec = le::acme_cert_record(&state).await.expect("record persisted");
+    assert_eq!(rec.cert_pem, cert_pem);
+    assert_eq!(rec.key_pem, key_pem);
+    assert_eq!(rec.ca, "letsencrypt");
+    assert_eq!(rec.domains, "example.com,www.example.com");
+    assert_eq!(rec.expires, Some(1234567890));
+}
+
+#[tokio::test]
+async fn test_cert_status_reads_from_db() {
+    let _paths = le_paths();
+    let state = build_state(TempDir::new().path()).await;
+    let (cert_pem, key_pem) = make_cert("example.com", 90);
+    le::acme_persist_cert(
+        &state,
+        &le::AcmeCertRecord {
+            cert_pem: cert_pem.clone(),
+            key_pem: key_pem.clone(),
+            ca: "letsencrypt".to_string(),
+            domains: "example.com".to_string(),
+            expires: le::acme_cert_expiry_from_pem(&cert_pem),
+        },
+    )
+    .await;
+    let status = le::cert_status(&state, &["example.com".into()]).await;
+    // The DB is the source of truth: cert/key are returned as PEM content.
+    assert_eq!(status["present"], true);
+    assert_eq!(status["source"], "acme_db");
+    assert_eq!(status["cert"], cert_pem);
+    assert_eq!(status["key"], key_pem);
+    assert_eq!(status["valid"], true);
+    let days = status["days_remaining"].as_i64().expect("days_remaining");
+    assert!(80 <= days && days <= 90, "days={days}");
+    assert!(status["expiry"].is_string());
+}
+
+#[tokio::test]
+async fn test_cert_status_db_preferred_over_disk() {
+    let paths = le_paths();
+    // A (different) cert on disk, and a DIFFERENT cert persisted in the DB:
+    // the DB record must win.
+    write_cert_tree(std::path::Path::new(&paths.app), "example.com", 90);
+    let state = build_state(TempDir::new().path()).await;
+    let (db_cert, db_key) = make_cert("db.example.com", 60);
+    le::acme_persist_cert(
+        &state,
+        &le::AcmeCertRecord {
+            cert_pem: db_cert.clone(),
+            key_pem: db_key.clone(),
+            ca: "zerossl".to_string(),
+            domains: "db.example.com".to_string(),
+            expires: le::acme_cert_expiry_from_pem(&db_cert),
+        },
+    )
+    .await;
+    let status = le::cert_status(&state, &["example.com".into()]).await;
+    assert_eq!(status["source"], "acme_db");
+    assert_eq!(status["cert"], db_cert);
+    assert_eq!(status["key"], db_key);
+    assert_eq!(status["valid"], true);
+}
+
+#[tokio::test]
+async fn test_ensure_acme_cert_persists_bundle_to_db() {
+    let _paths = le_paths();
+    let state = build_state(TempDir::new().path()).await;
+    let cfg = default_cfg();
+    let fake = FakeAcmeIssuer::ok_issuer();
+    let _guard = IssuerGuard::new(fake.clone());
+    let result = le::ensure_acme_cert(&state, &cfg, false).await;
+    assert_eq!(result["issued"], true);
+    // The issued bundle is persisted to the config DB with full metadata.
+    let rec = le::acme_cert_record(&state).await.expect("record persisted");
+    assert_eq!(rec.cert_pem, fake.cert_pem);
+    assert_eq!(rec.key_pem, fake.key_pem);
+    assert_eq!(rec.ca, "letsencrypt");
+    assert_eq!(rec.domains, "example.com");
+    assert!(rec.expires.is_some(), "expiry persisted");
+    // And cert_status reads it back from the DB (not disk).
+    let status = le::cert_status(&state, &["example.com".into()]).await;
+    assert_eq!(status["source"], "acme_db");
+    assert_eq!(status["cert"], fake.cert_pem);
+    assert_eq!(status["key"], fake.key_pem);
+}
+
 // --- ensure_acme_cert (acmex path, fake issuer) ------------------------------
 #[tokio::test]
 async fn test_ensure_acme_cert_disabled() {
     let _paths = le_paths();
+    let state = build_state(TempDir::new().path()).await;
     let mut cfg = default_cfg();
     cfg.acme_enabled = false;
     let _guard = IssuerGuard::new(FakeAcmeIssuer::ok_issuer());
-    let result = le::ensure_acme_cert(&cfg, false).await;
+    let result = le::ensure_acme_cert(&state, &cfg, false).await;
     assert_eq!(result["enabled"], false);
     assert_eq!(result["issued"], false);
 }
@@ -301,10 +426,11 @@ async fn test_ensure_acme_cert_disabled() {
 #[tokio::test]
 async fn test_ensure_acme_cert_no_domains() {
     let _paths = le_paths();
+    let state = build_state(TempDir::new().path()).await;
     let mut cfg = default_cfg();
     cfg.acme_domains = "".to_string();
     let _guard = IssuerGuard::new(FakeAcmeIssuer::ok_issuer());
-    let result = le::ensure_acme_cert(&cfg, false).await;
+    let result = le::ensure_acme_cert(&state, &cfg, false).await;
     assert_eq!(result["enabled"], true);
     assert_eq!(result["issued"], false);
 }
@@ -312,10 +438,11 @@ async fn test_ensure_acme_cert_no_domains() {
 #[tokio::test]
 async fn test_ensure_acme_cert_issues_when_missing() {
     let _paths = le_paths();
+    let state = build_state(TempDir::new().path()).await;
     let cfg = default_cfg();
     let fake = FakeAcmeIssuer::ok_issuer();
     let _guard = IssuerGuard::new(fake.clone());
-    let result = le::ensure_acme_cert(&cfg, false).await;
+    let result = le::ensure_acme_cert(&state, &cfg, false).await;
     assert_eq!(result["enabled"], true);
     assert_eq!(result["issued"], true);
     // The issuer was invoked once, for the Cloudflare DNS-01 provider.
@@ -329,10 +456,11 @@ async fn test_ensure_acme_cert_issues_when_missing() {
 async fn test_ensure_acme_cert_skips_when_valid() {
     let paths = le_paths();
     write_cert_tree(std::path::Path::new(&paths.app), "example.com", 90);
+    let state = build_state(TempDir::new().path()).await;
     let cfg = default_cfg();
     let fake = FakeAcmeIssuer::ok_issuer();
     let _guard = IssuerGuard::new(fake.clone());
-    let result = le::ensure_acme_cert(&cfg, false).await;
+    let result = le::ensure_acme_cert(&state, &cfg, false).await;
     assert_eq!(result["issued"], false);
     // No issuance was needed (the cert is still valid).
     assert!(fake.calls().is_empty());
@@ -342,12 +470,13 @@ async fn test_ensure_acme_cert_skips_when_valid() {
 async fn test_ensure_acme_cert_force_reissues_valid() {
     let paths = le_paths();
     write_cert_tree(std::path::Path::new(&paths.app), "example.com", 90);
+    let state = build_state(TempDir::new().path()).await;
     let cfg = default_cfg();
     let fake = FakeAcmeIssuer::ok_issuer();
     let _guard = IssuerGuard::new(fake.clone());
     // `force` (the admin "Issue/Renew Now" button) bypasses the valid
     // short-circuit and re-issues even a currently-valid certificate.
-    let result = le::ensure_acme_cert(&cfg, true).await;
+    let result = le::ensure_acme_cert(&state, &cfg, true).await;
     assert_eq!(result["issued"], true);
     assert_eq!(fake.calls().len(), 1);
     // A successful (re)issue surfaces its human-readable `logs` in the result.
@@ -361,10 +490,11 @@ async fn test_ensure_acme_cert_force_reissues_valid() {
 #[tokio::test]
 async fn test_ensure_acme_cert_cloudflare_provider() {
     let _paths = le_paths();
+    let state = build_state(TempDir::new().path()).await;
     let cfg = default_cfg();
     let fake = FakeAcmeIssuer::ok_issuer();
     let _guard = IssuerGuard::new(fake.clone());
-    le::ensure_acme_cert(&cfg, false).await;
+    le::ensure_acme_cert(&state, &cfg, false).await;
     let call = &fake.calls()[0];
     // Cloudflare DNS-01 is the default provider; the token/email flow through.
     assert_eq!(call.provider, "cloudflare");
@@ -375,9 +505,10 @@ async fn test_ensure_acme_cert_cloudflare_provider() {
 #[tokio::test]
 async fn test_ensure_acme_cert_acmex_error() {
     let _paths = le_paths();
+    let state = build_state(TempDir::new().path()).await;
     let cfg = default_cfg();
     let _guard = IssuerGuard::new(FakeAcmeIssuer::failing("DNS challenge timed out"));
-    let result = le::ensure_acme_cert(&cfg, false).await;
+    let result = le::ensure_acme_cert(&state, &cfg, false).await;
     assert_eq!(result["issued"], false);
     assert!(result["error"]
         .as_str()
@@ -390,11 +521,12 @@ async fn test_ensure_acme_cert_acmex_error() {
 #[tokio::test]
 async fn test_ensure_acme_cert_zerossl_ca() {
     let _paths = le_paths();
+    let state = build_state(TempDir::new().path()).await;
     let mut cfg = default_cfg();
     cfg.acme_ca = "zerossl".to_string();
     let fake = FakeAcmeIssuer::ok_issuer();
     let _guard = IssuerGuard::new(fake.clone());
-    le::ensure_acme_cert(&cfg, false).await;
+    le::ensure_acme_cert(&state, &cfg, false).await;
     // The selected CA is passed through to the issuer.
     assert_eq!(fake.calls()[0].ca, "zerossl");
 }
@@ -402,11 +534,12 @@ async fn test_ensure_acme_cert_zerossl_ca() {
 #[tokio::test]
 async fn test_ensure_acme_cert_google_ca() {
     let _paths = le_paths();
+    let state = build_state(TempDir::new().path()).await;
     let mut cfg = default_cfg();
     cfg.acme_ca = "google".to_string();
     let fake = FakeAcmeIssuer::ok_issuer();
     let _guard = IssuerGuard::new(fake.clone());
-    le::ensure_acme_cert(&cfg, false).await;
+    le::ensure_acme_cert(&state, &cfg, false).await;
     assert_eq!(fake.calls()[0].ca, "google");
 }
 
@@ -415,10 +548,11 @@ async fn test_ensure_acme_cert_google_ca() {
 async fn test_renew_acme_cert_not_due() {
     let paths = le_paths();
     write_cert_tree(std::path::Path::new(&paths.app), "example.com", 90);
+    let state = build_state(TempDir::new().path()).await;
     let cfg = default_cfg();
     let fake = FakeAcmeIssuer::ok_issuer();
     let _guard = IssuerGuard::new(fake.clone());
-    let result = le::renew_acme_cert(&cfg).await;
+    let result = le::renew_acme_cert(&state, &cfg).await;
     assert_eq!(result["due"], false);
     assert_eq!(result["renewed"], false);
     assert!(fake.calls().is_empty());
@@ -428,10 +562,11 @@ async fn test_renew_acme_cert_not_due() {
 async fn test_renew_acme_cert_due_and_renews() {
     let paths = le_paths();
     write_cert_tree(std::path::Path::new(&paths.app), "example.com", 10);
+    let state = build_state(TempDir::new().path()).await;
     let cfg = default_cfg();
     let fake = FakeAcmeIssuer::ok_issuer();
     let _guard = IssuerGuard::new(fake.clone());
-    let result = le::renew_acme_cert(&cfg).await;
+    let result = le::renew_acme_cert(&state, &cfg).await;
     assert_eq!(result["due"], true);
     assert_eq!(result["renewed"], true);
     assert_eq!(fake.calls().len(), 1);
@@ -441,16 +576,21 @@ async fn test_renew_acme_cert_due_and_renews() {
         json!("fake acmex: issued"),
         "renew run should surface logs"
     );
+    // The renewed bundle is now persisted to the config DB (source of truth).
+    let rec = le::acme_cert_record(&state).await.expect("renewed record persisted");
+    assert_eq!(rec.cert_pem, fake.cert_pem);
+    assert!(rec.expires.is_some());
 }
 
 #[tokio::test]
 async fn test_renew_acme_cert_disabled() {
     let _paths = le_paths();
+    let state = build_state(TempDir::new().path()).await;
     let mut cfg = default_cfg();
     cfg.acme_enabled = false;
     let fake = FakeAcmeIssuer::ok_issuer();
     let _guard = IssuerGuard::new(fake.clone());
-    let result = le::renew_acme_cert(&cfg).await;
+    let result = le::renew_acme_cert(&state, &cfg).await;
     assert_eq!(result["due"], false);
     assert!(fake.calls().is_empty());
 }
@@ -459,9 +599,10 @@ async fn test_renew_acme_cert_disabled() {
 async fn test_renew_acme_cert_acmex_error() {
     let paths = le_paths();
     write_cert_tree(std::path::Path::new(&paths.app), "example.com", 10);
+    let state = build_state(TempDir::new().path()).await;
     let cfg = default_cfg();
     let _guard = IssuerGuard::new(FakeAcmeIssuer::failing("rate limited"));
-    let result = le::renew_acme_cert(&cfg).await;
+    let result = le::renew_acme_cert(&state, &cfg).await;
     assert_eq!(result["due"], true);
     assert_eq!(result["renewed"], false);
     assert!(result["error"].as_str().unwrap().contains("rate limited"));

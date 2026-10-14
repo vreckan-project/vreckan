@@ -3,10 +3,12 @@
 //!
 //! This replaces the legacy certbot sidecar container for issuance. It drives
 //! the ACME v2 protocol in-process: it registers (or reuses a persisted)
-//! account, creates an order, fulfils the challenge (DNS-01 by default, or
-//! HTTP-01), and writes the resulting certificate chain + key into the
-//! app's `/data/le` layout (`live/{primary}/cert.pem` + `privkey.pem`), so
-//! `le::cert_status` and `tls::select_cert` keep working unchanged.
+//! account, creates an order, and fulfils the challenge (DNS-01 by default, or
+//! HTTP-01). The resulting certificate chain + key are carried back to the
+//! caller in `AcmeIssueResult` so it can persist them to the config DB (the
+//! authoritative source of truth); they are also written as a best-effort
+//! mirror into the app's `/data/le` layout (`live/{primary}/cert.pem` +
+//! `privkey.pem`) for backward compatibility.
 //!
 //! DNS-01 is routed through a small provider registry so a user can choose
 //! any of the DNS providers acmex ships (Cloudflare is the default; Route53,
@@ -516,12 +518,21 @@ pub struct AcmeIssueResult {
     pub ok: bool,
     pub logs: String,
     pub error: Option<String>,
+    /// The issued certificate chain PEM (populated on success). Carried out of
+    /// the issuance path so the caller can persist it to the config DB — the
+    /// authoritative store (the on-disk write is a best-effort mirror).
+    pub cert_pem: Option<String>,
+    /// The issued private key PEM (populated on success).
+    pub key_pem: Option<String>,
 }
 
-/// Run a full ACME order: register/reuse the account, create the order,
-/// fulfil the chosen challenge, and write the resulting bundle into the
-/// certbot layout. Collects human-readable milestone `logs` so the result can
-/// be surfaced to the user (the original "button did nothing" complaint).
+/// Run a full ACME order: register/reuse the account, create the order, and
+/// fulfil the chosen challenge. On success the issued certificate chain and
+/// private key are carried back in the result (for the caller to persist to
+/// the config DB — the authoritative store) and also written as a best-effort
+/// on-disk mirror in the `/data/le` layout. Collects human-readable milestone
+/// `logs` so the result can be surfaced to the user (the original "button did
+/// nothing" complaint).
 pub async fn issue_certificate(args: &IssueArgs<'_>) -> AcmeIssueResult {
     let mut logs: Vec<String> = Vec::new();
     macro_rules! log {
@@ -538,7 +549,7 @@ pub async fn issue_certificate(args: &IssueArgs<'_>) -> AcmeIssueResult {
             k
         }
         Err(e) => {
-            return AcmeIssueResult { ok: false, logs: logs.join("\n"), error: Some(e) };
+            return AcmeIssueResult { ok: false, logs: logs.join("\n"), error: Some(e), cert_pem: None, key_pem: None };
         }
     };
 
@@ -556,6 +567,8 @@ pub async fn issue_certificate(args: &IssueArgs<'_>) -> AcmeIssueResult {
             ok: false,
             logs: logs.join("\n"),
             error: Some(format!("ACME account registration failed: {e}")),
+            cert_pem: None,
+            key_pem: None,
         };
     }
     log!("ACME account ready: {}", client.account_id().unwrap_or("?"));
@@ -574,30 +587,31 @@ pub async fn issue_certificate(args: &IssueArgs<'_>) -> AcmeIssueResult {
         .await
     {
         Ok(bundle) => {
+            // Capture the bundle in memory: the config DB is the authoritative
+            // store (persisted by the caller), so even if the on-disk mirror
+            // write fails below, issuance still succeeds.
+            let cert_pem = bundle.certificate_pem.clone();
+            let key_pem = bundle.private_key_pem.clone();
             let primary = args.domains.first().cloned().unwrap_or_default();
             let live = format!(
                 "{}/live/{primary}",
                 crate::le::app_cert_dir()
             );
-            if let Err(e) = std::fs::create_dir_all(&live) {
-                return AcmeIssueResult {
-                    ok: false,
-                    logs: logs.join("\n"),
-                    error: Some(format!("Failed to create cert dir {live}: {e}")),
-                };
+            // Best-effort on-disk mirror (backward compat with the certbot
+            // layout); the DB is authoritative, so a write failure is a
+            // warning, not an issuance failure.
+            if let Some(parent) = std::path::Path::new(&live).parent() {
+                let _ = std::fs::create_dir_all(parent);
             }
             let cert_path = format!("{live}/cert.pem");
             let key_path = format!("{live}/privkey.pem");
             if let Err(e) = bundle.save_to_files(&cert_path, &key_path) {
-                return AcmeIssueResult {
-                    ok: false,
-                    logs: logs.join("\n"),
-                    error: Some(format!("Failed to save certificate: {e}")),
-                };
+                warn!("best-effort cert mirror write failed (DB is authoritative): {e}");
+            } else {
+                log!("Certificate mirror written to {cert_path} (key {key_path}).");
             }
-            log!("Certificate saved to {cert_path} (key {key_path}).");
             log!("Issuance completed for {}.", args.domains.join(", "));
-            AcmeIssueResult { ok: true, logs: logs.join("\n"), error: None }
+            AcmeIssueResult { ok: true, logs: logs.join("\n"), error: None, cert_pem: Some(cert_pem), key_pem: Some(key_pem) }
         }
         Err(e) => {
             warn!("ACME issuance failed: {e}");
@@ -605,6 +619,8 @@ pub async fn issue_certificate(args: &IssueArgs<'_>) -> AcmeIssueResult {
                 ok: false,
                 logs: logs.join("\n"),
                 error: Some(e.to_string()),
+                cert_pem: None,
+                key_pem: None,
             }
         }
     }

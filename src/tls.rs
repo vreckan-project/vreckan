@@ -28,7 +28,7 @@ pub async fn select_cert(state: &AppState) -> Result<(Vec<u8>, Vec<u8>)> {
     // now present on disk.
     let cfg = le::effective_acme_config(state).await;
     if cfg.acme_enabled {
-        let issued = le::ensure_acme_cert(&cfg, false)
+        let issued = le::ensure_acme_cert(state, &cfg, false)
             .await
             .get("issued")
             .and_then(|v| v.as_bool())
@@ -39,19 +39,28 @@ pub async fn select_cert(state: &AppState) -> Result<(Vec<u8>, Vec<u8>)> {
             .map(|d| d.trim().to_string())
             .filter(|d| !d.is_empty())
             .collect();
-        let status = le::cert_status(&domains);
+        let status = le::cert_status(state, &domains).await;
         if status.get("present").and_then(|v| v.as_bool()).unwrap_or(false)
             && status.get("valid").and_then(|v| v.as_bool()).unwrap_or(false)
         {
+            let source = status.get("source").and_then(|v| v.as_str()).unwrap_or("");
             let cert = status.get("cert").and_then(|v| v.as_str()).unwrap_or("");
             let key = status.get("key").and_then(|v| v.as_str()).unwrap_or("");
             if !cert.is_empty() && !key.is_empty() {
+                // The config DB is the source of truth: for an `acme_db`
+                // record the cert/key are PEM content; for a disk fallback
+                // they are on-disk paths to read.
+                let (cert_bytes, key_bytes) = if source == "acme_db" {
+                    (cert.as_bytes().to_vec(), key.as_bytes().to_vec())
+                } else {
+                    (std::fs::read(cert)?, std::fs::read(key)?)
+                };
                 info!(
-                    "using ACME cert {cert} (source={}, {}d left)",
-                    status.get("source").and_then(|v| v.as_str()).unwrap_or("?"),
+                    "using ACME cert (source={}, {}d left)",
+                    source,
                     status.get("days_remaining").and_then(|v| v.as_i64()).unwrap_or(0)
                 );
-                return Ok((std::fs::read(cert)?, std::fs::read(key)?));
+                return Ok((cert_bytes, key_bytes));
             }
         }
         warn!(
