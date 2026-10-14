@@ -281,7 +281,10 @@ pub fn needs_renewal(days_remaining: Option<i64>, renew_before_days: i64) -> boo
 }
 
 /// Write the Cloudflare credentials file into the shared volume. Mirrors
-/// `write_cloudflare_credentials`.
+/// `write_cloudflare_credentials`. The token is stored in plaintext, so the
+/// file is tightened to `0600` (owner read/write only) after writing; the
+/// runtime (non-root) user owns the file, so the mode is enforced by that
+/// same user.
 pub fn write_cloudflare_credentials(email: &str, token: &str) -> String {
     let base = app_cert_dir();
     let path = format!("{base}/cloudflare.ini");
@@ -294,6 +297,10 @@ pub fn write_cloudflare_credentials(email: &str, token: &str) -> String {
         content.push_str(&format!("dns_cloudflare_email = {email}\n"));
     }
     let _ = std::fs::write(&path, content);
+    let _ = std::fs::set_permissions(
+        &path,
+        std::os::unix::fs::PermissionsExt::from_mode(0o600),
+    );
     path
 }
 
