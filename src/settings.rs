@@ -54,7 +54,7 @@ pub const SETTING_DEFINITIONS: &[SettingDef] = &[
     SettingDef { name: "app_icons_path", type_: "str", default: "/data/storage/vreckan_app_icons", help: "Directory for storing custom-uploaded application icons." },
     SettingDef { name: "home_templates_path", type_: "str", default: "/data/storage/vreckan_home_templates", help: "Base directory for meta-app home directory templates." },
     SettingDef { name: "container_config_path", type_: "str", default: "/config", help: "Mount point for home directories inside the container." },
-    SettingDef { name: "server_private_key_path", type_: "str", default: "/config/ssl/server_key.pem", help: "Path to the server private key PEM file." },
+    SettingDef { name: "server_private_key_path", type_: "str", default: "/data/ssl/server_key.pem", help: "Path to the server private key PEM file (written 0600). Default lives under the persistent data root so the key survives container recreation." },
     SettingDef { name: "public_storage_path", type_: "str", default: "/data/storage/vreckan_public", help: "Directory for storing publicly shared files." },
     SettingDef { name: "share_cleanup_interval_seconds", type_: "int", default: "600", help: "How often to run the cleanup job for expired shares (in seconds)." },
     // --- OIDC / SSO settings ---
