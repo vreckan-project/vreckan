@@ -38,6 +38,18 @@ pub struct DownloadTokenRecord {
     pub expires_at: f64,
 }
 
+/// Login-attempt accounting for one (client IP, username) pair, used by the
+/// brute-force limiter on `/api/auth/login`.
+#[derive(Clone, Debug, Default)]
+pub struct LoginAttemptWindow {
+    /// Failed attempts recorded in the current window.
+    pub fails: u32,
+    /// Wall-clock start (unix seconds) of the current failure window.
+    pub window_start: f64,
+    /// While nonzero, the pair is locked out until this time (unix seconds).
+    pub locked_until: f64,
+}
+
 /// The shared application state, passed to every axum handler.
 #[derive(Clone)]
 pub struct AppState {
@@ -51,6 +63,9 @@ pub struct AppState {
     pub crypto_sessions: Arc<RwLock<HashMap<String, Vec<u8>>>>,
     /// Web-login auth tokens, keyed by the opaque token string.
     pub auth_tokens: Arc<RwLock<HashMap<String, AuthTokenRecord>>>,
+    /// Login-attempt windows for the brute-force limiter, keyed by
+    /// "ip:username". In-memory only: a server restart clears the counters.
+    pub login_attempts: Arc<RwLock<HashMap<String, LoginAttemptWindow>>>,
     /// In-flight OIDC authorization states, keyed by the opaque `state` string.
     pub oidc_states: Arc<RwLock<HashMap<String, OidcStateRecord>>>,
     /// Short-lived public-share download tokens.
@@ -117,6 +132,7 @@ impl AppState {
             sessions: Arc::new(RwLock::new(HashMap::new())),
             crypto_sessions: Arc::new(RwLock::new(HashMap::new())),
             auth_tokens: Arc::new(RwLock::new(HashMap::new())),
+            login_attempts: Arc::new(RwLock::new(HashMap::new())),
             oidc_states: Arc::new(RwLock::new(HashMap::new())),
             download_tokens: Arc::new(RwLock::new(HashMap::new())),
             pull_progress: Arc::new(Mutex::new(HashMap::new())),
