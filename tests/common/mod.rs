@@ -380,6 +380,36 @@ impl SecureClient {
         }
         (resp.status, Some(payload))
     }
+
+    /// Encrypted `POST` with an IV of exactly `iv_len` bytes (for exercising
+    /// the server-side IV length check). Mirrors a buggy/malformed client.
+    pub async fn post_with_iv_len(&self, url: &str, body: &Value, iv_len: usize) -> RawResponse {
+        let (Some(key), Some(sid)) = (&self.aes_key, &self.session_id) else {
+            panic!("handshake() must run first")
+        };
+        let cipher = Aes256Gcm::new_from_slice(key).expect("aes");
+        let mut nonce = Nonce::default();
+        nonce.copy_from_slice(&[7u8; 12]);
+        let ct = cipher
+            .encrypt(&nonce, Payload { msg: body.to_string().as_bytes(), aad: sid.as_bytes() })
+            .expect("encrypt");
+        let iv = vec![7u8; iv_len];
+        let payload = serde_json::json!({
+            "iv": base64::engine::general_purpose::STANDARD.encode(&iv),
+            "ciphertext": base64::engine::general_purpose::STANDARD.encode(ct),
+        });
+        let mut headers = HashMap::new();
+        headers.insert("x-session-id".to_string(), sid.clone());
+        self.http
+            .request(
+                "POST",
+                url,
+                Some(payload.to_string().into_bytes()),
+                Some("application/json"),
+                &headers,
+            )
+            .await
+    }
 }
 
 /// A temporary directory for a single test (removed on drop).

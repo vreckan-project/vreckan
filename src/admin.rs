@@ -33,6 +33,13 @@ use crate::permissions;
 use crate::state::AppState;
 use crate::user_manager;
 
+/// Test hook: true when the `Db.fail_writes` simulation is armed, so the
+/// handlers below treat raw SeaORM writes as failed even when the database
+/// itself is healthy (integration tests arm it to exercise the error paths).
+fn db_fails_writes(state: &AppState) -> bool {
+    state.db.fail_writes.load(std::sync::atomic::Ordering::Relaxed)
+}
+
 // ---------------------------------------------------------------------------
 // Permission catalog descriptions
 // ---------------------------------------------------------------------------
@@ -576,13 +583,27 @@ async fn save_global_settings(
                 key: ActiveValue::Set("global_default_gpu".to_string()),
                 value: ActiveValue::NotSet,
             };
-            let _ = entities::app_setting::Entity::delete(am).exec(&state.db.conn).await;
-            *state.global_default_gpu.write().await = None;
-        } else {
-            let _ = state
-                .db
-                .set_app_setting("global_default_gpu", &device)
+            if db_fails_writes(&state)
+                || entities::app_setting::Entity::delete(am).exec(&state.db.conn).await.is_err()
+            {
+                return e2ee::encrypt_response(
+                    &state,
+                    &headers,
+                    StatusCode::INTERNAL_SERVER_ERROR,
+                    serde_json::json!({ "detail": "Failed to save global settings." }),
+                )
                 .await;
+            }
+            *state.global_default_gpu.write().await = None;
+        } else if state.db.set_app_setting("global_default_gpu", &device).await.is_err() {
+            return e2ee::encrypt_response(
+                &state,
+                &headers,
+                StatusCode::INTERNAL_SERVER_ERROR,
+                serde_json::json!({ "detail": "Failed to save global settings." }),
+            )
+            .await;
+        } else {
             *state.global_default_gpu.write().await = Some(device.clone());
         }
         let gpu_msg = if device.is_empty() {
@@ -776,7 +797,13 @@ async fn save_sso_config(
         }
         let env_var = format!("VRECKAN_{}", name.to_uppercase());
         if let Err(e) = state.db.set_app_setting(&env_var, &value).await {
-            warn!("Failed to save SSO setting {name}: {e}");
+            return e2ee::encrypt_response(
+                &state,
+                &headers,
+                StatusCode::INTERNAL_SERVER_ERROR,
+                serde_json::json!({ "detail": format!("Failed to save SSO setting {name}: {e}") }),
+            )
+            .await;
         }
     }
     e2ee::encrypt_response(&state, &headers, StatusCode::OK, serde_json::json!({ "ok": true })).await
@@ -2526,7 +2553,17 @@ async fn save_template_schema(
                 docker: ActiveValue::NotSet,
                 options: ActiveValue::NotSet,
             };
-            let _ = entities::template_schema_setting::Entity::delete(am).exec(conn).await;
+            if db_fails_writes(&state)
+                || entities::template_schema_setting::Entity::delete(am).exec(conn).await.is_err()
+            {
+                return e2ee::encrypt_response(
+                    &state,
+                    &headers,
+                    StatusCode::INTERNAL_SERVER_ERROR,
+                    serde_json::json!({ "detail": format!("Database error deleting template setting '{}'.", row.name) }),
+                )
+                .await;
+            }
         }
     }
     for (i, entry) in clean.iter() {
@@ -2561,9 +2598,27 @@ async fn save_template_schema(
             ),
         };
         if exists {
-            let _ = entities::template_schema_setting::Entity::update(am).exec(conn).await;
-        } else {
-            let _ = entities::template_schema_setting::Entity::insert(am).exec(conn).await;
+            if db_fails_writes(&state)
+                || entities::template_schema_setting::Entity::update(am).exec(conn).await.is_err()
+            {
+                return e2ee::encrypt_response(
+                    &state,
+                    &headers,
+                    StatusCode::INTERNAL_SERVER_ERROR,
+                    serde_json::json!({ "detail": format!("Database error updating template setting '{name}'.") }),
+                )
+                .await;
+            }
+        } else if db_fails_writes(&state)
+            || entities::template_schema_setting::Entity::insert(am).exec(conn).await.is_err()
+        {
+            return e2ee::encrypt_response(
+                &state,
+                &headers,
+                StatusCode::INTERNAL_SERVER_ERROR,
+                serde_json::json!({ "detail": format!("Database error inserting template setting '{name}'.") }),
+            )
+            .await;
         }
     }
     // Rebuild the in-memory schema so the launch path sees the change.

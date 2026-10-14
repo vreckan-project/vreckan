@@ -392,3 +392,37 @@ async fn test_session_proxy_gets_loose_csp() {
     assert_eq!(csp, security::SESSION_CSP);
     assert!(csp.contains("'unsafe-inline'"));
 }
+
+// ---------------------------------------------------------------------------
+// E2EE request decryption: IV length guard
+// ---------------------------------------------------------------------------
+
+#[tokio::test]
+async fn test_e2ee_malformed_iv_returns_400_not_500() {
+    let _root = TempDir::new();
+    let mut sc = SecureClient::new(build_state(_root.path()).await);
+    sc.http.login("admin", "admin1234").await;
+    sc.handshake().await;
+    // The decoded IV must be exactly 12 bytes; any other length must be a
+    // 400 (before the fix, `nonce.copy_from_slice(&iv)` panicked -> 500).
+    for len in [0usize, 1, 11, 13, 16, 64] {
+        let resp = sc
+            .post_with_iv_len(
+                "/api/files/create_folder/default",
+                &json!({ "path": "/", "folder_name": "x" }),
+                len,
+            )
+            .await;
+        assert_eq!(resp.status, StatusCode::BAD_REQUEST, "iv_len={len}: {:?}", resp.body);
+    }
+    // The happy path is unaffected (home dir created first, as in test_files).
+    vreckan::user_manager::create_home_dir(&sc.state.settings, "admin", "default").unwrap();
+    let (status, data) = sc
+        .call(
+            "POST",
+            "/api/files/create_folder/default",
+            Some(&json!({ "path": "/", "folder_name": "ok-folder" })),
+        )
+        .await;
+    assert_eq!(status, StatusCode::OK, "{data:?}");
+}

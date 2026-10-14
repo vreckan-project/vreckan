@@ -9,7 +9,8 @@
 .env
 # Previous build outputs must never leak into the context.
 target/
-# Python-era leftovers still present in the tree during the port.
+# Python-era files are gone from the tree; kept as a guard against them
+# re-entering the site image context.
 requirements.txt
 pytest.ini
 __pycache__/
