@@ -24,7 +24,7 @@ use base64::Engine;
 use common::{build_state, SecureClient, TempDir};
 use http::StatusCode;
 use jsonwebtoken::{Algorithm, EncodingKey, Header};
-use pkcs8::EncodePrivateKey;
+use pkcs8_010::EncodePrivateKey;
 use rand_core::OsRng;
 use rsa::{RsaPrivateKey, traits::PublicKeyParts};
 use serde_json::{json, Value};
@@ -194,7 +194,7 @@ fn content_length(raw: &[u8]) -> Option<usize> {
 /// Sign an id_token (RS256) with the given key and kid.
 fn sign_id_token(key: &RsaPrivateKey, kid: &str, claims: &Value) -> String {
     let encoding_key = EncodingKey::from_rsa_pem(
-        key.to_pkcs8_pem(pkcs8::LineEnding::LF)
+        key.to_pkcs8_pem(pkcs8_010::LineEnding::LF)
             .unwrap()
             .as_bytes(),
     )
