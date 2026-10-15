@@ -53,7 +53,7 @@ listener; it does not change the bind port in the Rust port.
 ```bash
 git clone https://github.com/vreckan-project/vreckan.git
 cd vreckan
-cp .env.example .env    # edit to taste (OIDC, Let's Encrypt, ...)
+cp .env.example .env    # edit to taste (OIDC, ACME, ...)
 docker compose up -d
 ```
 
@@ -402,24 +402,45 @@ comparison plus an `/api/health` check), are covered there step by step.
 - **Self-signed (default).** On first run the server generates
   `/data/ssl/vreckan_dev.crt` / `.key` and reuses them on subsequent starts.
   Good for LAN/VPN deployments; browsers will warn.
-- **Let's Encrypt (optional).** Enable via env (`VRECKAN_LE_*`) or the admin
-  UI Certificates page (DB value overrides env):
-  - `VRECKAN_LE_ENABLED=true`, `VRECKAN_LE_DOMAINS=example.com,www.example.com`
-  - Challenge: `VRECKAN_LE_AUTH=dns-cloudflare` (with
-    `VRECKAN_LE_CLOUDFLARE_EMAIL` + `VRECKAN_LE_CLOUDFLARE_TOKEN`; works
-    behind a reverse proxy) or `http-01` (ACME server fetches over HTTP).
-  - `VRECKAN_LE_STAGING=true` for test certificates; renewal runs in the
-    background (`VRECKAN_LE_AUTO_RENEW`, check every
-    `VRECKAN_LE_RENEW_CHECK_HOURS` hours, renew within
-    `VRECKAN_LE_RENEW_BEFORE_DAYS` days of expiry).
-  - Issuance/renewal happens through a **transient certbot container**
-    launched via the Docker socket, so the server image itself stays
-    certbot-free. Until a valid LE certificate exists, the server falls back
-    to the self-signed one.
-  - With `dns-cloudflare`, the Cloudflare API token is written to
-    `/data/le/cloudflare.ini` (mode `0600`) for the certbot container; the
-    token is stored plaintext there, so the file is owner read/write only
-    (ANT-45 P2-2).
+- **ACME (optional).** Enable via env (`VRECKAN_ACME_*`) or the admin
+  UI Certificates page (DB value overrides env). Issuance is handled by the
+  **native `acmex` Rust client** — no external container is required, so
+  the Docker socket is no longer needed for certificate issuance (it is
+  still used for app containers and GPU setup).
+  - `VRECKAN_ACME_ENABLED=true`,
+    `VRECKAN_ACME_DOMAINS=example.com,www.example.com`
+  - **CA** — `VRECKAN_ACME_CA` selects the certificate authority:
+    `letsencrypt` (default), `zerossl`, or `google` (Google Public
+    Certificates). `VRECKAN_ACME_STAGING=true` selects the Let's Encrypt
+    staging endpoint for test certificates.
+  - **Challenge type** — `VRECKAN_ACME_AUTH` selects the ACME challenge:
+    `dns-cloudflare` (default; DNS-01 via Cloudflare, works behind a
+    reverse proxy) or `http-01` (the ACME server fetches from your domain
+    over HTTP).
+  - **DNS provider** (DNS-01) — `VRECKAN_ACME_DNS_PROVIDER` selects the
+    DNS provider that manages your domain's zone. Eleven providers are
+    supported: `cloudflare` (default), `route53`, `digitalocean`, `linode`,
+    `azure`, `google`, `alibaba`, `godaddy`, `tencent`, `huawei`, and
+    `cloudns`.
+  - **Provider credentials** —
+    `VRECKAN_ACME_CLOUDFLARE_EMAIL` +
+    `VRECKAN_ACME_CLOUDFLARE_TOKEN` for Cloudflare; or
+    `VRECKAN_ACME_DNS_PROVIDER_CONFIG` (a JSON object with the
+    credentials for any other provider).
+    `VRECKAN_ACME_CLOUDFLARE_ZONE_ID` optionally pins the Cloudflare zone.
+  - **Auto-renewal.** `VRECKAN_ACME_AUTO_RENEW=true` enables background
+    renewal: the server checks every
+    `VRECKAN_ACME_RENEW_CHECK_HOURS` hours and renews within
+    `VRECKAN_ACME_RENEW_BEFORE_DAYS` days of expiry. The renewal loop
+    reads the effective config fresh on each iteration, so changes made on
+    the admin page take effect without a container restart.
+  - **Certificate storage.** The issued certificate (PEM chain + private
+    key + expiry) is persisted in the **config database** as the source of
+    truth; a best-effort mirror is written to `/data/acme/live/<primary>/`
+    for backward compatibility. Until a valid ACME certificate exists, the
+    server falls back to the self-signed one.
+  - **Hot-reload.** After a successful issuance or renewal, the TLS
+    endpoint is reloaded in-place — no server restart is needed.
 
 ## 6. Host privileges & devices (docker-sock, DRI, groups)
 
@@ -438,7 +459,7 @@ dedicated non-root user (`vreckan`, UID/GID 1000) and no longer uses
   (RHEL/SUSE) — without a compose-level `cap_add`. Everything else needs no
   capabilities.
 - **What the daemon does for it** — creating/inspecting/stopping app
-  containers and the transient certbot container, plus the host-side parts
+  containers, plus the host-side parts
   of GPU/cgroup setup, all happen in the (root) Docker daemon, so they no
   longer need this container to be privileged. If a specific app-container
   feature turns out to require a capability on the *server container*, add
@@ -457,7 +478,7 @@ it is the minimum surface needed for the feature set: the server creates
 app containers **with device mounts and `group_add`** (that is how a
 DRI3/GPU app gets its render node — a scoped `docker-socket-proxy` must
 allow those container-creation fields or GPU app launches silently break),
-runs the transient certbot container, and discovers its own published port
+  and discovers its own published port
 mappings. If you want to restrict the API surface, run
 `vreckan-http` against a scoped socket proxy (e.g. `docker-socket-proxy`
 with `POST /containers/create`, `GET/POST /containers/...`, `POST
@@ -470,7 +491,7 @@ the standard Engine API over the mounted socket path.
 | `group_add: 990` (video) | DRI3 render-node passthrough: GPU-accelerated apps render through the host GPU; the server detects render nodes (and their group ids) at startup and propagates device + supplementary GIDs into app containers | drop if no GPU apps are used |
 | `group_add: 44` (input) | host `input` group so Uinput-based input devices work inside app containers | drop if no app needs it |
 | `group_add: ${VRECKAN_DOCKER_GROUP:-docker}` | the non-root server process reaches the host Docker socket (owned `root:docker`, mode 660) through the host's docker group — the replacement for `privileged: true`'s blanket access | set `VRECKAN_DOCKER_GROUP` to the group name or GID when the daemon's group is not named `docker`; a scoped socket proxy (e.g. `docker-socket-proxy`) or a rootless docker context is the further-hardening option if you want to restrict the API surface |
-| `/var/run/docker.sock` | the server talks to the Docker Engine API to create/inspect/stop app containers and to run the transient certbot container — raw socket by default (see the strategy paragraph above) | required unless you run a dedicated provider; the server degrades gracefully at boot if the socket is missing or inaccessible (logs a warning, app launches and self-inspection are disabled) |
+| `/var/run/docker.sock` | the server talks to the Docker Engine API to create/inspect/stop app containers — raw socket by default (see the strategy paragraph above) | required unless you run a dedicated provider; the server degrades gracefully at boot if the socket is missing or inaccessible (logs a warning, app launches and self-inspection are disabled) |
 | `/dev/dri:/dev/dri` | render-node device passthrough for GPU-accelerated apps (paired with the `video` group above) | drop if no GPU apps are used |
 | `ipc: host` | shared memory for streamed desktop apps | keep unless you have tested the apps without it |
 
@@ -518,8 +539,8 @@ pre-creates and owns the directory, so no other change is needed.
 │   ├── vreckan_app_icons/     custom app icons
 │   ├── vreckan_home_templates/ meta-app home-dir templates
 │   └── vreckan_public/        publicly shared files
-├── ssl/                       TLS certs: self-signed (vreckan_dev.*) and Let's Encrypt; also the E2EE server key (server_key.pem, 0600)
-├── le/                        Let's Encrypt certbot material; cloudflare.ini (DNS-01 token, 0600)
+├── ssl/                       TLS certs: self-signed (vreckan_dev.*); also the E2EE server key (server_key.pem, 0600)
+├── acme/                      ACME cert mirror (best-effort; the config DB is the source of truth)
 ├── autostart_cache/           cached autostart scripts
 ├── app_stores_cache/          cached app-store YAML files
 └── backups/                   backup archives (0600)

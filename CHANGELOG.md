@@ -9,6 +9,58 @@ is committed normally in `vreckan`. The changelog is the authoritative
 record of what shipped in each release — see
 [`docs/release.md`](./docs/release.md) for the conventions.
 
+## 2026-10-15 — Native ACME client, certbot sidecar removed (ANT-128)
+
+The certificate-issuance path is rewritten around the native **`acmex`**
+Rust ACME client. The legacy `certbot/dns-cloudflare` Docker sidecar
+(`src/le_certbot.rs`) is retired — `acmex` is now the **only** issuance
+backend, and the Docker socket is no longer required for certificate
+issuance (it remains in use for app containers and GPU setup).
+
+- **`le_*` → `acme_*` rename.** Every configuration key, API field, and
+  internal identifier that carried the legacy "Let's Encrypt" prefix is
+  renamed to the generic `acme_` prefix (13 DB settings, the admin API
+  request/response shapes, env vars, and the UI i18n keys). The feature
+  is now documented as **ACME** rather than "Let's Encrypt".
+- **Three CAs.** `acme_ca` selects the certificate authority:
+  **Let's Encrypt** (default), **ZeroSSL**, or **Google Public
+  Certificates**. The `acme_staging` flag still selects the Let's Encrypt
+  staging endpoint for test certificates.
+- **Eleven DNS-01 providers.** `acme_dns_provider` selects the DNS
+  provider that manages the domain's zone: Cloudflare (default), AWS
+  Route 53, DigitalOcean, Linode, Azure DNS, Google Cloud DNS, Alibaba
+  Cloud, GoDaddy, Tencent Cloud, Huawei Cloud, and CloudNS.
+  `acme_dns_provider_config` carries the JSON credentials for any
+  non-Cloudflare provider; `acme_cloudflare_zone_id` optionally pins the
+  Cloudflare zone.
+- **Certificate stored in the config database.** The issued bundle
+  (PEM chain + private key + expiry + CA + domains) is persisted in the
+  `app_settings` table as the source of truth. A best-effort file mirror
+  is written to `/data/acme/live/<primary>/` for backward compatibility;
+  the old `/data/le/` certbot layout is retired.
+- **Force-renew button.** `POST /api/admin/certificates/renew` now always
+  (re)issues, even when a valid certificate already exists (the previous
+  "already valid" short-circuit that made the button appear to do
+  nothing is gone). The response carries `issued`/`renewed` plus
+  human-readable `logs` and `error` fields so the UI can explain what
+  happened.
+- **Dynamic hot-reload.** After a successful issuance or renewal the TLS
+  endpoint is reloaded in-place — no server restart is needed. The
+  background renewal loop reads the effective config fresh on each
+  iteration, so changes made on the admin page take effect without a
+  restart.
+- **Docker build-deps for acmex.** The `Dockerfile` build stage adds
+  `cmake`, `make`, and `golang` (required by the FIPS variant of
+  aws-lc, which acmex pulls in via `aws-lc-rs/fips` and builds from
+  source through its CMake project). See the per-package justifications
+  in the `Dockerfile`.
+
+**Upgrading:** pull the new image and `docker compose up -d`. Existing
+`VRECKAN_LE_*` env vars are read as `VRECKAN_ACME_*`; the DB
+`app_settings` keys are migrated from `le_*` to `acme_*` on first
+startup. The `/data/le/` directory is no longer used; the cert mirror
+lives at `/data/acme/`.
+
 ## 2026-10-14 — Dependency bumps, v0.6.2 (ANT-118)
 
 Batch dependency bump and version release. All bumps were QA-validated for

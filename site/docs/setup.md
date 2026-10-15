@@ -13,7 +13,7 @@ description: Prerequisites, server installation, configuration, and getting your
   <ul>
     <li>A server with <strong>Docker</strong> and <strong>Docker Compose</strong> installed.</li>
     <li>Access to the Docker daemon (the server spawns and manages app containers through it).</li>
-    <li>An SSL certificate for your domain — <em>optional</em>. A self-signed certificate is generated automatically on first run, and Let's Encrypt can be enabled to issue real certificates (see below).</li>
+    <li>An SSL certificate for your domain — <em>optional</em>. A self-signed certificate is generated automatically on first run, and ACME can be enabled to issue real certificates (see below).</li>
   </ul>
 
   <h2>1. Get the image</h2>
@@ -54,14 +54,14 @@ cp .env.example .env</code></pre>
   <h2>4. Open the web client</h2>
   <p>Point a browser at <code>https://your-server/</code>, sign in, and you're in. Launch an app, manage files, and — as an admin — manage users, groups, and applications.</p>
 
-  <h2>Let's Encrypt (optional)</h2>
-  <p>By default Vreckan serves a self-signed certificate. To issue and auto-renew real certificates with certbot, enable Let's Encrypt — either via environment variables or the admin <strong>Certificates</strong> page:</p>
-  <pre><code>VRECKAN_LE_ENABLED=true
-VRECKAN_LE_DOMAINS=example.com,www.example.com
-VRECKAN_LE_AUTH=dns-cloudflare
-VRECKAN_LE_CLOUDFLARE_EMAIL=you@example.com
-VRECKAN_LE_CLOUDFLARE_TOKEN=your-cloudflare-api-token</code></pre>
-  <p>Two auth methods are supported: <code>dns-cloudflare</code> (Cloudflare DNS-01 — works behind a reverse proxy) and <code>http-01</code> (the ACME server fetches from your domain over HTTP). Renewal is automatic: the server checks every <code>VRECKAN_LE_RENEW_CHECK_HOURS</code> hours and renews within <code>VRECKAN_LE_RENEW_BEFORE_DAYS</code> days of expiry.</p>
+  <h2>ACME certificates (optional)</h2>
+  <p>By default Vreckan serves a self-signed certificate. To issue and auto-renew real certificates, enable ACME — either via environment variables or the admin <strong>Certificates</strong> page:</p>
+  <pre><code>VRECKAN_ACME_ENABLED=true
+VRECKAN_ACME_DOMAINS=example.com,www.example.com
+VRECKAN_ACME_AUTH=dns-cloudflare
+VRECKAN_ACME_CLOUDFLARE_EMAIL=you@example.com
+VRECKAN_ACME_CLOUDFLARE_TOKEN=your-cloudflare-api-token</code></pre>
+  <p>Issuance is handled by the native <code>acmex</code> Rust client — no external container or Docker socket is needed for certificate issuance. Three CAs are supported: <strong>Let's Encrypt</strong> (default), <strong>ZeroSSL</strong>, and <strong>Google Public Certificates</strong>. Two challenge types are available: <code>dns-cloudflare</code> (DNS-01, works behind a reverse proxy) and <code>http-01</code> (the ACME server fetches from your domain over HTTP). Eleven DNS-01 providers are supported (Cloudflare, Route 53, DigitalOcean, Linode, Azure, Google Cloud DNS, Alibaba Cloud, GoDaddy, Tencent Cloud, Huawei Cloud, CloudNS); select one with <code>VRECKAN_ACME_DNS_PROVIDER</code>. The issued certificate is stored in the configuration database; a best-effort file mirror is written to <code>/data/acme/</code>. Renewal is automatic: the server checks every <code>VRECKAN_ACME_RENEW_CHECK_HOURS</code> hours and renews within <code>VRECKAN_ACME_RENEW_BEFORE_DAYS</code> days of expiry, with the new certificate hot-reloaded without a restart.</p>
 
   <h2>PostgreSQL</h2>
   <p>The default <code>docker-compose.yml</code> deployment uses the bundled <code>postgres:16</code> service out of the box (Postgres has been the compose default since v0.6.0). To use SQLite instead, set <code>VRECKAN_DATABASE_URL</code> in your <code>.env</code> to a <code>sqlite:////data/vreckan.db</code> URL (a bare-binary run also defaults to a SQLite file at <code>/data/vreckan.db</code>).</p>
@@ -73,7 +73,7 @@ VRECKAN_LE_CLOUDFLARE_TOKEN=your-cloudflare-api-token</code></pre>
     <li><strong>Non-root server.</strong> The server process runs as a non-root user (UID/GID 1000) with no <code>privileged</code> container; it reaches the Docker daemon through the host <code>docker</code> group. A one-shot compose step takes ownership of <code>vreckan-data</code> before first boot (no manual <code>chown</code> needed).</li>
     <li><strong>First-boot admin.</strong> The seeded <code>admin</code> account is flagged must-change-password, so the web client prompts for a new password at first sign-in. <code>VRECKAN_DEFAULT_PASSWORD_POLICY</code> controls how a login with the literal default <code>admin1234</code> is handled while that flag is set.</li>
     <li><strong>E2EE server key.</strong> The server's E2EE RSA key defaults to <code>/data/ssl/server_key.pem</code> (written <code>0600</code>) and now survives container recreation; override the location with <code>VRECKAN_SERVER_PRIVATE_KEY_PATH</code>.</li>
-    <li><strong>Cloudflare ACME token.</strong> When <code>dns-cloudflare</code> auth is used, the Cloudflare token is written to <code>/data/le/cloudflare.ini</code> at mode <code>0600</code>.</li>
+    <li><strong>ACME certificate storage.</strong> The issued ACME certificate (PEM chain + private key + expiry) is persisted in the configuration database; a best-effort file mirror is written to <code>/data/acme/</code>.</li>
     <li><strong>Login rate limiting.</strong> <code>/api/auth/login</code> rate-limits per (client IP, username): <code>VRECKAN_LOGIN_MAX_ATTEMPTS</code> (default 5) failures within <code>VRECKAN_LOGIN_LOCKOUT_SECONDS</code> (default 900 s) lock the pair out with HTTP 429; a successful login clears it.</li>
     <li><strong>Backups.</strong> Config-DB backup archives live in <code>/data/backups</code> (written <code>0600</code>); the in-archive dump excludes live session tokens, and the server keeps the newest <code>VRECKAN_BACKUP_RETENTION</code> (default 7). <code>scripts/backup-postgres.sh</code> provides dated Postgres dumps.</li>
   </ul>

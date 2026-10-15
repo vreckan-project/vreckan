@@ -16,7 +16,7 @@ description: Answers to the most common questions about running and using Vrecka
 
   <div class="faq-item">
     <h3>What's the difference between Vreckan and SealSkin?</h3>
-    <p>Vreckan is a hard fork of <a href="https://github.com/linuxserver/docker-sealskin">SealSkin</a>. It continues the project under a new name with a leaner codebase and its own roadmap — including a database-backed configuration store, a full admin UI, SSO, and built-in Let's Encrypt. As of v0.6.0 the server is a Rust rewrite (axum + SeaORM); the original Python server is preserved in the <a href="https://github.com/vreckan-project/vreckan-python">vreckan-python</a> archive repo.</p>
+    <p>Vreckan is a hard fork of <a href="https://github.com/linuxserver/docker-sealskin">SealSkin</a>. It continues the project under a new name with a leaner codebase and its own roadmap — including a database-backed configuration store, a full admin UI, SSO, and built-in ACME. As of v0.6.0 the server is a Rust rewrite (axum + SeaORM); the original Python server is preserved in the <a href="https://github.com/vreckan-project/vreckan-python">vreckan-python</a> archive repo.</p>
   </div>
 
   <div class="faq-item">
@@ -31,7 +31,7 @@ description: Answers to the most common questions about running and using Vrecka
 
   <div class="faq-item">
     <h3>Do I need a real SSL certificate?</h3>
-    <p>Not strictly — a self-signed certificate is generated automatically on first run, which is fine for a LAN or a trusted setup. For a public domain, enable <strong>Let's Encrypt</strong> (Cloudflare DNS-01 or HTTP-01) to issue and auto-renew real certificates, or drop your own certificate and key at the configured SSL path.</p>
+    <p>Not strictly — a self-signed certificate is generated automatically on first run, which is fine for a LAN or a trusted setup. For a public domain, enable <strong>ACME</strong> (DNS-01 or HTTP-01 challenge, with support for Let's Encrypt, ZeroSSL, and Google CAs and eleven DNS providers) to issue and auto-renew real certificates, or drop your own certificate and key at the configured SSL path. The issued certificate is stored in the configuration database.</p>
   </div>
 
   <div class="faq-item">

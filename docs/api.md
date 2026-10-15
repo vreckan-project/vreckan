@@ -232,6 +232,66 @@ consolidation is a representation difference, not a behavior change.)
 | GET | `/api/admin/backup/{name}/download` | `download_backup` |
 | DELETE | `/api/admin/backup/{name}` | `delete_backup` |
 
+### Certificate fields — `admin.rs`
+
+The three certificate endpoints exchange the following fields (all
+`acme_*`; the legacy `le_*` names are retired).
+
+**`GET /api/admin/certificates`** — effective config (DB-over-env-over-
+default), current certificate status, and the available DNS providers:
+
+| Field | Type | Notes |
+|---|---|---|
+| `values.acme_enabled` | bool | ACME on/off |
+| `values.acme_ca` | string | `letsencrypt` (default) \| `zerossl` \| `google` |
+| `values.acme_domains` | string[] | target domains |
+| `values.acme_auth` | string | `dns-cloudflare` (default) \| `http-01` |
+| `values.acme_cloudflare_email` | string | ACME account contact |
+| `values.acme_cloudflare_token` | string | always `""` (masked) |
+| `values.token_set` | bool | whether a token is stored |
+| `values.token_length` | int | length of the stored token |
+| `values.acme_staging` | bool | use the LE staging endpoint |
+| `values.acme_auto_renew` | bool | background renewal on/off |
+| `values.acme_renew_check_hours` | int | renewal poll interval (h) |
+| `values.acme_renew_before_days` | int | renew-within window (days) |
+| `values.acme_dns_provider` | string | `cloudflare` (default) \| `route53` \| `digitalocean` \| `linode` \| `azure` \| `google` \| `alibaba` \| `godaddy` \| `tencent` \| `huawei` \| `cloudns` |
+| `values.acme_cloudflare_zone_id` | string | optional Cloudflare zone pin |
+| `values.acme_dns_provider_config` | string | JSON credentials for non-Cloudflare providers |
+| `sources.*` | string | per-field origin: `db` \| `env` \| `default` |
+| `status.present` | bool | a certificate exists |
+| `status.source` | string \| null | `acme_db` (DB is the source of truth) \| `host` \| `app` (disk fallback) |
+| `status.cert` | string \| null | PEM chain (DB) or path (disk) |
+| `status.key` | string \| null | private-key PEM (DB) or path (disk) |
+| `status.expiry` | string \| null | RFC 3339 expiry, when parseable |
+| `status.days_remaining` | int \| null | days until expiry |
+| `status.valid` | bool | expiry is in the future |
+| `dns_providers` | object[] | `[{ id, label, default }]` for all 11 providers |
+
+**`PUT /api/admin/certificates`** — save the ACME configuration to the
+`app_settings` table. Request body carries the same `acme_*` fields as the
+GET response's `values` (minus `token_set`/`token_length`). A blank
+`acme_cloudflare_token` means "leave the existing token unchanged".
+Response: `{ "ok": true }`.
+
+**`POST /api/admin/certificates/renew`** — issue or renew the certificate
+now. The "Issue / Renew Now" button always (re)issues, even when a valid
+certificate already exists. Response:
+
+| Field | Type | Notes |
+|---|---|---|
+| `present` | bool | a certificate exists after the call |
+| `source` | string \| null | `acme_db` \| `host` \| `app` |
+| `cert` | string \| null | PEM chain or path |
+| `key` | string \| null | private-key PEM or path |
+| `expiry` | string \| null | RFC 3339 expiry |
+| `days_remaining` | int \| null | days until expiry |
+| `valid` | bool | certificate is currently valid |
+| `issued` | bool | a new certificate was issued during this call |
+| `renewed` | bool | same as `issued` (alias for the UI) |
+| `enabled` | bool | ACME was enabled |
+| `logs` | string | human-readable acmex milestone log (when present) |
+| `error` | string | human-readable error (when present) |
+
 ### Collaboration room — `collaboration.rs` (plaintext)
 
 | Method | Path | Handler | Auth |
