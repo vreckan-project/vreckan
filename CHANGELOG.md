@@ -22,17 +22,21 @@ so `Issue/Renew now` failed with a misleading "Missing location header"
   (the orphaned account is simply re-registered under the new key).
   ES256 is accepted by all three supported CAs.
 - **`acmex` pinned to an `antitux/acmex` fork** of the upstream repo
-  (houseme/acmex `f7b06c2`, 2026-10-06, + one fix) via
+  (houseme/acmex `f7b06c2`, 2026-10-06, + two fixes) via
   `[patch.crates-io]`: only upstream derives the JWS `alg` and JWK from
   the actual key (`Jwk::for_key_pair`, `JwsSigner::jwa_algorithm`) and
-  ships `KeyPairGenerator`; the fork additionally defaults the `contact`
-  field in the account response, which Boulder omits for contact-less
-  accounts (the account registered with a 2xx + Location but the
-  response failed to parse). The re-resolution also moved the acmex
-  DNS/HTTP subtree to the advisory-fixed majors (h2 0.4, hickory 0.26,
-  rustls 0.23, rustls-webpki 0.103, hyper 1.x), so the now-unnecessary
-  RUSTSEC ignores were dropped from `deny.toml` and the acmex git source
-  was added to its source allowlist.
+  ships `KeyPairGenerator`. The fork additionally (1) defaults the
+  `contact` field in the account response — Boulder omits it for
+  contact-less accounts, so a successfully registered account (2xx +
+  Location) still failed to parse — and (2) sends an **empty payload**
+  on POST-as-GET requests (order/authz lookup, challenge trigger,
+  certificate download, account lookup): Boulder rejects the `e30`
+  (`{}`) encoding with "POST-as-GET requests must have an empty
+  payload", which 400ed the authorization fetch. The re-resolution also
+  moved the acmex DNS/HTTP subtree to the advisory-fixed majors (h2 0.4,
+  hickory 0.26, rustls 0.23, rustls-webpki 0.103, hyper 1.x), so the
+  now-unnecessary RUSTSEC ignores were dropped from `deny.toml` and the
+  acmex git source was added to its source allowlist.
 - **CA directory URLs resolve through acmex's CA table** instead of
   hand-coded constants that had gone stale: ZeroSSL now targets its
   current EAB-gated `https://acme.zerossl.com/v2/DV90` endpoint (the

@@ -123,13 +123,17 @@ tokio-rustls = "0.26"
 # and the `Location`-header check masks the real 400 (ANT-138). Upstream
 # derives the JWS `alg` and JWK from the actual key (`Jwk::for_key_pair`,
 # `JwsSigner::jwa_algorithm`) and adds `KeyPairGenerator`, so we pin an
-# `antitux/acmex` fork (of houseme/acmex @ f7b06c2) that also defaults the
-# `contact` field in the account response — Boulder omits it when the
-# account has no contacts, which broke response parsing. We generate ECDSA
-# P-256 account keys (ES256), accepted by all three supported CAs. Revert
-# to the crates.io release once both fixes ship in a published version.
+# `antitux/acmex` fork (of houseme/acmex @ f7b06c2) with three fixes:
+#   1. the `contact` field in account responses is defaulted — Boulder
+#      omits it when the account has no contacts, which broke parsing;
+#   2. POST-as-GET requests (order/authz lookup, challenge trigger, cert
+#      download, account lookup) use an empty payload — Boulder rejects
+#      the `e30` (`{}`) encoding with "must have an empty payload".
+# We generate ECDSA P-256 account keys (ES256), accepted by all three
+# supported CAs. Revert to the crates.io release once the fixes ship in a
+# published version.
 [patch.crates-io]
-acmex = { git = "https://github.com/antitux/acmex", rev = "f3ed526dfb816f9e23bb88cd5eb4d528d8a19620" }
+acmex = { git = "https://github.com/antitux/acmex", rev = "fec88dadebf3976403594547f991ddd20b5b9f46" }
 
 [profile.release]
 opt-level = 3
