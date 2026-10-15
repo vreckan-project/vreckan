@@ -37,7 +37,7 @@ use axum::{Json, Router};
 use base64::Engine;
 use pkcs8_010::{DecodePrivateKey, EncodePrivateKey, LineEnding};
 use rand::Rng;
-use rand_core::OsRng;
+use rand_core_06::OsRng;
 use rsa::{Oaep, Pss, RsaPrivateKey, sha2::Sha256};
 use sha2::Digest;
 use serde::{Deserialize, Serialize};
@@ -171,10 +171,11 @@ pub async fn handshake_initiate() -> impl IntoResponse {
     let mut nonce = [0u8; 32];
     // Use the OS CSPRNG (consistent with the server-key generation below) rather
     // than the thread-local `rand::rng()`, so the nonce is drawn from the same
-    // entropy source the rest of the handshake uses. `OsRng` is from
-    // `rand_core 0.6`, so call its `RngCore` method fully-qualified (the
-    // `rand::RngCore` import above is the 0.9 trait and doesn't apply here).
-    rand_core::RngCore::fill_bytes(&mut rand_core::OsRng, &mut nonce);
+    // entropy source the rest of the handshake uses. `OsRng` comes from the
+    // `rand_core_06` alias (`rsa 0.9` only accepts `rand_core 0.6` types), so
+    // call its `RngCore` method fully-qualified (the `rand::Rng` import above
+    // is the 0.10 trait and doesn't apply here).
+    rand_core_06::RngCore::fill_bytes(&mut rand_core_06::OsRng, &mut nonce);
     let key = server_key();
     // PSS always requires an RNG (for the random salt); the plain `sign`
     // helper passes `None` and fails, so use `sign_with_rng`. The 32-byte
@@ -187,7 +188,7 @@ pub async fn handshake_initiate() -> impl IntoResponse {
     // not the raw nonce — to match. (Python's `cryptography.sign(nonce, PSS,
     // SHA256)` hashes internally, which is why the Python server worked in the
     // browser while the raw-nonce Rust signature did not.)
-    let mut rng = rand_core::OsRng;
+    let mut rng = rand_core_06::OsRng;
     let hashed = Sha256::digest(&nonce);
     let signature = key
         .sign_with_rng(&mut rng, Pss::new_with_salt::<Sha256>(32), &hashed)
