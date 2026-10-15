@@ -9,6 +9,21 @@ is committed normally in `vreckan`. The changelog is the authoritative
 record of what shipped in each release — see
 [`docs/release.md`](./docs/release.md) for the conventions.
 
+## 2026-10-15 — pkcs8 0.11 + rand_core 0.10, v0.6.3 (ANT-128)
+
+The two RustCrypto ecosystem bumps deferred in v0.6.2 (while `rsa` 0.10
+was still pre-release) have now landed as separate renovate PRs. Each
+keeps a backward-compatible version alias so the still-unbumped `rsa` 0.9
+crate keeps compiling; no operator-visible behavior changes, and the full
+412-test suite passes on both branches.
+
+- **`pkcs8` 0.10 → 0.11** (PR #27). A `pkcs8_010` alias on `pkcs8` 0.10
+  preserves the `rsa` 0.9 / `pkcs1` 0.7 trait interop; it is dropped when
+  `rsa` 0.10 (which consumes `pkcs8` 0.11 directly) is released.
+- **`rand_core` 0.6 → 0.10** (PR #28). A `rand_core_06` alias on `rand_core`
+  0.6 preserves the `rsa` 0.9 `OsRng` interop; same exit condition.
+- **`VERSION` and `Cargo.toml` bumped to 0.6.3.**
+
 ## 2026-10-15 — ACME account key moved to ECDSA P-256; acmex pinned to upstream (ANT-138)
 
 Let's Encrypt production stopped accepting **EdDSA** (Ed25519) account
