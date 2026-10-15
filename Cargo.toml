@@ -52,7 +52,11 @@ rsa = { version = "0.9", features = ["sha2"] }
 # E2EE payload: AES-256-GCM with the session id as AAD.
 aes-gcm = "0.11"
 # Key encoding (PKCS#8 private key load, SPKI public-key PEM).
-pkcs8 = "0.10"
+pkcs8 = { version = "0.11", features = ["alloc", "pem"] }
+# 0.10-era alias: `rsa 0.9`/`pkcs1 0.7` implement the pkcs8 0.10 traits, so the
+# E2EE RSA-key PEM encode/decode in `e2ee.rs` (and the test helpers) need the
+# 0.10 trait API until `rsa` reaches the der-0.8/pkcs8-0.11 generation.
+pkcs8_010 = { package = "pkcs8", version = "0.10", features = ["alloc", "pem"] }
 spki = "0.7"
 der = "0.8"
 # `rsa 0.9` is built against `rand_core 0.6`; use its `OsRng` for one-time

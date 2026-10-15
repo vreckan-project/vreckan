@@ -1974,7 +1974,7 @@ version = "2.2.3"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "115531babc129696a58c64a4fef0a8bf9e9698629fb97e9e40767d235cfbcd53"
 dependencies = [
- "pkcs8",
+ "pkcs8 0.10.2",
  "signature",
 ]
 
@@ -2015,7 +2015,7 @@ dependencies = [
  "group",
  "hkdf 0.12.4",
  "pem-rfc7468 0.7.0",
- "pkcs8",
+ "pkcs8 0.10.2",
  "rand_core 0.6.4",
  "sec1",
  "subtle",
@@ -3854,7 +3854,7 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "c8ffb9f10fa047879315e6625af03c164b16962a5368d724ed16323b68ace47f"
 dependencies = [
  "der 0.7.10",
- "pkcs8",
+ "pkcs8 0.10.2",
  "spki 0.7.3",
 ]
 
@@ -3866,6 +3866,16 @@ checksum = "f950b2377845cebe5cf8b5165cb3cc1a5e0fa5cfa3e1f7f55707d8fd82e0a7b7"
 dependencies = [
  "der 0.7.10",
  "spki 0.7.3",
+]
+
+[[package]]
+name = "pkcs8"
+version = "0.11.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "451913da69c775a56034ea8d9003d27ee8948e12443eae7c038ba100a4f21cb7"
+dependencies = [
+ "der 0.8.2",
+ "spki 0.8.1",
 ]
 
 [[package]]
@@ -4396,7 +4406,7 @@ dependencies = [
  "num-integer",
  "num-traits",
  "pkcs1",
- "pkcs8",
+ "pkcs8 0.10.2",
  "rand_core 0.6.4",
  "sha2 0.10.9",
  "signature",
@@ -4730,7 +4740,7 @@ dependencies = [
  "base16ct",
  "der 0.7.10",
  "generic-array",
- "pkcs8",
+ "pkcs8 0.10.2",
  "subtle",
  "zeroize",
 ]
@@ -6080,7 +6090,8 @@ dependencies = [
  "log",
  "mime_guess",
  "openid",
- "pkcs8",
+ "pkcs8 0.10.2",
+ "pkcs8 0.11.0",
  "rand 0.10.3",
  "rand_core 0.6.4",
  "rcgen",

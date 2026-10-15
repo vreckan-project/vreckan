@@ -18,7 +18,7 @@ use aes_gcm::{Aes256Gcm, Nonce};
 use base64::Engine;
 use http::header;
 use http::{Request, StatusCode};
-use pkcs8::DecodePublicKey;
+use pkcs8_010::DecodePublicKey;
 use rsa::{Oaep, RsaPublicKey, sha2::Sha256};
 use serde_json::Value;
 use tower::ServiceExt;

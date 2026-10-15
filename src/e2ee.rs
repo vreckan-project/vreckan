@@ -35,7 +35,7 @@ use axum::response::{IntoResponse, Response};
 use axum::routing::{get, post};
 use axum::{Json, Router};
 use base64::Engine;
-use pkcs8::{DecodePrivateKey, EncodePrivateKey, LineEnding};
+use pkcs8_010::{DecodePrivateKey, EncodePrivateKey, LineEnding};
 use rand::Rng;
 use rand_core::OsRng;
 use rsa::{Oaep, Pss, RsaPrivateKey, sha2::Sha256};
