@@ -52,7 +52,7 @@ rsa = { version = "0.9", features = ["sha2"] }
 # E2EE payload: AES-256-GCM with the session id as AAD.
 aes-gcm = "0.11"
 # Key encoding (PKCS#8 private key load, SPKI public-key PEM).
-pkcs8 = "0.10"
+pkcs8 = "0.11"
 spki = "0.7"
 der = "0.8"
 # `rsa 0.9` is built against `rand_core 0.6`; use its `OsRng` for one-time
