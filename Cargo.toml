@@ -62,7 +62,7 @@ der = "0.8"
 # `rsa 0.9` is built against `rand_core 0.6`; use its `OsRng` for one-time
 # server-key generation (our `rand 0.10` uses `rand_core 0.10`, a different
 # trait version, so it can't be passed to `rsa` directly).
-rand_core = { version = "0.6", features = ["getrandom"] }
+rand_core = { version = "0.10", features = ["getrandom"] }
 
 # OIDC / SSO
 openid = "0.25"
