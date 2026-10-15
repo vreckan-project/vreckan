@@ -37,14 +37,17 @@
 # `cargo fetch` on a fresh runner) and goes straight to compiling:
 #   - system deps (linux-libc-dev, pkg-config, libssl-dev, cmake, make,
 #     golang, sccache) — installed in the base; the -sys requirements are
-#     documented alongside the install in Dockerfile.base-build
+#     documented alongside the install in the vreckan-workflow repo
+#     (images/vreckan-base-build/Dockerfile)
 #   - /usr/local/cargo/registry + /usr/local/cargo/git — the full
 #     dependency tree per the baked Cargo.lock
 #   - RUSTC_WRAPPER=sccache / SCCACHE_DIR=/sccache — the sccache env, set
 #     in the base (restated below for self-documentation)
-# Keep Dockerfile.base-build and this stage in lockstep: rebuild the base
-# image when the dependency tree (Cargo.lock) or the Rust toolchain changes,
-# and `scripts/build-base-image.sh` republishes it.
+# The base's Dockerfile is maintained in vreckan-workflow (not this repo):
+# images/vreckan-base-build/. Keep it in lockstep with this stage's
+# requirements; its build-base-build Gitea workflow re-bakes and republishes
+# the image whenever the dependency tree (Cargo.lock) or the Rust toolchain
+# changes.
 FROM repo.vreckanproject.com/vreckan/vreckan-base-build:latest AS build
 WORKDIR /app
 
