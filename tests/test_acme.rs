@@ -62,9 +62,10 @@ fn write_cert_tree(base: &std::path::Path, domain: &str, days: i64) {
     std::fs::write(live.join("privkey.pem"), key_pem).unwrap();
 }
 
-/// A process-wide lock serialising the tests that mutate the module's global
-/// cert-dir statics (mirrors pytest's function-scoped `monkeypatch`, which
-/// runs tests sequentially).
+/// A process-wide lock serialising the tests against the module's shared
+/// process-global state — the cert-dir statics AND the `FAKE_ACME_ISSUER`
+/// seam (mirrors pytest's function-scoped `monkeypatch`, which runs tests
+/// sequentially). Every test that reads or writes either global must hold it.
 static ACME_TEST_LOCK: Mutex<()> = Mutex::new(());
 
 /// Point the module's cert dirs at a fresh temp tree (host + app). Mirrors
@@ -228,6 +229,7 @@ async fn admin_client(state: vreckan::state::AppState) -> SecureClient {
 // --- needs_renewal -----------------------------------------------------------
 #[tokio::test]
 async fn test_needs_renewal() {
+    let _serial = lock_le();
     assert!(acme_orchestrator::needs_renewal(Some(10), 30));
     assert!(acme_orchestrator::needs_renewal(Some(30), 30));
     assert!(!acme_orchestrator::needs_renewal(Some(31), 30));
@@ -311,12 +313,14 @@ async fn test_cert_expiry_missing_file() {
 // --- config DB persistence (source of truth) ---------------------------------
 #[tokio::test]
 async fn test_acme_cert_record_none_when_unset() {
+    let _serial = lock_le();
     let state = build_state(TempDir::new().path()).await;
     assert!(acme_orchestrator::acme_cert_record(&state).await.is_none());
 }
 
 #[tokio::test]
 async fn test_acme_persist_cert_round_trips() {
+    let _serial = lock_le();
     let state = build_state(TempDir::new().path()).await;
     let (cert_pem, key_pem) = make_cert("example.com", 90);
     acme_orchestrator::acme_persist_cert(
@@ -616,6 +620,7 @@ async fn test_renew_acme_cert_acmex_error() {
 // --- effective_acme_config ---------------------------------------------------
 #[tokio::test]
 async fn test_effective_acme_config_defaults() {
+    let _serial = lock_le();
     // With no DB rows and no env, the defaults apply.
     let tmp = TempDir::new();
     let state = build_state(tmp.path()).await;
@@ -628,6 +633,7 @@ async fn test_effective_acme_config_defaults() {
 
 #[tokio::test]
 async fn test_effective_acme_config_env_override() {
+    let _serial = lock_le();
     let tmp = TempDir::new();
     let mut state = build_state(tmp.path()).await;
     // `get_setting` consults the settings instance attribute (populated from
@@ -642,6 +648,7 @@ async fn test_effective_acme_config_env_override() {
 // --- admin Certificates endpoints --------------------------------------------
 #[tokio::test]
 async fn test_certificates_get_default() {
+    let _serial = lock_le();
     let tmp = TempDir::new();
     let state = build_state(tmp.path()).await;
     let client = admin_client(state).await;
@@ -659,6 +666,7 @@ async fn test_certificates_get_default() {
 
 #[tokio::test]
 async fn test_certificates_put_and_get() {
+    let _serial = lock_le();
     let tmp = TempDir::new();
     let state = build_state(tmp.path()).await;
     let client = admin_client(state).await;
@@ -696,6 +704,7 @@ async fn test_certificates_put_and_get() {
 
 #[tokio::test]
 async fn test_certificates_put_blank_token_keeps_existing() {
+    let _serial = lock_le();
     let tmp = TempDir::new();
     let state = build_state(tmp.path()).await;
     let client = admin_client(state).await;
@@ -727,6 +736,7 @@ async fn test_certificates_put_blank_token_keeps_existing() {
 
 #[tokio::test]
 async fn test_certificates_renew_disabled() {
+    let _serial = lock_le();
     let tmp = TempDir::new();
     let state = build_state(tmp.path()).await;
     let client = admin_client(state).await;
@@ -736,6 +746,7 @@ async fn test_certificates_renew_disabled() {
 
 #[tokio::test]
 async fn test_certificates_renew_no_domains() {
+    let _serial = lock_le();
     let tmp = TempDir::new();
     let state = build_state(tmp.path()).await;
     let client = admin_client(state).await;
@@ -881,13 +892,14 @@ async fn first_served_cert(addr: std::net::SocketAddr) -> CertificateDer<'static
 
 #[tokio::test]
 async fn test_renewal_hot_reloads_served_cert_without_restart() {
+    let _serial = lock_le();
     // rustls needs a process-default crypto provider for both the server
     // `ServerConfig` and the test's client; install once (ignore "already set").
     let _ = rustls::crypto::ring::default_provider().install_default();
 
     // A fresh per-test state with a throwaway SQLite config DB (source of truth
-    // for the issued bundle). The test does not use the on-disk cert dirs, so it
-    // does not need to acquire the global acme-path lock.
+    // for the issued bundle). It still holds the process-wide lock (above)
+    // because it installs a fake issuer via `IssuerGuard`, a process global.
     let mut state = build_state(TempDir::new().path()).await;
 
     // Cert A is the currently-served certificate AND is within the renewal
