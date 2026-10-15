@@ -123,7 +123,7 @@ tokio-rustls = "0.26"
 # and the `Location`-header check masks the real 400 (ANT-138). Upstream
 # derives the JWS `alg` and JWK from the actual key (`Jwk::for_key_pair`,
 # `JwsSigner::jwa_algorithm`) and adds `KeyPairGenerator`, so we pin an
-# `antitux/acmex` fork (of houseme/acmex @ f7b06c2) with four fixes:
+# `antitux/acmex` fork (of houseme/acmex @ f7b06c2) with six fixes:
 #   1. the `contact` field in account responses is defaulted — Boulder
 #      omits it when the account has no contacts, which broke parsing;
 #   2. POST-as-GET reads (order/authz/cert lookup, account lookup) use
@@ -134,13 +134,21 @@ tokio-rustls = "0.26"
 #      during DNS propagation and retries come minutes later);
 #   4. challenge *activation* must POST an empty object (`{` + `}`), not
 #      an empty payload — an empty payload is a POST-as-GET (fetch only)
-#      and never triggers validation (RFC 8555 section 7.5.1), so
-#      challenges sat "pending" forever.
+#      and never triggers validation (RFC 8555 7.5.1), so
+#      challenges sat "pending" forever;
+#   5. CSR subject CN: rcgen's default DN is CN="rcgen self signed
+#      cert", which Boulder rejects ("Domain name contains an invalid
+#      character"); the fork sets the CN to the first identifier;
+#   6. the Cloudflare provider's TXT create is idempotent — Cloudflare
+#      81058 ("An identical record already exists") fires when a CA
+#      reuses a still-valid authorization (same token, same digest) and
+#      a previous run left the record in place; the fork reuses the
+#      existing record instead of failing the issuance.
 # We generate ECDSA P-256 account keys (ES256), accepted by all three
 # supported CAs. Revert to the crates.io release once the fixes ship in a
 # published version.
 [patch.crates-io]
-acmex = { git = "https://github.com/antitux/acmex", rev = "813bcba0b9f774fe92ace7c0123e3f778fcd4d91" }
+acmex = { git = "https://github.com/antitux/acmex", rev = "261817d654bff17e730421861c4a71a57d904c88" }
 
 [profile.release]
 opt-level = 3
