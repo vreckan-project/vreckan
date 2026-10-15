@@ -31,27 +31,34 @@ use acmex::dns::providers::digitalocean::DigitalOceanConfig;
 use acmex::dns::providers::linode::LinodeConfig;
 use acmex::dns::providers::route53::Route53Config;
 use acmex::{
-    AcmeClient, AcmeConfig, AlibabaCloudDnsProvider, AzureDnsProvider, Challenge,
-    ChallengeSolver, ChallengeSolverRegistry, ChallengeType, CloudFlareDnsProvider,
-    ClouDnsProvider, Contact, DigitalOceanDnsProvider, DnsProvider, GodaddyDnsProvider,
-    GoogleCloudDnsProvider, Http01Solver, HuaweiCloudDnsProvider, Identifier,
-    KeyPair, LinodeDnsProvider, Route53DnsProvider, TencentCloudDnsProvider,
+    AcmeClient, AcmeConfig, AlibabaCloudDnsProvider, AzureDnsProvider, CAConfig, Challenge,
+    ChallengeSolver, ChallengeSolverRegistry, ChallengeType, CertificateAuthority,
+    CloudFlareDnsProvider, ClouDnsProvider, Contact, DigitalOceanDnsProvider, DnsProvider,
+    Environment, GodaddyDnsProvider, GoogleCloudDnsProvider, Http01Solver,
+    HuaweiCloudDnsProvider, Identifier, KeyPair, LinodeDnsProvider, Route53DnsProvider,
+    TencentCloudDnsProvider,
 };
+use acmex::crypto::{KeyPairGenerator, KeyType};
 
-/// ACME directory URLs per CA. Let's Encrypt uses acmex's built-in helpers;
-/// the others use their published ACME v2 endpoints.
+/// ACME directory URLs per CA, resolved through acmex's CA table so the
+/// endpoints track upstream (Let's Encrypt production/staging, ZeroSSL's
+/// EAB-gated `DV90` endpoint, Google Trust Services — the previously
+/// hand-coded ZeroSSL/Google URLs had gone stale; ANT-138).
 pub fn ca_directory(ca: &str, staging: bool) -> String {
-    match ca.to_ascii_lowercase().as_str() {
-        "letsencrypt" => {
-            if staging {
-                AcmeConfig::lets_encrypt_staging().directory_url
-            } else {
-                AcmeConfig::lets_encrypt().directory_url
-            }
+    let authority = match ca.to_ascii_lowercase().as_str() {
+        "letsencrypt" => CertificateAuthority::LetsEncrypt,
+        "zerossl" => CertificateAuthority::ZeroSSL,
+        "google" | "google-public-certs" => CertificateAuthority::Google,
+        // Any other value is treated as a full custom directory URL.
+        other => return other.to_string(),
+    };
+    let environment = if staging { Environment::Staging } else { Environment::Production };
+    match CAConfig::new(authority, environment).directory_url() {
+        Ok(url) => url,
+        Err(e) => {
+            warn!("Could not resolve the ACME directory for {ca}: {e}");
+            String::new()
         }
-        "zerossl" => "https://acme.zerossl.com/v2/server/directory".to_string(),
-        "google" | "google-public-certs" => "https://acme.v1.pki.goog/directory".to_string(),
-        other => other.to_string(),
     }
 }
 
@@ -147,20 +154,16 @@ impl ChallengeSolver for VreckanDns01Solver {
         identifier: &Identifier,
         key_authorization: &str,
     ) -> acmex::error::Result<()> {
-        if identifier.id_type != "dns" {
+        let Some(dns) = identifier.as_dns() else {
             return Err(acmex::error::AcmeError::challenge(
                 "dns-01".to_string(),
-                format!("identifier is not a DNS name (type={})", identifier.id_type),
+                "identifier is not a DNS name".to_string(),
             ));
-        }
+        };
         // The host that carries the TXT record: for a wildcard
         // (`*.example.com`) it is the apex; for a normal name it is the name
         // itself.
-        let target = identifier
-            .value
-            .strip_prefix("*.")
-            .unwrap_or(&identifier.value)
-            .to_string();
+        let target = dns.base_name().to_string();
         let name = format!("_acme-challenge.{target}");
 
         let provider = self
@@ -482,13 +485,32 @@ pub fn account_key_path() -> String {
 /// Load the persisted ACME account key, or generate and persist a new one.
 /// Reusing the same key keeps the ACME account stable across restarts so we
 /// don't burn new-account rate limits.
+///
+/// The default key type is **ECDSA P-256**: its JWS algorithm (ES256) is
+/// accepted by all three supported CAs, whereas the `acmex` crate's built-in
+/// default (Ed25519/EdDSA) is no longer accepted by Let's Encrypt production
+/// (ANT-138). A persisted key of any other type is replaced — its ACME
+/// account, if one was ever registered, is simply orphaned and a new
+/// account is registered under the new key.
 pub async fn load_or_create_account_key() -> Result<KeyPair, String> {
     let path = account_key_path();
     if let Ok(kp) = KeyPair::load_from_file(&path) {
-        info!("Loaded ACME account key from {path}");
-        return Ok(kp);
+        match KeyType::for_key_pair(&kp.0) {
+            Ok(KeyType::EcdsaP256) => {
+                info!("Loaded ACME account key from {path}");
+                return Ok(kp);
+            }
+            Ok(other) => info!(
+                "Replacing ACME account key at {path}: existing key is {other}, \
+                 but ECDSA P-256 (ES256) is expected — the account-key type \
+                 Let's Encrypt production accepts (ANT-138)"
+            ),
+            Err(e) => info!(
+                "Replacing ACME account key at {path}: existing key could not be classified ({e})"
+            ),
+        }
     }
-    let kp = KeyPair::generate().map_err(|e| e.to_string())?;
+    let kp = KeyPair(KeyPairGenerator::ecdsa_p256().generate().map_err(|e| e.to_string())?);
     if let Some(parent) = std::path::Path::new(&path).parent() {
         let _ = std::fs::create_dir_all(parent);
     }
@@ -497,7 +519,7 @@ pub async fn load_or_create_account_key() -> Result<KeyPair, String> {
         &path,
         std::os::unix::fs::PermissionsExt::from_mode(0o600),
     );
-    info!("Generated and persisted new ACME account key at {path}");
+    info!("Generated and persisted new ACME account key (ECDSA P-256) at {path}");
     Ok(kp)
 }
 
@@ -674,7 +696,7 @@ mod tests {
         assert!(ca_directory("letsencrypt", true).contains("acme-staging-v02"));
         assert!(ca_directory("letsencrypt", false).contains("acme-v02.api.letsencrypt.org"));
         assert!(ca_directory("zerossl", false).contains("zerossl"));
-        assert!(ca_directory("google", false).contains("pki.goog"));
+        assert!(ca_directory("google", false).contains("dv.google.com"));
     }
 
     #[test]

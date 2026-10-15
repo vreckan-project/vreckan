@@ -9,6 +9,36 @@ is committed normally in `vreckan`. The changelog is the authoritative
 record of what shipped in each release — see
 [`docs/release.md`](./docs/release.md) for the conventions.
 
+## 2026-10-15 — ACME account key moved to ECDSA P-256; acmex pinned to upstream (ANT-138)
+
+Let's Encrypt production stopped accepting **EdDSA** (Ed25519) account
+keys in October 2026 — it now accepts only RS256 / ES256 / ES384 /
+ES512. The published `acmex` 0.8.0 hard-codes the account key as Ed25519,
+so `Issue/Renew now` failed with a misleading "Missing location header"
+(the account `newAccount` POST returned 400 before the header check).
+
+- **ECDSA P-256 account key (ES256).** `load_or_create_account_key` now
+  generates P-256 keys and **rotates** any persisted key of another type
+  (the orphaned account is simply re-registered under the new key).
+  ES256 is accepted by all three supported CAs.
+- **`acmex` pinned to the upstream repo** via `[patch.crates-io]`
+  (rev `f7b06c2`, 2026-10-06): only upstream derives the JWS `alg` and
+  JWK from the actual key (`Jwk::for_key_pair`,
+  `JwsSigner::jwa_algorithm`) and ships `KeyPairGenerator`. The
+  re-resolution also moved the acmex DNS/HTTP subtree to the
+  advisory-fixed majors (h2 0.4, hickory 0.26, rustls 0.23,
+  rustls-webpki 0.103, hyper 1.x), so the now-unnecessary RUSTSEC
+  ignores were dropped from `deny.toml` and the acmex git source was
+  added to its source allowlist.
+- **CA directory URLs resolve through acmex's CA table** instead of
+  hand-coded constants that had gone stale: ZeroSSL now targets its
+  current EAB-gated `https://acme.zerossl.com/v2/DV90` endpoint (the
+  old `/v2/server/directory` 403s) and Google targets
+  `https://dv.google.com/acme/directory` (the old `acme.v1.pki.goog`
+  404s). ZeroSSL additionally requires an External Account Binding
+  (account key ID + MAC key), which vreckan does not yet configure —
+  tracked as a follow-up.
+
 ## 2026-10-15 — Native ACME client, certbot sidecar removed (ANT-128)
 
 The certificate-issuance path is rewritten around the native **`acmex`**
