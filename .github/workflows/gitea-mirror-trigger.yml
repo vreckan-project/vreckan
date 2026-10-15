@@ -14,6 +14,10 @@
 #     2. If the tag v<VERSION> doesn't exist yet, creates it, pushes it to
 #        GitHub, and mirrors it to Gitea. The Gitea "Release" workflow then
 #        fires on the tag push and builds + pushes the container image.
+#     3. In the same tag-creation case, creates the user-facing GitHub
+#        Release entry (/releases) with the newest CHANGELOG.md section as
+#        the notes. Before this step, neither side of the pipeline created
+#        the /releases entry — v0.6.2 had to be published by hand (ANT-128).
 #     A version only gets tagged when VERSION actually changes (a version-bump
 #     PR is merged); ordinary pushes are a quick no-op.
 #
@@ -212,3 +216,30 @@ jobs:
           # (both push the same commit, so it's a no-op for them).
           git push gitea "$TAG" "HEAD:refs/heads/main"
           echo "Mirrored tag ${TAG} + main to Gitea"
+
+      - name: Create GitHub Release
+        # Only when the tag was just created above. Root cause of the missing
+        # v0.6.2 /releases entry: this job only ever cut the git tag, and the
+        # Gitea "Release (Rust)" workflow only builds + pushes the image —
+        # neither created the GitHub Release (ANT-128). The vreckan-ci app
+        # token minted above carries Contents: write, which covers releases.
+        if: steps.exists.outputs.exists == 'false'
+        env:
+          GH_TOKEN: ${{ steps.apptoken.outputs.token }}
+        run: |
+          set -euo pipefail
+          TAG="${{ steps.version.outputs.tag }}"
+          # Release notes = the newest CHANGELOG.md section (the entry for
+          # this release; per docs/release.md it ships in the same PR as the
+          # VERSION bump, so it is present in this checkout at tag time).
+          awk '/^## /{if (found) exit; found=1} found' CHANGELOG.md > /tmp/release-notes.md
+          if [ ! -s /tmp/release-notes.md ]; then
+            echo "WARNING: no changelog section found — using fallback notes" >&2
+            echo "Release ${TAG}" > /tmp/release-notes.md
+          fi
+          # `gh` is preinstalled on ubuntu-latest and resolves GITHUB_REPOSITORY
+          # from the Actions context. --target pins the release to the tagged
+          # commit (the merge that triggered this run).
+          gh release create "$TAG" --target "${GITHUB_SHA}" \
+            --title "Release ${TAG}" --notes-file /tmp/release-notes.md
+          echo "Created GitHub Release ${TAG}"
