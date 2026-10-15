@@ -7,7 +7,7 @@
 //! HTTP-01). The resulting certificate chain + key are carried back to the
 //! caller in `AcmeIssueResult` so it can persist them to the config DB (the
 //! authoritative source of truth); they are also written as a best-effort
-//! mirror into the app's `/data/le` layout (`live/{primary}/cert.pem` +
+//! mirror into the app's `/data/acme` layout (`live/{primary}/cert.pem` +
 //! `privkey.pem`) for backward compatibility.
 //!
 //! DNS-01 is routed through a small provider registry so a user can choose
@@ -42,7 +42,7 @@ use acmex::{
 /// the others use their published ACME v2 endpoints.
 pub fn ca_directory(ca: &str, staging: bool) -> String {
     match ca.to_ascii_lowercase().as_str() {
-        "letsencrypt" | "le" => {
+        "letsencrypt" => {
             if staging {
                 AcmeConfig::lets_encrypt_staging().directory_url
             } else {
@@ -236,7 +236,7 @@ pub struct AcmeDnsConfig<'a> {
     pub cloudflare_token: String,
     pub cloudflare_zone_id: String,
     pub cloudflare_email: String,
-    /// The primary domain (first in `le_domains`), used for Cloudflare zone
+    /// The primary domain (first in `acme_domains`), used for Cloudflare zone
     /// auto-discovery and as the registration key for the provider.
     pub domain: String,
     /// Free-form JSON holding provider-specific credentials for the non-
@@ -476,7 +476,7 @@ async fn discover_cloudflare_zone(token: &str, domain: &str) -> Result<String, S
 
 /// The on-disk location of the persisted ACME account key.
 pub fn account_key_path() -> String {
-    format!("{}/acme-account.key", crate::le::app_cert_dir())
+    format!("{}/acme-account.key", crate::acme_orchestrator::app_cert_dir())
 }
 
 /// Load the persisted ACME account key, or generate and persist a new one.
@@ -530,7 +530,7 @@ pub struct AcmeIssueResult {
 /// fulfil the chosen challenge. On success the issued certificate chain and
 /// private key are carried back in the result (for the caller to persist to
 /// the config DB — the authoritative store) and also written as a best-effort
-/// on-disk mirror in the `/data/le` layout. Collects human-readable milestone
+/// on-disk mirror in the `/data/acme` layout. Collects human-readable milestone
 /// `logs` so the result can be surfaced to the user (the original "button did
 /// nothing" complaint).
 pub async fn issue_certificate(args: &IssueArgs<'_>) -> AcmeIssueResult {
@@ -539,7 +539,7 @@ pub async fn issue_certificate(args: &IssueArgs<'_>) -> AcmeIssueResult {
         ($($arg:tt)*) => {{
             let m = format!($($arg)*);
             logs.push(m.clone());
-            info!(target: "le_acme", "{m}");
+            info!(target: "acme", "{m}");
         }};
     }
 
@@ -595,7 +595,7 @@ pub async fn issue_certificate(args: &IssueArgs<'_>) -> AcmeIssueResult {
             let primary = args.domains.first().cloned().unwrap_or_default();
             let live = format!(
                 "{}/live/{primary}",
-                crate::le::app_cert_dir()
+                crate::acme_orchestrator::app_cert_dir()
             );
             // Best-effort on-disk mirror (backward compat with the certbot
             // layout); the DB is authoritative, so a write failure is a

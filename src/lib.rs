@@ -17,7 +17,7 @@ pub mod docker_provider;
 pub mod e2ee;
 pub mod entities;
 pub mod files;
-pub mod le;
+pub mod acme_orchestrator;
 pub mod permissions;
 pub mod security;
 pub mod session_proxy;

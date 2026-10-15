@@ -9,7 +9,7 @@ use std::net::SocketAddr;
 use std::path::PathBuf;
 use tracing::info;
 
-use vreckan::{app, auth, catalog, db, e2ee, files, le, tls, user_manager};
+use vreckan::{app, auth, catalog, db, e2ee, files, acme_orchestrator, tls, user_manager};
 use vreckan::settings::Settings;
 use vreckan::state::AppState;
 
@@ -100,7 +100,7 @@ async fn main() -> anyhow::Result<()> {
 
     // Let's Encrypt renewal: started unconditionally; the job no-ops (sleeps)
     // when LE is disabled or auto-renew is off. Mirrors the Python lifespan.
-    tokio::spawn(le::background_acme_renewal_job(state.clone()));
+    tokio::spawn(acme_orchestrator::background_acme_renewal_job(state.clone()));
 
     // Build the router.
     let app = app::router(state);

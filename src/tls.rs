@@ -2,12 +2,12 @@
 //! TLS certificate selection.
 //!
 //! Ports the cert logic in `run_https`. When ACME is enabled the real cert is
-//! issued/renewed by the native acmex backend (`le::ensure_acme_cert`);
+//! issued/renewed by the native acmex backend (`acme_orchestrator::ensure_acme_cert`);
 //! otherwise a generated self-signed cert (CN=localhost) is used.
 //! `select_cert` issues/renews when due, then serves the cert if a valid one is
 //! now present, else falls back to the self-signed cert.
 
-use crate::le;
+use crate::acme_orchestrator;
 use crate::state::AppState;
 use anyhow::Result;
 use std::path::PathBuf;
@@ -26,9 +26,9 @@ pub async fn select_cert(state: &AppState) -> Result<(Vec<u8>, Vec<u8>)> {
     // ACME: read the *effective* config (DB-over-env), issue/renew via the
     // native acmex backend when due, then serve the cert if a valid one is
     // now present on disk.
-    let cfg = le::effective_acme_config(state).await;
+    let cfg = acme_orchestrator::effective_acme_config(state).await;
     if cfg.acme_enabled {
-        let issued = le::ensure_acme_cert(state, &cfg, false)
+        let issued = acme_orchestrator::ensure_acme_cert(state, &cfg, false)
             .await
             .get("issued")
             .and_then(|v| v.as_bool())
@@ -39,7 +39,7 @@ pub async fn select_cert(state: &AppState) -> Result<(Vec<u8>, Vec<u8>)> {
             .map(|d| d.trim().to_string())
             .filter(|d| !d.is_empty())
             .collect();
-        let status = le::cert_status(state, &domains).await;
+        let status = acme_orchestrator::cert_status(state, &domains).await;
         if status.get("present").and_then(|v| v.as_bool()).unwrap_or(false)
             && status.get("valid").and_then(|v| v.as_bool()).unwrap_or(false)
         {

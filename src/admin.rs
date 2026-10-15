@@ -8,7 +8,7 @@
 //! say, only `admin.apps` can manage apps but not accounts. The frontend
 //! mirrors this by only showing the admin sections the caller has permission
 //! for. The `/certificates/*` and `/backup/*` route groups are added by
-//! `le.rs` and `backup_manager.rs` respectively.
+//! `acme_orchestrator.rs` and `backup_manager.rs` respectively.
 
 use std::collections::HashMap;
 
@@ -941,8 +941,8 @@ async fn get_certificates(
         .await;
     }
     // The *effective* config (DB-over-env-over-default), mirroring Python's
-    // `get_certificates` which reads via `le.effective_acme_config()`.
-    let cfg = crate::le::effective_acme_config(&state).await;
+    // `get_certificates` which reads via `acme_orchestrator.effective_acme_config()`.
+    let cfg = crate::acme_orchestrator::effective_acme_config(&state).await;
     let domains: Vec<String> = cfg
         .acme_domains
         .split(',')
@@ -971,7 +971,7 @@ async fn get_certificates(
     for name in ACME_SETTING_FIELDS {
         sources.insert((*name).to_string(), Value::String(setting_source(&state, name).await));
     }
-    let status = crate::le::cert_status(&state, &domains).await;
+    let status = crate::acme_orchestrator::cert_status(&state, &domains).await;
     let value = serde_json::json!({
         "values": values,
         "sources": Value::Object(sources),
@@ -1094,8 +1094,8 @@ async fn renew_certificates(
         .await;
     }
     // The *effective* config (DB-over-env-over-default), mirroring Python's
-    // `renew_certificates` which reads via `le.effective_acme_config()`.
-    let cfg = crate::le::effective_acme_config(&state).await;
+    // `renew_certificates` which reads via `acme_orchestrator.effective_acme_config()`.
+    let cfg = crate::acme_orchestrator::effective_acme_config(&state).await;
     if !cfg.acme_enabled {
         return e2ee::encrypt_response(
             &state,
@@ -1125,7 +1125,7 @@ async fn renew_certificates(
     // short-circuit that previously made the button appear to do nothing.
     // The returned object carries `issued`/`renewed` plus human-readable
     // `logs`/`error` so the UI can explain what happened.
-    let result = crate::le::ensure_acme_cert(&state, &cfg, true).await;
+    let result = crate::acme_orchestrator::ensure_acme_cert(&state, &cfg, true).await;
     let mut result = result;
     if let Some(obj) = result.as_object_mut() {
         let issued = obj.get("issued").and_then(|v| v.as_bool()).unwrap_or(false);
