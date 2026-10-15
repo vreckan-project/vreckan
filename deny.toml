@@ -82,11 +82,15 @@ multiple-versions = "warn"
 deny = []
 
 [sources]
-# Source allowlist: the canonical crates.io registry plus the upstream acmex
-# repo (pinned via `[patch.crates-io]` in Cargo.toml for the account-key
-# crypto fix, ANT-138 — see that comment for the reason and the revert
-# condition). Unexpected sources are WARNINGS (not errors) for now.
+# Source allowlist: the canonical crates.io registry plus the acmex fork
+# (pinned via `[patch.crates-io]` in Cargo.toml for the account-key crypto
+# fix + contact-field default, ANT-138 — see that comment for the reason
+# and the revert condition). Unexpected sources are WARNINGS (not errors)
+# for now.
 allow-registry = ["https://github.com/rust-lang/crates.io-index"]
-allow-git = ["https://github.com/houseme/acmex"]
+allow-git = [
+  "https://github.com/antitux/acmex",
+  "https://github.com/houseme/acmex",
+]
 unknown-registry = "warn"
 unknown-git = "warn"

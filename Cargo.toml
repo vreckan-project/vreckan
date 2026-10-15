@@ -122,12 +122,14 @@ tokio-rustls = "0.26"
 # accepts EdDSA (2026-10: RS256/ES256/ES384/ES512 only) — registration fails
 # and the `Location`-header check masks the real 400 (ANT-138). Upstream
 # derives the JWS `alg` and JWK from the actual key (`Jwk::for_key_pair`,
-# `JwsSigner::jwa_algorithm`) and adds `KeyPairGenerator`, so we pin the
-# upstream repo and generate ECDSA P-256 account keys (ES256), accepted by
-# all three supported CAs. Revert to the crates.io release once that fix
-# ships in a published version.
+# `JwsSigner::jwa_algorithm`) and adds `KeyPairGenerator`, so we pin an
+# `antitux/acmex` fork (of houseme/acmex @ f7b06c2) that also defaults the
+# `contact` field in the account response — Boulder omits it when the
+# account has no contacts, which broke response parsing. We generate ECDSA
+# P-256 account keys (ES256), accepted by all three supported CAs. Revert
+# to the crates.io release once both fixes ship in a published version.
 [patch.crates-io]
-acmex = { git = "https://github.com/houseme/acmex", rev = "f7b06c2cdb930037d1f3899edf33aa2c3464861e" }
+acmex = { git = "https://github.com/antitux/acmex", rev = "f3ed526dfb816f9e23bb88cd5eb4d528d8a19620" }
 
 [profile.release]
 opt-level = 3

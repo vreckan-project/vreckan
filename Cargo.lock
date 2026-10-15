@@ -5,7 +5,7 @@ version = 4
 [[package]]
 name = "acmex"
 version = "0.8.0"
-source = "git+https://github.com/houseme/acmex?rev=f7b06c2cdb930037d1f3899edf33aa2c3464861e#f7b06c2cdb930037d1f3899edf33aa2c3464861e"
+source = "git+https://github.com/antitux/acmex?rev=f3ed526dfb816f9e23bb88cd5eb4d528d8a19620#f3ed526dfb816f9e23bb88cd5eb4d528d8a19620"
 dependencies = [
  "async-trait",
  "aws-config",
