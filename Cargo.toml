@@ -1,6 +1,6 @@
 [package]
 name = "vreckan"
-version = "0.6.2"
+version = "0.6.3"
 edition = "2021"
 description = "Vreckan server (Rust port of the Python/FastAPI server)"
 # MPL-2.0 to match the upstream SealSkin fork this project derives from (see
