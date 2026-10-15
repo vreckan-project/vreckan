@@ -2,7 +2,10 @@
 #
 # Vreckan (Rust port) — multi-stage image build.
 #
-#   stage 1 (build):   rust:1.99-slim (Debian trixie) — `cargo build --release`
+#   stage 1 (build):   vreckan-base-build (ANT-203) — the self-contained
+#                      build/work base image (rust:1.99-slim underneath,
+#                      the -sys build deps, sccache, and a warm crates.io
+#                      + git dependency cache baked in) — `cargo build --release`
 #   stage 2 (test):    build stage + the `tests/` tree — CI runs
 #                      `cargo test --profile test-release` inside it
 #                      (kept out of prod)
@@ -19,47 +22,31 @@
 # are all self-contained.
 #
 # Base-image pinning (carried over from the Python image): `.base-image-digest`
-# holds the digest of the BUILD base image (rust:1.99-slim). The nightly scan
-# workflow rebuilds when the live registry digest of that base differs from
-# the `vreckan.base-digest` label of the last nightly image, and its bot PR
-# re-points the file. The runtime base (debian:trixie-slim, the same trixie
-# distro the build stage is built on, so the glibc-linked binary runs as-is)
-# is a fixed tag, not part of the digest convention.
+# holds the digest of the BUILD base image (vreckan-base-build, itself built
+# on rust:1.99-slim). The nightly scan workflow rebuilds when the live
+# registry digest of that base differs from the `vreckan.base-digest` label
+# of the last nightly image, and its bot PR re-points the file. The runtime
+# base (debian:trixie-slim, the same trixie distro the build stage is built
+# on, so the glibc-linked binary runs as-is) is a fixed tag, not part of the
+# digest convention.
 
-FROM rust:1.99-slim AS build
+# The build base is the self-contained vreckan-base-build image (ANT-203),
+# not rust:1.99-slim directly. It pre-installs the system deps the -sys
+# crates need and bakes a warm crates.io + git dependency cache, so a build
+# here skips both the apt install and the dependency fetch (a full
+# `cargo fetch` on a fresh runner) and goes straight to compiling:
+#   - system deps (linux-libc-dev, pkg-config, libssl-dev, cmake, make,
+#     golang, sccache) — installed in the base; the -sys requirements are
+#     documented alongside the install in Dockerfile.base-build
+#   - /usr/local/cargo/registry + /usr/local/cargo/git — the full
+#     dependency tree per the baked Cargo.lock
+#   - RUSTC_WRAPPER=sccache / SCCACHE_DIR=/sccache — the sccache env, set
+#     in the base (restated below for self-documentation)
+# Keep Dockerfile.base-build and this stage in lockstep: rebuild the base
+# image when the dependency tree (Cargo.lock) or the Rust toolchain changes,
+# and `scripts/build-base-image.sh` republishes it.
+FROM repo.vreckanproject.com/vreckan/vreckan-base-build:latest AS build
 WORKDIR /app
-
-# System deps needed by the -sys crates in the tree (gcc, libc6-dev,
-# ca-certificates and perl already ship with rust:slim):
-#   linux-libc-dev   — kernel UAPI headers, required by the C code bundled
-#                      with libsqlite3-sys and aws-lc-sys
-#   pkg-config +
-#   libssl-dev       — system OpenSSL for openssl-sys (the native-tls
-#                      provider pulled in via openid/jwks -> reqwest)
-#   cmake + make     — acmex (ANT-128) pulls aws-lc-rs with the `fips`
-#                      feature, which builds the FIPS variant of aws-lc
-#                      (aws-lc-fips-sys) from source via its CMake project.
-#                      Unlike the non-FIPS aws-lc-sys (which builds from
-#                      pre-generated sources with the bundled cc builder) the
-#                      FIPS crate always uses the CMake builder — its build
-#                      script disables the prebuilt path for FIPS builds —
-#                      so cmake + make are hard requirements.
-#   golang           — the same FIPS build compiles the FIPSTools
-#                      delocate/inject_hash utilities with Go during CMake
-#                      (AWS-LC's CMakeLists FATALs when Go is missing in a
-#                      FIPS build); perl, the other FIPS requirement, already
-#                      ships with the rust base image.
-RUN apt-get update -y && \
-    DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends \
-      linux-libc-dev \
-      pkg-config \
-      libssl-dev \
-      cmake \
-      make \
-      golang \
-      sccache && \
-    apt-get clean && \
-    rm -rf /var/lib/apt/lists/*
 
 # sccache: shared compile cache that persists across builds via a BuildKit
 # cache mount (the `docker build` driver's BuildKit rejects `type=volume`
@@ -68,24 +55,26 @@ RUN apt-get update -y && \
 # On a cold rebuild (BuildKit layer cache invalidated, e.g. by a
 # source-mirror switch) the dependency crates are still served from the
 # sccache disk cache, so only changed crates are recompiled. Cuts cold
-# builds by 30–70 %.
+# builds by 30–70 %. (Both vars are also set by the base image; restated
+# here so this file is self-documenting.)
 ENV RUSTC_WRAPPER=sccache
 ENV SCCACHE_DIR=/sccache
 
-# Warm the cargo cache from manifests alone, so later source-only changes
-# don't re-fetch the whole dependency tree.
+# Drift top-up: the base image already carries the full dependency tree per
+# its baked Cargo.lock, so with an unchanged lockfile `cargo fetch` is a
+# no-op and only the delta is downloaded after a lockfile change. Deliberate
+# no `type=cache` mounts on /usr/local/cargo/registry|git — a named BuildKit
+# cache starts empty on a fresh runner and, mounted over the baked cache,
+# would hide it and force a full re-fetch. The baked layer is the warm
+# cache; only genuinely new crates need network here.
 COPY Cargo.toml Cargo.lock ./
-RUN --mount=type=cache,target=/usr/local/cargo/registry \
-    --mount=type=cache,target=/usr/local/cargo/git \
-    cargo fetch
+RUN cargo fetch
 
 # NB: no `type=cache` mount for /app/target — the compiled binary must live
 # in the step's own snapshot so `COPY --from=build` finds it when this step
 # is replayed from cache (a mount that outlives the snapshot breaks that).
 COPY src ./src
-RUN --mount=type=cache,target=/usr/local/cargo/registry \
-    --mount=type=cache,target=/usr/local/cargo/git \
-    --mount=type=cache,id=sccache,target=/sccache \
+RUN --mount=type=cache,id=sccache,target=/sccache \
     cargo build --release
 
 # Test stage: the build stage plus the integration-test tree. CI builds
@@ -112,9 +101,7 @@ RUN --mount=type=cache,target=/usr/local/cargo/registry \
 FROM build AS test
 COPY tests ./tests
 COPY server ./server
-RUN --mount=type=cache,target=/usr/local/cargo/registry \
-    --mount=type=cache,target=/usr/local/cargo/git \
-    --mount=type=cache,id=sccache,target=/sccache \
+RUN --mount=type=cache,id=sccache,target=/sccache \
     CORES=$(nproc); \
     JOBS=$(awk '/^MemAvailable:/{print int($2/1048576/4)}' /proc/meminfo); \
     [ "$JOBS" -lt 1 ] && JOBS=1; [ "$JOBS" -gt "$CORES" ] && JOBS=$CORES; \

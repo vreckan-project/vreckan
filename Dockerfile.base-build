@@ -1,0 +1,87 @@
+# syntax=docker/dockerfile:1
+#
+# Vreckan (Rust) — stable build/work base image (`vreckan-base-build`).
+#
+# A self-contained image with every tool needed to build and work on vreckan:
+# the Rust 1.99 toolchain, the -sys build dependencies, sccache, and a warm
+# crates.io + git dependency cache. Two ways to use it (ANT-203):
+#
+#   1. Spin one up to do work (no build step needed):
+#        docker run --rm -it -v "$PWD":/app \
+#          repo.vreckanproject.com/vreckan/vreckan-base-build
+#     You land in a shell at /app with `cargo`, `rustc`, sccache, and a
+#     pre-fetched dependency tree already in place — `cargo build` /
+#     `cargo test` start immediately instead of re-fetching the tree.
+#
+#   2. As the build stage of the production image: the main `Dockerfile`
+#     starts `FROM` this image, so a release build skips the system-dep
+#     install and the dependency fetch and goes straight to `cargo build`.
+#
+# Built and pushed to the Gitea registry (repo.vreckanproject.com) by
+# `scripts/build-base-image.sh`. Rebuild it whenever the Rust base toolchain
+# or the dependency tree (Cargo.lock) changes so the baked cache stays warm.
+#
+# The system-dep set mirrors the `build` stage of the production `Dockerfile`
+# exactly, so the two stay in lockstep.
+
+FROM rust:1.99-slim AS base-build
+WORKDIR /app
+
+# System deps needed by the -sys crates in the tree (gcc, libc6-dev,
+# ca-certificates and perl already ship with rust:slim):
+#   linux-libc-dev   — kernel UAPI headers, required by the C code bundled
+#                      with libsqlite3-sys and aws-lc-sys
+#   pkg-config +
+#   libssl-dev       — system OpenSSL for openssl-sys (the native-tls
+#                      provider pulled in via openid/jwks -> reqwest)
+#   cmake + make     — acmex (ANT-128) pulls aws-lc-rs with the `fips`
+#                      feature, which builds the FIPS variant of aws-lc
+#                      (aws-lc-fips-sys) from source via its CMake project.
+#   golang           — the same FIPS build compiles the FIPSTools
+#                      delocate/inject_hash utilities with Go during CMake
+#   sccache          — shared compile cache (see the ENV below)
+# The mkdir of /sccache is folded in here so the apt layer stays a single
+# unit and the sccache directory is present for both run and build consumers.
+RUN apt-get update -y && \
+    DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends \
+      linux-libc-dev \
+      pkg-config \
+      libssl-dev \
+      cmake \
+      make \
+      golang \
+      sccache && \
+    apt-get clean && \
+    rm -rf /var/lib/apt/lists/* && \
+    mkdir -p /sccache
+
+# sccache: the Rust compile cache. The env is set for both a bare `docker run`
+# (bind-mount a host dir at /sccache to persist it) and the consumer build
+# stage (the production `Dockerfile` mounts it as a BuildKit cache,
+# `id=sccache`, for cross-build reuse). On a cold rebuild only changed crates
+# are recompiled; sccache cuts cold builds by 30–70 %.
+ENV RUSTC_WRAPPER=sccache
+ENV SCCACHE_DIR=/sccache
+
+# Keep the Rust toolchain on PATH in login shells too. The base distro's
+# /etc/profile resets PATH and drops /usr/local/cargo/bin, so an interactive
+# `docker run -it --entrypoint bash -l <image>` would otherwise lose cargo /
+# rustc. A no-op for the non-login shell Docker `RUN` uses (the image ENV
+# already carries /usr/local/cargo/bin).
+RUN printf '#!/bin/sh\nexport PATH="/usr/local/cargo/bin:$PATH"\n' \
+    > /etc/profile.d/vreckan-build.sh
+
+# Warm the dependency cache and bake it into the image. Deliberately NOT a
+# BuildKit cache mount: a mount's contents do not survive into the committed
+# layer, and this image must be self-contained. `cargo fetch` downloads the
+# whole crates.io tree and the single git dependency (acmex) into the standard
+# CARGO_HOME locations (/usr/local/cargo/registry + /usr/local/cargo/git), so a
+# first build in a fresh container does not re-fetch the tree. A consumer whose
+# Cargo.lock has since changed still fetches only the deltas during `cargo
+# build`. Rebuild this image when Cargo.lock changes to keep the cache warm.
+COPY Cargo.toml Cargo.lock ./
+RUN cargo fetch
+
+# Drop into a shell by default so `docker run -it <image>` is immediately
+# usable for interactive work (mount your tree at /app).
+CMD ["bash"]
