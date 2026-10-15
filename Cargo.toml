@@ -113,6 +113,9 @@ anyhow = "1"
 [dev-dependencies]
 # Direct router invocation in integration tests (no real socket needed).
 tower = { version = "0.5", features = ["util"] }
+# TLS client for the hot-reload test (already in the tree via axum-server; a
+# direct dev-dep so the test can drive a real client handshake).
+tokio-rustls = "0.26"
 
 [profile.release]
 opt-level = 3

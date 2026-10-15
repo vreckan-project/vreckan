@@ -316,6 +316,41 @@ pub async fn acme_persist_cert(state: &AppState, rec: &AcmeCertRecord) {
     let _ = db.set_app_setting("VRECKAN_ACME_CERT_EXPIRES", &expires).await;
 }
 
+/// Swap the running TLS listener to serve the certificate currently persisted
+/// in the config DB, without re-binding the socket or restarting the process.
+///
+/// The listener's [`RustlsConfig`](axum_server::tls_rustls::RustlsConfig) is an
+/// `Arc<ArcSwap<ServerConfig>>`; `reload_from_pem` stores a fresh `ServerConfig`
+/// and every *new* TLS handshake serves it. In-flight connections keep the
+/// previous certificate until they close. The config DB is the source of truth:
+/// the cert/key are read back from it here, not from memory or disk. Returns
+/// `true` when a cert was read from the DB and the swap performed, `false` when
+/// no listener is attached or no cert is persisted yet.
+pub async fn reload_served_cert(state: &AppState) -> bool {
+    let Some(config) = state.tls_config.clone() else {
+        return false;
+    };
+    let Some(rec) = acme_cert_record(state).await else {
+        return false;
+    };
+    if rec.cert_pem.trim().is_empty() || rec.key_pem.trim().is_empty() {
+        return false;
+    }
+    match config
+        .reload_from_pem(rec.cert_pem.as_bytes().to_vec(), rec.key_pem.as_bytes().to_vec())
+        .await
+    {
+        Ok(()) => {
+            info!("hot-reloaded the served TLS certificate from the config DB");
+            true
+        }
+        Err(e) => {
+            warn!("hot-reload of the served TLS certificate failed: {e}");
+            false
+        }
+    }
+}
+
 /// Build the `cert_status` JSON body from a resolved expiry. `cert`/`key`
 /// carry either the PEM content (DB source) or the on-disk path (disk
 /// fallback); the `source` label tells the caller which.
@@ -476,6 +511,10 @@ async fn run_acme_issue(state: &AppState, cfg: &AcmeConfig, status: &Value) -> V
                 },
             )
             .await;
+            // Hot-reload: serve the freshly issued cert from the running TLS
+            // listener in place (no restart). No-op before the listener is
+            // attached (the startup path) when `tls_config` is still `None`.
+            let _ = reload_served_cert(state).await;
         }
     }
     let status = cert_status(state, &domains).await;
@@ -575,6 +614,9 @@ async fn run_acme_renew(state: &AppState, cfg: &AcmeConfig, status: &Value) -> V
                 },
             )
             .await;
+            // Hot-reload: serve the renewed cert from the running TLS listener
+            // in place (no restart), sourcing it from the config DB.
+            let _ = reload_served_cert(state).await;
         }
     }
     let status = cert_status(state, &domains).await;

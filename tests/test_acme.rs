@@ -15,8 +15,13 @@ use std::sync::{Arc, Mutex};
 use async_trait::async_trait;
 use http::StatusCode;
 use rcgen::{Certificate, CertificateParams, DistinguishedName, DnType, KeyPair};
+use rustls::client::danger::{HandshakeSignatureValid, ServerCertVerifier, ServerCertVerified};
+use rustls::pki_types::{CertificateDer, ServerName, UnixTime};
+use rustls::{DigitallySignedStruct, SignatureScheme};
 use serde_json::json;
 use time::OffsetDateTime;
+use tokio::net::TcpStream;
+use tokio_rustls::TlsConnector;
 
 use common::{build_state, SecureClient, TempDir};
 use vreckan::acme_orchestrator;
@@ -780,4 +785,178 @@ async fn test_certificates_renew_issues() {
     assert_eq!(data.expect("body")["issued"], true);
     assert_eq!(fake.calls().len(), 1);
     assert_eq!(fake.calls()[0].provider, "cloudflare");
+}
+
+// --- TLS hot-reload: a renewal swaps the served cert without a restart -------
+
+/// A `FakeAcmeIssuer` that returns the given cert/key on success (so a test can
+/// drive a renewal that yields a specific, known certificate).
+fn issuer_returning(cert_pem: &str, key_pem: &str) -> Arc<FakeAcmeIssuer> {
+    Arc::new(FakeAcmeIssuer {
+        ok: true,
+        error: None,
+        cert_pem: cert_pem.to_string(),
+        key_pem: key_pem.to_string(),
+        calls: Arc::new(Mutex::new(Vec::new())),
+    })
+}
+
+/// Decode the first certificate in a PEM bundle into its DER form (for comparing
+/// the served cert against the cert that was generated/persisted).
+fn pem_first_cert(pem: &str) -> CertificateDer<'static> {
+    let mut reader = std::io::Cursor::new(pem.as_bytes());
+    let cert = rustls_pemfile::certs(&mut reader)
+        .next()
+        .expect("a cert in the bundle")
+        .expect("cert parses to DER");
+    cert
+}
+
+/// A rustls client verifier that trusts every server certificate (mirrors
+/// axum-server's own `test_reload`), so the test can read whatever cert the
+/// server presents without a real trust anchor.
+#[derive(Debug)]
+struct NoVerify;
+
+impl ServerCertVerifier for NoVerify {
+    fn verify_server_cert(
+        &self,
+        _end_entity: &CertificateDer,
+        _intermediates: &[CertificateDer],
+        _server_name: &ServerName,
+        _ocsp_response: &[u8],
+        _now: UnixTime,
+    ) -> Result<ServerCertVerified, rustls::Error> {
+        Ok(ServerCertVerified::assertion())
+    }
+    fn verify_tls12_signature(
+        &self,
+        _message: &[u8],
+        _cert: &CertificateDer<'_>,
+        _dss: &DigitallySignedStruct,
+    ) -> Result<HandshakeSignatureValid, rustls::Error> {
+        Ok(HandshakeSignatureValid::assertion())
+    }
+    fn verify_tls13_signature(
+        &self,
+        _message: &[u8],
+        _cert: &CertificateDer<'_>,
+        _dss: &DigitallySignedStruct,
+    ) -> Result<HandshakeSignatureValid, rustls::Error> {
+        Ok(HandshakeSignatureValid::assertion())
+    }
+    fn supported_verify_schemes(&self) -> Vec<SignatureScheme> {
+        vec![
+            SignatureScheme::RSA_PKCS1_SHA1,
+            SignatureScheme::RSA_PKCS1_SHA256,
+            SignatureScheme::RSA_PKCS1_SHA384,
+            SignatureScheme::RSA_PKCS1_SHA512,
+            SignatureScheme::RSA_PSS_SHA256,
+            SignatureScheme::RSA_PSS_SHA384,
+            SignatureScheme::RSA_PSS_SHA512,
+            SignatureScheme::ECDSA_NISTP256_SHA256,
+            SignatureScheme::ECDSA_NISTP384_SHA384,
+            SignatureScheme::ECDSA_NISTP521_SHA512,
+        ]
+    }
+}
+
+/// Open a fresh TLS client connection to `addr` and return the first
+/// certificate the server presents (a new handshake, so it reflects any
+/// in-place `ServerConfig` swap the listener has performed).
+async fn first_served_cert(addr: std::net::SocketAddr) -> CertificateDer<'static> {
+    let stream = TcpStream::connect(addr).await.expect("connect");
+    let client_config = rustls::ClientConfig::builder()
+        .dangerous()
+        .with_custom_certificate_verifier(Arc::new(NoVerify))
+        .with_no_client_auth();
+    let connector = TlsConnector::from(Arc::new(client_config));
+    let tls = connector
+        .connect(ServerName::try_from("example.com").expect("server name"), stream)
+        .await
+        .expect("tls handshake");
+    let (_io, client) = tls.into_inner();
+    client.peer_certificates().expect("peer certs")[0].clone()
+}
+
+#[tokio::test]
+async fn test_renewal_hot_reloads_served_cert_without_restart() {
+    // rustls needs a process-default crypto provider for both the server
+    // `ServerConfig` and the test's client; install once (ignore "already set").
+    let _ = rustls::crypto::ring::default_provider().install_default();
+
+    // A fresh per-test state with a throwaway SQLite config DB (source of truth
+    // for the issued bundle). The test does not use the on-disk cert dirs, so it
+    // does not need to acquire the global acme-path lock.
+    let mut state = build_state(TempDir::new().path()).await;
+
+    // Cert A is the currently-served certificate AND is within the renewal
+    // window (10d < 30d), so a subsequent renewal is "due". Build the TLS
+    // listener config from it, attach it to the state (what main.rs does), and
+    // serve a trivial router over it on an ephemeral port.
+    let (cert_a, key_a) = make_cert("renew-a.example.com", 10);
+    let config = axum_server::tls_rustls::RustlsConfig::from_pem(
+        cert_a.as_bytes().to_vec(),
+        key_a.as_bytes().to_vec(),
+    )
+    .await
+    .expect("build config from cert A");
+    state.tls_config = Some(config.clone());
+
+    let app = axum::Router::new().route("/", axum::routing::get(|| async { "hi" }));
+    let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.expect("bind");
+    let addr = listener.local_addr().expect("local addr");
+    let server_config = config.clone();
+    let _server = tokio::spawn(async move {
+        axum_server::Server::<std::net::SocketAddr>::from_listener(listener)
+            .acceptor(axum_server::tls_rustls::RustlsAcceptor::new(server_config))
+            .serve(app.into_make_service())
+            .await
+            .expect("serve");
+    });
+
+    // Baseline: the running listener serves cert A.
+    let served_a = first_served_cert(addr).await;
+    assert_eq!(
+        served_a,
+        pem_first_cert(&cert_a),
+        "the running listener should serve cert A"
+    );
+
+    // Renew: seed the DB with the (due) current cert so the renewal triggers,
+    // then a fake issuer returns a DIFFERENT cert B. `renew_acme_cert` persists
+    // B to the config DB and hot-reloads the running listener in place.
+    let (cert_b, key_b) = make_cert("renew-b.example.com", 90);
+    let fake = issuer_returning(&cert_b, &key_b);
+    let _guard = IssuerGuard::new(fake.clone());
+    acme_orchestrator::acme_persist_cert(
+        &state,
+        &acme_orchestrator::AcmeCertRecord {
+            cert_pem: cert_a.clone(),
+            key_pem: key_a.clone(),
+            ca: "letsencrypt".to_string(),
+            domains: "renew-a.example.com".to_string(),
+            expires: acme_orchestrator::acme_cert_expiry_from_pem(&cert_a),
+        },
+    )
+    .await;
+    let cfg = default_cfg();
+    let result = acme_orchestrator::renew_acme_cert(&state, &cfg).await;
+    assert_eq!(result["renewed"], true, "renewal should have run");
+    // The renewed cert is persisted to the config DB (the source of truth).
+    let rec = acme_orchestrator::acme_cert_record(&state).await.expect("record persisted");
+    assert_eq!(rec.cert_pem, cert_b, "the renewed cert is in the DB");
+
+    // The SAME running listener (no restart, no rebind) now serves cert B,
+    // sourced from the DB — proving the in-place hot-reload.
+    let served_b = first_served_cert(addr).await;
+    assert_ne!(
+        served_a, served_b,
+        "a renewal should change the served cert in place"
+    );
+    assert_eq!(
+        served_b,
+        pem_first_cert(&cert_b),
+        "the served cert must be the renewed cert read from the DB"
+    );
 }
