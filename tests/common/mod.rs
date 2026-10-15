@@ -302,7 +302,7 @@ impl SecureClient {
         let mut aes_key = [0u8; 32];
         rand::rng().fill_bytes(&mut aes_key);
         let wrapped = pub_key
-            .encrypt(&mut rand_core::OsRng, Oaep::new::<Sha256>(), &aes_key)
+            .encrypt(&mut rand_core_06::OsRng, Oaep::new::<Sha256>(), &aes_key)
             .expect("OAEP encrypt");
         let b64 = base64::engine::general_purpose::STANDARD.encode(wrapped);
         let resp = self

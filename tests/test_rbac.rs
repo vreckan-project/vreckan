@@ -22,7 +22,7 @@ use http::StatusCode;
 use jsonwebtoken::{Algorithm, EncodingKey, Header};
 use sea_orm::ConnectionTrait;
 use pkcs8_010::EncodePrivateKey;
-use rand_core::OsRng;
+use rand_core_06::OsRng;
 use rsa::{RsaPrivateKey, traits::PublicKeyParts};
 use serde_json::{json, Value};
 use std::collections::HashMap;
