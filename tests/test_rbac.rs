@@ -21,8 +21,7 @@ use common::{build_state, SecureClient, TempDir};
 use http::StatusCode;
 use jsonwebtoken::{Algorithm, EncodingKey, Header};
 use sea_orm::ConnectionTrait;
-use pkcs8_010::EncodePrivateKey;
-use rand_core_06::OsRng;
+use pkcs8::EncodePrivateKey;
 use rsa::{RsaPrivateKey, traits::PublicKeyParts};
 use serde_json::{json, Value};
 use std::collections::HashMap;
@@ -54,7 +53,7 @@ struct MockIdp {
 
 impl MockIdp {
     fn new() -> Self {
-        let jwk_key = RsaPrivateKey::new(&mut OsRng, 2048).unwrap();
+        let jwk_key = RsaPrivateKey::new(&mut rand::rng(), 2048).unwrap();
         let sign_key = Arc::new(Mutex::new(jwk_key.clone()));
         Self {
             jwk_key,
@@ -162,7 +161,7 @@ fn content_length(raw: &[u8]) -> Option<usize> {
 /// Sign an id_token (RS256) with the given key and kid.
 fn sign_id_token(key: &RsaPrivateKey, kid: &str, claims: &Value) -> String {
     let encoding_key = EncodingKey::from_rsa_pem(
-        key.to_pkcs8_pem(pkcs8_010::LineEnding::LF)
+        key.to_pkcs8_pem(pkcs8::LineEnding::LF)
             .unwrap()
             .as_bytes(),
     )
@@ -241,8 +240,8 @@ async fn handle_conn(
                     "kid": kid,
                     "use": "sig",
                     "alg": "RS256",
-                    "n": b64u(&pub_key.n().to_bytes_be()),
-                    "e": b64u(&pub_key.e().to_bytes_be()),
+                    "n": b64u(&pub_key.n().to_be_bytes_trimmed_vartime()),
+                    "e": b64u(&pub_key.e().to_be_bytes_trimmed_vartime()),
                 }]
             }),
         )

@@ -9,6 +9,27 @@ is committed normally in `vreckan`. The changelog is the authoritative
 record of what shipped in each release — see
 [`docs/release.md`](./docs/release.md) for the conventions.
 
+## 2026-10-15 — rsa 0.10 crypto-stack unification, v0.6.4 (ANT-191)
+
+`rsa` bumped to **0.10.0-rc.19** — the first release built on the
+pkcs8 0.11 / spki 0.8 / der 0.8 / rand_core 0.10 / sha2 0.11 stack —
+removing the `pkcs8_010` and `rand_core_06` version-alias shims that
+v0.6.3 carried to keep `rsa` 0.9 compiling alongside the newer pins.
+
+- **`rsa` 0.9 → 0.10.0-rc.19, `sha2` 0.10 → 0.11, `spki` 0.7 → 0.8.**
+  All three move to the same RustCrypto major generation as `pkcs8`
+  0.11 / `der` 0.8 / `rand_core` 0.10 already on main.
+- **Alias shims removed.** The `pkcs8_010` and `rand_core_06`
+  `[dependencies]` aliases (and every `use` of them) are gone; the
+  code now uses `pkcs8` / `rand` directly.
+- **RNG unified on `rand::rng()`.** One-time server-key generation and
+  the PSS-nonce draw now use the thread-local CSPRNG (seeded from OS
+  entropy) instead of the separate `rand_core 0.6` `OsRng`.
+- **API adjustments for the new `num-bigint-dig` / `digest` 0.11
+  types** (`to_bytes_be` → `to_be_bytes_trimmed_vartime`, turbofish
+  moved to type position for `Pss` / `Oaep`).
+- **`VERSION` and `Cargo.toml` bumped to 0.6.4.**
+
 ## 2026-10-15 — pkcs8 0.11 + rand_core 0.10, v0.6.3 (ANT-128)
 
 The two RustCrypto ecosystem bumps deferred in v0.6.2 (while `rsa` 0.10
