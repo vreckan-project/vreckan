@@ -129,11 +129,14 @@ tokio-rustls = "0.26"
 #   2. POST-as-GET requests (order/authz lookup, challenge trigger, cert
 #      download, account lookup) use an empty payload — Boulder rejects
 #      the `e30` (`{}`) encoding with "must have an empty payload".
+#   3. order polling is budgeted at 5 minutes per stage (60s was below
+#      Let's Encrypt's dns-01 validation cadence — first attempts fail
+#      during DNS propagation and retries come minutes later).
 # We generate ECDSA P-256 account keys (ES256), accepted by all three
 # supported CAs. Revert to the crates.io release once the fixes ship in a
 # published version.
 [patch.crates-io]
-acmex = { git = "https://github.com/antitux/acmex", rev = "fec88dadebf3976403594547f991ddd20b5b9f46" }
+acmex = { git = "https://github.com/antitux/acmex", rev = "3bd6ea94b3e830384ae3e92d0d49e33c90cfc140" }
 
 [profile.release]
 opt-level = 3
