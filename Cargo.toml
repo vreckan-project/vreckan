@@ -82,6 +82,17 @@ rustls = { version = "0.23", features = ["ring"] }
 rustls-pemfile = "2"
 x509-cert = "0.3"
 rcgen = "0.14"
+# Native ACME client (replaces the certbot sidecar container for Let's
+# Encrypt issuance; see `src/acme.rs` and `src/le_certbot.rs`). Default crypto
+# is aws-lc-rs (already in the tree via rcgen). DNS-01 providers are feature
+# gated — Cloudflare is the default; the rest are available for users who
+# manage DNS elsewhere (ANT-128). `zerossl-ca`/`google-ca` add those CAs.
+acmex = { version = "0.8", features = [
+  "dns-cloudflare", "dns-route53", "dns-digitalocean", "dns-linode",
+  "dns-azure", "dns-google", "dns-alibaba", "dns-godaddy",
+  "dns-tencent", "dns-huawei", "dns-cloudns",
+  "zerossl-ca", "google-ca",
+] }
 
 # Logging
 tracing = "0.1"
@@ -102,6 +113,42 @@ anyhow = "1"
 [dev-dependencies]
 # Direct router invocation in integration tests (no real socket needed).
 tower = { version = "0.5", features = ["util"] }
+# TLS client for the hot-reload test (already in the tree via axum-server; a
+# direct dev-dep so the test can drive a real client handshake).
+tokio-rustls = "0.26"
+
+# The published `acmex` 0.8.0 hard-codes the ACME account key as Ed25519 and
+# signs every JWS with `alg: EdDSA`, but Let's Encrypt production no longer
+# accepts EdDSA (2026-10: RS256/ES256/ES384/ES512 only) — registration fails
+# and the `Location`-header check masks the real 400 (ANT-138). Upstream
+# derives the JWS `alg` and JWK from the actual key (`Jwk::for_key_pair`,
+# `JwsSigner::jwa_algorithm`) and adds `KeyPairGenerator`, so we pin an
+# `antitux/acmex` fork (of houseme/acmex @ f7b06c2) with six fixes:
+#   1. the `contact` field in account responses is defaulted — Boulder
+#      omits it when the account has no contacts, which broke parsing;
+#   2. POST-as-GET reads (order/authz/cert lookup, account lookup) use
+#      an empty payload — Boulder rejects the `e30` (`{}`) encoding with
+#      "must have an empty payload";
+#   3. order polling is budgeted at 5 minutes per stage (60s was below
+#      Let's Encrypt's dns-01 validation cadence — first attempts fail
+#      during DNS propagation and retries come minutes later);
+#   4. challenge *activation* must POST an empty object (`{` + `}`), not
+#      an empty payload — an empty payload is a POST-as-GET (fetch only)
+#      and never triggers validation (RFC 8555 7.5.1), so
+#      challenges sat "pending" forever;
+#   5. CSR subject CN: rcgen's default DN is CN="rcgen self signed
+#      cert", which Boulder rejects ("Domain name contains an invalid
+#      character"); the fork sets the CN to the first identifier;
+#   6. the Cloudflare provider's TXT create is idempotent — Cloudflare
+#      81058 ("An identical record already exists") fires when a CA
+#      reuses a still-valid authorization (same token, same digest) and
+#      a previous run left the record in place; the fork reuses the
+#      existing record instead of failing the issuance.
+# We generate ECDSA P-256 account keys (ES256), accepted by all three
+# supported CAs. Revert to the crates.io release once the fixes ship in a
+# published version.
+[patch.crates-io]
+acmex = { git = "https://github.com/antitux/acmex", rev = "261817d654bff17e730421861c4a71a57d904c88" }
 
 [profile.release]
 opt-level = 3

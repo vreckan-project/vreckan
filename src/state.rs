@@ -15,6 +15,8 @@ use std::collections::HashMap;
 use std::sync::{Arc, Mutex};
 use tokio::sync::RwLock;
 
+use axum_server::tls_rustls::RustlsConfig;
+
 use crate::db::Db;
 use crate::settings::Settings;
 
@@ -122,6 +124,12 @@ pub struct AppState {
     /// The recorded launch kwargs + app config from the most recent fake
     /// provider launch (see `fake_provider`).
     pub fake_provider_record: Arc<std::sync::Mutex<Option<serde_json::Value>>>,
+    /// The TLS listener's `RustlsConfig` (an `Arc<ArcSwap<ServerConfig>>`). The
+    /// ACME issuance/renewal paths reload this in place so a renewed certificate
+    /// is served by the running process without a restart or a port rebind.
+    /// `None` until the binary has bound a TLS listener (e.g. in unit tests that
+    /// drive the router directly without serving TLS).
+    pub tls_config: Option<RustlsConfig>,
 }
 
 impl AppState {
@@ -152,6 +160,7 @@ impl AppState {
             pull_noop: Arc::new(std::sync::atomic::AtomicBool::new(false)),
             fake_provider: Arc::new(std::sync::atomic::AtomicBool::new(false)),
             fake_provider_record: Arc::new(std::sync::Mutex::new(None)),
+            tls_config: None,
         }
     }
 }

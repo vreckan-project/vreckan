@@ -9,7 +9,7 @@ use std::net::SocketAddr;
 use std::path::PathBuf;
 use tracing::info;
 
-use vreckan::{app, auth, catalog, db, e2ee, files, le_certbot, tls, user_manager};
+use vreckan::{app, auth, catalog, db, e2ee, files, acme_orchestrator, tls, user_manager};
 use vreckan::settings::Settings;
 use vreckan::state::AppState;
 
@@ -70,7 +70,7 @@ async fn main() -> anyhow::Result<()> {
 
     // Build the shared application state (needed by cert selection so the
     // effective LE settings can be read).
-    let state = AppState::new(settings, db);
+    let mut state = AppState::new(settings, db);
 
     // TLS cert selection (Let's Encrypt or self-signed fallback).
     let (cert_pem, key_pem) = tls::select_cert(&state).await?;
@@ -98,9 +98,21 @@ async fn main() -> anyhow::Result<()> {
     catalog::detect_gpus(&state).await;
     files::load_public_shares(&state).await;
 
-    // Let's Encrypt renewal: started unconditionally; the job no-ops (sleeps)
-    // when LE is disabled or auto-renew is off. Mirrors the Python lifespan.
-    tokio::spawn(le_certbot::background_le_renewal_job(state.clone()));
+    // Build the TLS listener config before the renewal job starts, so both the
+    // background renewal job and the admin Issue/Renew path can reload it in
+    // place. axum-server's `RustlsConfig` is an `Arc<ArcSwap<ServerConfig>>`:
+    // a renewal stores a fresh `ServerConfig` and the *next* TLS handshake
+    // serves it — no process restart, no port rebind. `state.tls_config` holds
+    // a shared clone the ACME paths use to trigger the swap.
+    let tls_config = axum_server::tls_rustls::RustlsConfig::from_pem(cert_pem, key_pem)
+        .await
+        .map_err(anyhow::Error::msg)?;
+    state.tls_config = Some(tls_config.clone());
+
+    // ACME renewal: started unconditionally; the job no-ops (sleeps) when ACME
+    // is disabled or auto-renew is off. On a successful renewal it hot-reloads
+    // the served cert in place. Mirrors the Python lifespan.
+    tokio::spawn(acme_orchestrator::background_acme_renewal_job(state.clone()));
 
     // Build the router.
     let app = app::router(state);
@@ -113,10 +125,7 @@ async fn main() -> anyhow::Result<()> {
 
     info!("vreckan (rust) listening on https://{addr}");
 
-    let config = axum_server::tls_rustls::RustlsConfig::from_pem(cert_pem, key_pem)
-        .await
-        .map_err(anyhow::Error::msg)?;
-    axum_server::tls_rustls::bind_rustls(addr, config)
+    axum_server::tls_rustls::bind_rustls(addr, tls_config)
         // ConnectInfo exposes the client address to handlers (the login
         // rate limiter keys on it); `X-Forwarded-For` still takes precedence
         // when a reverse proxy is in front.
