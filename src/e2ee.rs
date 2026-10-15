@@ -35,9 +35,8 @@ use axum::response::{IntoResponse, Response};
 use axum::routing::{get, post};
 use axum::{Json, Router};
 use base64::Engine;
-use pkcs8_010::{DecodePrivateKey, EncodePrivateKey, LineEnding};
+use pkcs8::{DecodePrivateKey, EncodePrivateKey, LineEnding};
 use rand::Rng;
-use rand_core_06::OsRng;
 use rsa::{Oaep, Pss, RsaPrivateKey, sha2::Sha256};
 use sha2::Digest;
 use serde::{Deserialize, Serialize};
@@ -77,7 +76,7 @@ static SERVER_PUBLIC_KEY_PEM: OnceLock<String> = OnceLock::new();
 pub fn init_server_key(settings: &Settings) -> anyhow::Result<()> {
     let path = std::path::PathBuf::from(&settings.server_private_key_path);
     if !path.exists() {
-        let key = RsaPrivateKey::new(&mut OsRng, 2048)?;
+        let key = RsaPrivateKey::new(&mut rand::rng(), 2048)?;
         let pem = key.to_pkcs8_pem(LineEnding::LF)?.to_string();
         if let Some(parent) = path.parent() {
             std::fs::create_dir_all(parent)?;
@@ -169,13 +168,10 @@ pub async fn handshake_public_key() -> impl IntoResponse {
 /// RSA-PSS (SHA-256, salt 32) to prove server identity.
 pub async fn handshake_initiate() -> impl IntoResponse {
     let mut nonce = [0u8; 32];
-    // Use the OS CSPRNG (consistent with the server-key generation below) rather
-    // than the thread-local `rand::rng()`, so the nonce is drawn from the same
-    // entropy source the rest of the handshake uses. `OsRng` comes from the
-    // `rand_core_06` alias (`rsa 0.9` only accepts `rand_core 0.6` types), so
-    // call its `RngCore` method fully-qualified (the `rand::Rng` import above
-    // is the 0.10 trait and doesn't apply here).
-    rand_core_06::RngCore::fill_bytes(&mut rand_core_06::OsRng, &mut nonce);
+    // The thread-local CSPRNG is seeded from the OS entropy source, so the
+    // nonce is drawn from the same entropy source the rest of the handshake
+    // uses (consistent with the server-key generation above).
+    rand::rng().fill_bytes(&mut nonce);
     let key = server_key();
     // PSS always requires an RNG (for the random salt); the plain `sign`
     // helper passes `None` and fails, so use `sign_with_rng`. The 32-byte
@@ -188,10 +184,10 @@ pub async fn handshake_initiate() -> impl IntoResponse {
     // not the raw nonce — to match. (Python's `cryptography.sign(nonce, PSS,
     // SHA256)` hashes internally, which is why the Python server worked in the
     // browser while the raw-nonce Rust signature did not.)
-    let mut rng = rand_core_06::OsRng;
+    let mut rng = rand::rng();
     let hashed = Sha256::digest(&nonce);
     let signature = key
-        .sign_with_rng(&mut rng, Pss::new_with_salt::<Sha256>(32), &hashed)
+        .sign_with_rng(&mut rng, Pss::<Sha256>::new_with_salt(32), &hashed)
         .expect("RSA-PSS sign failed");
     Json(HandshakeInitiateResponse {
         nonce: base64::engine::general_purpose::STANDARD.encode(nonce),
@@ -218,7 +214,7 @@ pub async fn handshake_exchange(
                 .into_response()
         }
     };
-    let aes_key = match key.decrypt(Oaep::new::<Sha256>(), &encrypted) {
+    let aes_key = match key.decrypt(Oaep::<Sha256>::new(), &encrypted) {
         Ok(k) => k,
         Err(e) => {
             warn!("Failed to decrypt session key during handshake: {e}");

@@ -565,7 +565,7 @@ async fn test_backup_dump_excludes_auth_tokens() {
     ));
     let mut archive = tar::Archive::new(&mut gz);
     for entry in archive.entries().unwrap() {
-        let mut entry = entry.unwrap();
+        let entry = entry.unwrap();
         if entry.path().unwrap().file_name().unwrap() == "db_dump.json" {
             let mode = entry.header().mode().map(|m| m & 0o777).unwrap_or(0);
             assert_eq!(mode, 0o600);

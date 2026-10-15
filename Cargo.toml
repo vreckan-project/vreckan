@@ -1,6 +1,6 @@
 [package]
 name = "vreckan"
-version = "0.6.3"
+version = "0.6.4"
 edition = "2021"
 description = "Vreckan server (Rust port of the Python/FastAPI server)"
 # MPL-2.0 to match the upstream SealSkin fork this project derives from (see
@@ -43,29 +43,34 @@ serde_yaml = "0.9"
 # Crypto (E2EE + password hashing)
 ring = "0.17"
 argon2 = "0.6"
-sha2 = "0.10"
+# `sha2` 0.11 (digest 0.11) matches the version `rsa 0.10` is built against
+# and re-exports, so the `Sha256`/`Digest` types used for the PSS/OAEP
+# handshake line up with `rsa`'s own (ANT-191).
+sha2 = "0.11"
 base64 = "0.23"
 rand = "0.10"
 # E2EE handshake: RSA-PSS (server identity) + RSA-OAEP (session-key wrap).
 # `sha2` is not a default feature of `rsa`, so enable it explicitly.
-rsa = { version = "0.9", features = ["sha2"] }
+# `rsa 0.10` is the first release built on the pkcs8 0.11 / spki 0.8 /
+# der 0.8 / rand_core 0.10 stack (0.9.x stays on pkcs8 0.10 / spki 0.7 /
+# rand_core 0.6), so it is bumped in lockstep with the pins below, replacing
+# the `pkcs8_010`/`rand_core_06` alias workaround (ANT-183/ANT-191).
+rsa = { version = "0.10.0-rc.19", features = ["sha2"] }
 # E2EE payload: AES-256-GCM with the session id as AAD.
 aes-gcm = "0.11"
-# Key encoding (PKCS#8 private key load, SPKI public-key PEM).
+# Key encoding (PKCS#8 private key load, SPKI public-key PEM). Must stay on
+# the same versions `rsa` implements its traits against — the old
+# pkcs8 0.10 / spki 0.7 (pem-rfc7468 0.7) `LineEnding` is a distinct type
+# from pkcs8 0.11 / spki 0.8 (pem-rfc7468 1.0)'s (ANT-191). The older
+# majors remain in the tree via `jsonwebtoken`'s `rust_crypto` feature, but
+# vreckan only crosses that boundary with opaque PEM bytes.
 pkcs8 = { version = "0.11", features = ["alloc", "pem"] }
-# 0.10-era alias: `rsa 0.9`/`pkcs1 0.7` implement the pkcs8 0.10 traits, so the
-# E2EE RSA-key PEM encode/decode in `e2ee.rs` (and the test helpers) need the
-# 0.10 trait API until `rsa` reaches the der-0.8/pkcs8-0.11 generation.
-pkcs8_010 = { package = "pkcs8", version = "0.10", features = ["alloc", "pem"] }
-spki = "0.7"
+spki = "0.8"
 der = "0.8"
-rand_core = "0.10"
-# 0.6-era alias: `rsa 0.9` is built against `rand_core 0.6`, whose `OsRng`
-# (behind the `getrandom` feature, removed in 0.10) is the only RNG type that
-# can be passed to `rsa` directly, so it stays for one-time server-key
-# generation in `e2ee.rs` (our `rand 0.10` uses `rand_core 0.10`, a different
-# trait version).
-rand_core_06 = { package = "rand_core", version = "0.6", features = ["getrandom"] }
+# RNGs come from `rand 0.10`'s thread-local CSPRNG (`rand::rng()`), which is
+# seeded from the OS CSPRNG and implements `rand_core 0.10`'s `CryptoRng`,
+# so it can be passed to `rsa 0.10` directly (the `rand_core 0.6` `OsRng`
+# from the old stack can't — different trait version).
 
 # OIDC / SSO
 openid = "0.25"
