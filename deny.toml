@@ -19,8 +19,8 @@
 # github.com/rustsec/advisory-db; the nightly runner has outbound network).
 # By default a finding in any category (vulnerability / unsound /
 # unmaintained / yanked) is an ERROR, so any NEW advisory fails the nightly.
-# The three currently-known advisories are ignored (with reasons) because they
-# are accepted risk in this tree; drop an entry once its crate is fixed.
+# The known advisories are ignored (with reasons) because they are accepted
+# risk in this tree; drop an entry once its crate is fixed.
 ignore = [
   # rsa 0.9.x — "Marvin Attack": a non-constant-time RSA leaks the private key
   # through timing observable over the network. No safe upgrade exists yet
@@ -33,6 +33,12 @@ ignore = [
   # unsafe-libyaml 0.2.11 — archived/unmaintained. Transitive dep of
   # serde_yaml (itself marked +deprecated); tracked for removal, low risk.
   { id = "RUSTSEC-2024-0449", reason = "unsafe-libyaml archived; transitive dep of serde_yaml (+deprecated)" },
+  # The crates whose advisories used to require ignores in the acmex subtree
+  # (h2 0.3, hickory 0.25, rustls 0.21, rustls-webpki 0.101 — RUSTSEC-2026-0258/
+  # 0118/0119/0346/0349/0098/0099/0104) are gone: pinning acmex to the upstream
+  # git rev (ANT-138, `[patch.crates-io]` in Cargo.toml) re-resolved them to the
+  # advisory-fixed majors (h2 0.4, hickory 0.26, rustls 0.23, webpki 0.103).
+  # Re-add any of them if a future acmex pin regresses the tree.
 ]
 
 [licenses]
@@ -56,6 +62,12 @@ allow = [
   "MIT",
   "MIT-0",
   "MPL-2.0",
+  # OpenSSL License — pulled in by aws-lc-fips-sys (via acmex's aws-lc-rs/fips),
+  # which is dual/triple-licensed "ISC AND (Apache-2.0 OR ISC) AND OpenSSL".
+  # The OpenSSL clause is the only non-allowed component; it is a permissive
+  # attribution license, so allowing it satisfies the whole AND-expression
+  # without admitting copyleft.
+  "OpenSSL",
   "Unlicense",
   "Unicode-3.0",
   "Zlib",
@@ -70,9 +82,15 @@ multiple-versions = "warn"
 deny = []
 
 [sources]
-# Source allowlist: only the canonical crates.io registry; no git/path deps
-# yet. Unexpected sources are WARNINGS (not errors) for now.
+# Source allowlist: the canonical crates.io registry plus the acmex fork
+# (pinned via `[patch.crates-io]` in Cargo.toml for the account-key crypto
+# fix + contact-field default, ANT-138 — see that comment for the reason
+# and the revert condition). Unexpected sources are WARNINGS (not errors)
+# for now.
 allow-registry = ["https://github.com/rust-lang/crates.io-index"]
-allow-git = []
+allow-git = [
+  "https://github.com/antitux/acmex",
+  "https://github.com/houseme/acmex",
+]
 unknown-registry = "warn"
 unknown-git = "warn"

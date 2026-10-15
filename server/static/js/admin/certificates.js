@@ -1,7 +1,7 @@
-// Certificates section: configure Let's Encrypt (certbot) issuance and show
-// the current certificate status. Mirrors the SSO page: each field shows a
-// source badge (db / env / default), the Cloudflare token is a password field
-// (blank = keep the existing one), and domains use a tag input (stored
+// Certificates section: configure ACME issuance (native acmex client) and
+// show the current certificate status. Mirrors the SSO page: each field shows
+// a source badge (db / env / default), the Cloudflare token is a password
+// field (blank = keep the existing one), and domains use a tag input (stored
 // comma-joined).
 //
 // The small DOM helpers ($, esc, toast, request) come from util.js; `render`
@@ -63,6 +63,26 @@ function sourceBadge(source) {
   return `<span class="src-badge${source === "db" ? " db" : ""}">${label}</span>`;
 }
 
+// --- Select option builders -------------------------------------------------
+function caOptions(selected) {
+  const cas = [
+    { id: "letsencrypt", label: t("certificates.caLetsencrypt") },
+    { id: "zerossl", label: t("certificates.caZerossl") },
+    { id: "google", label: t("certificates.caGoogle") },
+  ];
+  if (selected && !cas.some((c) => c.id === selected)) cas.unshift({ id: selected, label: selected });
+  return cas.map((c) => `<option value="${esc(c.id)}" ${c.id === selected ? "selected" : ""}>${esc(c.label)}</option>`).join("");
+}
+
+function dnsProviderOptions(providers, selected) {
+  const known =
+    Array.isArray(providers) && providers.length
+      ? providers.map((p) => ({ id: String(p.id || ""), label: p.label || p.id }))
+      : [{ id: "cloudflare", label: "Cloudflare" }];
+  if (selected && !known.some((p) => p.id === selected)) known.unshift({ id: selected, label: selected });
+  return known.map((p) => `<option value="${esc(p.id)}" ${p.id === selected ? "selected" : ""}>${esc(p.label)}</option>`).join("");
+}
+
 // Render the current certificate status card.
 function statusHtml(status) {
   if (!status || !status.present) {
@@ -99,6 +119,8 @@ async function renderCertificates() {
   const src = res.data.sources || {};
   const status = res.data.status || {};
   const badge = (name) => sourceBadge(src[name] || "default");
+  const ca = v.acme_ca || "letsencrypt";
+  const provider = v.acme_dns_provider || "cloudflare";
 
   setPanel(`
     ${statusHtml(status)}
@@ -108,83 +130,135 @@ async function renderCertificates() {
       <p class="muted">${t("certificates.help")}</p>
 
       <div class="field mt-12">
-        <label>${t("certificates.enableLabel")} ${badge("le_enabled")}</label>
-        <label class="check"><input type="checkbox" id="le-enabled" ${v.le_enabled ? "checked" : ""}> ${t("certificates.enabled")}</label>
+        <label>${t("certificates.enableLabel")} ${badge("acme_enabled")}</label>
+        <label class="check"><input type="checkbox" id="acme-enabled" ${v.acme_enabled ? "checked" : ""}> ${t("certificates.enabled")}</label>
       </div>
 
       <div class="field mt-12">
-        <label>${t("certificates.domainsLabel")} ${badge("le_domains")}</label>
-        ${tagInputHtml("le-domains", v.le_domains || [])}
+        <label>${t("certificates.domainsLabel")} ${badge("acme_domains")}</label>
+        ${tagInputHtml("acme-domains", v.acme_domains || [])}
         <p class="muted mt-4">${t("certificates.domainsHelp")}</p>
       </div>
 
       <div class="admin-form-row mt-12">
         <div class="field flex-1 min-w-220">
-          <label>${t("certificates.authLabel")} ${badge("le_auth")}</label>
-          <select id="le-auth">
-            <option value="dns-cloudflare" ${v.le_auth === "dns-cloudflare" ? "selected" : ""}>${t("certificates.authDns")}</option>
-            <option value="http-01" ${v.le_auth === "http-01" ? "selected" : ""}>${t("certificates.authHttp")}</option>
-          </select>
-          <p class="muted mt-4">${t("certificates.authHelp")}</p>
+          <label>${t("certificates.caLabel")} ${badge("acme_ca")}</label>
+          <select id="acme-ca">${caOptions(ca)}</select>
+          <p class="muted mt-4">${t("certificates.caHelp")}</p>
         </div>
-        <div class="field flex-1 min-w-220">
-          <label>${t("certificates.stagingLabel")} ${badge("le_staging")}</label>
-          <label class="check"><input type="checkbox" id="le-staging" ${v.le_staging ? "checked" : ""}> ${t("certificates.staging")}</label>
+        <div class="field flex-1 min-w-220" id="acme-staging-field">
+          <label>${t("certificates.stagingLabel")} ${badge("acme_staging")}</label>
+          <label class="check"><input type="checkbox" id="acme-staging" ${v.acme_staging ? "checked" : ""}> ${t("certificates.staging")}</label>
           <p class="muted mt-4">${t("certificates.stagingHelp")}</p>
         </div>
       </div>
 
       <div class="admin-form-row mt-12">
         <div class="field flex-1 min-w-220">
-          <label>${t("certificates.emailLabel")} ${badge("le_cloudflare_email")}</label>
-          <input type="text" id="le-email" value="${esc(v.le_cloudflare_email || "")}">
+          <label>${t("certificates.authLabel")} ${badge("acme_auth")}</label>
+          <select id="acme-auth">
+            <option value="dns-cloudflare" ${v.acme_auth === "dns-cloudflare" ? "selected" : ""}>${t("certificates.authDns")}</option>
+            <option value="http-01" ${v.acme_auth === "http-01" ? "selected" : ""}>${t("certificates.authHttp")}</option>
+          </select>
+          <p class="muted mt-4">${t("certificates.authHelp")}</p>
+        </div>
+        <div class="field flex-1 min-w-220">
+          <label>${t("certificates.dnsProviderLabel")} ${badge("acme_dns_provider")}</label>
+          <select id="acme-dns-provider">${dnsProviderOptions(res.data.dns_providers, provider)}</select>
+          <p class="muted mt-4">${t("certificates.dnsProviderHelp")}</p>
+        </div>
+      </div>
+
+      <div class="admin-form-row mt-12" id="acme-cloudflare-fields">
+        <div class="field flex-1 min-w-220">
+          <label>${t("certificates.zoneIdLabel")} ${badge("acme_cloudflare_zone_id")}</label>
+          <input type="text" id="acme-zone-id" value="${esc(v.acme_cloudflare_zone_id || "")}">
+          <p class="muted mt-4">${t("certificates.zoneIdHelp")}</p>
+        </div>
+        <div class="field flex-1 min-w-220">
+          <label>${t("certificates.emailLabel")} ${badge("acme_cloudflare_email")}</label>
+          <input type="text" id="acme-email" value="${esc(v.acme_cloudflare_email || "")}">
           <p class="muted mt-4">${t("certificates.emailHelp")}</p>
         </div>
         <div class="field flex-1 min-w-220">
-          <label>${t("certificates.tokenLabel")} ${badge("le_cloudflare_token")}</label>
-          <input type="password" id="le-token" value="" placeholder="${v.token_set ? t("certificates.tokenSet", { length: v.token_length }) : t("certificates.tokenOptional")}">
+          <label>${t("certificates.tokenLabel")} ${badge("acme_cloudflare_token")}</label>
+          <input type="password" id="acme-token" value="" placeholder="${v.token_set ? t("certificates.tokenSet", { length: v.token_length }) : t("certificates.tokenOptional")}">
           <p class="muted mt-4">${t("certificates.tokenHelp")}</p>
         </div>
       </div>
 
+      <div class="field mt-12" id="acme-provider-config-field">
+        <label>${t("certificates.providerConfigLabel")} ${badge("acme_dns_provider_config")}</label>
+        <textarea id="acme-provider-config" rows="6" placeholder="${esc(t("certificates.providerConfigPlaceholder"))}">${esc(v.acme_dns_provider_config || "")}</textarea>
+        <p class="muted mt-4">${t("certificates.providerConfigHelp")}</p>
+      </div>
+
       <div class="admin-form-row mt-12">
         <div class="field flex-1 min-w-220">
-          <label>${t("certificates.autoRenewLabel")} ${badge("le_auto_renew")}</label>
-          <label class="check"><input type="checkbox" id="le-auto-renew" ${v.le_auto_renew ? "checked" : ""}> ${t("certificates.autoRenew")}</label>
+          <label>${t("certificates.autoRenewLabel")} ${badge("acme_auto_renew")}</label>
+          <label class="check"><input type="checkbox" id="acme-auto-renew" ${v.acme_auto_renew ? "checked" : ""}> ${t("certificates.autoRenew")}</label>
         </div>
         <div class="field flex-1 min-w-220">
-          <label>${t("certificates.checkHoursLabel")} ${badge("le_renew_check_hours")}</label>
-          <input type="number" id="le-check-hours" value="${v.le_renew_check_hours ?? 6}">
+          <label>${t("certificates.checkHoursLabel")} ${badge("acme_renew_check_hours")}</label>
+          <input type="number" id="acme-check-hours" value="${v.acme_renew_check_hours ?? 6}">
           <p class="muted mt-4">${t("certificates.checkHoursHelp")}</p>
         </div>
         <div class="field flex-1 min-w-220">
-          <label>${t("certificates.renewBeforeLabel")} ${badge("le_renew_before_days")}</label>
-          <input type="number" id="le-renew-before" value="${v.le_renew_before_days ?? 30}">
+          <label>${t("certificates.renewBeforeLabel")} ${badge("acme_renew_before_days")}</label>
+          <input type="number" id="acme-renew-before" value="${v.acme_renew_before_days ?? 30}">
           <p class="muted mt-4">${t("certificates.renewBeforeHelp")}</p>
         </div>
       </div>
 
       <div class="mt-14 row gap-8 row-end">
-        <button class="btn btn-ghost" id="le-renew" type="button">${t("certificates.renewNow")}</button>
-        <button class="btn btn-primary" id="le-save" type="button">${t("certificates.save")}</button>
+        <button class="btn btn-ghost" id="acme-renew" type="button">${t("certificates.renewNow")}</button>
+        <button class="btn btn-primary" id="acme-save" type="button">${t("certificates.save")}</button>
       </div>
-      <div class="mt-8"><span class="test-result" id="le-renew-result"></span></div>
+      <div class="mt-8"><span class="test-result" id="acme-renew-result"></span></div>
+      <pre class="key-block mt-8" id="acme-renew-detail" hidden></pre>
     </div>
   `);
 
-  wireTagInput("le-domains");
+  wireTagInput("acme-domains");
 
-  $("le-save").addEventListener("click", async () => {
+  // Staging only exists for Let's Encrypt; the provider credentials only
+  // matter for the DNS-01 challenge.
+  function updateVisibility() {
+    const caSel = $("acme-ca");
+    const authSel = $("acme-auth");
+    const provSel = $("acme-dns-provider");
+    if (!caSel || !authSel || !provSel) return;
+    const stagingOnly = caSel.value !== "letsencrypt";
+    const stagingField = $("acme-staging-field");
+    if (stagingField) stagingField.hidden = stagingOnly;
+    const stagingBox = $("acme-staging");
+    if (stagingBox) stagingBox.disabled = stagingOnly;
+    const dns = authSel.value !== "http-01";
+    const cfFields = $("acme-cloudflare-fields");
+    if (cfFields) cfFields.hidden = !dns || provSel.value !== "cloudflare";
+    const pcField = $("acme-provider-config-field");
+    if (pcField) pcField.hidden = !dns || provSel.value === "cloudflare";
+  }
+  for (const id of ["acme-ca", "acme-auth", "acme-dns-provider"]) {
+    $(id).addEventListener("change", updateVisibility);
+  }
+  updateVisibility();
+
+  $("acme-save").addEventListener("click", async () => {
     const payload = {
-      le_enabled: $("le-enabled").checked,
-      le_domains: readTagInput("le-domains"),
-      le_auth: $("le-auth").value,
-      le_cloudflare_email: $("le-email").value,
-      le_cloudflare_token: $("le-token").value,
-      le_staging: $("le-staging").checked,
-      le_auto_renew: $("le-auto-renew").checked,
-      le_renew_check_hours: Number($("le-check-hours").value) || 6,
-      le_renew_before_days: Number($("le-renew-before").value) || 30,
+      acme_enabled: $("acme-enabled").checked,
+      acme_ca: $("acme-ca").value,
+      acme_domains: readTagInput("acme-domains"),
+      acme_auth: $("acme-auth").value,
+      acme_dns_provider: $("acme-dns-provider").value,
+      acme_cloudflare_zone_id: $("acme-zone-id").value,
+      acme_dns_provider_config: $("acme-provider-config").value,
+      acme_cloudflare_email: $("acme-email").value,
+      acme_cloudflare_token: $("acme-token").value,
+      acme_staging: $("acme-staging").checked,
+      acme_auto_renew: $("acme-auto-renew").checked,
+      acme_renew_check_hours: Number($("acme-check-hours").value) || 6,
+      acme_renew_before_days: Number($("acme-renew-before").value) || 30,
     };
     const r = await request("/api/admin/certificates", "PUT", payload);
     if (r.error) return toast(r.error.message, "error");
@@ -192,18 +266,40 @@ async function renderCertificates() {
     render();
   });
 
-  $("le-renew").addEventListener("click", async () => {
-    const out = $("le-renew-result");
+  $("acme-renew").addEventListener("click", async () => {
+    const out = $("acme-renew-result");
+    const detail = $("acme-renew-detail");
     out.className = "test-result";
     out.textContent = t("certificates.renewing");
+    detail.hidden = true;
+    detail.textContent = "";
     const r = await request("/api/admin/certificates/renew", "POST", {});
     if (r.error) {
       out.classList.add("err");
       out.textContent = "✗ " + r.error.message;
+      render();
       return;
     }
-    out.classList.add("ok");
-    out.textContent = "✓ " + t("certificates.renewDone");
+    const d = r.data || {};
+    const issued = d.issued === true || d.renewed === true;
+    const error = typeof d.error === "string" && d.error.trim() ? d.error : "";
+    const logs = typeof d.logs === "string" && d.logs.trim() ? d.logs : "";
+    if (issued) {
+      out.classList.add("ok");
+      out.textContent = "✓ " + t("certificates.renewDone");
+    } else if (error) {
+      out.classList.add("err");
+      out.textContent = "✗ " + t("certificates.renewFailed");
+    } else {
+      out.textContent = "– " + t("certificates.renewNoop");
+    }
+    const parts = [];
+    if (error) parts.push(`${t("certificates.renewErrorLabel")}\n${error}`);
+    if (logs) parts.push(logs);
+    if (parts.length) {
+      detail.textContent = parts.join("\n\n");
+      detail.hidden = false;
+    }
     render();
   });
 }

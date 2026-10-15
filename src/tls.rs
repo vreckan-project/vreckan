@@ -1,22 +1,21 @@
 //! Copyright (c) 2026 Antitux Networks LLC. SPDX-License-Identifier: MPL-2.0
 //! TLS certificate selection.
 //!
-//! Ports the cert logic in `run_https`. When Let's Encrypt is enabled the
-//! real cert is issued/renewed via a transient certbot container (that logic
-//! lives in `le_certbot`, ported in a later step); otherwise a generated
-//! self-signed cert (CN=localhost) is used. For now this returns the
-//! self-signed cert, generating it on first run if it is missing.
+//! Ports the cert logic in `run_https`. When ACME is enabled the real cert is
+//! issued/renewed by the native acmex backend (`acme_orchestrator::ensure_acme_cert`);
+//! otherwise a generated self-signed cert (CN=localhost) is used.
+//! `select_cert` issues/renews when due, then serves the cert if a valid one is
+//! now present, else falls back to the self-signed cert.
 
-use crate::le_certbot;
+use crate::acme_orchestrator;
 use crate::state::AppState;
 use anyhow::Result;
 use std::path::PathBuf;
 use tracing::{info, warn};
 
-/// Pick the TLS cert: a Let's Encrypt cert (issued via certbot when LE is
-/// enabled, or a host-mounted one) when available, else a self-signed cert.
-/// Returns the PEM-encoded cert and key. Mirrors `_select_cert` in
-/// `run_https`.
+/// Pick the TLS cert: an ACME-issued cert when ACME is enabled and a valid
+/// cert is available, else a self-signed cert. Returns the PEM-encoded cert
+/// and key. Mirrors `_select_cert` in `run_https`.
 pub async fn select_cert(state: &AppState) -> Result<(Vec<u8>, Vec<u8>)> {
     let settings = &state.settings;
     let ssl_dir = PathBuf::from(&settings.data_root).join("ssl");
@@ -24,32 +23,52 @@ pub async fn select_cert(state: &AppState) -> Result<(Vec<u8>, Vec<u8>)> {
     let cert_path = ssl_dir.join("vreckan_dev.crt");
     let key_path = ssl_dir.join("vreckan_dev.key");
 
-    // Let's Encrypt: issue/renew via a transient certbot container, then use
-    // the cert if it is present and valid. Mirrors `run_https`, which reads
-    // the *effective* config (DB-over-env) before calling `ensure_le_cert`.
-    let cfg = le_certbot::effective_le_config(state).await;
-    if cfg.le_enabled {
-        let status = le_certbot::ensure_le_cert(&cfg).await;
+    // ACME: read the *effective* config (DB-over-env), issue/renew via the
+    // native acmex backend when due, then serve the cert if a valid one is
+    // now present on disk.
+    let cfg = acme_orchestrator::effective_acme_config(state).await;
+    if cfg.acme_enabled {
+        let issued = acme_orchestrator::ensure_acme_cert(state, &cfg, false)
+            .await
+            .get("issued")
+            .and_then(|v| v.as_bool())
+            .unwrap_or(false);
+        let domains: Vec<String> = cfg
+            .acme_domains
+            .split(',')
+            .map(|d| d.trim().to_string())
+            .filter(|d| !d.is_empty())
+            .collect();
+        let status = acme_orchestrator::cert_status(state, &domains).await;
         if status.get("present").and_then(|v| v.as_bool()).unwrap_or(false)
             && status.get("valid").and_then(|v| v.as_bool()).unwrap_or(false)
         {
+            let source = status.get("source").and_then(|v| v.as_str()).unwrap_or("");
             let cert = status.get("cert").and_then(|v| v.as_str()).unwrap_or("");
             let key = status.get("key").and_then(|v| v.as_str()).unwrap_or("");
             if !cert.is_empty() && !key.is_empty() {
+                // The config DB is the source of truth: for an `acme_db`
+                // record the cert/key are PEM content; for a disk fallback
+                // they are on-disk paths to read.
+                let (cert_bytes, key_bytes) = if source == "acme_db" {
+                    (cert.as_bytes().to_vec(), key.as_bytes().to_vec())
+                } else {
+                    (std::fs::read(cert)?, std::fs::read(key)?)
+                };
                 info!(
-                    "using Let's Encrypt cert {cert} (source={}, {}d left)",
-                    status.get("source").and_then(|v| v.as_str()).unwrap_or("?"),
+                    "using ACME cert (source={}, {}d left)",
+                    source,
                     status.get("days_remaining").and_then(|v| v.as_i64()).unwrap_or(0)
                 );
-                return Ok((std::fs::read(cert)?, std::fs::read(key)?));
+                return Ok((cert_bytes, key_bytes));
             }
         }
         warn!(
-            "LE enabled but no valid cert yet (issued={}); using self-signed until one is available",
-            status.get("issued").and_then(|v| v.as_bool()).unwrap_or(false)
+            "ACME enabled but no valid cert yet (issued={}); using self-signed until one is available",
+            issued
         );
     } else {
-        info!("LE not enabled; using self-signed certificate");
+        info!("ACME not enabled; using self-signed certificate");
     }
 
     if !cert_path.exists() || !key_path.exists() {

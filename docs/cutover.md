@@ -45,7 +45,7 @@ typical configuration database.
   checkout, `git pull` to v0.6.0; otherwise copy the v0.6.0
   `docker-compose.yml` into your deployment directory.
 - **The v0.6.0 image** — `ghcr.io/vreckan-project/vreckan:v0.6.0` is
-  published on the tag push (ops guide §3.3). Point `image:` at the
+  published on the tag push (ops guide §3.4). Point `image:` at the
   versioned tag, not `:latest`, so a later release can't change what you
   just cut over to. In a registry deployment drop the local `build:` block.
 - **Python 3.8+ on the host** for the migration and verification scripts.
