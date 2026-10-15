@@ -22,7 +22,7 @@ so `Issue/Renew now` failed with a misleading "Missing location header"
   (the orphaned account is simply re-registered under the new key).
   ES256 is accepted by all three supported CAs.
 - **`acmex` pinned to an `antitux/acmex` fork** of the upstream repo
-  (houseme/acmex `f7b06c2`, 2026-10-06, + three fixes) via
+  (houseme/acmex `f7b06c2`, 2026-10-06, + six fixes) via
   `[patch.crates-io]`: only upstream derives the JWS `alg` and JWK from
   the actual key (`Jwk::for_key_pair`, `JwsSigner::jwa_algorithm`) and
   ships `KeyPairGenerator`. The fork additionally (1) defaults the
@@ -37,7 +37,25 @@ so `Issue/Renew now` failed with a misleading "Missing location header"
   Encrypt's dns-01 validation cadence — the first validation attempt
   fails while the DNS change propagates and retries arrive minutes
   later, so a correctly configured issuance timed out with the order
-  still pending). The re-resolution also moved the acmex DNS/HTTP
+  still pending) — (4) activates dns-01 challenges with an **empty
+  object** (`{`) instead of an empty payload: per RFC 8555 §7.5.1 (and
+  Boulder's `postChallenge`), an empty payload is a POST-as-GET that
+  only *fetches* the challenge state, so the fork's uniform empty
+  payload turned every activation into a no-op fetch and the
+  challenges sat "pending" forever — the single most insidious layer,
+  because the order looked healthy (authz pending, order pending, no
+  errors) and Let's Encrypt's own status page said "Operational" — and
+  (5) sets the **CSR subject CN** to the first identifier: rcgen's
+  `CertificateParams::default()` subjects every CSR to
+  `CN="rcgen self signed cert"`, which Boulder validates as a domain
+  name and rejects at finalization ("Domain name contains an invalid
+  character") — and (6) makes the **Cloudflare TXT create idempotent**:
+  a *new* order for the same domain reuses the *existing* valid
+  authorization, so the challenge token (and thus the digest content)
+  is unchanged and Cloudflare's 81058 "An identical record already
+  exists" fires when a previous run left the record in place; the
+  provider now reuses the existing record's ID. The re-resolution also
+  moved the acmex DNS/HTTP
   subtree to the advisory-fixed majors (h2 0.4, hickory 0.26,
   rustls 0.23, rustls-webpki 0.103, hyper 1.x), so the now-unnecessary
   RUSTSEC ignores were dropped from `deny.toml` and the acmex git source
@@ -50,6 +68,18 @@ so `Issue/Renew now` failed with a misleading "Missing location header"
   404s). ZeroSSL additionally requires an External Account Binding
   (account key ID + MAC key), which vreckan does not yet configure —
   tracked as a follow-up.
+- **Verified end-to-end on the staging box (192.168.103.225,
+  `vreckan.antitux.net`, Cloudflare DNS-01, Let's Encrypt
+  **production**).** Boot-time issuance and the admin "Issue/Renew
+  now" button both complete in ~2 s: a real `Let's Encrypt YE1`
+  certificate for `CN=vreckan.antitux.net` (SAN included, 90-day
+  validity) is saved to the cert DB, hot-reloaded into the serving
+  TLS config, and presented on `https://vreckan.antitux.net`.
+  The earlier "pending forever" symptom was *not* a Cloudflare,
+  DNSSEC (the `antitux.net` zone has no DS at `.net`), or
+  Let's Encrypt incident — it was the activation semantics above,
+  confirmed by activating a stale challenge by hand (validated in
+  <15 s) and by reading Boulder's WFE source.
 
 ## 2026-10-15 — Native ACME client, certbot sidecar removed (ANT-128)
 
