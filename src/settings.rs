@@ -424,7 +424,7 @@ impl Settings {
     /// to their sqlx equivalents.
     fn normalize_url(url: &str) -> String {
         if url.starts_with("sqlite+") {
-            let after = url.splitn(2, ':').nth(1).unwrap_or("");
+            let after = url.split_once(':').map(|(_, after)| after).unwrap_or("");
             let sep = if after.contains('?') { "&" } else { "?" };
             let with_mode = if after.contains("mode=") {
                 after.to_string()
@@ -433,10 +433,10 @@ impl Settings {
             };
             format!("sqlite:{}", with_mode)
         } else if url.starts_with("postgresql+") || url.starts_with("postgres+") {
-            let rest = url.splitn(2, "://").nth(1).unwrap_or(url);
+            let rest = url.split_once("://").map(|(_, rest)| rest).unwrap_or(url);
             format!("postgres://{}", rest)
         } else if url.starts_with("mysql+") || url.starts_with("mariadb+") {
-            let rest = url.splitn(2, "://").nth(1).unwrap_or(url);
+            let rest = url.split_once("://").map(|(_, rest)| rest).unwrap_or(url);
             format!("mysql://{}", rest)
         } else {
             url.to_string()
@@ -511,10 +511,8 @@ pub fn default_db_creds_policy() -> DefaultDbCredsPolicy {
         .ok()
         .map(|s| s.trim().to_ascii_lowercase());
     match raw.as_deref() {
-        Some(v) if matches!(v, "1" | "true" | "yes" | "on" | "silent" | "allow") => {
-            DefaultDbCredsPolicy::Silent
-        }
-        Some(v) if matches!(v, "refuse" | "strict" | "fail") => DefaultDbCredsPolicy::Refuse,
+        Some("1" | "true" | "yes" | "on" | "silent" | "allow") => DefaultDbCredsPolicy::Silent,
+        Some("refuse" | "strict" | "fail") => DefaultDbCredsPolicy::Refuse,
         _ => DefaultDbCredsPolicy::Warn,
     }
 }

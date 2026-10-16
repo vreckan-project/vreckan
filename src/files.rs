@@ -1084,7 +1084,7 @@ async fn create_public_share(
         .password
         .as_deref()
         .filter(|p| !p.is_empty())
-        .map(|p| user_manager::hash_share_password(p));
+        .map(user_manager::hash_share_password);
     let now = std::time::SystemTime::now()
         .duration_since(std::time::UNIX_EPOCH)
         .map(|d| d.as_secs_f64())

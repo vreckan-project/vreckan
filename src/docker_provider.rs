@@ -883,7 +883,7 @@ fn parse_device_spec(spec: &str) -> Option<DeviceMapping> {
 fn parse_bind_mount(spec: &str) -> Option<Mount> {
     let (host, rest) = spec.split_once(':')?;
     let (cont, ro) = match rest.rsplit_once(':') {
-        Some((c, mode)) if mode == "ro" => (c, true),
+        Some((c, "ro")) => (c, true),
         _ => (rest, false),
     };
     if host.is_empty() {

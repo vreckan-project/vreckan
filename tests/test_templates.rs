@@ -48,19 +48,18 @@ async fn builtin_templates(sc: &mut SecureClient) {
     .unwrap();
     // Remove the seeded "Default" template so the reload only sees the
     // built-in (mirrors a fresh startup where the built-in dir is populated).
-    if let Ok(row) = vreckan::entities::app_template::Entity::find_by_id("Default".to_string())
-        .one(&sc.state.db.conn)
-        .await
+    if let Ok(Some(row)) =
+        vreckan::entities::app_template::Entity::find_by_id("Default".to_string())
+            .one(&sc.state.db.conn)
+            .await
     {
-        if let Some(row) = row {
-            let am = vreckan::entities::app_template::ActiveModel {
-                name: sea_orm::ActiveValue::Set(row.name),
-                settings: sea_orm::ActiveValue::NotSet,
-            };
-            let _ = vreckan::entities::app_template::Entity::delete(am)
-                .exec(&sc.state.db.conn)
-                .await;
-        }
+        let am = vreckan::entities::app_template::ActiveModel {
+            name: sea_orm::ActiveValue::Set(row.name),
+            settings: sea_orm::ActiveValue::NotSet,
+        };
+        let _ = vreckan::entities::app_template::Entity::delete(am)
+            .exec(&sc.state.db.conn)
+            .await;
     }
     sc.state.settings.default_app_templates_path = dir.to_string_lossy().to_string();
     catalog::load_app_templates(&sc.state).await;

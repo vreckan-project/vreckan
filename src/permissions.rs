@@ -55,7 +55,10 @@ pub const SUPER_PERMISSION: &str = "admin";
 
 /// True if `perm` is a known permission in the catalog.
 pub fn is_valid_permission(perm: &str) -> bool {
-    all_permissions().iter().any(|p| *p == perm)
+    all_permissions()
+        .into_iter()
+        .collect::<HashSet<_>>()
+        .contains(perm)
 }
 
 /// Expand a permission list into the full set it grants.

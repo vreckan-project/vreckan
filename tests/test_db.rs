@@ -103,7 +103,7 @@ async fn wipe_db(d: &db::Db) {
     for table in db::TABLE_ORDER {
         let _ = d
             .conn
-            .execute_raw(sea_orm::Statement::from_string(backend, &format!("DELETE FROM {table}")))
+            .execute_raw(sea_orm::Statement::from_string(backend, format!("DELETE FROM {table}")))
             .await;
     }
 }
