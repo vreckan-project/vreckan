@@ -83,7 +83,7 @@ server restart resets them.
 Local build instead of pulling the image:
 
 ```bash
-docker build -t vreckan .   # multi-stage: rust:1.99-slim build → debian:trixie-slim runtime
+docker build -t vreckan .   # multi-stage: pinned vreckan-base-build image → debian:trixie-slim runtime
 ```
 
 ## 3. Image build, registries, and the CI/CD flow
@@ -92,8 +92,11 @@ docker build -t vreckan .   # multi-stage: rust:1.99-slim build → debian:trixi
 
 The `Dockerfile` is multi-stage:
 
-- **Build stage** — `rust:1.99-slim` (Debian trixie): `cargo build --release`
-  with BuildKit cargo-cache mounts. System deps are `linux-libc-dev`,
+- **Build stage** — the pinned `repo.vreckanproject.com/vreckan/vreckan-base-build`
+  image (built on `rust:1.99-slim`, Debian trixie; see §3.5 — it bakes the
+  toolchain, the `-sys` build deps, sccache, and a warm dependency cache):
+  `cargo build --release` with BuildKit cargo-cache mounts.
+- **System deps in the base image** — `linux-libc-dev`,
   `pkg-config`, `libssl-dev` (needed by the `-sys` crates and the native-tls
   stack) plus `cmake`, `make`, and `golang` (needed by the FIPS variant of
   aws-lc, `aws-lc-fips-sys`, which acmex pulls in via `aws-lc-rs/fips` and
@@ -557,8 +560,8 @@ pre-creates and owns the directory, so no other change is needed.
 
 - `GET /api/health` — liveness probe (`ok (N session(s))`); point load
   balancers/monitors at it.
-- Logs: `tracing`-based, structured. `VRECKAN_LOG_LEVEL` (or `RUST_LOG`)
-  sets the filter; SQL query logging is available via the SeaORM
-  `sqlx_logging_level` hook.
+- Logs: `tracing`-based, structured. `RUST_LOG`, when set, takes precedence;
+  otherwise `VRECKAN_LOG_LEVEL` sets the filter (both unset → `info`); SQL
+  query logging is available via the SeaORM `sqlx_logging_level` hook.
 - First-run credentials, cert selection, and startup loads are all logged —
   `docker compose logs -f vreckan-http` is the primary diagnostic surface.

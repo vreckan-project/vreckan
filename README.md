@@ -54,7 +54,7 @@ The interaction between the web client and the server follows a secure and orche
 *   **Containerized Application Backend:** Uses Docker as the provider to run applications in isolated, sandboxed environments.
 *   **Role-Based Access Control (RBAC):** A clear distinction between Admins (full system control) and Users (can only launch and manage their own sessions).
 *   **Database-backed configuration:** Users, groups, apps, sessions, tokens, and shares live in a database (SQLite by default, PostgreSQL supported), so there are no config files to manage by hand.
-*   **Let's Encrypt integration:** Optional automatic issuance and renewal of real TLS certificates via certbot (Cloudflare DNS-01 or HTTP-01), configurable from the admin UI.
+*   **ACME certificates:** Optional automatic issuance and renewal of real TLS certificates via a built-in ACME client (Let's Encrypt, ZeroSSL, or Google; DNS-01 via eleven providers or HTTP-01), configurable from the admin UI.
 *   **No Installation Required:** The full client experience, including launching apps, managing files, and administration, runs entirely in the browser.
 *   **Full Admin UI:** A dedicated admin area provides a complete management dashboard for administrators, allowing for user, group, application, template, SSO, and certificate management directly from the browser.
 
@@ -62,7 +62,7 @@ The interaction between the web client and the server follows a secure and orche
 
 ### Prerequisites
 *   A server with **Docker** and **Docker Compose** installed, with access to the Docker daemon (the server spawns and manages app containers through it).
-*   An SSL certificate for your domain (optional — a self-signed certificate is generated automatically on first run, and Let's Encrypt can be enabled to issue real certificates).
+*   An SSL certificate for your domain (optional — a self-signed certificate is generated automatically on first run, and ACME can be enabled to issue real certificates from Let's Encrypt, ZeroSSL, or Google).
 
 ### 1. Run the server
 The recommended deployment is the pre-built container image:
@@ -70,7 +70,7 @@ The recommended deployment is the pre-built container image:
 ```bash
 git clone --depth 1 https://github.com/vreckan-project/vreckan.git
 cd vreckan
-cp .env.example .env   # edit to taste (OIDC, Let's Encrypt, ...)
+cp .env.example .env   # edit to taste (OIDC, ACME, ...)
 docker compose up -d
 ```
 
@@ -85,8 +85,8 @@ checkout runs the Rust server either way. Versioned image tags (e.g.
 [release process](./docs/release.md).
 
 To run from source instead (e.g. for development): install the Rust toolchain
-(the image builds with `rust:1.99-slim`; any recent stable release works) and
-Docker on the host, then:
+(the image build stage is the pinned `vreckan-base-build` base image, built on
+`rust:1.99-slim`; any recent stable release works) and Docker on the host, then:
 
 ```bash
 cargo run --release
@@ -97,7 +97,7 @@ The binary reads the same `VRECKAN_*` environment variables; point
 
 ### 2. Web Client Access
 1.  Open the server's web address in any modern browser (for example, `https://<your-server>/`).
-2.  Sign in. On first run the server creates a default `admin` account (bootstrap password `admin1234`, configurable via `VRECKAN_BOOTSTRAP_ADMIN_*`). The account is marked *must-change-password*, so the web client prompts for a new password on first login; the startup log names the username (and the well-known default password only when it is in use) rather than printing a configured one. If OIDC/SSO is configured, you can sign in via the provider instead.
+2.  Sign in. On first run the server creates a default `admin` account (bootstrap password `admin1234`, configurable via `VRECKAN_BOOTSTRAP_ADMIN_*`). The account is flagged *must-change-password* — change it from the web client (or set up SSO) as soon as possible; while the flag is set, `VRECKAN_DEFAULT_PASSWORD_POLICY` controls how a login with the literal default password is handled. The startup log names the username (and the well-known default password only when it is in use) rather than printing a configured one. If OIDC/SSO is configured, you can sign in via the provider instead.
 3.  Use the web client to launch applications, manage files, and, if you are an administrator, manage users, groups, and applications.
 
 ## Configuration
@@ -205,28 +205,38 @@ These settings can also be edited from the admin UI's SSO page (a value set ther
 | `VRECKAN_OIDC_USER_GROUPS` | Comma/space-separated group names that map to regular (non-admin) Vreckan groups; an SSO user not in an admin group is assigned to their first group in this list. | *(empty)* |
 | `VRECKAN_OIDC_REQUIRE_SIGNATURE` | Require a verified `id_token` signature; fail closed when the JWKS is unreachable (set `false` for a claims-only fallback). | `true` |
 
-### Let's Encrypt (certbot)
+### ACME certificates (native `acmex` client)
 
-These settings can also be edited from the admin UI's Certificates page (a value set there overrides the environment).
+Issuance and renewal run in-process through the native `acmex` Rust ACME
+client — no external certbot container or Docker socket is needed for
+certificates (ANT-128). These settings can also be edited from the admin UI's
+Certificates page (a value set there overrides the environment).
 
 | Environment Variable | Description | Default Value |
 | --- | --- | --- |
-| `VRECKAN_LE_ENABLED` | Issue Let's Encrypt certificates via certbot. When off, the server uses a self-signed certificate. | `False` |
-| `VRECKAN_LE_DOMAINS` | Comma-separated domain(s) to issue certificates for (e.g. `example.com,www.example.com`). | *(empty)* |
-| `VRECKAN_LE_AUTH` | ACME challenge method: `dns-cloudflare` (Cloudflare DNS-01) or `http-01`. | `dns-cloudflare` |
-| `VRECKAN_LE_CLOUDFLARE_EMAIL` | Account email for Let's Encrypt (used with Cloudflare DNS auth). | *(empty)* |
-| `VRECKAN_LE_CLOUDFLARE_TOKEN` | Cloudflare API token with Zone.DNS edit permission for the domain's zone. | *(empty)* |
-| `VRECKAN_LE_STAGING` | Use the Let's Encrypt staging server (test certificates, no production rate limits). | `False` |
-| `VRECKAN_LE_AUTO_RENEW` | Automatically renew Let's Encrypt certificates in the background. | `True` |
-| `VRECKAN_LE_RENEW_CHECK_HOURS` | How often to check for certificate renewal (in hours). | `6` |
-| `VRECKAN_LE_RENEW_BEFORE_DAYS` | Renew the certificate when it expires within this many days. | `30` |
+| `VRECKAN_ACME_ENABLED` | Issue ACME (Let's Encrypt / ZeroSSL / Google) certificates. When off, the server uses a self-signed certificate. | `False` |
+| `VRECKAN_ACME_CA` | The ACME certificate authority to use: `letsencrypt` (default), `zerossl`, or `google`. Only `letsencrypt` honours `VRECKAN_ACME_STAGING` (staging vs production). | `letsencrypt` |
+| `VRECKAN_ACME_DOMAINS` | Comma-separated domain(s) to issue certificates for (e.g. `example.com,www.example.com`). | *(empty)* |
+| `VRECKAN_ACME_AUTH` | ACME challenge method: `dns-cloudflare` (Cloudflare DNS-01) or `http-01`. | `dns-cloudflare` |
+| `VRECKAN_ACME_CLOUDFLARE_EMAIL` | Account email for Let's Encrypt (used with Cloudflare DNS auth). | *(empty)* |
+| `VRECKAN_ACME_CLOUDFLARE_TOKEN` | Cloudflare API token with Zone.DNS edit permission for the domain's zone (held in memory; the DB is the source of truth). | *(empty)* |
+| `VRECKAN_ACME_STAGING` | Use the Let's Encrypt staging server (test certificates, no production rate limits). | `False` |
+| `VRECKAN_ACME_AUTO_RENEW` | Automatically renew ACME certificates in the background. | `True` |
+| `VRECKAN_ACME_RENEW_CHECK_HOURS` | How often to check for certificate renewal (in hours). | `6` |
+| `VRECKAN_ACME_RENEW_BEFORE_DAYS` | Renew the certificate when it expires within this many days. | `30` |
+| `VRECKAN_ACME_DNS_PROVIDER` | DNS-01 provider used for validation when auth is not `http-01`: `cloudflare`, `route53`, `digitalocean`, `linode`, `azure`, `google`, `alibaba`, `godaddy`, `tencent`, `huawei`, `cloudns`. | `cloudflare` |
+| `VRECKAN_ACME_CLOUDFLARE_ZONE_ID` | Cloudflare zone ID for the domain's zone. Leave blank to auto-discover it from the API token. | *(empty)* |
+| `VRECKAN_ACME_DNS_PROVIDER_CONFIG` | JSON object with credentials for the selected DNS provider (e.g. `{"hosted_zone_id":"Z..."}` for route53). | *(empty)* |
 
-When `VRECKAN_LE_AUTH=dns-cloudflare`, the server writes the Cloudflare API token to `/data/le/cloudflare.ini` (mode `0600`) for the certbot container; the token is stored plaintext there, so the file is owner read/write only (ANT-45 P2-2).
+The issued certificate (PEM chain + private key + expiry) is stored in the
+configuration database; a best-effort file mirror is written to
+`/data/acme/live/<primary>/`. After a successful issuance or renewal the TLS
+endpoint is hot-reloaded without a restart.
 
 ## Documentation
 
 - **[docs/api.md](./docs/api.md)** — full REST/WS endpoint reference for the Rust port, with per-route auth and E2EE requirements.
-- **[docs/ops.md](./docs/ops.md)** — operations & deployment: the container and its host privileges (docker-sock, DRI, group add), image build and registries, the Gitea vLLM-pattern CI/CD flow, database backends, TLS / Let's Encrypt, and the data layout.
+- **[docs/ops.md](./docs/ops.md)** — operations & deployment: the container and its host privileges (docker-sock, DRI, group add), image build and registries, the Gitea vLLM-pattern CI/CD flow, database backends, TLS / ACME, and the data layout.
 - **[docs/release.md](./docs/release.md)** — the release & changelog process (`bump-and-tag`, `.base-image-digest`, changelog conventions).
 - **[docs/port-status.md](./docs/port-status.md)** — living record of known gaps vs the Python original, sourced from the ANT-5 parity audit.
 - **[REWRITE_EVALUATION.md](./REWRITE_EVALUATION.md)** — the feasibility assessment that kicked off the Rust rewrite.

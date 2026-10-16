@@ -15,7 +15,7 @@ follow-up does not change the endpoint surface.
 
 | Area | Status |
 |---|---|
-| Endpoint surface | **Complete** — all 103 unique paths of the original present; 102 exact matches; representation-level differences only (see [api.md](./api.md)); 1 additive Rust endpoint (`/api/health`) |
+| Endpoint surface | **Complete** — all unique paths of the original present (101 unique paths in the current tree; see [api.md](./api.md)); representation-level differences only; 1 additive Rust endpoint (`/api/health`) |
 | 13-table config schema + column migrations | ✅ matches (SeaORM schema-sync subsumes Python `init_db` + `migrate_db`) |
 | E2EE handshake (RSA-PSS / RSA-OAEP / AES-GCM, AAD=session) | ✅ matches |
 | Auth (cookie/Bearer tokens), OIDC provisioning + group re-stamp, RBAC | ✅ matches |
@@ -54,7 +54,7 @@ ANT-1.
 
 | ID | Gap | Where | Impact | Status |
 |---|---|---|---|---|
-| **G7** | Trailing-slash divergence on the `/api/homedirs` and `/api/pinned` collection roots (Rust serves the trailing-slash form; Python served no slash) | `files.rs` route registration | Strict clients calling the other form get 404/405; the shipped web client uses the Rust form, so in-tree clients are unaffected | Open (2026-10-12) |
+| **G7** | Trailing-slash direction on the `/api/homedirs` and `/api/pinned` collection roots — as of the 2026-10-16 re-check (ANT-242), axum 0.8 collapses the nested `"/"` route onto the prefix, so **Rust serves the no-slash forms, the same as Python**; only the trailing-slash forms 404 (the original audit had the direction inverted) | `files.rs` route registration | Only strict clients that call the trailing-slash forms get 404; the shipped web client and the test suite both use the no-slash forms | Open (2026-10-12; direction corrected 2026-10-16) |
 | **G8** | UUID path-param validation dropped on session/room paths — Python 422'd malformed ids at routing; Rust matches any string and the handler fails later (404/500) | `catalog.rs`, `session_proxy.rs`, `collaboration.rs` | Different error class/status for malformed ids | Open (2026-10-12) |
 | **G9** | **Startup cache warm-up missing** — initial population of the app-store YAML caches, autostart-script caches, and image-metadata caches (Python does this in lifespan before serving) | consequence of G2 | First client requests on a cold Rust boot pay the fetch latency | Open (2026-10-12) |
 | **G10** | Rust-only `GET /api/health` liveness endpoint (no Python counterpart) | `app.rs` | Additive, non-breaking; strictly an addition, listed for completeness | Additive (2026-10-12) |
