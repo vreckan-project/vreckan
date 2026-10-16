@@ -1174,6 +1174,32 @@ pub async fn oidc_apply_groups(
     let _ = user_manager::recompute_is_admin(&state.db, username).await;
 }
 
+/// `jwks 0.5.x` still compiles against `jsonwebtoken` v10, so the
+/// `DecodingKey` stored on its `Jwk` is a v10 type. vreckan decodes with v11,
+/// so translate the v10 key into the equivalent v11 key before use (the
+/// `jsonwebtoken_v10` companion dep in Cargo.toml names that v10 crate).
+fn v11_decoding_key(
+    v10_key: &jsonwebtoken_v10::DecodingKey,
+) -> Option<jsonwebtoken::DecodingKey> {
+    use jsonwebtoken_v10::DecodingKeyKind;
+    match v10_key.kind() {
+        DecodingKeyKind::RsaModulusExponent { n, e } => {
+            Some(jsonwebtoken::DecodingKey::from_rsa_raw_components(n, e))
+        }
+        DecodingKeyKind::SecretOrDer(der) => match v10_key.family() {
+            jsonwebtoken_v10::AlgorithmFamily::Rsa => {
+                Some(jsonwebtoken::DecodingKey::from_rsa_der(der))
+            }
+            jsonwebtoken_v10::AlgorithmFamily::Ec => {
+                Some(jsonwebtoken::DecodingKey::from_ec_der(der))
+            }
+            // HMAC/Ed keys can never satisfy the RS256 validation below;
+            // treat as "no usable key" (fail-closed path).
+            _ => None,
+        },
+    }
+}
+
 /// Verify the id_token signature (via the provider's JWKS) and standard claims
 /// (aud/exp), then return its claims. The signature algorithm is pinned to
 /// RS256 (the de-facto OIDC standard) rather than trusted from the token
@@ -1216,7 +1242,7 @@ async fn oidc_verify_id_token(
                 } else {
                     jwks.keys.values().next()
                 };
-                entry.map(|j| j.decoding_key.clone())
+                entry.and_then(|j| v11_decoding_key(&j.decoding_key))
             }
             Err(e) => {
                 warn!("OIDC JWKS fetch/parse failed: {e}");
