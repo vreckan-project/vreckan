@@ -41,9 +41,10 @@ release notes and the image tag always agree.
    `ghcr.io/...:latest` reference resolves. If anything slipped, cut a
    follow-up patch release (same flow, `patch` bump).
 5. **Base-image bumps.** When the nightly scan bot re-points
-   `.base-image-digest` (build base digest drifted), the resulting image
-   rebuild is noted in the next changelog entry ("build base advanced to
-   digest …") so operators can see it in release notes.
+   `.base-image-digest` (build base digest drifted), the same PR also
+   re-points the `Dockerfile` build-stage digest pin (ANT-277), and the
+   resulting image rebuild is noted in the next changelog entry ("build
+   base advanced to digest …") so operators can see it in release notes.
 
 ## Changelog convention
 

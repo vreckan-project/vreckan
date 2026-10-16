@@ -21,11 +21,17 @@
 # server is one Rust binary; TLS (ring/rustls), sqlite, and the web client
 # are all self-contained.
 #
-# Base-image pinning (carried over from the Python image): `.base-image-digest`
-# holds the digest of the BUILD base image (vreckan-base-build, itself built
-# on rust:1.99-slim). The nightly scan workflow rebuilds when the live
-# registry digest of that base differs from the `vreckan.base-digest` label
-# of the last nightly image, and its bot PR re-points the file. The runtime
+# Base-image pinning (carried over from the Python image, made live in
+# ANT-277): the build stage below FROMs vreckan-base-build by digest instead
+# of the mutable `:latest` tag, so a re-bake (daily cron, or a Cargo.lock /
+# Rust-base move) cannot swap the compiler toolchain under an image build
+# without a visible diff. The digest is carried in two places, kept in
+# lockstep: inline in the FROM line, and in `.base-image-digest`, the
+# tracked record the nightly flow reads and bumps. The nightly scan workflow
+# rebuilds when the live registry digest of that base differs from the
+# `vreckan.base-digest` label of the last nightly image, and its bot PR
+# re-points both (the file and this FROM line) — digest bumps land as
+# explicit, reviewable PRs instead of silent `latest` movement. The runtime
 # base (debian:trixie-slim, the same trixie distro the build stage is built
 # on, so the glibc-linked binary runs as-is) is a fixed tag, not part of the
 # digest convention.
@@ -47,8 +53,10 @@
 # images/vreckan-base-build/. Keep it in lockstep with this stage's
 # requirements; its build-base-build Gitea workflow re-bakes and republishes
 # the image whenever the dependency tree (Cargo.lock) or the Rust toolchain
-# changes.
-FROM repo.vreckanproject.com/vreckan/vreckan-base-build:latest AS build
+# changes. Re-bakes move the `latest` tag, but not this stage: the FROM
+# below pins the base by digest, and the nightly's base-bump PR re-points
+# the pin (and `.base-image-digest`) when the tag moves.
+FROM repo.vreckanproject.com/vreckan/vreckan-base-build@sha256:c4fa6f98750e7e305cf5fe1017e83036829a90ae991b39d9f218c28b443c5ea8 AS build
 WORKDIR /app
 
 # sccache: shared compile cache that persists across builds via a BuildKit

@@ -196,9 +196,15 @@ GitHub is the source of truth; Gitea is a mirror.
 
 ### 3.5 Base-image pinning (`.base-image-digest`)
 
-`.base-image-digest` pins the digest of the **build** base image
+`.base-image-digest` records the digest of the **build** base image
 (`repo.vreckanproject.com/vreckan/vreckan-base-build`, the self-contained
-build/work image built on `rust:1.99-slim`). The image is built and
+build/work image built on `rust:1.99-slim`), and the `Dockerfile` build
+stage pins that same digest — the `FROM` line references
+`vreckan-base-build@<digest>`, not the mutable `:latest` tag, so a re-bake
+cannot swap the compiler toolchain under an image build without a visible,
+reviewable diff (ANT-277). The two copies stay in lockstep: the file is the
+tracked record, the `FROM` line is what every build (CI, local, compose
+`build: .`) actually pulls. The image is built and
 maintained out of the **vreckan-workflow** repo — its Dockerfile lives at
 [images/vreckan-base-build/](https://repo.vreckanproject.com/vreckan/vreckan-workflow/src/branch/main/images/vreckan-base-build)
 and the `build-base-build` Gitea workflow there builds + pushes it on demand
@@ -206,7 +212,8 @@ and re-bakes it daily when vreckan's `Cargo.lock` or the Rust base digest
 moves (ANT-203). The nightly
 scan workflow compares the live registry digest of that base against the
 `vreckan.base-digest` label of the last nightly image; when they differ it
-opens a bot PR re-pointing the file. The runtime base
+opens a bot PR re-pointing both `.base-image-digest` and the `Dockerfile`
+build-stage digest pin (and bumping the patch version). The runtime base
 (`debian:trixie-slim`) is a fixed tag and is not part of the digest
 convention. When a digest re-point lands, the release notes should mention
 the base-image bump (see [release process](./release.md)).
