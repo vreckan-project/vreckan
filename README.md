@@ -223,6 +223,8 @@ These settings can also be edited from the admin UI's Certificates page (a value
 
 When `VRECKAN_LE_AUTH=dns-cloudflare`, the server writes the Cloudflare API token to `/data/le/cloudflare.ini` (mode `0600`) for the certbot container; the token is stored plaintext there, so the file is owner read/write only (ANT-45 P2-2).
 
+These are the legacy (pre-`acme_*`) names: the server reads them as a fallback for the corresponding `VRECKAN_ACME_*` variable when the `ACME`-named one is unset, and on first startup it migrates `app_settings` rows stored under these names to their `VRECKAN_ACME_*` successors (ANT-128, implemented in ANT-252).
+
 ## Documentation
 
 - **[docs/api.md](./docs/api.md)** — full REST/WS endpoint reference for the Rust port, with per-route auth and E2EE requirements.

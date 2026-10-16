@@ -9,6 +9,36 @@ is committed normally in `vreckan`. The changelog is the authoritative
 record of what shipped in each release — see
 [`docs/release.md`](./docs/release.md) for the conventions.
 
+## 2026-10-16 — `le_*` → `acme_*` upgrade path: env fallback + DB key migration (ANT-252)
+
+Implements the upgrade behaviour the 2026-10-15 ANT-128 entry promised but
+the code did not yet have (re-verified and flagged by the 2026-10-16 docs
+freshness check, ANT-242):
+
+- **Env fallback.** `Settings::from_env()` now honours the nine retired
+  Python-era vars — `VRECKAN_LE_ENABLED`, `VRECKAN_LE_DOMAINS`,
+  `VRECKAN_LE_AUTH`, `VRECKAN_LE_CLOUDFLARE_EMAIL`, `VRECKAN_LE_CLOUDFLARE_TOKEN`,
+  `VRECKAN_LE_STAGING`, `VRECKAN_LE_AUTO_RENEW`, `VRECKAN_LE_RENEW_CHECK_HOURS`,
+  `VRECKAN_LE_RENEW_BEFORE_DAYS` — as a fallback for the corresponding
+  `VRECKAN_ACME_*` var when the latter is unset. The current `VRECKAN_ACME_*`
+  name always wins when both are present.
+- **One-time `app_settings` migration.** At startup the server copies every
+  stored `VRECKAN_LE_*` row to its `VRECKAN_ACME_*` successor and removes the
+  retired row. A successor value saved on the admin Certificates page after
+  the rename wins over a copied legacy value; the migration is idempotent
+  (a no-op on later startups) and a failure is logged rather than fatal —
+  affected values can be re-saved from the admin Certificates page.
+- Both behaviours are driven by one table (`LEGACY_LE_ALIASES` in
+  `src/settings.rs`) and covered by new tests in `tests/test_db.rs`. The four
+  certbot-only env vars that had no setting definition
+  (`VRECKAN_LE_CERTBOT_IMAGE`, `VRECKAN_LE_VOLUME`, `VRECKAN_LE_APP_CERT_DIR`,
+  `VRECKAN_LE_HOST_CERT_DIR`) had no successor and remain retired.
+
+**Note for the docs pass (PR #35, `will/ant-242-docs-freshness`):** the
+interim "old names are not read; re-save from the admin Certificates page"
+wording is superseded by this entry — the README/`.env.example` ACME tables
+may gain a one-line legacy-fallback note.
+
 ## 2026-10-15 — rsa 0.10 crypto-stack unification, v0.6.4 (ANT-191)
 
 `rsa` bumped to **0.10.0-rc.19** — the first release built on the

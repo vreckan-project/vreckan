@@ -92,6 +92,27 @@ pub const SETTING_DEFINITIONS: &[SettingDef] = &[
     SettingDef { name: "acme_dns_provider_config", type_: "str", default: "", help: "JSON object with credentials for the selected DNS provider (e.g. {\"hosted_zone_id\":\"Z...\"} for route53, {\"api_token\":\"...\",\"domain\":\"example.com\"} for digitalocean)." },
 ];
 
+/// The Python-era setting names retired by the ANT-128 `le_*` → `acme_*`
+/// rename, mapped as `(retired name, current successor)`. `from_env` honours
+/// the retired `VRECKAN_LE_*` env var as a fallback when the current
+/// `VRECKAN_ACME_*` var is unset, and `Db::migrate_legacy_le_app_settings`
+/// uses this table to move `app_settings` rows stored under the retired keys
+/// at startup (ANT-252). The four certbot-only env vars that never had a
+/// setting definition (`VRECKAN_LE_CERTBOT_IMAGE`, `VRECKAN_LE_VOLUME`,
+/// `VRECKAN_LE_APP_CERT_DIR`, `VRECKAN_LE_HOST_CERT_DIR`) had no successor
+/// and are not part of this mapping.
+pub const LEGACY_LE_ALIASES: &[(&str, &str)] = &[
+    ("le_enabled", "acme_enabled"),
+    ("le_domains", "acme_domains"),
+    ("le_auth", "acme_auth"),
+    ("le_cloudflare_email", "acme_cloudflare_email"),
+    ("le_cloudflare_token", "acme_cloudflare_token"),
+    ("le_staging", "acme_staging"),
+    ("le_auto_renew", "acme_auto_renew"),
+    ("le_renew_check_hours", "acme_renew_check_hours"),
+    ("le_renew_before_days", "acme_renew_before_days"),
+];
+
 /// Parse a raw string into a setting value according to its declared type.
 fn parse_value(type_: &str, raw: &str) -> String {
     match type_ {
@@ -185,7 +206,19 @@ impl Settings {
         let mut values: HashMap<&str, String> = HashMap::new();
         for def in SETTING_DEFINITIONS {
             let env_var = format!("VRECKAN_{}", def.name.to_uppercase());
-            let raw = std::env::var(&env_var).unwrap_or_else(|_| def.default.to_string());
+            let raw = match std::env::var(&env_var) {
+                Ok(v) => v,
+                // ANT-128 upgrade path (ANT-252): the retired Python-era name
+                // is honoured as a fallback when the current name is unset;
+                // the current name always wins when both are present.
+                Err(_) => LEGACY_LE_ALIASES
+                    .iter()
+                    .find(|(_retired, successor)| *successor == def.name)
+                    .and_then(|(retired, _)| {
+                        std::env::var(format!("VRECKAN_{}", retired.to_uppercase())).ok()
+                    })
+                    .unwrap_or_else(|| def.default.to_string()),
+            };
             values.insert(def.name, parse_value(def.type_, &raw));
         }
         let get = |name: &str| values.get(name).cloned().unwrap_or_default();

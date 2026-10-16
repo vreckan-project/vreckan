@@ -68,6 +68,25 @@ async fn main() -> anyhow::Result<()> {
         .map_err(anyhow::Error::msg)?;
     db.init().await.map_err(anyhow::Error::msg)?;
 
+    // ANT-128 upgrade path (ANT-252): move the retired Python-era
+    // `VRECKAN_LE_*` app_settings rows to their `VRECKAN_ACME_*` successors
+    // before anything reads the effective ACME config (cert selection, the
+    // renewal job, the admin pages). Best effort: on a migration failure the
+    // values can still be re-saved from the admin Certificates page.
+    match db.migrate_legacy_le_app_settings().await {
+        Ok(moved) if !moved.is_empty() => {
+            info!(
+                "migrated {} retired VRECKAN_LE_* app_settings row(s) to VRECKAN_ACME_* (ANT-128)",
+                moved.len()
+            );
+        }
+        Ok(_) => {}
+        Err(e) => tracing::warn!(
+            "legacy VRECKAN_LE_* app_settings migration failed: {e} (values can be \
+             re-saved from the admin Certificates page)"
+        ),
+    }
+
     // Build the shared application state (needed by cert selection so the
     // effective LE settings can be read).
     let mut state = AppState::new(settings, db);

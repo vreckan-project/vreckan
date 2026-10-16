@@ -178,6 +178,44 @@ impl Db {
         Ok(())
     }
 
+    /// Delete a single `app_settings` row (no-op when the key is absent).
+    pub async fn delete_app_setting(&self, key: &str) -> Result<(), sea_orm::DbErr> {
+        let stmt = entities::app_setting::Entity::delete_by_id(key.to_string())
+            .build(self.conn.get_database_backend());
+        self.conn.execute_raw(stmt).await?;
+        Ok(())
+    }
+
+    /// One-time migration of the retired Python-era `VRECKAN_LE_*` rows to
+    /// their `VRECKAN_ACME_*` successors (the ANT-128 `le_*` → `acme_*`
+    /// rename; the upgrade behaviour promised by the 2026-10-15 changelog
+    /// entry and implemented here per ANT-252).
+    ///
+    /// For every retired key in [`crate::settings::LEGACY_LE_ALIASES`], a
+    /// stored value is copied to the successor key only when the successor
+    /// does not already have a row — a value saved on the admin Certificates
+    /// page after the rename wins. The retired row is removed in either case,
+    /// which also keeps the migration idempotent across restarts. Returns the
+    /// `(retired key, value)` pairs that were moved.
+    pub async fn migrate_legacy_le_app_settings(
+        &self,
+    ) -> Result<Vec<(String, String)>, sea_orm::DbErr> {
+        let mut moved: Vec<(String, String)> = Vec::new();
+        for (retired_name, successor_name) in crate::settings::LEGACY_LE_ALIASES {
+            let retired_key = format!("VRECKAN_{}", retired_name.to_uppercase());
+            let successor_key = format!("VRECKAN_{}", successor_name.to_uppercase());
+            let Some(value) = self.get_app_setting(&retired_key).await? else {
+                continue;
+            };
+            if self.get_app_setting(&successor_key).await?.is_none() {
+                self.set_app_setting(&successor_key, &value).await?;
+            }
+            self.delete_app_setting(&retired_key).await?;
+            moved.push((retired_key, value));
+        }
+        Ok(moved)
+    }
+
     /// Write a logical, backend-agnostic snapshot of every table to a JSON file.
     ///
     /// The format is `{"version": 1, "tables": {"users": [ {...}, ... ], ...}}`
