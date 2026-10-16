@@ -19,7 +19,7 @@ description: Prerequisites, server installation, configuration, and getting your
   <h2>1. Get the image</h2>
   <p>Vreckan ships as a container image. Pull the latest release:</p>
   <pre><code>docker pull ghcr.io/vreckan-project/vreckan:latest</code></pre>
-  <p>Versioned tags (for example <code>:v0.6.4</code>) are published alongside <code>latest</code> for every release. The current release is **v0.6.4** — see the <a href="https://github.com/vreckan-project/vreckan/blob/main/CHANGELOG.md">changelog</a> for what changed in each version.</p>
+  <p>Versioned tags (for example <code>:v0.6.5</code>) are published alongside <code>latest</code> for every release. The current release is **v0.6.5** — see the <a href="https://github.com/vreckan-project/vreckan/blob/main/CHANGELOG.md">changelog</a> for what changed in each version.</p>
 
   <h2>2. Configure</h2>
   <p>Vreckan is configured entirely through <code>VRECKAN_*</code> environment variables. The repository ships a <code>.env.example</code> you can copy and edit:</p>
@@ -68,7 +68,7 @@ VRECKAN_ACME_CLOUDFLARE_TOKEN=your-cloudflare-api-token</code></pre>
   <p>Since v0.6.1 that service's host port is published on the host <strong>loopback interface only</strong> (<code>127.0.0.1:5432</code>) by default — the server reaches it over the internal compose network either way. Set <code>VRECKAN_POSTGRES_PORT=5432</code> to publish it on every interface again, or comment out the <code>ports</code> entry in <code>docker-compose.yml</code> to disable host publication entirely. Starting against the default <code>vreckan</code>/<code>vreckan</code> credentials logs a warning by default; change them with <code>VRECKAN_DB_USER</code>/<code>VRECKAN_DB_PASS</code>, silence the warning with <code>VRECKAN_ALLOW_DEFAULT_DB_CREDS=1</code>, or make startup fail with <code>VRECKAN_ALLOW_DEFAULT_DB_CREDS=refuse</code>.</p>
 
   <h2>Security &amp; data (v0.6.1)</h2>
-  <p>v0.6.1 closes the P1 and P2 findings from the v0.6.0 security review. Operator-relevant details:</p>
+  <p>v0.6.1 addresses the outstanding findings from the v0.6.0 security review. Operator-relevant details:</p>
   <ul>
     <li><strong>Non-root server.</strong> The server process runs as a non-root user (UID/GID 1000) with no <code>privileged</code> container; it reaches the Docker daemon through the host <code>docker</code> group. A one-shot compose step takes ownership of <code>vreckan-data</code> before first boot (no manual <code>chown</code> needed).</li>
     <li><strong>First-boot admin.</strong> The seeded <code>admin</code> account is flagged must-change-password (change it from the web client). <code>VRECKAN_DEFAULT_PASSWORD_POLICY</code> controls how a login with the literal default <code>admin1234</code> is handled while that flag is set.</li>
