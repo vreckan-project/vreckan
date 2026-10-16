@@ -9,6 +9,110 @@ is committed normally in `vreckan`. The changelog is the authoritative
 record of what shipped in each release — see
 [`docs/release.md`](./docs/release.md) for the conventions.
 
+## 2026-10-16 — Installed Apps image identity, scheduled auto-update, and the ANT-267 security batch, v0.7.0 (ANT-266/ANT-268/ANT-269/ANT-270 + ANT-273/ANT-274/ANT-275/ANT-276/ANT-277)
+
+The Apps Control **Installed Apps** table now shows each app's real image
+identity instead of "— unknown", and the update workflow (Check / Update /
+scheduled auto-update) drives what the table displays. The release also
+carries the ANT-267 weekly security batch.
+
+- **The Image column stops saying "— unknown" after a server restart.** At
+  startup the server inspects each installed app's local image (deduped,
+  concurrently, best-effort) and caches its sha/digests, so the table shows
+  the real image identity with no user action. A missing image or a down
+  Docker daemon is logged and left unknown — startup never blocks, and the
+  warm-up never touches pull bookkeeping (ANT-269).
+- **"Check" and "Check all" now refresh the table.** The update-check
+  endpoints persist the refreshed sha/digests — and the registry
+  comparison — into the metadata cache the table renders from, so the
+  result of a Check is visible in the list instead of vanishing (ANT-269).
+- **The check toast reports the real image short id.**
+  `get_local_image_info` returns the Docker-style 12-character `short_id`
+  (image id minus its `sha256:` prefix); against a real daemon the Check
+  toast's `current_sha` is no longer null (ANT-269).
+- **Launch-time pulls are cached too.** When a launch pulls a missing image
+  on demand, the pulled image's metadata is cached, so the table becomes
+  accurate without admin action (ANT-269).
+- **"Update available" is visible per app.** The check endpoints record
+  `update_available` and `last_update_checked_at` per app; the list endpoint
+  stays cache-only (both fields are `null` until a check has run — no live
+  registry calls during a table render). The UI shows an amber Update button
+  for apps with an available update and re-renders after a Check (ANT-270).
+- **Scheduled update checks with optional auto-pull.** The previously
+  unconsumed `auto_update_apps` / `auto_update_interval_seconds` settings now
+  drive a background job: the first tick runs immediately at startup (local
+  metadata warm-up plus a registry digest comparison), each tick re-reads
+  the settings fresh (admin edits apply without a restart), the tick no-ops
+  when auto-update is off, and with it on the job pulls opted-in apps that
+  have an available update through the same background path as the manual
+  Update button (live containers pick up the new image at their next
+  start/recreate, as with a manual pull). A new read-only
+  `GET /api/admin/apps/auto_update_status` exposes the job's state —
+  `enabled`, `interval_seconds`, `last_check_at`, `next_check_at`,
+  `updates_available`, `auto_update_apps_count` (ANT-269/ANT-270).
+
+### Security (ANT-267 weekly batch)
+
+- **Backups no longer carry live ACME/OIDC secrets** (major, ANT-273).
+  `Db::dump` redacts the secret `app_settings` rows — the ACME account key,
+  the Cloudflare token, the DNS provider config, the OIDC client secret —
+  to a `<redacted>` placeholder, and `Db::restore` skips a placeholder row
+  (older dumps with plaintext values still restore as-is). The ACME
+  app-side cert dir now derives from the configurable data root
+  (`{data_root}/acme`) instead of the hardcoded `/data/acme`, so moving
+  `data_root` no longer silently loses the persisted account key and
+  cert mirror on container recreation.
+- **ACME key files land 0600 from the first byte** (major, ANT-274). The
+  ACME account key is created owner-only (create-new with mode `0600`)
+  instead of write-at-umask-then-chmod; replacing an existing file
+  (e.g. one left world-readable by an older version) re-tightens it to
+  `0600`, and a failed chmod is logged instead of swallowed. The on-disk
+  cert/key mirror (`live/{domain}/cert.pem` + `privkey.pem`) uses the same
+  owner-only writer, so the private key TLS serves no longer sits at the
+  process umask.
+- **The admin ACME surface stops leaking secrets** (minor, ANT-275).
+  `GET /api/admin/certificates` masks `acme_dns_provider_config` (the raw
+  JSON carries the provider's `api_token` / `client_secret` — blank on save
+  keeps the stored value, like the Cloudflare token) and elides the
+  embedded `status.key` private-key PEM for DB-sourced records. Custom CA
+  directory URLs must use `https://` unless the new `acme_allow_http_ca`
+  setting explicitly opts into plaintext; echoed acmex errors are capped at
+  512 chars with the (possibly internal) CA URL masked; the `acmex` git
+  fork is pinned to the `vreckan-2026-10-16` tag instead of a mutable branch
+  rev; the self-signed dev key lands 0600 with an explicit 3-year validity
+  and an expiry sidecar, so an expired dev cert is regenerated instead of
+  being served forever.
+- **The login limiter no longer trusts attacker-rotatable headers** (minor,
+  ANT-276). The leftmost `X-Forwarded-For` entry is honoured for the
+  per-IP login lockout only when the direct TCP peer matches the new
+  `trusted_proxies` setting (comma-separated IPs/CIDRs; fail closed when
+  empty); the lockout key lowercases the username so case variants of the
+  same account share one budget; the still-on-default-password 401
+  collapses to the generic "Invalid username or password." body under the
+  default `warn` policy (the specific body remains only under an explicit
+  `silent` opt-in); `save_sso_config` returns a generic 500 detail and logs
+  the raw DB error. The clippy lint backlog across `src/` and the test
+  suite is cleared in the same batch.
+- **The Dockerfile build stage pins the base-build image by digest** (minor,
+  ANT-277). The build stage no longer pulls a mutable
+  `vreckan-base-build:latest`; the pin is recorded in
+  `.base-image-digest`. The v0.7.0 image builds on the advanced base
+  (digest `sha256:c4fa6f98750e…`); no operator action needed.
+
+### Also in this release (merged to `main` since the v0.6.5 tag)
+
+- **OIDC id-token verification adapted to jsonwebtoken v11** (ANT-246):
+  the renovate bump of the `jsonwebtoken` crate lands with the signature
+  changes the new major requires, so SSO sign-in is unaffected.
+- Docs freshness pass: port-status test-parity notes (ANT-256) and the
+  weekly doc/site corrections (ANT-242) ride the v0.7.0 image; the new
+  repo `AGENTS.md` records the GitHub @-mention rule for agent comments
+  (ANT-260).
+- **The site image tracks `main` automatically.** A push to `main` that
+  changes `site/` now dispatches the site build workflow, so the
+  `vreckan-site` image in the Gitea registry stays current without a
+  manual trigger (ANT-278).
+
 ## 2026-10-16 — Launch options move into the per-app Launch dialog; session name; first-sign-in password prompt, v0.6.5 (ANT-228/ANT-229/ANT-230/ANT-253)
 
 The "Launch options" card at the top of the Apps view is gone. Picking an
