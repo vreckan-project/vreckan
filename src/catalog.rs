@@ -22,7 +22,7 @@ use rand::Rng;
 use sea_orm::{ActiveValue, EntityTrait};
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
-use tracing::{info, warn};
+use tracing::{debug, info, warn};
 
 use crate::auth;
 use crate::docker_provider::{DockerProvider, GpuInfo, LaunchResult, VolumeSpec};
@@ -1305,6 +1305,281 @@ pub async fn do_pull_and_cache_image(
     let _ = app;
 }
 
+/// The current wall-clock time in unix seconds (the shape used by the
+/// metadata-cache timestamps).
+fn now_unix_secs() -> f64 {
+    std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .map(|d| d.as_secs_f64())
+        .unwrap_or(0.0)
+}
+
+/// The deterministic fake `get_local_image_info` record used by the
+/// `fake_provider` test hook (mirrors the fake in the admin check endpoints).
+fn fake_local_image_info() -> Value {
+    serde_json::json!({
+        "id": "sha256:local",
+        "short_id": "local123",
+        "digests": ["sha256:local"],
+    })
+}
+
+/// Merge refreshed image metadata into the in-memory cache (keyed by image
+/// name), preserving any fields the update does not refresh. With
+/// `local_info` (a `get_local_image_info` result) present, writes the local
+/// `sha` (image ID) / `digests` and bumps `last_checked_at`; with
+/// `remote_check` (`(remote_digest, update_available)`) present, writes the
+/// registry comparison and bumps `last_update_checked_at` (ANT-269).
+pub async fn persist_image_metadata(
+    state: &AppState,
+    image_name: &str,
+    local_info: Option<&Value>,
+    remote_check: Option<(&str, bool)>,
+) {
+    if local_info.is_none() && remote_check.is_none() {
+        return;
+    }
+    let mut metadata = state.image_metadata.write().await;
+    let entry = metadata
+        .entry(image_name.to_string())
+        .or_insert_with(|| Value::Object(serde_json::Map::new()))
+        .as_object_mut()
+        .unwrap();
+    if let Some(info) = local_info {
+        entry.insert(
+            "sha".to_string(),
+            info.get("id")
+                .and_then(|v| v.as_str())
+                .map(|s| s.to_string())
+                .map(Value::from)
+                .unwrap_or(Value::Null),
+        );
+        entry.insert(
+            "digests".to_string(),
+            info.get("digests").cloned().unwrap_or(Value::Array(vec![])),
+        );
+        entry.insert("last_checked_at".to_string(), Value::from(now_unix_secs()));
+    }
+    if let Some((remote_digest, update_available)) = remote_check {
+        entry.insert("remote_digest".to_string(), Value::from(remote_digest));
+        entry.insert("update_available".to_string(), Value::Bool(update_available));
+        entry.insert("last_update_checked_at".to_string(), Value::from(now_unix_secs()));
+    }
+}
+
+/// Inspect a locally-present image and cache its metadata (sha / digests /
+/// last_checked_at) into `state.image_metadata` — the same entry shape
+/// `do_pull_and_cache_image` writes. Best-effort: a missing image or an
+/// unreachable daemon is logged and the entry stays unknown. The
+/// `fake_provider` test hook substitutes a deterministic fake record.
+/// Used by the startup warm-up, the launch path (after a launch-time pull),
+/// and the background auto-update job (ANT-269).
+pub async fn cache_local_image_metadata(state: &AppState, image_name: &str) {
+    let local_info = if state
+        .fake_provider
+        .load(std::sync::atomic::Ordering::Relaxed)
+    {
+        Some(fake_local_image_info())
+    } else {
+        let provider = match DockerProvider::new(serde_json::json!({ "provider_config": { "image": image_name } })) {
+            Ok(p) => p,
+            Err(e) => {
+                warn!(
+                    "Local image metadata lookup failed for '{image_name}': {}",
+                    e.detail
+                );
+                return;
+            }
+        };
+        match provider.get_local_image_info(image_name).await {
+            Some(info) => Some(info),
+            None => {
+                debug!("No local image found for '{image_name}'; leaving metadata unknown.");
+                return;
+            }
+        }
+    };
+    persist_image_metadata(state, image_name, local_info.as_ref(), None).await;
+}
+
+/// Warm the in-memory image-metadata cache at startup (the root-cause fix for
+/// the "— unknown" Image column, ANT-266/ANT-269): for each installed app's
+/// image (deduped by image name), inspect the local image concurrently and
+/// cache its sha/digests, so the installed-apps table shows the real image
+/// identity immediately after a restart. Best-effort and non-blocking with
+/// respect to failures: a missing image or a down Docker daemon is logged and
+/// left unknown, and no `pull_status` changes (this is inspection, not
+/// pulling). The `fake_provider` test hook is honored.
+pub async fn warm_image_metadata(state: &AppState) {
+    let apps = state
+        .installed_apps
+        .read()
+        .await
+        .values()
+        .cloned()
+        .collect::<Vec<_>>();
+    let mut images: Vec<String> = apps
+        .iter()
+        .map(|a| a.provider_config.base.image.clone())
+        .collect();
+    images.sort();
+    images.dedup();
+    let mut tasks = Vec::new();
+    for image in images {
+        let state = state.clone();
+        tasks.push(tokio::spawn(async move {
+            cache_local_image_metadata(&state, &image).await;
+        }));
+    }
+    for task in tasks {
+        let _ = task.await;
+    }
+}
+
+/// One auto-update tick (ANT-269): for each installed app's image (deduped by
+/// image name, fetched concurrently, best-effort) refresh the metadata cache
+/// with the local sha/digests and the registry's latest digest
+/// (`update_available` = the remote digest is not among the local digests),
+/// and — when `auto_update_apps` is on and at least one app using the image
+/// has its `auto_update` flag on and an update is available — claim the image
+/// in `pull_status` and pull it through the same background path the manual
+/// Update button uses (`do_pull_and_cache_image`). A missing local image or a
+/// down daemon is logged and never crashes the job. The `fake_provider` test
+/// hook is honored.
+pub async fn run_auto_update_tick(state: &AppState) {
+    let apps = state
+        .installed_apps
+        .read()
+        .await
+        .values()
+        .cloned()
+        .collect::<Vec<_>>();
+    let mut by_image: HashMap<String, Vec<InstalledApp>> = HashMap::new();
+    for app in apps {
+        by_image
+            .entry(app.provider_config.base.image.clone())
+            .or_default()
+            .push(app);
+    }
+    let enabled = state
+        .settings
+        .get_setting(&state.db, "auto_update_apps")
+        .await
+        .as_bool()
+        .unwrap_or(true);
+    let mut tasks = Vec::new();
+    for (image, image_apps) in by_image {
+        let state = state.clone();
+        let enabled = enabled;
+        tasks.push(tokio::spawn(async move {
+            let (local_info, remote_digest) = if state
+                .fake_provider
+                .load(std::sync::atomic::Ordering::Relaxed)
+            {
+                let remote = if image == "lscr.io/linuxserver/firefox:latest" {
+                    "sha256:local".to_string()
+                } else {
+                    "sha256:remote".to_string()
+                };
+                (Some(fake_local_image_info()), Some(remote))
+            } else {
+                let provider = match DockerProvider::new(
+                    serde_json::json!({ "provider_config": { "image": image } }),
+                ) {
+                    Ok(p) => p,
+                    Err(e) => {
+                        warn!(
+                            "Auto-update tick: failed to connect to Docker for '{image}': {}",
+                            e.detail
+                        );
+                        return;
+                    }
+                };
+                (
+                    provider.get_local_image_info(&image).await,
+                    provider.get_remote_image_digest(&image).await,
+                )
+            };
+            let local_digests = local_info
+                .as_ref()
+                .and_then(|i| i.get("digests").and_then(|d| d.as_array()))
+                .cloned()
+                .unwrap_or_default();
+            let update_available = remote_digest
+                .as_ref()
+                .map(|rd| !local_digests.iter().any(|d| d.as_str().map(|s| s.contains(rd)).unwrap_or(false)))
+                .unwrap_or(false);
+            persist_image_metadata(
+                &state,
+                &image,
+                local_info.as_ref(),
+                remote_digest.as_deref().map(|rd| (rd, update_available)),
+            )
+            .await;
+            if enabled && update_available && image_apps.iter().any(|a| a.auto_update) {
+                let already = matches!(
+                    state.pull_status.read().await.get(&image).map(|s| s.as_str()),
+                    Some("queued") | Some("pulling")
+                );
+                if !already {
+                    state
+                        .pull_status
+                        .write()
+                        .await
+                        .insert(image.clone(), "queued".to_string());
+                    let app = image_apps
+                        .iter()
+                        .find(|a| a.auto_update)
+                        .cloned()
+                        .unwrap_or_else(|| image_apps[0].clone());
+                    tokio::spawn(async move {
+                        do_pull_and_cache_image(&state, &image, Some(app)).await;
+                    });
+                }
+            }
+        }));
+    }
+    for task in tasks {
+        let _ = task.await;
+    }
+}
+
+/// The scheduled update-check job (ANT-269). The first tick runs immediately
+/// at startup (the local metadata warm-up plus the registry digest
+/// comparison); afterwards each tick runs every `auto_update_interval_seconds`.
+/// Both settings are re-read fresh on every tick (DB-over-env-over-default
+/// precedence), so admin edits apply without a restart. When
+/// `auto_update_apps` is false the tick is a no-op (mirrors how the ACME job
+/// no-ops when ACME is disabled); the local warm-up already ran from
+/// `main.rs` at startup in either case. Each completed tick records
+/// `last_check_at` / `next_check_at` in `state.auto_update_job` for
+/// `GET /api/admin/apps/auto_update_status`.
+pub async fn background_auto_update_job(state: AppState) {
+    loop {
+        let enabled = state
+            .settings
+            .get_setting(&state.db, "auto_update_apps")
+            .await
+            .as_bool()
+            .unwrap_or(true);
+        let interval = state
+            .settings
+            .get_setting(&state.db, "auto_update_interval_seconds")
+            .await
+            .as_i64()
+            .unwrap_or(3600)
+            .max(1) as u64;
+        if enabled {
+            run_auto_update_tick(&state).await;
+        }
+        let now = now_unix_secs();
+        let mut job = state.auto_update_job.write().await;
+        job.last_check_at = Some(now);
+        job.next_check_at = Some(now + interval as f64);
+        tokio::time::sleep(std::time::Duration::from_secs(interval)).await;
+    }
+}
+
 // ---------------------------------------------------------------------------
 // The launch flow
 // ---------------------------------------------------------------------------
@@ -1798,6 +2073,12 @@ pub async fn launch_common(
         let digest = provider.get_remote_image_digest(&app.provider_config.base.image).await;
         (details, digest)
     };
+
+    // A launch pulls a missing image on demand; cache the image's metadata so
+    // the installed-apps table shows the real image identity without admin
+    // action (the Rust equivalent of the `initialize` launch-time pull,
+    // ANT-269). The `fake_provider` hook is honored inside the helper.
+    cache_local_image_metadata(state, &app.provider_config.base.image).await;
 
     // --- Record the session -------------------------------------------------
     let now = std::time::SystemTime::now()
