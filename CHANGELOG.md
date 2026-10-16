@@ -9,6 +9,56 @@ is committed normally in `vreckan`. The changelog is the authoritative
 record of what shipped in each release — see
 [`docs/release.md`](./docs/release.md) for the conventions.
 
+## 2026-10-16 — Launch options move into the per-app Launch dialog; session name (ANT-228/ANT-229/ANT-230)
+
+The "Launch options" card at the top of the Apps view is gone. Picking an
+app now opens a per-app **Launch dialog** that shows exactly the fields
+that app type can use, and every launch option is set there, at launch
+time. Verified against the T3 QA matrix (11 cases, live server).
+
+- **One dialog for every app type.** Browser apps show a **Session name**
+  field plus **URL to open** (required); file-capable apps show an
+  **Open file on launch** section (upload a local file, or open a file
+  already in shared storage — with an *Upload a file to shared storage*
+  button when persistent storage is enabled); plain apps show the session
+  name and launch options only.
+- **Session name for browser sessions.** The optional session name
+  appears in the session's window title and the active-sessions list, so
+  a browser app pointed at different sites produces distinguishable
+  sessions.
+- **Moved controls.** Home directory (auto / cleanroom / a named home,
+  with a *Manage* link to the home-directory list), language, GPU (shown
+  only for GPU-capable apps on a server that reports GPUs), room mode,
+  and Wayland (on by default) now live in the dialog instead of the
+  top-bar card.
+- **Presets are saved from and applied by the dialog.** *Save as preset*
+  in the dialog footer saves the current options for that app; saved
+  presets appear in the Pinned section of the Apps view (apply / make
+  default / delete), and the dialog pre-fills from your default preset
+  every time it opens (falling back to the admin's global default GPU).
+- **Backend.** The applications payload now includes each app's store
+  `type` (`app` / `browser` / `desktop` — data only, no client branching
+  yet), and `file_path` launches honor room mode like every other launch
+  path.
+- **The three known issues found in the T3 QA matrix are fixed in the
+  fix round and confirmed by the regression re-run** (5/5 pass on v0.6.4,
+  including both launch smoke paths — nothing previously green
+  regressed). None of them remains a known issue for the next release.
+- **Wayland off now reaches the container env.** Unchecking Wayland in
+  the Launch dialog sets `PIXELFLUX_WAYLAND=false` on the launch,
+  overriding the `true` that linuxserver images bake into the image env
+  (ANT-234).
+- **Explicit GPU selection no longer fails with a 500 in containerized
+  deployments.** When the server's `/dev/dri` is bind-mounted at a
+  different host path, the selected device is now remapped onto the real
+  host path on the host side while the container keeps seeing the
+  standard `/dev/dri` node, so an explicit pick launches cleanly
+  (ANT-234).
+- **Deleting your default preset resets the dialog.** After deleting your
+  default preset, the next time the Launch dialog opens it restores the
+  defaults: home `auto`, room off, Wayland on (language reverts to the
+  browser guess, GPU to `Auto`) (ANT-235).
+
 ## 2026-10-15 — rsa 0.10 crypto-stack unification, v0.6.4 (ANT-191)
 
 `rsa` bumped to **0.10.0-rc.19** — the first release built on the
