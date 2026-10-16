@@ -134,12 +134,14 @@ pub struct AppStore {
 }
 
 /// The public (E2EE) view of an app, returned by `POST /api/applications`.
-/// Mirrors `models.Application`.
+/// Mirrors `models.Application`. `type` is the store-config app type
+/// (`app` | `browser` | `desktop`); data only, no behavioral branching.
 #[derive(Clone, Debug, Serialize)]
 pub struct Application {
     pub id: String,
     pub name: String,
     pub logo: String,
+    pub r#type: String,
     pub home_directories: bool,
     pub nvidia_support: bool,
     pub dri3_support: bool,
@@ -770,6 +772,8 @@ pub struct LaunchRequestFilePath {
     pub language: Option<String>,
     #[serde(default)]
     pub selected_gpu: Option<String>,
+    #[serde(default)]
+    pub launch_in_room_mode: bool,
     #[serde(default = "default_true")]
     pub wayland_mode: bool,
     #[serde(default)]
@@ -2000,6 +2004,7 @@ async fn get_applications(
                 id: app.id.clone(),
                 name: app.name.clone(),
                 logo: app.logo.clone(),
+                r#type: app.provider_config.base.r#type.clone(),
                 home_directories: app.home_directories,
                 nvidia_support: app.provider_config.base.nvidia_support,
                 dri3_support: app.provider_config.base.dri3_support,
@@ -2316,7 +2321,7 @@ async fn launch_file_path(
         None,
         false,
         None,
-        false,
+        req.launch_in_room_mode,
         req.wayland_mode,
         req.session_name.as_deref(),
         true,
