@@ -75,9 +75,24 @@ der = "0.8"
 # OIDC / SSO
 openid = "0.25"
 jwks = "0.5"
-# JWT (id_token) decode + RS256 signature verification. Pinned to the same
-# major as the `jwks` dependency so the `DecodingKey` types line up.
-jsonwebtoken = "10"
+# JWT (id_token) decode + RS256 signature verification. v11 is a breaking
+# bump (non_exhaustive types, removed `Validation::insecure_disable_
+# signature_validation`, reworked feature gates); vreckan's call sites in
+# src/auth.rs and the test suites were audited against it (ANT-246).
+# `rust_crypto` must be enabled explicitly: v11 selects its process-level
+# CryptoProvider from this feature (exactly one of rust_crypto/aws_lc_rs),
+# and in the v10 era it only reached jsonwebtoken through feature
+# unification via jwks' default features — nothing else names v11, so
+# without it RS256 verification panics at runtime. The feature pulls the
+# same rsa/p256/p384/ed25519-dalek/sha2/hmac/rand versions jwks' v10 dep
+# already puts in the tree.
+jsonwebtoken = { version = "11", features = ["rust_crypto"] }
+# `jwks 0.5.x` still compiles against `jsonwebtoken` v10, so the
+# `DecodingKey` on its `Jwk` is a v10 type. Named explicitly so src/auth.rs
+# can convert it into the v11 key `jsonwebtoken::decode` consumes. This
+# companion dep drops out when jwks ships a v11-based release (0.5.3 is
+# the latest as of 2026-10).
+jsonwebtoken_v10 = { package = "jsonwebtoken", version = "10" }
 
 # Docker Engine API
 bollard = "0.21"

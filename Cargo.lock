@@ -3101,13 +3101,37 @@ dependencies = [
 ]
 
 [[package]]
+name = "jsonwebtoken"
+version = "11.1.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "e75fe14a82d81e5f5af639997db37d8b96045938a7ac6ab18cdbe1c7467e05e1"
+dependencies = [
+ "base64 0.22.1",
+ "ed25519-dalek",
+ "getrandom 0.2.17",
+ "hmac 0.12.1",
+ "js-sys",
+ "p256",
+ "p384",
+ "pem 3.0.6",
+ "rand 0.8.8",
+ "rsa 0.9.10",
+ "serde",
+ "serde_json",
+ "sha2 0.10.9",
+ "signature 2.2.0",
+ "simple_asn1",
+ "zeroize",
+]
+
+[[package]]
 name = "jwks"
 version = "0.5.3"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "32a4cf2e9dd754c698b41139c2ec88304249ecf3dd15cabfeddd48665cdf5c0c"
 dependencies = [
  "base64 0.22.1",
- "jsonwebtoken",
+ "jsonwebtoken 10.4.0",
  "reqwest",
  "serde",
  "thiserror 2.0.21",
@@ -6163,7 +6187,8 @@ dependencies = [
  "http",
  "http-body-util",
  "hyper",
- "jsonwebtoken",
+ "jsonwebtoken 10.4.0",
+ "jsonwebtoken 11.1.0",
  "jwks",
  "log",
  "mime_guess",
