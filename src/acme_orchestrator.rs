@@ -206,7 +206,11 @@ async fn build_issue_args<'a>(cfg: &'a AcmeConfig) -> Result<crate::acme::IssueA
 pub fn sanitize_acme_error(error: &str, cfg: &AcmeConfig) -> String {
     let ca_l = cfg.acme_ca.trim().to_ascii_lowercase();
     let known = crate::acme::KNOWN_CA_IDS.contains(&ca_l.as_str());
-    let dir = if known { String::new() } else { cfg.acme_ca.trim().to_string() };
+    let dir = if known {
+        String::new()
+    } else {
+        cfg.acme_ca.trim().to_string()
+    };
     let masked = if dir.is_empty() {
         error.to_string()
     } else {

@@ -71,7 +71,11 @@ pub const KNOWN_CA_IDS: &[&str] = &["letsencrypt", "zerossl", "google", "google-
 /// `allow_http_ca` explicitly opts in to plaintext `http://` (which would
 /// expose the account-key JWSes and CA responses in transit). Fails before
 /// any network I/O so a misconfigured CA never leaks to the wire.
-pub fn resolve_ca_directory(ca: &str, staging: bool, allow_http_ca: bool) -> Result<String, String> {
+pub fn resolve_ca_directory(
+    ca: &str,
+    staging: bool,
+    allow_http_ca: bool,
+) -> Result<String, String> {
     if KNOWN_CA_IDS.contains(&ca.trim().to_ascii_lowercase().as_str()) {
         return Ok(ca_directory(ca, staging));
     }
