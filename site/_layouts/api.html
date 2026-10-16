@@ -306,7 +306,8 @@ layout: default
       </thead>
       <tbody>
         <tr><td><code>values.acme_enabled</code></td><td>bool</td><td>ACME on/off</td></tr>
-        <tr><td><code>values.acme_ca</code></td><td>string</td><td><code>letsencrypt</code> (default) | <code>zerossl</code> | <code>google</code></td></tr>
+        <tr><td><code>values.acme_ca</code></td><td>string</td><td><code>letsencrypt</code> (default) | <code>zerossl</code> | <code>google</code> | full custom ACME directory URL</td></tr>
+        <tr><td><code>values.acme_allow_http_ca</code></td><td>bool</td><td>allow a plaintext <code>http://</code> custom CA URL</td></tr>
         <tr><td><code>values.acme_domains</code></td><td>string[]</td><td>target domains</td></tr>
         <tr><td><code>values.acme_auth</code></td><td>string</td><td><code>dns-cloudflare</code> (default) | <code>http-01</code></td></tr>
         <tr><td><code>values.acme_cloudflare_email</code></td><td>string</td><td>ACME account contact</td></tr>
@@ -319,19 +320,22 @@ layout: default
         <tr><td><code>values.acme_renew_before_days</code></td><td>int</td><td>renew-within window (days)</td></tr>
         <tr><td><code>values.acme_dns_provider</code></td><td>string</td><td><code>cloudflare</code> (default) | <code>route53</code> | <code>digitalocean</code> | <code>linode</code> | <code>azure</code> | <code>google</code> | <code>alibaba</code> | <code>godaddy</code> | <code>tencent</code> | <code>huawei</code> | <code>cloudns</code></td></tr>
         <tr><td><code>values.acme_cloudflare_zone_id</code></td><td>string</td><td>optional Cloudflare zone pin</td></tr>
-        <tr><td><code>values.acme_dns_provider_config</code></td><td>string</td><td>JSON credentials for non-Cloudflare providers</td></tr>
+        <tr><td><code>values.acme_dns_provider_config</code></td><td>string</td><td>always <code>""</code> (masked — the raw JSON carries the provider's <code>api_token</code>/<code>client_secret</code>)</td></tr>
+        <tr><td><code>values.dns_provider_config_set</code></td><td>bool</td><td>whether a provider config is stored</td></tr>
+        <tr><td><code>values.dns_provider_config_length</code></td><td>int</td><td>length of the stored provider config</td></tr>
         <tr><td><code>sources.*</code></td><td>string</td><td>per-field origin: <code>db</code> | <code>env</code> | <code>default</code></td></tr>
         <tr><td><code>status.present</code></td><td>bool</td><td>a certificate exists</td></tr>
         <tr><td><code>status.source</code></td><td>string | null</td><td><code>acme_db</code> (DB is the source of truth) | <code>host</code> | <code>app</code> (disk fallback)</td></tr>
         <tr><td><code>status.cert</code></td><td>string | null</td><td>PEM chain (DB) or path (disk)</td></tr>
-        <tr><td><code>status.key</code></td><td>string | null</td><td>private-key PEM (DB) or path (disk)</td></tr>
+        <tr><td><code>status.key</code></td><td>string | null</td><td>elided to a marker when <code>source</code> is <code>acme_db</code> (the PEM stays out of the admin's browser); path for disk fallbacks</td></tr>
+        <tr><td><code>status.key_length</code></td><td>int | null</td><td>length of the stored private-key PEM, when elided</td></tr>
         <tr><td><code>status.expiry</code></td><td>string | null</td><td>RFC 3339 expiry, when parseable</td></tr>
         <tr><td><code>status.days_remaining</code></td><td>int | null</td><td>days until expiry</td></tr>
         <tr><td><code>status.valid</code></td><td>bool</td><td>expiry is in the future</td></tr>
         <tr><td><code>dns_providers</code></td><td>object[]</td><td><code>[{ id, label, default }]</code> for all 11 providers</td></tr>
       </tbody>
     </table>
-    <p><strong><code>PUT /api/admin/certificates</code></strong> — save the ACME configuration to the <code>app_settings</code> table. Request body carries the same <code>acme_*</code> fields as the GET response's <code>values</code> (minus <code>token_set</code>/<code>token_length</code>). A blank <code>acme_cloudflare_token</code> means "leave the existing token unchanged". Response: <code>{ "ok": true }</code>.</p>
+    <p><strong><code>PUT /api/admin/certificates</code></strong> — save the ACME configuration to the <code>app_settings</code> table. Request body carries the same <code>acme_*</code> fields as the GET response's <code>values</code> (minus the masked indicators). A blank <code>acme_cloudflare_token</code> or <code>acme_dns_provider_config</code> means "leave the existing value unchanged" (both are masked to blank in the GET response). Response: <code>{ "ok": true }</code>.</p>
     <p><strong><code>POST /api/admin/certificates/renew</code></strong> — issue or renew the certificate now. The "Issue / Renew Now" button always (re)issues, even when a valid certificate already exists. Response:</p>
     <table>
       <thead>
@@ -341,7 +345,7 @@ layout: default
         <tr><td><code>present</code></td><td>bool</td><td>a certificate exists after the call</td></tr>
         <tr><td><code>source</code></td><td>string | null</td><td><code>acme_db</code> | <code>host</code> | <code>app</code></td></tr>
         <tr><td><code>cert</code></td><td>string | null</td><td>PEM chain or path</td></tr>
-        <tr><td><code>key</code></td><td>string | null</td><td>private-key PEM or path</td></tr>
+        <tr><td><code>key</code></td><td>string | null</td><td>elided to a marker when DB-sourced; path for disk fallbacks</td></tr>
         <tr><td><code>expiry</code></td><td>string | null</td><td>RFC 3339 expiry</td></tr>
         <tr><td><code>days_remaining</code></td><td>int | null</td><td>days until expiry</td></tr>
         <tr><td><code>valid</code></td><td>bool</td><td>certificate is currently valid</td></tr>
