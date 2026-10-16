@@ -322,6 +322,21 @@ input::placeholder {
   color: #fff;
 }
 
+/* Same amber hue as .badge-warn: flags a row/action that needs attention
+   (e.g. "Update" when a newer image is available). */
+.btn-warning {
+  background: rgba(255, 176, 32, 0.14);
+  border-color: rgba(255, 176, 32, 0.45);
+  color: var(--amber);
+}
+
+.btn-warning:hover:not(:disabled) {
+  background: var(--amber);
+  border-color: var(--amber);
+  color: #fff;
+  transform: translateY(-1px);
+}
+
 .btn-block {
   width: 100%;
 }
@@ -1338,6 +1353,70 @@ label:has(.src-badge) {
   background: var(--accent-soft);
   border-color: rgba(0, 255, 255, 0.4);
   color: var(--accent);
+}
+
+/* Installed-apps Image cell: the image reference is the primary line, with
+   the short-SHA / status badges on the line below it. */
+.image-ref {
+  font-family: var(--mono);
+  font-size: 0.8rem;
+  word-break: break-all;
+  color: var(--text);
+}
+
+.image-meta {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin-top: 4px;
+}
+
+/* Auto-update control row under the Installed Apps header: enable toggle,
+   interval select, and the live job status line. */
+.auto-update-row {
+  flex-wrap: wrap;
+  gap: 12px;
+  padding: 8px 12px;
+  margin-bottom: 12px;
+  background: var(--surface-2);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+}
+
+/* Horizontal label ([checkbox] text) — overrides the global column label. */
+.auto-update-row label {
+  display: flex;
+  flex-direction: row;
+  align-items: center;
+  gap: 6px;
+  margin: 0;
+  font-size: 0.85rem;
+  color: var(--text-muted);
+}
+
+.auto-update-row input[type="checkbox"] {
+  width: 15px;
+  height: 15px;
+  margin: 0;
+  flex-shrink: 0;
+}
+
+/* Per-app "Auto" checkbox in the table's actions cell. */
+.auto-toggle {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  margin: 0;
+  font-size: 0.78rem;
+  color: var(--text-muted);
+  white-space: nowrap;
+}
+
+.auto-toggle input {
+  width: 14px;
+  height: 14px;
+  margin: 0;
 }
 
 .key-block {

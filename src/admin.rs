@@ -2321,6 +2321,97 @@ async fn pull_latest_app_image(
     .await
 }
 
+/// Request body for `PUT /api/admin/apps/auto_update`. Both fields are
+/// optional; omitted fields are left unchanged.
+#[derive(Deserialize)]
+struct AutoUpdateSettingsRequest {
+    #[serde(default)]
+    enabled: Option<bool>,
+    #[serde(default)]
+    interval_seconds: Option<i64>,
+}
+
+/// `PUT /api/admin/apps/auto_update` — save the global auto-update settings
+/// (`auto_update_apps` + `auto_update_interval_seconds`) into the
+/// `app_settings` table through the same persistence path as the other admin
+/// settings pages, so the background auto-update job picks them up on its
+/// next tick without a restart.
+async fn save_auto_update_settings(
+    State(state): State<AppState>,
+    headers: HeaderMap,
+    body: Bytes,
+) -> Response {
+    let user = match auth::verify_token(&state, &headers).await {
+        Ok(u) => u,
+        Err(e) => {
+            // Auth failures are returned in plaintext (mirroring Python, where
+            // the HTTPException raised in the auth dependency bypasses the
+            // E2EE response wrapper).
+            return (
+                StatusCode::from_u16(e.status()).unwrap_or(StatusCode::INTERNAL_SERVER_ERROR),
+                Json(serde_json::json!({ "detail": e.to_string() })),
+            )
+                .into_response()
+        }
+    };
+    if !require_permission(&user, "admin.apps") {
+        return e2ee::encrypt_response(
+            &state,
+            &headers,
+            StatusCode::FORBIDDEN,
+            serde_json::json!({ "detail": "Admin privileges required." }),
+        )
+        .await;
+    }
+    let decrypted = match e2ee::decrypt_request_body(&state, &headers, body).await {
+        Ok(v) => v,
+        Err((s, d)) => {
+            return e2ee::encrypt_response(&state, &headers, s, serde_json::json!({ "detail": d }))
+                .await
+        }
+    };
+    let req: AutoUpdateSettingsRequest = match serde_json::from_value(decrypted) {
+        Ok(r) => r,
+        Err(e) => {
+            return e2ee::encrypt_response(
+                &state,
+                &headers,
+                StatusCode::UNPROCESSABLE_ENTITY,
+                serde_json::json!({ "detail": format!("Invalid request body: {e}") }),
+            )
+            .await
+        }
+    };
+    let writes: Vec<(&str, String)> = [
+        ("auto_update_apps", req.enabled.map(|b| b.to_string())),
+        ("auto_update_interval_seconds", req.interval_seconds.map(|n| n.to_string())),
+    ]
+    .into_iter()
+    .filter_map(|(name, value)| value.map(|v| (name, v)))
+    .collect();
+    for (name, value) in writes {
+        let env_var = format!("VRECKAN_{}", name.to_uppercase());
+        if let Err(e) = state.db.set_app_setting(&env_var, &value).await {
+            return e2ee::encrypt_response(
+                &state,
+                &headers,
+                StatusCode::INTERNAL_SERVER_ERROR,
+                serde_json::json!({ "detail": format!("Failed to save setting {name}: {e}") }),
+            )
+            .await;
+        }
+    }
+    let enabled = state.settings.get_setting(&state.db, "auto_update_apps").await;
+    let interval_seconds = state.settings.get_setting(&state.db, "auto_update_interval_seconds").await;
+    e2ee::encrypt_response(
+        &state,
+        &headers,
+        StatusCode::OK,
+        serde_json::json!({ "ok": true, "enabled": enabled, "interval_seconds": interval_seconds }),
+    )
+    .await
+}
+
 // ---------------------------------------------------------------------------
 // App templates + template schema
 // ---------------------------------------------------------------------------
@@ -5020,6 +5111,7 @@ pub fn admin_router() -> Router<AppState> {
         .route("/apps/installed/check_all_updates", post(check_all_app_updates))
         .route("/apps/installed/pull_all_latest", post(pull_all_app_images))
         .route("/apps/installed/{app_id}/pull_latest", post(pull_latest_app_image))
+        .route("/apps/auto_update", put(save_auto_update_settings))
         // Templates
         .route("/apps/templates", get(get_app_templates).post(save_app_template))
         .route("/apps/templates/schema", get(get_template_schema).post(save_template_schema))
