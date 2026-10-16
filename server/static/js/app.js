@@ -24,6 +24,9 @@ import { loadPinned, applyPreset, openSavePresetModal, pinnedBehaviors } from ".
 // ---------------------------------------------------------------------------
 export let currentUser = null;
 export let availableGpus = [];
+// The admin's global default GPU (set in loadMain); applied by the launch
+// modal when an app has no personal default preset of its own.
+export let globalDefaultGpu = null;
 // The current user's effective settings (set in loadMain); read by the
 // home-directory helpers (homedirs.js) and the launch code (launch.js).
 export let currentSettings = {};
@@ -119,16 +122,19 @@ async function loadMain() {
   const settings = (statusData && statusData.settings) || {};
   currentSettings = settings;
   availableGpus = (statusData && statusData.gpus) || [];
+  globalDefaultGpu = (statusData && statusData.global_default_gpu) || null;
   setInstalledApps(appsData);
 
   $("user-label").textContent = statusData.username || currentUser.username;
 
-  // Home directory dropdown: auto + cleanroom always; persistent dirs if enabled.
+  // Home directory dropdown (in the launch modal): auto + cleanroom always;
+  // persistent dirs if enabled.
   await populateHomeSelect();
-  // Self-service "Manage" button: only shown when the user has persistent storage.
+  // The "Manage" and "Upload to storage" buttons (in the launch modal) are
+  // only meaningful when the user has persistent storage; openLaunchModal
+  // re-checks this each time the modal opens.
   const manageBtn = $("btn-manage-homedirs");
   if (manageBtn) manageBtn.hidden = !settings.persistent_storage;
-  // Upload-to-storage button (Feat 10): only meaningful with persistent storage.
   const uploadStorageBtn = $("btn-upload-storage");
   if (uploadStorageBtn) uploadStorageBtn.hidden = !settings.persistent_storage;
 
@@ -139,20 +145,14 @@ async function loadMain() {
   // Pinned launch options (Feat 7).
   await loadPinned();
 
-  // Restore the user's default preset (if any) so their saved launch options
-  // (GPU, home directory, language, …) are remembered between sessions and are
-  // used across every app, not just the one the preset was originally saved for.
+  // The launch-options controls now live inside the per-app launch modal
+  // (ANT-228). Seed their standing values now (the user's default preset, if
+  // any) so non-modal launch flows — e.g. the Files view's "Open in app" —
+  // read the same values the old top bar had; applyModalDefaults re-applies
+  // them each time the modal opens (including the global default GPU, which
+  // only applies per app).
   const defaultPreset = pinnedBehaviors.find((p) => p.is_default);
-  if (defaultPreset) {
-    applyPreset(defaultPreset, true);
-  } else if (
-    statusData.global_default_gpu &&
-    !$("field-gpu").hidden &&
-    availableGpus.some((g) => g.device === statusData.global_default_gpu)
-  ) {
-    // No personal default preset — fall back to the admin's global default GPU.
-    $("opt-gpu").value = statusData.global_default_gpu;
-  }
+  if (defaultPreset) applyPreset(defaultPreset, true);
 
   // File manager tab: only available when persistent storage is enabled.
   if (settings.persistent_storage) {
@@ -207,6 +207,27 @@ async function enterMain() {
   // on Apps.
   restoreLastView();
   return true;
+}
+
+// Opens the change-password dialog. The note line is shown while the server
+// still reports must_change_password (the account carries its initial
+// bootstrap password) — including when the dialog opens automatically at
+// first sign-in.
+function openPasswordModal() {
+  clearError($("cp-error"));
+  $("cp-must-change").hidden = !currentUser?.must_change_password;
+  $("modal-password").hidden = false;
+  $("cp-old").focus();
+}
+
+// First sign-in prompt: while the account still carries its initial
+// (bootstrap) password the server reports must_change_password, so open the
+// change-password dialog right after sign-in. SSO accounts manage their
+// password with the identity provider (the button is disabled for them), and
+// closing the dialog never traps the user — the server's
+// VRECKAN_DEFAULT_PASSWORD_POLICY still governs plain logins.
+function promptPasswordChange() {
+  if (currentUser?.must_change_password && !currentUser.is_sso) openPasswordModal();
 }
 
 // Remember the page the user is on so a browser refresh lands back on it
@@ -324,6 +345,7 @@ async function init() {
       );
       $("login-password").value = "";
       if (!(await enterMain())) return;
+      promptPasswordChange();
     } catch (err) {
       showError($("login-error"), err.message);
     } finally {
@@ -360,11 +382,7 @@ async function init() {
   });
 
   // Change password modal
-  $("btn-change-password").addEventListener("click", () => {
-    clearError($("cp-error"));
-    $("modal-password").hidden = false;
-    $("cp-old").focus();
-  });
+  $("btn-change-password").addEventListener("click", () => openPasswordModal());
   $("cp-cancel").addEventListener("click", () => {
     $("modal-password").hidden = true;
   });
@@ -378,6 +396,10 @@ async function init() {
     if (newPw !== confirm) return showError($("cp-error"), "New passwords do not match.");
     try {
       await changePassword(oldPw, newPw);
+      // The server cleared the must-change flag on the change — mirror it so
+      // the sign-in prompt does not re-fire on the next in-session action.
+      if (currentUser) currentUser.must_change_password = false;
+      $("cp-must-change").hidden = true;
       $("modal-password").hidden = true;
       $("change-password-form").reset();
       toast("Password updated");
@@ -474,7 +496,7 @@ async function init() {
       } catch (_) {}
     }
     if (langSelect) langSelect.value = activeLanguage();
-    await enterMain();
+    if (await enterMain()) promptPasswordChange();
   } catch (e) {
     showView("login");
   }

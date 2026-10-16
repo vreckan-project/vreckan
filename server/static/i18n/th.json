@@ -98,7 +98,7 @@
     "cleanroom": "ห้องสะอาด",
     "roomMode": "เริ่มในโหมดห้อง",
     "wayland": "Wayland",
-    "savePreset": "บันทึกตัวเลือกการเริ่มเหล่านี้เป็นค่าที่ตั้งไว้ล่วงหน้า",
+    "savePreset": "บันทึกรวมเป็นค่าที่ตั้้งไว้ล่วงหน้า",
     "uploadStorage": "อัปโหลดไฟล์ไปยังพื้นที่จัดเก็บร่วม",
     "pinned": "ปักหมุด",
     "activeSessions": "เซสชันที่ใช้งานอยู่",
@@ -123,7 +123,10 @@
     "uploadingProgress": "กำลังอัปโหลด… {done}/{total}",
     "launching": "กำลังเริ่ม…",
     "finalizing": "กำลังสร้้าง…",
-    "fileUploaded": "อัปโหลดไฟล์ '{name}' แล้้้ว"
+    "fileUploaded": "อัปโหลดไฟล์ '{name}' แล้้้ว",
+    "urlToOpen": "URL ที่่จะเปิ่ด",
+    "urlRequired": "ใส่ URL เพื่่อเปิ่ด",
+    "options": "ตั่วเลือกการเริ่ม"
   },
   "password": {
     "title": "เปลี่ยนรหัสผ่าน",

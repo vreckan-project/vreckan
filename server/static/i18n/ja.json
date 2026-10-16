@@ -98,7 +98,7 @@
     "cleanroom": "クリーンルーム",
     "roomMode": "ルームモードで起動",
     "wayland": "Wayland",
-    "savePreset": "これらの起動オプションをプリセットとして保存",
+    "savePreset": "プリセットとして保存",
     "uploadStorage": "ファイルを共有ストレージにアップロード",
     "pinned": "ピン留め",
     "activeSessions": "アクティブなセッション",
@@ -123,7 +123,10 @@
     "uploadingProgress": "アップロード中… {done}/{total}",
     "launching": "起動中…",
     "finalizing": "最終処理中…",
-    "fileUploaded": "ファイル '{name}' をアップロードしました。"
+    "fileUploaded": "ファイル '{name}' をアップロードしました。",
+    "urlToOpen": "開くURL",
+    "urlRequired": "開くURLを入力してください。",
+    "options": "起動オプション"
   },
   "password": {
     "title": "パスワードを変更",

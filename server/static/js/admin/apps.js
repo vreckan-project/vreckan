@@ -99,13 +99,13 @@ async function trackPullInModal(appId, box, confirmBtn, close, isDismissed) {
       if (f && prog.percentage != null) f.style.width = `${prog.percentage}%`;
       const p = pct();
       if (p) p.textContent = prog.percentage != null ? `${Math.floor(prog.percentage)}%` : "";
-      const t = text();
-      if (t) t.textContent = `${t("apps.downloading")}${prog.status ? ` (${prog.status})` : ""}`.trim();
+      const textEl = text();
+      if (textEl) textEl.textContent = `${t("apps.downloading")}${prog.status ? ` (${prog.status})` : ""}`.trim();
       continue;
     }
     if (ps === "pull_failed" || (typeof ps === "string" && ps.startsWith("error"))) {
-      const t = text();
-      if (t) t.textContent = t("apps.downloadFailed");
+      const textEl = text();
+      if (textEl) textEl.textContent = t("apps.downloadFailed");
       const errEl = box.querySelector("#install-error");
       if (errEl) {
         errEl.textContent = (prog && prog.status) || t("apps.downloadFailedDefault");
@@ -119,8 +119,8 @@ async function trackPullInModal(appId, box, confirmBtn, close, isDismissed) {
     if (f) f.style.width = "100%";
     const p = pct();
     if (p) p.textContent = "100%";
-    const t = text();
-    if (t) t.textContent = t("apps.downloadComplete");
+    const textEl = text();
+    if (textEl) textEl.textContent = t("apps.downloadComplete");
     confirmBtn.textContent = t("apps.done");
     return "ok";
   }

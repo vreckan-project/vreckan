@@ -98,7 +98,7 @@
     "cleanroom": "Cleanroom",
     "roomMode": "Start i rumtilstand",
     "wayland": "Wayland",
-    "savePreset": "Gem disse startindstillinger som standard",
+    "savePreset": "Gem som standard",
     "uploadStorage": "Upload en fil til fælles lager",
     "pinned": "Fastgjort",
     "activeSessions": "Aktive sessioner",
@@ -123,7 +123,10 @@
     "uploadingProgress": "Uploader… {done}/{total}",
     "launching": "Starter…",
     "finalizing": "Afslutter…",
-    "fileUploaded": "Fil '{name}' uploadet."
+    "fileUploaded": "Fil '{name}' uploadet.",
+    "urlToOpen": "URL der skal åbnes",
+    "urlRequired": "Indtast den URL, der skal åbnes.",
+    "options": "Startindstillinger"
   },
   "password": {
     "title": "Skift adgangskode",
