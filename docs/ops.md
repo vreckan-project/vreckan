@@ -164,7 +164,10 @@ The deploy (docker-compose `build: .`) and the CI PR gate build the same
 
 CI follows the vLLM/Gitea pattern: GitHub Actions do the cheap parts, a
 self-hosted **Gitea Actions runner** does the heavy build/test/scan work.
-GitHub is the source of truth; Gitea is a mirror.
+GitHub is the source of truth; Gitea is a mirror. Never push directly to
+the Gitea `vreckan/vreckan` mirror — feature branches go to GitHub only, and
+`gitea-mirror-trigger.yml` is the sole Gitea writer (`pr/<N>` branches;
+`bump-and-tag` for main/tags).
 
 - **`gitea-mirror-trigger.yml`** (the only workflow in this repo; its
   `push`/`pull_request` triggers are re-enabled — they were briefly disabled
