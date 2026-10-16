@@ -77,7 +77,7 @@ openid = "0.25"
 jwks = "0.5"
 # JWT (id_token) decode + RS256 signature verification. Pinned to the same
 # major as the `jwks` dependency so the `DecodingKey` types line up.
-jsonwebtoken = "10"
+jsonwebtoken = "11"
 
 # Docker Engine API
 bollard = "0.21"
