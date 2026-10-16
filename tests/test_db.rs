@@ -102,9 +102,11 @@ async fn test_dump_redacts_secret_app_settings() {
         .set_app_setting("VRECKAN_OIDC_CLIENT_SECRET", "SECRET-OIDC")
         .await
         .unwrap();
+    // A non-secret row (a plain string, not a JSON-reparseable token) to
+    // prove the round trip preserves it.
     state
         .db
-        .set_app_setting("VRECKAN_ACME_ENABLED", "true")
+        .set_app_setting("VRECKAN_ACME_CA", "zerossl")
         .await
         .unwrap();
 
@@ -152,11 +154,11 @@ async fn test_dump_redacts_secret_app_settings() {
     assert_eq!(
         state
             .db
-            .get_app_setting("VRECKAN_ACME_ENABLED")
+            .get_app_setting("VRECKAN_ACME_CA")
             .await
             .unwrap()
             .as_deref(),
-        Some("true")
+        Some("zerossl")
     );
 }
 
