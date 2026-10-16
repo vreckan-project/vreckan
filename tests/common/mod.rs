@@ -65,9 +65,17 @@ pub fn test_settings(root: &std::path::Path) -> Settings {
 }
 
 /// Connect to (and initialise) a fresh SQLite database under `root`.
+///
+/// Uses a **single-connection** pool. In production [`vreckan::db::connect`]
+/// runs a 10-connection pool, but with SQLite WAL a multi-connection pool lets
+/// a write and a follow-up read land on different connections, so a read can
+/// observe a stale WAL snapshot of a record that was only *partially* written
+/// (see `Db::connect_with_max`). One connection serialises every statement and
+/// makes read-after-write consistent, which the config-DB read-back tests
+/// (e.g. the ACME cert record) depend on.
 pub async fn connect_db(root: &std::path::Path) -> vreckan::db::Db {
     let url = format!("sqlite://{}?mode=rwc", root.join("test.db").to_string_lossy());
-    let d = db::connect(&url).await.expect("connect db");
+    let d = db::connect_with_max(&url, 1).await.expect("connect db");
     d.init().await.expect("init db");
     d
 }

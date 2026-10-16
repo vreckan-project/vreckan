@@ -84,9 +84,25 @@ fn dialect_from_url(url: &str) -> String {
 /// with a health check only for connections that have been idle for a while
 /// (cheaper than pinging on every acquire).
 pub async fn connect(url: &str) -> Result<Db, sea_orm::DbErr> {
+    connect_with_max(url, 10).await
+}
+
+/// Like [`connect`], but with an explicit pool size.
+///
+/// The integration-test harness uses a **single-connection** pool (`max = 1`).
+/// With SQLite in WAL mode and a multi-connection pool, a write and a
+/// subsequent read can be served by *different* pool connections; a read
+/// connection that already holds a WAL read-snapshot taken *before* the write
+/// committed then observes a stale, partial view (a `set_app_setting` upsert is
+/// a separate statement from its sibling upserts, so a record is read back with
+/// some fields populated and others empty). Serialising every statement onto a
+/// single connection makes each read-after-write consistent, eliminating the
+/// cross-connection snapshot race. Production keeps its faster 10-connection
+/// pool via [`connect`].
+pub async fn connect_with_max(url: &str, max_connections: u32) -> Result<Db, sea_orm::DbErr> {
     let dialect = dialect_from_url(url);
     let mut opt = ConnectOptions::new(url);
-    opt.max_connections(10);
+    opt.max_connections(max_connections);
     opt.min_connections(1);
     opt.test_before_acquire_if_idle_for(Duration::from_secs(30));
     // sea-orm's `ConnectOptions::new` defaults SQL statement logging to
