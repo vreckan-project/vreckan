@@ -234,8 +234,14 @@ impl Db {
                         .and_then(|k| k.as_str())
                         .is_some_and(is_secret_app_setting);
                     if is_secret {
-                        if let Some(serde_json::Value::String(value)) = obj.get_mut("value") {
-                            *value = Self::REDACTED_VALUE.to_string();
+                        // The value may have been re-parsed into a JSON object
+                        // or array (see `extract_cell`), so replace the whole
+                        // field rather than just a string cell.
+                        if let serde_json::Value::Object(map) = &mut obj {
+                            map.insert(
+                                "value".to_string(),
+                                serde_json::Value::String(Self::REDACTED_VALUE.to_string()),
+                            );
                         }
                     }
                 }
