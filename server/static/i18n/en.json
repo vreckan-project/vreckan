@@ -132,7 +132,8 @@
     "title": "Change password",
     "current": "Current password",
     "new": "New password",
-    "confirm": "Confirm new password"
+    "confirm": "Confirm new password",
+    "mustChangeNote": "You're still using your initial password. Change it now — or close this dialog and do it later from the Password button."
   },
   "share": {
     "title": "Share file",

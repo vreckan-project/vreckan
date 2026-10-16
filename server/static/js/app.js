@@ -209,6 +209,27 @@ async function enterMain() {
   return true;
 }
 
+// Opens the change-password dialog. The note line is shown while the server
+// still reports must_change_password (the account carries its initial
+// bootstrap password) — including when the dialog opens automatically at
+// first sign-in.
+function openPasswordModal() {
+  clearError($("cp-error"));
+  $("cp-must-change").hidden = !currentUser?.must_change_password;
+  $("modal-password").hidden = false;
+  $("cp-old").focus();
+}
+
+// First sign-in prompt: while the account still carries its initial
+// (bootstrap) password the server reports must_change_password, so open the
+// change-password dialog right after sign-in. SSO accounts manage their
+// password with the identity provider (the button is disabled for them), and
+// closing the dialog never traps the user — the server's
+// VRECKAN_DEFAULT_PASSWORD_POLICY still governs plain logins.
+function promptPasswordChange() {
+  if (currentUser?.must_change_password && !currentUser.is_sso) openPasswordModal();
+}
+
 // Remember the page the user is on so a browser refresh lands back on it
 // instead of always bouncing to Apps. Stored per browser in localStorage as
 // { view, adminSection } and cleared on logout. On restore we only honour a
@@ -324,6 +345,7 @@ async function init() {
       );
       $("login-password").value = "";
       if (!(await enterMain())) return;
+      promptPasswordChange();
     } catch (err) {
       showError($("login-error"), err.message);
     } finally {
@@ -360,11 +382,7 @@ async function init() {
   });
 
   // Change password modal
-  $("btn-change-password").addEventListener("click", () => {
-    clearError($("cp-error"));
-    $("modal-password").hidden = false;
-    $("cp-old").focus();
-  });
+  $("btn-change-password").addEventListener("click", () => openPasswordModal());
   $("cp-cancel").addEventListener("click", () => {
     $("modal-password").hidden = true;
   });
@@ -378,6 +396,10 @@ async function init() {
     if (newPw !== confirm) return showError($("cp-error"), "New passwords do not match.");
     try {
       await changePassword(oldPw, newPw);
+      // The server cleared the must-change flag on the change — mirror it so
+      // the sign-in prompt does not re-fire on the next in-session action.
+      if (currentUser) currentUser.must_change_password = false;
+      $("cp-must-change").hidden = true;
       $("modal-password").hidden = true;
       $("change-password-form").reset();
       toast("Password updated");
@@ -474,7 +496,7 @@ async function init() {
       } catch (_) {}
     }
     if (langSelect) langSelect.value = activeLanguage();
-    await enterMain();
+    if (await enterMain()) promptPasswordChange();
   } catch (e) {
     showView("login");
   }
