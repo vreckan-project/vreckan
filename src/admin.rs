@@ -880,7 +880,7 @@ async fn test_sso_connection(
     }
     // Reuse the same discovery path as the auth flow (mirrors the Python
     // `_oidc_discovery`, which the SSO test endpoint imports).
-    let doc = match auth::oidc_discovery(&issuer).await {
+    let doc = match auth::oidc_discovery(issuer).await {
         Some(d) => d,
         None => {
             return e2ee::encrypt_response(

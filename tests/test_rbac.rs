@@ -250,30 +250,30 @@ async fn handle_conn(
         let grant = form.get("grant_type").cloned().unwrap_or_default();
         let code = form.get("code").cloned().unwrap_or_default();
         let claims = codes.lock().unwrap().remove(&code);
-        if grant != "authorization_code" || claims.is_none() {
-            (400, json!({ "error": "invalid_grant" }))
-        } else {
-            let now = std::time::SystemTime::now()
-                .duration_since(std::time::UNIX_EPOCH)
-                .unwrap()
-                .as_secs() as i64;
-            let mut full = claims.unwrap();
-            if let Some(o) = full.as_object_mut() {
-                o.insert("iss".into(), json!(issuer));
-                o.insert("aud".into(), json!(CLIENT_ID));
-                o.insert("iat".into(), json!(now));
-                o.insert("exp".into(), json!(now + 3600));
+        match (grant.as_str(), claims) {
+            ("authorization_code", Some(mut full)) => {
+                let now = std::time::SystemTime::now()
+                    .duration_since(std::time::UNIX_EPOCH)
+                    .unwrap()
+                    .as_secs() as i64;
+                if let Some(o) = full.as_object_mut() {
+                    o.insert("iss".into(), json!(issuer));
+                    o.insert("aud".into(), json!(CLIENT_ID));
+                    o.insert("iat".into(), json!(now));
+                    o.insert("exp".into(), json!(now + 3600));
+                }
+                let token = sign_id_token(&sign_key.lock().unwrap(), &kid, &full);
+                (
+                    200,
+                    json!({
+                        "access_token": "opaque-access-token",
+                        "id_token": token,
+                        "token_type": "Bearer",
+                        "expires_in": 3600,
+                    }),
+                )
             }
-            let token = sign_id_token(&sign_key.lock().unwrap(), &kid, &full);
-            (
-                200,
-                json!({
-                    "access_token": "opaque-access-token",
-                    "id_token": token,
-                    "token_type": "Bearer",
-                    "expires_in": 3600,
-                }),
-            )
+            _ => (400, json!({ "error": "invalid_grant" })),
         }
     } else {
         (404, json!({ "error": "not_found" }))

@@ -1470,7 +1470,6 @@ pub async fn run_auto_update_tick(state: &AppState) {
     let mut tasks = Vec::new();
     for (image, image_apps) in by_image {
         let state = state.clone();
-        let enabled = enabled;
         tasks.push(tokio::spawn(async move {
             let (local_info, remote_digest) = if state
                 .fake_provider
@@ -1981,7 +1980,7 @@ pub async fn launch_common(
     // endpoint env; give them the same `launch_context` as the file-upload
     // path so session listings are consistent (ANT-234).
     if launch_context.is_none() {
-        if let Some(fp) = final_env.get("VRECKAN_FILE").and_then(|v| Some(v.as_str())) {
+        if let Some(fp) = final_env.get("VRECKAN_FILE").map(|v| v.as_str()) {
             let fname = std::path::Path::new(fp)
                 .file_name()
                 .and_then(|f| f.to_str())
@@ -2199,7 +2198,7 @@ fn copy_dir_recursive(src: &str, dst: &str) -> std::io::Result<()> {
         if file_type.is_dir() {
             copy_dir_recursive(&entry.path().to_string_lossy(), &target)?;
         } else if file_type.is_symlink() {
-            if let Ok(target_path) = std::fs::read_link(&entry.path()) {
+            if let Ok(target_path) = std::fs::read_link(entry.path()) {
                 let _ = std::os::unix::fs::symlink(target_path, &target);
             }
         } else {
@@ -2314,7 +2313,7 @@ async fn get_applications(
             });
         }
     }
-    user_apps.sort_by(|a, b| a.name.to_lowercase().cmp(&b.name.to_lowercase()));
+    user_apps.sort_by_key(|a| a.name.to_lowercase());
     let value = serde_json::to_value(&user_apps).unwrap_or_default();
     e2ee::encrypt_response(&state, &headers, StatusCode::OK, value).await
 }

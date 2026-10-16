@@ -27,7 +27,7 @@ use vreckan::user_manager;
 
 /// Split `data` into at most `n` roughly-equal chunks (mirrors `_split`).
 fn split(data: &[u8], n: usize) -> Vec<Vec<u8>> {
-    let size = (data.len() + n - 1) / n;
+    let size = data.len().div_ceil(n);
     let mut out = Vec::new();
     let mut i = 0;
     while i < data.len() {

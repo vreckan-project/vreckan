@@ -260,7 +260,7 @@ async fn test_cert_status_present_valid() {
     assert_eq!(status["source"], "app");
     assert_eq!(status["valid"], true);
     let days = status["days_remaining"].as_i64().expect("days_remaining");
-    assert!(80 <= days && days <= 90, "days={days}");
+    assert!((80..=90).contains(&days), "days={days}");
     assert!(status["expiry"].is_string());
 }
 
@@ -302,7 +302,7 @@ async fn test_cert_expiry_parses() {
         .unwrap()
         .as_secs() as i64;
     let days = (exp - now) / 86400;
-    assert!(80 <= days && days <= 90, "days={days}");
+    assert!((80..=90).contains(&days), "days={days}");
 }
 
 #[tokio::test]
@@ -314,6 +314,8 @@ async fn test_cert_expiry_missing_file() {
 
 // --- config DB persistence (source of truth) ---------------------------------
 #[tokio::test]
+// The LE serialization lock intentionally spans the whole test.
+#[allow(clippy::await_holding_lock)]
 async fn test_acme_cert_record_none_when_unset() {
     let _serial = lock_le();
     let state = build_state(TempDir::new().path()).await;
@@ -321,6 +323,8 @@ async fn test_acme_cert_record_none_when_unset() {
 }
 
 #[tokio::test]
+// The LE serialization lock intentionally spans the whole test.
+#[allow(clippy::await_holding_lock)]
 async fn test_acme_persist_cert_round_trips() {
     let _serial = lock_le();
     let state = build_state(TempDir::new().path()).await;
@@ -368,7 +372,7 @@ async fn test_cert_status_reads_from_db() {
     assert_eq!(status["key"], key_pem);
     assert_eq!(status["valid"], true);
     let days = status["days_remaining"].as_i64().expect("days_remaining");
-    assert!(80 <= days && days <= 90, "days={days}");
+    assert!((80..=90).contains(&days), "days={days}");
     assert!(status["expiry"].is_string());
 }
 
@@ -638,6 +642,8 @@ fn test_app_cert_dir_derives_from_data_root() {
 
 // --- effective_acme_config ---------------------------------------------------
 #[tokio::test]
+// The LE serialization lock intentionally spans the whole test.
+#[allow(clippy::await_holding_lock)]
 async fn test_effective_acme_config_defaults() {
     let _serial = lock_le();
     // With no DB rows and no env, the defaults apply.
@@ -652,6 +658,8 @@ async fn test_effective_acme_config_defaults() {
 }
 
 #[tokio::test]
+// The LE serialization lock intentionally spans the whole test.
+#[allow(clippy::await_holding_lock)]
 async fn test_effective_acme_config_env_override() {
     let _serial = lock_le();
     let tmp = TempDir::new();
@@ -669,6 +677,8 @@ async fn test_effective_acme_config_env_override() {
 
 // --- admin Certificates endpoints --------------------------------------------
 #[tokio::test]
+// The LE serialization lock intentionally spans the whole test.
+#[allow(clippy::await_holding_lock)]
 async fn test_certificates_get_default() {
     let _serial = lock_le();
     let tmp = TempDir::new();
@@ -687,6 +697,8 @@ async fn test_certificates_get_default() {
 }
 
 #[tokio::test]
+// The LE serialization lock intentionally spans the whole test.
+#[allow(clippy::await_holding_lock)]
 async fn test_certificates_put_and_get() {
     let _serial = lock_le();
     let tmp = TempDir::new();
@@ -725,6 +737,8 @@ async fn test_certificates_put_and_get() {
 }
 
 #[tokio::test]
+// The LE serialization lock intentionally spans the whole test.
+#[allow(clippy::await_holding_lock)]
 async fn test_certificates_put_blank_token_keeps_existing() {
     let _serial = lock_le();
     let tmp = TempDir::new();
@@ -757,6 +771,8 @@ async fn test_certificates_put_blank_token_keeps_existing() {
 }
 
 #[tokio::test]
+// The LE serialization lock intentionally spans the whole test.
+#[allow(clippy::await_holding_lock)]
 async fn test_certificates_renew_disabled() {
     let _serial = lock_le();
     let tmp = TempDir::new();
@@ -767,6 +783,8 @@ async fn test_certificates_renew_disabled() {
 }
 
 #[tokio::test]
+// The LE serialization lock intentionally spans the whole test.
+#[allow(clippy::await_holding_lock)]
 async fn test_certificates_renew_no_domains() {
     let _serial = lock_le();
     let tmp = TempDir::new();
@@ -913,6 +931,8 @@ async fn first_served_cert(addr: std::net::SocketAddr) -> CertificateDer<'static
 }
 
 #[tokio::test]
+// The LE serialization lock intentionally spans the whole test.
+#[allow(clippy::await_holding_lock)]
 async fn test_renewal_hot_reloads_served_cert_without_restart() {
     let _serial = lock_le();
     // rustls needs a process-default crypto provider for both the server

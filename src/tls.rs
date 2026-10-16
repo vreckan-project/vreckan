@@ -107,7 +107,7 @@ pub(crate) fn dev_cert_needs_generation(
     let recorded = std::fs::read_to_string(expiry_path)
         .ok()
         .and_then(|s| s.trim().parse::<i64>().ok());
-    recorded.map_or(true, |e| e <= now)
+    recorded.is_none_or(|e| e <= now)
 }
 
 /// Generate a self-signed RSA-2048 cert (CN=localhost, SAN localhost +
