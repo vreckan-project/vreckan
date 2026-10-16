@@ -1,0 +1,364 @@
+---
+layout: default
+---
+{% comment %}
+  Vreckan site — Ops section, FULL PAGE (source of truth).
+
+  Convention: this layout holds the complete ops guide. The per-page
+  snapshots under site/docs/ops/ are thin frontmatter files that select one
+  section via `section:` — they carry no content of their own. Update the
+  content HERE, and the snapshots pick it up automatically. A page using
+  this layout without a `section:` renders the full guide.
+
+  Content is ported from the repo's canonical docs/ops.md (the live record);
+  internal issue numbers (ANT-…) are dropped for public readers.
+{% endcomment %}
+<div class="doc">
+  <h1>{% if page.section == nil %}Operations &amp; Deployment{% else %}{{ page.title }}{% endif %}</h1>
+  <p class="doc-sub">
+    {% if page.section == nil %}
+    Deployment, infrastructure, and operations reference for Vreckan — the single-container
+    Rust server. Build and deployment specifics follow the multi-stage Dockerfile + compose
+    and the GitHub-light / Gitea-heavy CI/CD flow described in the sections below.
+    {% else %}
+    Section of the <a href="{{ '/docs/ops' | relative_url }}">Vreckan ops guide</a> ({{ page.title }}).
+    {% endif %}
+  </p>
+
+  <nav class="toc" aria-label="Ops sections">
+    {% if page.section == nil %}
+      <span class="toc-label">Sections</span>
+      <a href="#deployment-model">1. Deployment model</a>
+      <a href="#quick-start">2. Quick start</a>
+      <a href="#image-build-ci">3. Image build, registries &amp; CI/CD</a>
+      <a href="#database">4. Database</a>
+      <a href="#tls">5. TLS</a>
+      <a href="#host-privileges">6. Host privileges &amp; devices</a>
+      <a href="#data-layout">7. Data layout</a>
+      <a href="#observability">8. Observability</a>
+    {% else %}
+      <a href="{{ '/docs/ops' | relative_url }}" class="toc-full">← Full guide</a>
+      <span class="toc-label">Sections</span>
+      <a href="{{ '/docs/ops/deployment-model' | relative_url }}" class="{% if page.section == 'deployment-model' %}active{% endif %}">1. Deployment model</a>
+      <a href="{{ '/docs/ops/quick-start' | relative_url }}" class="{% if page.section == 'quick-start' %}active{% endif %}">2. Quick start</a>
+      <a href="{{ '/docs/ops/image-build-ci' | relative_url }}" class="{% if page.section == 'image-build-ci' %}active{% endif %}">3. Image build, registries &amp; CI/CD</a>
+      <a href="{{ '/docs/ops/database' | relative_url }}" class="{% if page.section == 'database' %}active{% endif %}">4. Database</a>
+      <a href="{{ '/docs/ops/tls' | relative_url }}" class="{% if page.section == 'tls' %}active{% endif %}">5. TLS</a>
+      <a href="{{ '/docs/ops/host-privileges' | relative_url }}" class="{% if page.section == 'host-privileges' %}active{% endif %}">6. Host privileges &amp; devices</a>
+      <a href="{{ '/docs/ops/data-layout' | relative_url }}" class="{% if page.section == 'data-layout' %}active{% endif %}">7. Data layout</a>
+      <a href="{{ '/docs/ops/observability' | relative_url }}" class="{% if page.section == 'observability' %}active{% endif %}">8. Observability</a>
+    {% endif %}
+  </nav>
+
+  {% if page.section == 'deployment-model' or page.section == nil %}
+  <section id="deployment-model">
+    <h2>1. Deployment model</h2>
+    <p>The server is a <strong>single container</strong> (<code>vreckan-http</code>) that does everything: serves the web client, runs the API, terminates TLS, and manages the per-session application containers through the host's Docker daemon.</p>
+    <pre><code>Browser ──HTTPS:443──▶ vreckan-http (UID 1000, non-root)
+                           │  /var/run/docker.sock ──▶ Docker daemon
+                           │  /dev/dri, group_add 990/44/docker (GPU/DRI3)
+                           ▼
+                     app containers (created on demand, on the host network)</code></pre>
+    <p>Since v0.6.1 the <code>vreckan-http</code> container runs its server process as a dedicated non-root user (<code>vreckan</code>, UID/GID 1000 — see <a href="{% if page.section == nil %}#host-privileges{% else %}{{ '/docs/ops/host-privileges' | relative_url }}{% endif %}">§6, Host privileges</a>) instead of root with <code>privileged: true</code>.</p>
+    <p>Key properties of the default <code>docker-compose.yml</code>:</p>
+    <table>
+      <thead>
+        <tr><th scope="col">Setting</th><th scope="col">Value</th><th scope="col">Why</th></tr>
+      </thead>
+      <tbody>
+        <tr>
+          <td><code>image</code></td>
+          <td>the published <code>ghcr.io/vreckan-project/vreckan</code> tag — <code>:latest</code> by default; pin a versioned tag (e.g. <code>:v0.6.0</code>) and drop <code>build:</code> in a real deployment (Rust cutover complete)</td>
+          <td><code>build: .</code> is the local fallback: <code>docker compose build</code> / <code>up --build</code> builds the <strong>Rust</strong> image from this repo and tags it under the <code>image:</code> name, so a local checkout runs the Rust server even without a registry</td>
+        </tr>
+        <tr><td><code>ports</code></td><td><code>443:443</code></td><td>Single TLS port for API + session proxy + web client</td></tr>
+        <tr><td>non-root <code>USER</code> in the image</td><td>UID/GID 1000</td><td>the server process no longer runs as root; the only capability it needs is <code>cap_net_bind_service</code> (a file capability on the binary, so the default port 443 binds on any host) because all host-side work (app-container creation, GPU setup) is done by the Docker daemon over the socket (<a href="{% if page.section == nil %}#host-privileges{% else %}{{ '/docs/ops/host-privileges' | relative_url }}{% endif %}">§6</a>)</td></tr>
+        <tr><td><code>ipc: host</code></td><td>—</td><td>shared memory for the streamed apps</td></tr>
+        <tr><td><code>devices: /dev/dri:/dev/dri</code></td><td>—</td><td>DRI3 render-node passthrough for GPU-accelerated apps</td></tr>
+        <tr><td><code>group_add: 990, 44, ${VRECKAN_DOCKER_GROUP:-docker}</code></td><td>—</td><td>host <code>video</code> (990) and <code>input</code> (44) groups so the server process can open DRI nodes and propagate render-node access to app containers; the <code>docker</code> group gives the non-root process access to the host socket (override the name/GID with <code>VRECKAN_DOCKER_GROUP</code>)</td></tr>
+        <tr><td><code>volumes: ./vreckan-data:/data</code></td><td>—</td><td>all durable state (DB, storage, SSL, caches, backups) in one bind mount</td></tr>
+        <tr><td><code>volumes: /var/run/docker.sock:/var/run/docker.sock</code></td><td>—</td><td>Docker Engine API access (the <code>bollard</code> client speaks to the daemon over this socket)</td></tr>
+        <tr><td><code>data-perms</code> service + <code>depends_on</code></td><td>—</td><td>one-shot <code>chown -R 1000:1000</code> of <code>./vreckan-data</code> before first boot, so the non-root server can write to a bind mount that Docker created root-owned (<a href="{% if page.section == nil %}#data-layout{% else %}{{ '/docs/ops/data-layout' | relative_url }}{% endif %}">§7</a>)</td></tr>
+        <tr><td><code>env_file: .env</code></td><td>—</td><td><code>VRECKAN_*</code> configuration (see the <a href="https://github.com/vreckan-project/vreckan#configuration">README</a> configuration tables and <code>.env.example</code>)</td></tr>
+      </tbody>
+    </table>
+    <p>The <strong><code>postgres:16</code></strong> service is included in the compose file and is the v0.6.0 default database (see <a href="{% if page.section == nil %}#database{% else %}{{ '/docs/ops/database' | relative_url }}{% endif %}">§4</a>); since v0.6.1 its host port is published on loopback only (<code>127.0.0.1:5432</code>) instead of every interface.</p>
+    <p>The server binds <code>0.0.0.0:$VRECKAN_API_PORT</code> (default <strong>443</strong>) with TLS (rustls/ring) and serves the API, web client, and session proxy on that single listener. <code>VRECKAN_SESSION_PORT</code> (default 8443) is carried-over metadata from the Python port, which ran the session proxy on a separate listener; it does not change the bind port in the Rust port.</p>
+  </section>
+  {% endif %}
+
+  {% if page.section == 'quick-start' or page.section == nil %}
+  <section id="quick-start">
+    <h2>2. Quick start</h2>
+    <pre><code>git clone https://github.com/vreckan-project/vreckan.git
+cd vreckan
+cp .env.example .env    # edit to taste (OIDC, ACME, ...)
+docker compose up -d</code></pre>
+    <p>First run: a self-signed certificate is generated under <code>/data/ssl</code>, the database is created, and a bootstrap <code>admin</code> account is seeded (default <code>admin</code> / <code>admin1234</code>, configurable via <code>VRECKAN_BOOTSTRAP_ADMIN_*</code>). The account is marked <em>must-change-password</em>: the web client prompts for a new password on first login, and a login with the literal default <code>admin1234</code> is logged at <code>warn</code> unless <code>VRECKAN_DEFAULT_PASSWORD_POLICY</code> says otherwise (<code>allow</code> / <code>warn</code> / <code>reject</code>). The startup log names the username but prints the password value only when the well-known default is in use. Sign in at <code>https://&lt;your-server&gt;/</code> and change the password.</p>
+    <p>The one-shot <code>data-perms</code> service chowns <code>./vreckan-data</code> to UID/GID 1000 on every <code>docker compose up</code> before the server starts (see <a href="{% if page.section == nil %}#data-layout{% else %}{{ '/docs/ops/data-layout' | relative_url }}{% endif %}">§7</a>), so no manual ownership step is needed — on a fresh host and when upgrading from a v0.5.x deployment (whose data tree was written by the old root-running image), the first <code>up</code> after pulling the new image takes ownership over.</p>
+    <p>Brute-force protection on <code>/api/auth/login</code>: per (client IP, username) pair, <code>VRECKAN_LOGIN_MAX_ATTEMPTS</code> (default 5) failed attempts within <code>VRECKAN_LOGIN_LOCKOUT_SECONDS</code> (default 900 s) lock the pair out for the same window (HTTP 429, fail closed); lockout events are logged at <code>warn</code> and a successful login clears the pair. Counters are in-memory only, so a server restart resets them.</p>
+    <p>Local build instead of pulling the image:</p>
+    <pre><code>docker build -t vreckan .   # multi-stage: pinned vreckan-base-build image → debian:trixie-slim runtime</code></pre>
+  </section>
+  {% endif %}
+
+  {% if page.section == 'image-build-ci' or page.section == nil %}
+  <section id="image-build-ci">
+    <h2>3. Image build, registries &amp; the CI/CD flow</h2>
+
+    <h3>3.1 The image</h3>
+    <p>The <code>Dockerfile</code> is multi-stage:</p>
+    <ul>
+      <li><strong>Build stage</strong> — the pinned <code>repo.vreckanproject.com/vreckan/vreckan-base-build</code> image (built on <code>rust:1.99-slim</code>, Debian trixie; see §3.5 — it bakes the toolchain, the <code>-sys</code> build deps, sccache, and a warm dependency cache): <code>cargo build --release</code> with BuildKit cargo-cache mounts.</li>
+      <li><strong>System deps in the base image</strong> — <code>linux-libc-dev</code>, <code>pkg-config</code>, <code>libssl-dev</code> (needed by the <code>-sys</code> crates and the native-tls stack) plus <code>cmake</code>, <code>make</code>, and <code>golang</code> (needed by the FIPS variant of aws-lc, <code>aws-lc-fips-sys</code>, which acmex pulls in via <code>aws-lc-rs/fips</code> and builds from source through its CMake project — its FIPS build requires Go for the FIPSTools integrity utilities and Perl, which ships with the rust base image) and <code>sccache</code>, which wraps <code>rustc</code> (<code>RUSTC_WRAPPER=sccache</code>) and persists the compile cache across builds via a BuildKit <code>type=cache</code> mount. See the per-package justifications in the <code>Dockerfile</code>.</li>
+      <li><strong>Test stage</strong> — the build stage plus the <code>tests/</code> and <code>server/</code> trees: CI builds <code>--target test</code> and pre-compiles <code>cargo test --profile test-release</code> (thin-LTO, codegen-units=16) so the Gitea test job only executes the tests. sccache serves unchanged dependency crates from its persistent cache, and the job count scales with the runner's core count and a per-rustc memory budget.</li>
+      <li><strong>Runtime stage</strong> — <code>debian:trixie-slim</code>: the compiled <code>vreckan</code> binary, the web client (<code>server/static/</code>), and the bundled template schema (<code>server/template_schema.yml</code>). No Python, no pip. TLS, SQLite, and the client are all self-contained.</li>
+    </ul>
+
+    <h3>3.2 Standard local build &amp; test (for engineers)</h3>
+    <p>Build and test <strong>inside the standard image</strong>, not a bare local toolchain — it is the same container CI and the deploy use (verified for the full acmex feature set: 11 DNS-01 providers + Let's Encrypt/ZeroSSL/Google CAs). A hand-installed local <code>gcc</code>/<code>cmake</code> setup drifts from it.</p>
+    <pre><code># One command builds the whole tree (build stage) and pre-compiles the test
+# binaries (test stage) in the standard container:
+docker build --target test -f Dockerfile -t vreckan:local .
+
+# Run the full suite in it, the same way the Gitea CI test job does:
+HOST_TMP=$(mktemp -d /tmp/vreckan-tests.XXXXXX)
+docker run --rm \
+  --shm-size=2gb \
+  -v /var/run/docker.sock:/var/run/docker.sock \
+  -v "$HOST_TMP:/tmp/vreckan-tests" \
+  -e VRECKAN_TEST_TMPDIR=/tmp/vreckan-tests \
+  --entrypoint cargo vreckan:local test --profile test-release
+rm -rf "$HOST_TMP"</code></pre>
+    <p>The three run flags mirror the CI test job: the docker socket lets the daemon-dependent tests (Tier 5 docker launch, the postgres fixture) reach a real daemon; <code>VRECKAN_TEST_TMPDIR</code> must point at a directory <strong>visible to that daemon</strong> — the server bind-mounts the test's throwaway data dirs into the app containers it launches, and the daemon resolves the source on its own host (the test container's own <code>/tmp</code> is not one); <code>--shm-size=2gb</code> keeps the LTO compile and the postgres fixture off the 64MB default <code>/dev/shm</code>.</p>
+    <p>For fast source iteration without the test tree, build only the build stage and run it with your <code>src/</code> mounted in:</p>
+    <pre><code>docker build --target build -f Dockerfile -t vreckan:build .
+docker run --rm -it -v "$PWD/src:/app/src" vreckan:build \
+  sh -c 'cargo build --release'</code></pre>
+    <p>The deploy (docker-compose <code>build: .</code>) and the CI PR gate build the same <code>Dockerfile</code> stages, so anything that builds here builds everywhere.</p>
+
+    <h3>3.3 The vLLM-style split (GitHub light, Gitea heavy)</h3>
+    <p>CI follows the vLLM/Gitea pattern: GitHub Actions do the cheap parts, a self-hosted <strong>Gitea Actions runner</strong> does the heavy build/test/scan work. GitHub is the source of truth; Gitea is a mirror.</p>
+    <ul>
+      <li><strong><code>gitea-mirror-trigger.yml</code></strong> (the only workflow in this repo; its <code>push</code>/<code>pull_request</code> triggers are re-enabled — they were briefly disabled while the initial Rust-port push was landing):
+        <ul>
+          <li><em>mirror-and-trigger</em> — force-mirrors the branch to the Gitea mirror repo (<code>scripts/mirror-to-gitea.sh</code>; PRs mirror to <code>pr/&lt;number&gt;</code>) and dispatches the Gitea-side <strong><code>build-test-rust.yml</code></strong> workflow (<code>scripts/trigger-gitea.sh</code>) with <code>branch</code>/<code>sha</code> inputs.</li>
+          <li><em>bump-and-tag</em> — on push to <code>main</code>: reads <code>VERSION</code>; if tag <code>v&lt;VERSION&gt;</code> does not exist yet, mints a short-lived GitHub App installation token, creates and pushes the annotated tag, and mirrors the tag (and the commit as <code>main</code>) to Gitea. <strong>The Gitea Release workflow fires on that tag push</strong> and builds + pushes the container image.</li>
+        </ul>
+      </li>
+      <li><strong>Gitea-side workflows</strong> live in the separate <code>vreckan/vreckan-workflow</code> repo (not this one): <code>build-test-rust.yml</code> (build + test + scan on the Gitea runner), the <strong>Release (Rust)</strong> workflow (tag → image → registries), and the <strong>nightly scan</strong> workflow (§3.5).</li>
+    </ul>
+
+    <h3>3.4 Registries</h3>
+    <ul>
+      <li><strong>GHCR</strong> — <code>ghcr.io/vreckan-project/vreckan</code> is the registry; every release publishes a versioned tag (<code>:v&lt;VERSION&gt;</code>) alongside <code>:latest</code>, and the compose file's <code>image:</code> tag points at it (Rust cutover complete).</li>
+      <li><strong>Gitea registry</strong> — the Release workflow also pushes to the self-hosted Gitea package registry for air-gapped/on-prem pulls.</li>
+      <li>The compose file's <code>image:</code> tag is set by the cutover decision; <code>build: .</code> always builds the Rust image locally when the tag is not present.</li>
+    </ul>
+
+    <h3>3.5 Base-image pinning (<code>.base-image-digest</code>)</h3>
+    <p><code>.base-image-digest</code> pins the digest of the <strong>build</strong> base image (<code>repo.vreckanproject.com/vreckan/vreckan-base-build</code>, the self-contained build/work image built on <code>rust:1.99-slim</code>). The image is built and maintained out of the <strong>vreckan-workflow</strong> repo — its Dockerfile lives at <a href="https://repo.vreckanproject.com/vreckan/vreckan-workflow/src/branch/main/images/vreckan-base-build">images/vreckan-base-build/</a> and the <code>build-base-build</code> Gitea workflow there builds + pushes it on demand and re-bakes it daily when vreckan's <code>Cargo.lock</code> or the Rust base digest moves. The nightly scan workflow compares the live registry digest of that base against the <code>vreckan.base-digest</code> label of the last nightly image; when they differ it opens a bot PR re-pointing the file. The runtime base (<code>debian:trixie-slim</code>) is a fixed tag and is not part of the digest convention. When a digest re-point lands, the release notes should mention the base-image bump (see the <a href="https://github.com/vreckan-project/vreckan/blob/main/docs/release.md">release process</a>).</p>
+
+    <h3>3.6 Self-hosted Gitea runner</h3>
+    <p>The Gitea runner that executes <code>build-test-rust.yml</code> / Release needs:</p>
+    <ul>
+      <li>Gitea with the <strong>Actions</strong> feature enabled; a runner registered with a <code>self-hosted</code> label.</li>
+      <li>A <strong>Docker daemon</strong> reachable from the runner (image build + push).</li>
+      <li>Outbound network to GHCR and the Rust/crates registries (the build stage fetches the full dependency tree).</li>
+      <li>Secrets available to the workflow repo: registry credentials for image pushes (GHCR + Gitea registry), plus the <code>GITEA_URL</code>/<code>GITEA_REPO</code>/<code>GITEA_TOKEN</code> pair the trigger scripts use.</li>
+    </ul>
+  </section>
+  {% endif %}
+
+  {% if page.section == 'database' or page.section == nil %}
+  <section id="database">
+    <h2>4. Database</h2>
+    <p>All durable configuration (users, groups, roles, apps, templates, sessions, tokens, shares, settings) lives in one of <strong>13 tables</strong>; tables are created and missing columns migrated idempotently on every start (SeaORM schema-sync, mirroring the Python <code>init_db</code> + <code>migrate_db</code> pair).</p>
+    <p>Backends are selected with <code>VRECKAN_DB_BACKEND</code>:</p>
+    <table>
+      <thead>
+        <tr><th scope="col">Backend</th><th scope="col">How to configure</th><th scope="col">Notes</th></tr>
+      </thead>
+      <tbody>
+        <tr>
+          <td><code>sqlite</code> (bare-binary default)</td>
+          <td>nothing — file at <code>VRECKAN_DB_PATH</code> (default <code>{data_root}/vreckan.db</code>)</td>
+          <td>zero-setup; the default when running the server directly (no compose)</td>
+        </tr>
+        <tr>
+          <td><code>postgres</code> (compose default)</td>
+          <td>nothing — the default compose file presets <code>VRECKAN_DATABASE_URL</code> to the bundled <code>postgres</code> service (<code>postgres:16</code>, user/db <code>vreckan</code>, password <code>vreckan</code>). For your own Postgres, set <code>VRECKAN_DB_BACKEND=postgres</code> + <code>VRECKAN_DB_HOST</code> / <code>VRECKAN_DB_PORT</code> / <code>VRECKAN_DB_USER</code> / <code>VRECKAN_DB_PASS</code> / <code>VRECKAN_DB_NAME</code>, or simply override <code>VRECKAN_DATABASE_URL</code> in <code>.env</code></td>
+          <td>recommended for production; the default credentials in the compose file should be changed</td>
+        </tr>
+        <tr>
+          <td><code>mysql</code></td>
+          <td>same pattern (<code>VRECKAN_DB_BACKEND=mysql</code>, default port 3306, default user <code>root</code>)</td>
+          <td>MariaDB also accepted</td>
+        </tr>
+      </tbody>
+    </table>
+    <p><code>VRECKAN_DATABASE_URL</code> overrides everything with an explicit sqlx-format URL.</p>
+    <p><strong>Deployment default.</strong> As of v0.6.0 the <code>docker-compose.yml</code> in this repo points the server at the bundled <code>postgres</code> service out of the box: the <code>vreckan-http</code> service sets <code>VRECKAN_DATABASE_URL=postgres://vreckan:vreckan@postgres:5432/vreckan</code> (with <code>${VRECKAN_DB_USER:-vreckan}</code> / <code>${VRECKAN_DB_PASS:-vreckan}</code> / <code>${VRECKAN_DB_NAME:-vreckan}</code> defaults) and only starts once that service is healthy. The bare-binary default remains SQLite, so a deployment that does not use this compose file is unchanged. To use your own Postgres (or to fall back to SQLite) set <code>VRECKAN_DATABASE_URL</code> in <code>.env</code> — the <code>${VAR:-default}</code> form keeps <code>.env</code> as the override source while Postgres is the out-of-the-box default.</p>
+    <p><strong>Host exposure (v0.6.1).</strong> The bundled service is no longer published on every host interface: its <code>ports</code> entry defaults to <code>${VRECKAN_POSTGRES_PORT:-127.0.0.1:5432}:5432</code>, i.e. host loopback only. The server reaches the database over the internal compose network either way. Set <code>VRECKAN_POSTGRES_PORT=5432</code> in <code>.env</code> to publish on every interface again, or comment out the <code>ports</code> entry to disable host publication entirely. The default <code>vreckan</code>/<code>vreckan</code> credentials still apply unless overridden (<code>VRECKAN_DB_USER</code>/<code>VRECKAN_DB_PASS</code>); since v0.6.1 the server reacts to starting against those defaults. By default it logs a prominent warning; the <code>VRECKAN_ALLOW_DEFAULT_DB_CREDS</code> escape hatch selects the behaviour — unset/empty warns, <code>1</code>/<code>true</code> silences the warning once the defaults are knowingly accepted, and <code>refuse</code>/<code>strict</code>/<code>fail</code> stops the server from starting. The guard only fires when the <em>resolved</em> database URL actually carries the default <code>vreckan</code>/<code>vreckan</code> credentials.</p>
+
+    <h3 id="sqlite-cutover">4.1 Cutting over an existing SQLite deployment</h3>
+    <p><code>scripts/migrate-sqlite-to-postgres.py</code> moves an existing SQLite configuration database onto a Postgres database, so a deployment that ran on SQLite up to v0.5.0 can be cut over to the v0.6.0 Postgres default without re-seeding users and settings. It creates the Postgres schema (idempotently), then replaces each table's contents with the migrated rows (JSON columns move from SQLite TEXT to Postgres <code>json</code>, the type the server itself uses). It is safe to re-run. The server should be stopped during the cut-over. It is the only remaining Python in the repository (the server itself is a single Rust binary with no Python in the image), and it needs Python 3.8+ (stdlib <code>sqlite3</code>) and <code>psycopg2</code> (<code>pip install psycopg2-binary</code>) only for a real run — <code>--dry-run</code> previews the DDL and row counts with the stdlib alone.</p>
+    <pre><code># preview (no Postgres needed)
+python3 scripts/migrate-sqlite-to-postgres.py --dry-run
+
+# run it (defaults from VRECKAN_SQLITE_PATH / VRECKAN_DATABASE_URL)
+python3 scripts/migrate-sqlite-to-postgres.py</code></pre>
+    <p>The target DSN is printed with its <code>user:pass</code> userinfo masked (<code>postgres://***:***@host:5432/db</code>), and a connection failure is re-raised with the DSN scrubbed, so the credentials do not leak into logs or tracebacks.</p>
+    <p><strong>Backups:</strong> the admin UI can create a backup (tar.gz of the data tree + a logical JSON dump in table order) and restore it, including a chunked restore flow for large archives. Archives (and the in-archive <code>db_dump.json</code>) are written <code>0600</code>, because the dump carries <code>users.password_hash</code>; live session tokens (<code>auth_tokens</code>) are excluded from the dump, so a restore never drops or resurrects in-flight logins. <code>VRECKAN_BACKUP_RETENTION</code> prunes old archives (default: keep 7). Take a backup before upgrading the image. For a native <code>pg_dump</code>-based Postgres backup with dated-dump rotation, see <a href="#postgres-backup">§4.2</a>.</p>
+
+    <h3 id="postgres-backup">4.2 Postgres backup and restore (<code>scripts/backup-postgres.sh</code>)</h3>
+    <p>The admin-UI archives of §4.1 snapshot the data tree (plus a logical JSON dump of the database). For a server-independent, cron-friendly database backup, <code>scripts/backup-postgres.sh</code> writes a native PostgreSQL custom-format dump (<code>pg_dump -Fc</code>) of the vreckan database as a dated file (<code>vreckan-postgres-YYYYmmdd-HHMMSS.dump</code>) and keeps only the newest <code>VRECKAN_BACKUP_RETENTION</code> of them (0 = keep all; the script's default is 14).</p>
+    <p><strong>Configuration.</strong> The script reads the same database configuration as the server (§4): <code>VRECKAN_DATABASE_URL</code> (postgres:// URL, wins over the discrete vars), or <code>VRECKAN_DB_BACKEND</code> / <code>VRECKAN_DB_HOST</code> / <code>VRECKAN_DB_PORT</code> / <code>VRECKAN_DB_USER</code> / <code>VRECKAN_DB_PASS</code> / <code>VRECKAN_DB_NAME</code>. Run it with the same environment the server uses — for a compose deployment, source the same <code>.env</code> first:</p>
+    <pre><code>set -a; . ./.env; set +a</code></pre>
+    <p>Execution picks the lightest available path:</p>
+    <ul>
+      <li><strong>Bundled compose Postgres</strong> — when the <code>vreckan-postgres</code> container (<code>VRECKAN_POSTGRES_CONTAINER</code> to rename) is present and the target host is local, <code>pg_dump</code>/<code>pg_restore</code> run inside it via <code>docker exec</code>. No Postgres client is needed on the host, and the container's own <code>POSTGRES_USER</code>/<code>POSTGRES_PASSWORD</code>/<code>POSTGRES_DB</code> initialization values are used when the operator did not override the URL.</li>
+      <li><strong>External Postgres / no container</strong> — the host's <code>pg_dump</code> / <code>pg_restore</code> are used (install <code>postgresql-client</code>), connecting to the configured host/port with the configured credentials.</li>
+    </ul>
+    <p><strong>Where dumps go.</strong> <code>VRECKAN_BACKUP_DIR</code> (default <code>${VRECKAN_DATA_ROOT:-.}/backups</code>). For a compose deployment set it to the <em>host</em> path of the <code>vreckan-data</code> mount (e.g. <code>VRECKAN_BACKUP_DIR=./vreckan-data/backups</code>) so the dated dumps live next to the admin-UI archives and a snapshot of the <code>vreckan-data</code> volume covers both.</p>
+    <p><strong>Usage:</strong></p>
+    <pre><code>scripts/backup-postgres.sh backup      # write a dated dump, rotate to the
+                                        # retention count
+scripts/backup-postgres.sh list        # stored dumps, newest first
+scripts/backup-postgres.sh restore vreckan-postgres-YYYYmmdd-HHMMSS.dump
+#   FILE is a path, or a name inside VRECKAN_BACKUP_DIR. Stop the vreckan
+#   server first (it re-syncs the schema on startup). The default
+#   --clean --if-exists drops and recreates the dumped objects;
+#   --no-clean restores over the existing schema.</code></pre>
+    <p><strong>Scheduling.</strong> Cron (daily at 03:17):</p>
+    <pre><code>17 3 * * * cd /opt/vreckan &amp;&amp; set -a &amp;&amp; . ./.env &amp;&amp; set +a &amp;&amp; ./scripts/backup-postgres.sh backup &gt;&gt; /var/log/vreckan-backup.log 2&gt;&amp;1</code></pre>
+    <p>or a systemd timer:</p>
+    <pre><code># /etc/systemd/system/vreckan-backup.service
+[Unit]
+Description=Vreckan Postgres backup
+[Service]
+Type=oneshot
+WorkingDirectory=/opt/vreckan
+EnvironmentFile=/opt/vreckan/.env
+ExecStart=/opt/vreckan/scripts/backup-postgres.sh backup</code></pre>
+    <pre><code># /etc/systemd/system/vreckan-backup.timer
+[Unit]
+Description=Daily Vreckan Postgres backup
+[Timer]
+OnCalendar=daily
+Persistent=true
+[Install]
+WantedBy=timers.target</code></pre>
+    <p>(<code>systemctl enable --now vreckan-backup.timer</code>.)</p>
+    <p><strong>Restoring elsewhere.</strong> Because the dump is a standard <code>pg_dump -Fc</code> archive it restores to <em>any</em> Postgres 11+ cluster: point <code>VRECKAN_DATABASE_URL</code> at the new cluster and run <code>scripts/backup-postgres.sh restore FILE</code> (or use <code>pg_restore</code> directly). For full disaster recovery, restore into a fresh (dropped/recreated) database and then start the server — the startup schema-sync reconciles the rest.</p>
+    <p><strong>Full cutover procedure:</strong> the end-to-end runbook for a running deployment — pre-cutover snapshot, stopping the legacy service, the dry-run and real migration, row-count and health verification, starting the Rust service against the bundled Postgres, and the rollback path — is in the <a href="https://github.com/vreckan-project/vreckan/blob/main/docs/cutover.md">cutover runbook</a>. Its two helpers, <code>scripts/snapshot-sqlite.py</code> (a stdlib-only online backup of the SQLite database) and <code>scripts/verify-cutover.py</code> (independent per-table row-count comparison plus an <code>/api/health</code> check), are covered there step by step.</p>
+  </section>
+  {% endif %}
+
+  {% if page.section == 'tls' or page.section == nil %}
+  <section id="tls">
+    <h2>5. TLS</h2>
+    <ul>
+      <li><strong>Self-signed (default).</strong> On first run the server generates <code>/data/ssl/vreckan_dev.crt</code> / <code>.key</code> and reuses them on subsequent starts. Good for LAN/VPN deployments; browsers will warn.</li>
+      <li>
+        <strong>ACME (optional).</strong> Enable via env (<code>VRECKAN_ACME_*</code>) or the admin UI Certificates page (DB value overrides env). Issuance is handled by the <strong>native <code>acmex</code> Rust client</strong> — no external container is required, so the Docker socket is no longer needed for certificate issuance (it is still used for app containers and GPU setup).
+        <ul>
+          <li><code>VRECKAN_ACME_ENABLED=true</code>, <code>VRECKAN_ACME_DOMAINS=example.com,www.example.com</code></li>
+          <li><strong>CA</strong> — <code>VRECKAN_ACME_CA</code> selects the certificate authority: <code>letsencrypt</code> (default), <code>zerossl</code>, or <code>google</code> (Google Public Certificates). <code>VRECKAN_ACME_STAGING=true</code> selects the Let's Encrypt staging endpoint for test certificates.</li>
+          <li><strong>Challenge type</strong> — <code>VRECKAN_ACME_AUTH</code> selects the ACME challenge: <code>dns-cloudflare</code> (default; DNS-01 via Cloudflare, works behind a reverse proxy) or <code>http-01</code> (the ACME server fetches from your domain over HTTP).</li>
+          <li><strong>DNS provider</strong> (DNS-01) — <code>VRECKAN_ACME_DNS_PROVIDER</code> selects the DNS provider that manages your domain's zone. Eleven providers are supported: <code>cloudflare</code> (default), <code>route53</code>, <code>digitalocean</code>, <code>linode</code>, <code>azure</code>, <code>google</code>, <code>alibaba</code>, <code>godaddy</code>, <code>tencent</code>, <code>huawei</code>, and <code>cloudns</code>.</li>
+          <li><strong>Provider credentials</strong> — <code>VRECKAN_ACME_CLOUDFLARE_EMAIL</code> + <code>VRECKAN_ACME_CLOUDFLARE_TOKEN</code> for Cloudflare; or <code>VRECKAN_ACME_DNS_PROVIDER_CONFIG</code> (a JSON object with the credentials for any other provider). <code>VRECKAN_ACME_CLOUDFLARE_ZONE_ID</code> optionally pins the Cloudflare zone.</li>
+          <li><strong>Auto-renewal.</strong> <code>VRECKAN_ACME_AUTO_RENEW=true</code> enables background renewal: the server checks every <code>VRECKAN_ACME_RENEW_CHECK_HOURS</code> hours and renews within <code>VRECKAN_ACME_RENEW_BEFORE_DAYS</code> days of expiry. The renewal loop reads the effective config fresh on each iteration, so changes made on the admin page take effect without a container restart.</li>
+          <li><strong>Certificate storage.</strong> The issued certificate (PEM chain + private key + expiry) is persisted in the <strong>config database</strong> as the source of truth; a best-effort mirror is written to <code>/data/acme/live/&lt;primary&gt;/</code> for backward compatibility. Until a valid ACME certificate exists, the server falls back to the self-signed one.</li>
+          <li><strong>Hot-reload.</strong> After a successful issuance or renewal, the TLS endpoint is reloaded in-place — no server restart is needed.</li>
+        </ul>
+      </li>
+    </ul>
+  </section>
+  {% endif %}
+
+  {% if page.section == 'host-privileges' or page.section == nil %}
+  <section id="host-privileges">
+    <h2>6. Host privileges &amp; devices (docker-sock, DRI, groups)</h2>
+    <p>Since v0.6.1 the <code>vreckan-http</code> container runs its server process as a dedicated non-root user (<code>vreckan</code>, UID/GID 1000) and no longer uses <code>privileged: true</code>. The split:</p>
+    <ul>
+      <li><strong>What the server process itself needs</strong> — bind <code>0.0.0.0:$VRECKAN_API_PORT</code> (default <strong>443</strong>, a privileged port below 1024), read <code>/sys</code> and <code>/proc</code>, write under <code>/data</code> and <code>/config</code> (image-owned or chowned, see <a href="{% if page.section == nil %}#data-layout{% else %}{{ '/docs/ops/data-layout' | relative_url }}{% endif %}">§7</a>), and talk to the host Docker daemon over the socket. The only capability involved is <code>cap_net_bind_service</code>, granted as a <strong>file capability on the <code>vreckan</code> binary</strong> in the image (like nginx's unprivileged image), so the bind works on any host — including ones that set <code>net.ipv4.ip_unprivileged_port_start=1024</code> (RHEL/SUSE) — without a compose-level <code>cap_add</code>. Everything else needs no capabilities.</li>
+      <li><strong>What the daemon does for it</strong> — creating/inspecting/stopping app containers, plus the host-side parts of GPU/cgroup setup, all happen in the (root) Docker daemon, so they no longer need this container to be privileged. If a specific app-container feature turns out to require a capability on the <em>server container</em>, add it as a targeted <code>cap_add</code> entry in <code>docker-compose.yml</code> (test thoroughly) instead of restoring <code>privileged: true</code>.</li>
+    </ul>
+    <p><strong>Socket strategy (v0.6.1).</strong> The default deployment keeps the <strong>raw <code>/var/run/docker.sock</code></strong> — the same choice the SealSkin reference deployment makes — with the container's access scoped to the host <code>docker</code> group instead of <code>privileged: true</code>. The blast radius of the raw socket is that of the daemon's API surface: a compromised <em>server process</em> can create/inspect/stop containers and read container logs, which on a standard host is equivalent to root (a container created with a host root bind mount escapes). It is <em>no longer</em> an automatic root upgrade via <code>privileged</code>, and it is the minimum surface needed for the feature set: the server creates app containers <strong>with device mounts and <code>group_add</code></strong> (that is how a DRI3/GPU app gets its render node — a scoped <code>docker-socket-proxy</code> must allow those container-creation fields or GPU app launches silently break), and discovers its own published port mappings. If you want to restrict the API surface, run <code>vreckan-http</code> against a scoped socket proxy (e.g. <code>docker-socket-proxy</code> with <code>POST /containers/create</code>, <code>GET/POST /containers/...</code>, <code>POST /containers/.../start|stop|kill</code> and network/image reads allowed) or a rootless Docker context — both are drop-in because the server only speaks the standard Engine API over the mounted socket path.</p>
+    <table>
+      <thead>
+        <tr><th scope="col">Privilege</th><th scope="col">What it does</th><th scope="col">When you can drop it</th></tr>
+      </thead>
+      <tbody>
+        <tr>
+          <td><code>group_add: 990</code> (video)</td>
+          <td>DRI3 render-node passthrough: GPU-accelerated apps render through the host GPU; the server detects render nodes (and their group ids) at startup and propagates device + supplementary GIDs into app containers</td>
+          <td>drop if no GPU apps are used</td>
+        </tr>
+        <tr>
+          <td><code>group_add: 44</code> (input)</td>
+          <td>host <code>input</code> group so Uinput-based input devices work inside app containers</td>
+          <td>drop if no app needs it</td>
+        </tr>
+        <tr>
+          <td><code>group_add: ${VRECKAN_DOCKER_GROUP:-docker}</code></td>
+          <td>the non-root server process reaches the host Docker socket (owned <code>root:docker</code>, mode 660) through the host's docker group — the replacement for <code>privileged: true</code>'s blanket access</td>
+          <td>set <code>VRECKAN_DOCKER_GROUP</code> to the group name or GID when the daemon's group is not named <code>docker</code>; a scoped socket proxy (e.g. <code>docker-socket-proxy</code>) or a rootless docker context is the further-hardening option if you want to restrict the API surface</td>
+        </tr>
+        <tr>
+          <td><code>/var/run/docker.sock</code></td>
+          <td>the server talks to the Docker Engine API to create/inspect/stop app containers — raw socket by default (see the strategy paragraph above)</td>
+          <td>required unless you run a dedicated provider; the server degrades gracefully at boot if the socket is missing or inaccessible (logs a warning, app launches and self-inspection are disabled)</td>
+        </tr>
+        <tr>
+          <td><code>/dev/dri:/dev/dri</code></td>
+          <td>render-node device passthrough for GPU-accelerated apps (paired with the <code>video</code> group above)</td>
+          <td>drop if no GPU apps are used</td>
+        </tr>
+        <tr>
+          <td><code>ipc: host</code></td>
+          <td>shared memory for streamed desktop apps</td>
+          <td>keep unless you have tested the apps without it</td>
+        </tr>
+      </tbody>
+    </table>
+    <p>App containers also run with a default identity of <code>VRECKAN_PUID</code> / <code>VRECKAN_PGID</code> (both default 1000) for file ownership in the storage tree — the same UID/GID as the server's non-root user, so the server and the apps it spawns share ownership of the <code>/data/storage</code> tree.</p>
+  </section>
+  {% endif %}
+
+  {% if page.section == 'data-layout' or page.section == nil %}
+  <section id="data-layout">
+    <h2>7. Data layout (<code>/data</code>)</h2>
+    <p>Everything durable lives under the data root (<code>VRECKAN_DATA_ROOT</code>, default <code>/data</code> — the <code>vreckan-data</code> bind mount).</p>
+    <p><strong>Ownership (v0.6.1).</strong> The server runs as UID/GID 1000, so everything it writes under <code>/data</code> (and the host path behind the bind mount) is owned by 1000:1000. Docker creates a missing <code>./vreckan-data</code> directory as root:root, so the compose file includes the one-shot <code>data-perms</code> service (<code>chown -R 1000:1000</code>) which <code>vreckan-http</code> waits for; it runs on every <code>docker compose up</code> and is a cheap no-op once the tree is already owned by 1000. Upgrading from a v0.5.x deployment (data written by the old root-running image) is handled by the first <code>up</code> on the new image. If you point <code>VRECKAN_DATA_ROOT</code> elsewhere, apply the same ownership there.</p>
+    <p><strong>Volume layout (v0.6.1).</strong> This deployment persists state in a single <code>/data</code> bind mount (<code>./vreckan-data</code>). That is a deliberate deviation from the SealSkin reference, which bind-mounts <em>both</em> <code>/config</code> and <code>/storage</code> and keeps the E2EE server key at <code>/config/ssl/</code>. Since v0.6.1 the E2EE server key defaults to the persistent data root — <code>VRECKAN_SERVER_PRIVATE_KEY_PATH</code> is <code>/data/ssl/server_key.pem</code>, written <code>0600</code> — so it survives container recreation and no longer forces a client re-pair when the container is re-created. <code>/config</code> is now a purely <strong>ephemeral, image-owned</strong> directory inside the server container and carries no durable state, so the single-<code>/data</code> layout is self-sufficient. The self-signed TLS certificate also lives in the persistent tree (<code>/data/ssl/</code>). If you prefer the reference layout, bind-mount a second volume at <code>/config</code> in <code>docker-compose.yml</code> — the image pre-creates and owns the directory, so no other change is needed.</p>
+    <pre><code>/data
+├── vreckan.db                 SQLite database (sqlite backend)
+├── storage/
+│   ├── &lt;user home dirs&gt;       per-user home directories served to apps as /config
+│   ├── vreckan_uploads/       temporary chunked-upload staging
+│   ├── vreckan_app_icons/     custom app icons
+│   ├── vreckan_home_templates/ meta-app home-dir templates
+│   └── vreckan_public/        publicly shared files
+├── ssl/                       TLS certs: self-signed (vreckan_dev.*); also the E2EE server key (server_key.pem, 0600)
+├── acme/                      ACME cert mirror (best-effort; the config DB is the source of truth)
+├── autostart_cache/           cached autostart scripts
+├── app_stores_cache/          cached app-store YAML files
+└── backups/                   backup archives (0600)</code></pre>
+  </section>
+  {% endif %}
+
+  {% if page.section == 'observability' or page.section == nil %}
+  <section id="observability">
+    <h2>8. Observability</h2>
+    <ul>
+      <li><code>GET /api/health</code> — liveness probe (<code>ok (N session(s))</code>); point load balancers/monitors at it.</li>
+      <li>Logs: <code>tracing</code>-based, structured. <code>RUST_LOG</code>, when set, takes precedence; otherwise <code>VRECKAN_LOG_LEVEL</code> sets the filter (both unset → <code>info</code>); SQL query logging is available via the SeaORM <code>sqlx_logging_level</code> hook.</li>
+      <li>First-run credentials, cert selection, and startup loads are all logged — <code>docker compose logs -f vreckan-http</code> is the primary diagnostic surface.</li>
+    </ul>
+  </section>
+  {% endif %}
+
+  {{ content }}
+</div>

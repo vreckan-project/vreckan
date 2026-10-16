@@ -1,0 +1,389 @@
+---
+layout: default
+---
+{% comment %}
+  Vreckan site — API section, FULL PAGE (source of truth).
+
+  Convention: this layout holds the complete API reference. The per-page
+  snapshots under site/docs/api/ are thin frontmatter files that select one
+  section via `section:` — they carry no content of their own. Update the
+  content HERE, and the snapshots pick it up automatically. A page using
+  this layout without a `section:` renders the full reference.
+
+  Content is ported from the repo's canonical docs/api.md (the live record);
+  internal issue numbers (ANT-…) and internal baseline shas are dropped for
+  public readers, with links to the repo docs where the detail lives.
+{% endcomment %}
+<div class="doc">
+  <h1>{% if page.section == nil %}API &amp; Endpoint Reference{% else %}{{ page.title }}{% endif %}</h1>
+  <p class="doc-sub">
+    {% if page.section == nil %}
+    Endpoint reference for the Vreckan Rust server. Extracted from the actual route
+    registrations in <code>src/</code> — this page is the live record: if a route is not here,
+    it is not served — and cross-checked against a functionality-parity audit (2026-10-12)
+    that verified every route against the Python original (v0.5.0). The audit's full
+    per-route matrix is the source of truth for Python↔Rust handler mapping; the
+    <a href="https://github.com/vreckan-project/vreckan/blob/main/docs/port-status.md">port status document</a>
+    tracks the residual gaps. Scale: <strong>104 route registrations covering 101 unique paths</strong>
+    (several paths serve multiple methods) — all equivalent paths of the Python original,
+    plus representation-level differences and one additive endpoint.
+    {% else %}
+    Section of the <a href="{{ '/docs/api' | relative_url }}">Vreckan API reference</a> ({{ page.title }}).
+    {% endif %}
+  </p>
+
+  <nav class="toc" aria-label="API sections">
+    {% if page.section == nil %}
+      <span class="toc-label">Sections</span>
+      <a href="#protection">How requests are protected</a>
+      <a href="#routes">Route groups</a>
+      <a href="#differences">Representation differences</a>
+    {% else %}
+      <a href="{{ '/docs/api' | relative_url }}" class="toc-full">← Full reference</a>
+      <span class="toc-label">Sections</span>
+      <a href="{{ '/docs/api/protection' | relative_url }}" class="{% if page.section == 'protection' %}active{% endif %}">How requests are protected</a>
+      <a href="{{ '/docs/api/routes' | relative_url }}" class="{% if page.section == 'routes' %}active{% endif %}">Route groups</a>
+      <a href="{{ '/docs/api/differences' | relative_url }}" class="{% if page.section == 'differences' %}active{% endif %}">Representation differences</a>
+    {% endif %}
+  </nav>
+
+  {% if page.section == 'protection' or page.section == nil %}
+  <section id="protection">
+    <h2>How requests are protected</h2>
+    <p>Two orthogonal layers:</p>
+    <ol>
+      <li><strong>Transport:</strong> every response carries the standard security headers (CSP, HSTS, <code>X-Content-Type-Options</code>, <code>X-Frame-Options</code>, Permissions-Policy, COEP, COOP, CORP) via a shared middleware. The collaboration-room and public-password pages use a per-response nonce CSP; proxied session traffic gets the looser session CSP.</li>
+      <li>
+        <strong>Authentication &amp; E2EE:</strong>
+        <ul>
+          <li><strong>Auth routes</strong> (<code>/api/auth/*</code>, handshake, public shares, room, session proxy, static) use <strong>plaintext</strong> bodies. The web-login credential is the <code>vreckan_auth</code> cookie (opaque server-issued token, 8 h TTL by default).</li>
+          <li><strong>E2EE routes</strong> (catalog, launch, sessions, files, upload, homedirs, pinned, and all of <code>/api/admin/*</code>) require the same token and <strong>AES-256-GCM-encrypted request/response bodies</strong>. The client first runs the handshake (<code>/api/handshake/*</code>) to establish the per-session crypto key (RSA-PSS-signed nonce → RSA-OAEP key wrap → AES-GCM; the AAD binds the key to the session id, and <code>X-Session-ID</code> carries it).</li>
+          <li><strong>Admin routes</strong> additionally enforce per-permission RBAC (18-permission catalog; the <code>admin</code> super-permission implies all). Auth-failure responses are deliberately plaintext in both ports (401 bypasses the E2EE wrapper).</li>
+        </ul>
+      </li>
+    </ol>
+    <table>
+      <thead>
+        <tr><th scope="col">Mark</th><th scope="col">Meaning</th></tr>
+      </thead>
+      <tbody>
+        <tr><td><code>E2EE</code></td><td>Body must be E2EE-encrypted; token required</td></tr>
+        <tr><td><code>admin</code></td><td>E2EE + one or more admin permissions</td></tr>
+        <tr><td><code>—</code></td><td>Plaintext; no auth (public) or cookie/session auth only</td></tr>
+      </tbody>
+    </table>
+  </section>
+  {% endif %}
+
+  {% if page.section == 'routes' or page.section == nil %}
+  <section id="routes">
+    <h2>Route groups</h2>
+
+    <h3>Root / static / health — <code>app.rs</code></h3>
+    <table>
+      <thead>
+        <tr><th scope="col">Method</th><th scope="col">Path</th><th scope="col">Handler</th><th scope="col">Auth</th></tr>
+      </thead>
+      <tbody>
+        <tr><td>GET</td><td><code>/</code></td><td><code>index</code></td><td>— (serves the web client, cache-busted)</td></tr>
+        <tr><td>GET</td><td><code>/api/health</code></td><td><code>health</code></td><td>— (Rust-only liveness probe: <code>ok (N session(s))</code>)</td></tr>
+        <tr><td>ANY</td><td><code>/{*path}</code></td><td><code>serve_static</code></td><td>— (catch-all static handler, registered last; path-traversal guarded; JS/CSS <code>no-store</code>, rest <code>no-cache</code>)</td></tr>
+      </tbody>
+    </table>
+
+    <h3>E2EE handshake — <code>e2ee.rs</code> (plaintext — it establishes the crypto session)</h3>
+    <table>
+      <thead>
+        <tr><th scope="col">Method</th><th scope="col">Path</th><th scope="col">Handler</th><th scope="col">Auth</th></tr>
+      </thead>
+      <tbody>
+        <tr><td>GET</td><td><code>/api/handshake/public_key</code></td><td><code>handshake_public_key</code></td><td>—</td></tr>
+        <tr><td>POST</td><td><code>/api/handshake/initiate</code></td><td><code>handshake_initiate</code></td><td>— (RSA-PSS-signed nonce)</td></tr>
+        <tr><td>POST</td><td><code>/api/handshake/exchange</code></td><td><code>handshake_exchange</code></td><td>— (RSA-OAEP wrap of the AES session key)</td></tr>
+      </tbody>
+    </table>
+
+    <h3>Auth / SSO — <code>auth.rs</code> (plaintext bodies)</h3>
+    <table>
+      <thead>
+        <tr><th scope="col">Method</th><th scope="col">Path</th><th scope="col">Handler</th><th scope="col">Auth</th></tr>
+      </thead>
+      <tbody>
+        <tr><td>POST</td><td><code>/api/auth/login</code></td><td><code>login</code></td><td>— (sets <code>vreckan_auth</code>)</td></tr>
+        <tr><td>POST</td><td><code>/api/auth/logout</code></td><td><code>logout</code></td><td>cookie</td></tr>
+        <tr><td>POST</td><td><code>/api/auth/revoke-sessions</code></td><td><code>revoke_sessions</code></td><td>cookie</td></tr>
+        <tr><td>GET</td><td><code>/api/auth/me</code></td><td><code>me</code></td><td>cookie</td></tr>
+        <tr><td>POST</td><td><code>/api/auth/change_password</code></td><td><code>change_password</code></td><td>cookie</td></tr>
+        <tr><td>POST</td><td><code>/api/auth/set_password</code></td><td><code>set_password</code></td><td>cookie</td></tr>
+        <tr><td>PUT</td><td><code>/api/auth/preferences</code></td><td><code>preferences</code></td><td>cookie</td></tr>
+        <tr><td>GET</td><td><code>/api/auth/oidc/status</code></td><td><code>oidc_status</code></td><td>—</td></tr>
+        <tr><td>GET</td><td><code>/api/auth/oidc/authorize</code></td><td><code>oidc_authorize</code></td><td>— (302 to IdP)</td></tr>
+        <tr><td>GET</td><td><code>/api/auth/oidc/callback</code></td><td><code>oidc_callback</code></td><td>— (state CSRF check, JWKS id_token verify, auto-provisioning + group re-stamp)</td></tr>
+      </tbody>
+    </table>
+
+    <h3>Catalog / launch / own sessions — <code>catalog.rs</code> (E2EE)</h3>
+    <table>
+      <thead>
+        <tr><th scope="col">Method</th><th scope="col">Path</th><th scope="col">Handler</th><th scope="col">Auth</th></tr>
+      </thead>
+      <tbody>
+        <tr><td>POST</td><td><code>/api/applications</code></td><td><code>get_applications</code></td><td>E2EE</td></tr>
+        <tr><td>POST</td><td><code>/api/launch/simple</code></td><td><code>launch_simple</code></td><td>E2EE</td></tr>
+        <tr><td>POST</td><td><code>/api/launch/url</code></td><td><code>launch_url</code></td><td>E2EE</td></tr>
+        <tr><td>POST</td><td><code>/api/launch/file</code></td><td><code>launch_file</code></td><td>E2EE</td></tr>
+        <tr><td>POST</td><td><code>/api/launch/file_path</code></td><td><code>launch_file_path</code></td><td>E2EE</td></tr>
+        <tr><td>POST</td><td><code>/api/admin/status</code></td><td><code>admin_status</code></td><td>E2EE</td></tr>
+        <tr><td>GET</td><td><code>/api/app_icon/{app_id}</code></td><td><code>get_app_icon</code></td><td>E2EE</td></tr>
+        <tr><td>GET</td><td><code>/api/sessions</code></td><td><code>get_my_sessions</code></td><td>E2EE</td></tr>
+        <tr><td>GET</td><td><code>/api/sessions/{session_id}/status</code></td><td><code>get_session_status</code></td><td>E2EE (own session)</td></tr>
+        <tr><td>DELETE</td><td><code>/api/sessions/{session_id}</code></td><td><code>stop_my_session</code></td><td>E2EE (own session)</td></tr>
+        <tr><td>POST</td><td><code>/api/sessions/{session_id}/recreate</code></td><td><code>recreate_my_session</code></td><td>E2EE (own session)</td></tr>
+        <tr><td>POST</td><td><code>/api/sessions/{session_id}/send_file</code></td><td><code>send_file_to_session</code></td><td>E2EE (own session)</td></tr>
+      </tbody>
+    </table>
+
+    <h3>Session reverse proxy (data plane) — <code>session_proxy.rs</code></h3>
+    <table>
+      <thead>
+        <tr><th scope="col">Method</th><th scope="col">Path</th><th scope="col">Handler</th><th scope="col">Auth</th></tr>
+      </thead>
+      <tbody>
+        <tr><td>ANY</td><td><code>/api/apps/session/{session_id}/</code></td><td><code>initial_session_auth</code></td><td>first hit: exchange the single-use <code>access_token</code> for a session cookie; then session cookie (token is validated but not consumed on the server side — replaying it re-sets the cookie)</td></tr>
+        <tr><td>ANY</td><td><code>/api/apps/session/{session_id}/{*path}</code></td><td><code>session_proxy_subpath</code></td><td>session cookie</td></tr>
+      </tbody>
+    </table>
+    <p>One <code>any()</code> registration per route handles both HTTP and WebSocket: an <code>Upgrade</code> header dispatches to the WebSocket bridge (client leg <code>axum::ws</code>, upstream leg <code>tokio-tungstenite</code>), everything else to the streaming HTTP proxy. Raw content-encoded bodies pass through undecoded; hop-by-hop headers are dropped; <code>SameSite=None</code> is set when the session page is opened embedded; the session CSP is applied to proxied responses. (Python registered the same surface as three routes — all-methods HTTP root, all-methods HTTP sub-path, and a separate WebSocket route — the consolidation is a representation difference, not a behavior change.)</p>
+
+    <h3>File management — <code>files.rs</code> (E2EE)</h3>
+    <table>
+      <thead>
+        <tr><th scope="col">Method</th><th scope="col">Path</th><th scope="col">Handler</th><th scope="col">Auth</th></tr>
+      </thead>
+      <tbody>
+        <tr><td>GET</td><td><code>/api/files/list/{home_dir}</code></td><td><code>list_files</code></td><td>E2EE</td></tr>
+        <tr><td>GET</td><td><code>/api/files/download/chunk/{home_dir}</code></td><td><code>download_file_chunk</code></td><td>E2EE</td></tr>
+        <tr><td>POST</td><td><code>/api/files/create_folder/{home_dir}</code></td><td><code>create_folder</code></td><td>E2EE</td></tr>
+        <tr><td>POST</td><td><code>/api/files/delete/{home_dir}</code></td><td><code>initiate_deletion</code></td><td>E2EE</td></tr>
+        <tr><td>GET</td><td><code>/api/files/delete_status/{task_id}</code></td><td><code>check_deletion_status</code></td><td>E2EE</td></tr>
+        <tr><td>POST</td><td><code>/api/files/upload_to_dir/{home_dir}</code></td><td><code>finalize_upload_to_dir</code></td><td>E2EE</td></tr>
+        <tr><td>POST</td><td><code>/api/files/launch_from_storage</code></td><td><code>launch_from_storage</code></td><td>E2EE</td></tr>
+        <tr><td>POST</td><td><code>/api/files/share</code></td><td><code>create_public_share</code></td><td>E2EE</td></tr>
+        <tr><td>GET</td><td><code>/api/files/shares</code></td><td><code>list_public_shares</code></td><td>E2EE</td></tr>
+        <tr><td>DELETE</td><td><code>/api/files/share/{share_id}</code></td><td><code>delete_public_share</code></td><td>E2EE (owner)</td></tr>
+      </tbody>
+    </table>
+
+    <h3>Uploads — <code>files.rs</code> (E2EE)</h3>
+    <table>
+      <thead>
+        <tr><th scope="col">Method</th><th scope="col">Path</th><th scope="col">Handler</th><th scope="col">Auth</th></tr>
+      </thead>
+      <tbody>
+        <tr><td>POST</td><td><code>/api/upload/initiate</code></td><td><code>upload_initiate</code></td><td>E2EE</td></tr>
+        <tr><td>POST</td><td><code>/api/upload/chunk</code></td><td><code>upload_chunk</code></td><td>E2EE</td></tr>
+        <tr><td>POST</td><td><code>/api/upload/to_storage</code></td><td><code>upload_to_storage</code></td><td>E2EE</td></tr>
+      </tbody>
+    </table>
+
+    <h3>Home directories — <code>files.rs</code> (E2EE)</h3>
+    <table>
+      <thead>
+        <tr><th scope="col">Method</th><th scope="col">Path</th><th scope="col">Handler</th><th scope="col">Auth</th></tr>
+      </thead>
+      <tbody>
+        <tr><td>GET</td><td><code>/api/homedirs</code></td><td><code>list_my_home_dirs</code></td><td>E2EE</td></tr>
+        <tr><td>POST</td><td><code>/api/homedirs</code></td><td><code>create_my_home_dir</code></td><td>E2EE</td></tr>
+        <tr><td>DELETE</td><td><code>/api/homedirs/{home_name}</code></td><td><code>delete_my_home_dir</code></td><td>E2EE</td></tr>
+      </tbody>
+    </table>
+    <div class="callout">
+      <strong>Trailing-slash note.</strong> These collection routes are registered as <code>"/"</code> under the <code>/api/homedirs</code> / <code>/api/pinned</code> nest prefixes. Axum 0.8 collapses a nested <code>"/"</code> route onto the prefix, so the live paths are the <strong>no-slash</strong> forms — <code>/api/homedirs</code> and <code>/api/pinned</code> — the same forms the Python original served. The trailing-slash forms 404. (The in-tree client and the test suite both use the no-slash forms.) See gap <strong>G7</strong> in the <a href="https://github.com/vreckan-project/vreckan/blob/main/docs/port-status.md">port status document</a>.
+    </div>
+
+    <h3>Pinned behaviors — <code>files.rs</code> (E2EE)</h3>
+    <table>
+      <thead>
+        <tr><th scope="col">Method</th><th scope="col">Path</th><th scope="col">Handler</th><th scope="col">Auth</th></tr>
+      </thead>
+      <tbody>
+        <tr><td>GET</td><td><code>/api/pinned</code></td><td><code>list_pinned_behaviors</code></td><td>E2EE</td></tr>
+        <tr><td>POST</td><td><code>/api/pinned</code></td><td><code>create_pinned_behavior</code></td><td>E2EE</td></tr>
+        <tr><td>POST</td><td><code>/api/pinned/{pinned_id}/set-default</code></td><td><code>set_default_pinned_behavior</code></td><td>E2EE</td></tr>
+        <tr><td>DELETE</td><td><code>/api/pinned/{pinned_id}</code></td><td><code>delete_pinned_behavior</code></td><td>E2EE</td></tr>
+      </tbody>
+    </table>
+
+    <h3>Public shares — <code>files.rs</code> (plaintext)</h3>
+    <table>
+      <thead>
+        <tr><th scope="col">Method</th><th scope="col">Path</th><th scope="col">Handler</th><th scope="col">Auth</th></tr>
+      </thead>
+      <tbody>
+        <tr><td>GET</td><td><code>/public/download/{token}</code></td><td><code>download_shared_file</code></td><td>— (single-use token)</td></tr>
+        <tr><td>GET</td><td><code>/public/{share_id}</code></td><td><code>access_public_share_get</code></td><td>— (password page where applicable)</td></tr>
+        <tr><td>POST</td><td><code>/public/{share_id}</code></td><td><code>access_public_share_post</code></td><td>—</td></tr>
+      </tbody>
+    </table>
+
+    <h3>Admin — <code>admin.rs</code> (E2EE + per-permission RBAC)</h3>
+    <p>46 registrations, 61 method+path routes (matches the Python admin router's 61 exactly).</p>
+    <table>
+      <thead>
+        <tr><th scope="col">Method</th><th scope="col">Path</th><th scope="col">Handler</th></tr>
+      </thead>
+      <tbody>
+        <tr><td>POST</td><td><code>/api/admin/data</code></td><td><code>get_management_data</code></td></tr>
+        <tr><td>GET</td><td><code>/api/admin/global-settings</code></td><td><code>get_global_settings</code></td></tr>
+        <tr><td>POST</td><td><code>/api/admin/global-settings</code></td><td><code>save_global_settings</code></td></tr>
+        <tr><td>GET</td><td><code>/api/admin/sso-groups</code></td><td><code>get_sso_groups</code></td></tr>
+        <tr><td>GET</td><td><code>/api/admin/sso</code></td><td><code>get_sso_config</code></td></tr>
+        <tr><td>PUT</td><td><code>/api/admin/sso</code></td><td><code>save_sso_config</code></td></tr>
+        <tr><td>POST</td><td><code>/api/admin/sso/test</code></td><td><code>test_sso_connection</code></td></tr>
+        <tr><td>GET</td><td><code>/api/admin/certificates</code></td><td><code>get_certificates</code></td></tr>
+        <tr><td>PUT</td><td><code>/api/admin/certificates</code></td><td><code>save_certificates</code></td></tr>
+        <tr><td>POST</td><td><code>/api/admin/certificates/renew</code></td><td><code>renew_certificates</code></td></tr>
+        <tr><td>GET</td><td><code>/api/admin/apps/stores</code></td><td><code>get_app_stores</code></td></tr>
+        <tr><td>POST</td><td><code>/api/admin/apps/stores</code></td><td><code>add_app_store</code></td></tr>
+        <tr><td>DELETE</td><td><code>/api/admin/apps/stores/{store_name}</code></td><td><code>delete_app_store</code></td></tr>
+        <tr><td>POST</td><td><code>/api/admin/apps/meta</code></td><td><code>create_meta_app</code></td></tr>
+        <tr><td>POST</td><td><code>/api/admin/launch/meta_customize</code></td><td><code>launch_meta_for_customization</code></td></tr>
+        <tr><td>GET</td><td><code>/api/admin/apps/available</code></td><td><code>get_available_apps</code></td></tr>
+        <tr><td>GET</td><td><code>/api/admin/apps/installed</code></td><td><code>list_installed_apps</code></td></tr>
+        <tr><td>POST</td><td><code>/api/admin/apps/installed</code></td><td><code>install_app</code></td></tr>
+        <tr><td>PUT</td><td><code>/api/admin/apps/installed/{app_id}</code></td><td><code>update_installed_app</code></td></tr>
+        <tr><td>DELETE</td><td><code>/api/admin/apps/installed/{app_id}</code></td><td><code>delete_installed_app</code></td></tr>
+        <tr><td>POST</td><td><code>/api/admin/apps/installed/{app_id}/check_update</code></td><td><code>check_app_update</code></td></tr>
+        <tr><td>POST</td><td><code>/api/admin/apps/installed/check_all_updates</code></td><td><code>check_all_app_updates</code></td></tr>
+        <tr><td>POST</td><td><code>/api/admin/apps/installed/pull_all_latest</code></td><td><code>pull_all_app_images</code></td></tr>
+        <tr><td>POST</td><td><code>/api/admin/apps/installed/{app_id}/pull_latest</code></td><td><code>pull_latest_app_image</code></td></tr>
+        <tr><td>GET</td><td><code>/api/admin/apps/templates</code></td><td><code>get_app_templates</code></td></tr>
+        <tr><td>POST</td><td><code>/api/admin/apps/templates</code></td><td><code>save_app_template</code></td></tr>
+        <tr><td>DELETE</td><td><code>/api/admin/apps/templates/{template_name}</code></td><td><code>delete_app_template</code></td></tr>
+        <tr><td>GET</td><td><code>/api/admin/apps/templates/schema</code></td><td><code>get_template_schema</code></td></tr>
+        <tr><td>POST</td><td><code>/api/admin/apps/templates/schema</code></td><td><code>save_template_schema</code></td></tr>
+        <tr><td>GET</td><td><code>/api/admin/sessions</code></td><td><code>get_all_sessions</code></td></tr>
+        <tr><td>DELETE</td><td><code>/api/admin/sessions/{session_id}</code></td><td><code>stop_any_session</code></td></tr>
+        <tr><td>POST</td><td><code>/api/admin/sessions/{session_id}/recreate</code></td><td><code>recreate_any_session</code></td></tr>
+        <tr><td>POST</td><td><code>/api/admin/oidc/revoke</code></td><td><code>revoke_oidc_sessions</code></td></tr>
+        <tr><td>POST</td><td><code>/api/admin/people</code></td><td><code>create_person</code></td></tr>
+        <tr><td>PUT</td><td><code>/api/admin/people/{username}</code></td><td><code>update_person</code></td></tr>
+        <tr><td>DELETE</td><td><code>/api/admin/people/{username}</code></td><td><code>delete_person</code></td></tr>
+        <tr><td>POST</td><td><code>/api/admin/people/{username}/admin-status</code></td><td><code>set_admin_status</code></td></tr>
+        <tr><td>GET</td><td><code>/api/admin/people/{username}/homedirs</code></td><td><code>list_person_home_dirs</code></td></tr>
+        <tr><td>POST</td><td><code>/api/admin/people/{username}/homedirs</code></td><td><code>create_person_home_dir</code></td></tr>
+        <tr><td>DELETE</td><td><code>/api/admin/people/{username}/homedirs/{home_name}</code></td><td><code>delete_person_home_dir</code></td></tr>
+        <tr><td>POST</td><td><code>/api/admin/people/{username}/access</code></td><td><code>set_user_access</code></td></tr>
+        <tr><td>POST</td><td><code>/api/admin/groups</code></td><td><code>create_group</code></td></tr>
+        <tr><td>PUT</td><td><code>/api/admin/groups/{group_name}</code></td><td><code>update_group</code></td></tr>
+        <tr><td>DELETE</td><td><code>/api/admin/groups/{group_name}</code></td><td><code>delete_group</code></td></tr>
+        <tr><td>GET</td><td><code>/api/admin/volume_mounts</code></td><td><code>list_volume_mounts</code></td></tr>
+        <tr><td>POST</td><td><code>/api/admin/volume_mounts</code></td><td><code>create_volume_mount</code></td></tr>
+        <tr><td>PUT</td><td><code>/api/admin/volume_mounts/{name}</code></td><td><code>update_volume_mount</code></td></tr>
+        <tr><td>DELETE</td><td><code>/api/admin/volume_mounts/{name}</code></td><td><code>delete_volume_mount</code></td></tr>
+        <tr><td>GET</td><td><code>/api/admin/permissions</code></td><td><code>list_permissions</code></td></tr>
+        <tr><td>GET</td><td><code>/api/admin/roles</code></td><td><code>list_roles</code></td></tr>
+        <tr><td>POST</td><td><code>/api/admin/roles</code></td><td><code>create_role</code></td></tr>
+        <tr><td>PUT</td><td><code>/api/admin/roles/{role_name}</code></td><td><code>update_role</code></td></tr>
+        <tr><td>DELETE</td><td><code>/api/admin/roles/{role_name}</code></td><td><code>delete_role</code></td></tr>
+        <tr><td>POST</td><td><code>/api/admin/backup/create</code></td><td><code>create_backup</code></td></tr>
+        <tr><td>GET</td><td><code>/api/admin/backup</code></td><td><code>list_backups</code></td></tr>
+        <tr><td>POST</td><td><code>/api/admin/backup/restore</code></td><td><code>restore_backup</code></td></tr>
+        <tr><td>POST</td><td><code>/api/admin/backup/restore/initiate</code></td><td><code>backup_restore_initiate</code></td></tr>
+        <tr><td>POST</td><td><code>/api/admin/backup/restore/chunk</code></td><td><code>backup_restore_chunk</code></td></tr>
+        <tr><td>POST</td><td><code>/api/admin/backup/restore/finalize</code></td><td><code>backup_restore_finalize</code></td></tr>
+        <tr><td>GET</td><td><code>/api/admin/backup/{name}/download</code></td><td><code>download_backup</code></td></tr>
+        <tr><td>DELETE</td><td><code>/api/admin/backup/{name}</code></td><td><code>delete_backup</code></td></tr>
+      </tbody>
+    </table>
+
+    <h3>Certificate fields — <code>admin.rs</code></h3>
+    <p>The three certificate endpoints exchange the following fields (all <code>acme_*</code>; the legacy <code>le_*</code> names are retired).</p>
+    <p><strong><code>GET /api/admin/certificates</code></strong> — effective config (DB-over-env-over-default), current certificate status, and the available DNS providers:</p>
+    <table>
+      <thead>
+        <tr><th scope="col">Field</th><th scope="col">Type</th><th scope="col">Notes</th></tr>
+      </thead>
+      <tbody>
+        <tr><td><code>values.acme_enabled</code></td><td>bool</td><td>ACME on/off</td></tr>
+        <tr><td><code>values.acme_ca</code></td><td>string</td><td><code>letsencrypt</code> (default) | <code>zerossl</code> | <code>google</code></td></tr>
+        <tr><td><code>values.acme_domains</code></td><td>string[]</td><td>target domains</td></tr>
+        <tr><td><code>values.acme_auth</code></td><td>string</td><td><code>dns-cloudflare</code> (default) | <code>http-01</code></td></tr>
+        <tr><td><code>values.acme_cloudflare_email</code></td><td>string</td><td>ACME account contact</td></tr>
+        <tr><td><code>values.acme_cloudflare_token</code></td><td>string</td><td>always <code>""</code> (masked)</td></tr>
+        <tr><td><code>values.token_set</code></td><td>bool</td><td>whether a token is stored</td></tr>
+        <tr><td><code>values.token_length</code></td><td>int</td><td>length of the stored token</td></tr>
+        <tr><td><code>values.acme_staging</code></td><td>bool</td><td>use the LE staging endpoint</td></tr>
+        <tr><td><code>values.acme_auto_renew</code></td><td>bool</td><td>background renewal on/off</td></tr>
+        <tr><td><code>values.acme_renew_check_hours</code></td><td>int</td><td>renewal poll interval (h)</td></tr>
+        <tr><td><code>values.acme_renew_before_days</code></td><td>int</td><td>renew-within window (days)</td></tr>
+        <tr><td><code>values.acme_dns_provider</code></td><td>string</td><td><code>cloudflare</code> (default) | <code>route53</code> | <code>digitalocean</code> | <code>linode</code> | <code>azure</code> | <code>google</code> | <code>alibaba</code> | <code>godaddy</code> | <code>tencent</code> | <code>huawei</code> | <code>cloudns</code></td></tr>
+        <tr><td><code>values.acme_cloudflare_zone_id</code></td><td>string</td><td>optional Cloudflare zone pin</td></tr>
+        <tr><td><code>values.acme_dns_provider_config</code></td><td>string</td><td>JSON credentials for non-Cloudflare providers</td></tr>
+        <tr><td><code>sources.*</code></td><td>string</td><td>per-field origin: <code>db</code> | <code>env</code> | <code>default</code></td></tr>
+        <tr><td><code>status.present</code></td><td>bool</td><td>a certificate exists</td></tr>
+        <tr><td><code>status.source</code></td><td>string | null</td><td><code>acme_db</code> (DB is the source of truth) | <code>host</code> | <code>app</code> (disk fallback)</td></tr>
+        <tr><td><code>status.cert</code></td><td>string | null</td><td>PEM chain (DB) or path (disk)</td></tr>
+        <tr><td><code>status.key</code></td><td>string | null</td><td>private-key PEM (DB) or path (disk)</td></tr>
+        <tr><td><code>status.expiry</code></td><td>string | null</td><td>RFC 3339 expiry, when parseable</td></tr>
+        <tr><td><code>status.days_remaining</code></td><td>int | null</td><td>days until expiry</td></tr>
+        <tr><td><code>status.valid</code></td><td>bool</td><td>expiry is in the future</td></tr>
+        <tr><td><code>dns_providers</code></td><td>object[]</td><td><code>[{ id, label, default }]</code> for all 11 providers</td></tr>
+      </tbody>
+    </table>
+    <p><strong><code>PUT /api/admin/certificates</code></strong> — save the ACME configuration to the <code>app_settings</code> table. Request body carries the same <code>acme_*</code> fields as the GET response's <code>values</code> (minus <code>token_set</code>/<code>token_length</code>). A blank <code>acme_cloudflare_token</code> means "leave the existing token unchanged". Response: <code>{ "ok": true }</code>.</p>
+    <p><strong><code>POST /api/admin/certificates/renew</code></strong> — issue or renew the certificate now. The "Issue / Renew Now" button always (re)issues, even when a valid certificate already exists. Response:</p>
+    <table>
+      <thead>
+        <tr><th scope="col">Field</th><th scope="col">Type</th><th scope="col">Notes</th></tr>
+      </thead>
+      <tbody>
+        <tr><td><code>present</code></td><td>bool</td><td>a certificate exists after the call</td></tr>
+        <tr><td><code>source</code></td><td>string | null</td><td><code>acme_db</code> | <code>host</code> | <code>app</code></td></tr>
+        <tr><td><code>cert</code></td><td>string | null</td><td>PEM chain or path</td></tr>
+        <tr><td><code>key</code></td><td>string | null</td><td>private-key PEM or path</td></tr>
+        <tr><td><code>expiry</code></td><td>string | null</td><td>RFC 3339 expiry</td></tr>
+        <tr><td><code>days_remaining</code></td><td>int | null</td><td>days until expiry</td></tr>
+        <tr><td><code>valid</code></td><td>bool</td><td>certificate is currently valid</td></tr>
+        <tr><td><code>issued</code></td><td>bool</td><td>a new certificate was issued during this call</td></tr>
+        <tr><td><code>renewed</code></td><td>bool</td><td>same as <code>issued</code> (alias for the UI)</td></tr>
+        <tr><td><code>enabled</code></td><td>bool</td><td>ACME was enabled</td></tr>
+        <tr><td><code>logs</code></td><td>string</td><td>human-readable acmex milestone log (when present)</td></tr>
+        <tr><td><code>error</code></td><td>string</td><td>human-readable error (when present)</td></tr>
+      </tbody>
+    </table>
+
+    <h3>Collaboration room — <code>collaboration.rs</code> (plaintext)</h3>
+    <table>
+      <thead>
+        <tr><th scope="col">Method</th><th scope="col">Path</th><th scope="col">Handler</th><th scope="col">Auth</th></tr>
+      </thead>
+      <tbody>
+        <tr><td>GET</td><td><code>/room/{session_id}</code></td><td><code>collaborative_room</code></td><td>session cookie (nonce CSP page)</td></tr>
+        <tr><td>GET</td><td><code>/room/room.css</code></td><td><code>get_room_css</code></td><td>—</td></tr>
+        <tr><td>GET</td><td><code>/room/room.js</code></td><td><code>get_room_js</code></td><td>—</td></tr>
+        <tr><td>GET</td><td><code>/room/translation.js</code></td><td><code>get_translation_js</code></td><td>—</td></tr>
+        <tr><td>GET</td><td><code>/ws/room/{session_id}</code></td><td><code>room_websocket</code></td><td>session cookie (WS)</td></tr>
+      </tbody>
+    </table>
+  </section>
+  {% endif %}
+
+  {% if page.section == 'differences' or page.section == nil %}
+  <section id="differences">
+    <h2>Representation differences vs the Python original</h2>
+    <p>Verified in the parity audit; none change functionality except where a gap is linked:</p>
+    <ul>
+      <li><strong>Multi-method routes collapse.</strong> axum registers <code>get(...).post(...)</code> on one path where Python used separate decorators per method — this is why the raw registration counts differ (119 Python route objects vs 104 Rust <code>.route()</code> calls) while the method+path surface is identical.</li>
+      <li><strong>WebSocket handling differs by route.</strong> The session-proxy routes are <code>any()</code> and dispatch on the <code>Upgrade</code> header in-handler; the room WS route (<code>/ws/room/{session_id}</code>) is a plain <code>GET</code> upgrade.</li>
+      <li><strong>Trailing slash</strong> on the <code>/api/homedirs</code> / <code>/api/pinned</code> collection roots (gap <strong>G7</strong> in the <a href="https://github.com/vreckan-project/vreckan/blob/main/docs/port-status.md">port status document</a>).</li>
+      <li><strong>UUID path params.</strong> Python validated <code>{session_id:uuid}</code> at routing (malformed → 422); Rust matches any string and the handler fails later (gap <strong>G8</strong>).</li>
+      <li><strong>Static catch-all is <code>any()</code></strong> in Rust, <code>GET</code> in Python — a superset; non-GET to unknown paths reaches the static handler instead of 405.</li>
+      <li><strong><code>GET /api/health</code></strong> exists only in Rust (additive liveness probe, gap <strong>G10</strong>).</li>
+      <li><strong>Session ids</strong> on <code>/room/{session_id}</code> and <code>/ws/room/{session_id}</code> are unvalidated strings in Rust (same as G8).</li>
+    </ul>
+  </section>
+  {% endif %}
+
+  {{ content }}
+</div>
