@@ -299,6 +299,35 @@ async fn test_default_password_policy_reject() {
         )
         .await;
     assert_eq!(resp.status.as_u16(), 401);
+    // Under the default (warn) default-DB-creds policy the 401 body is the
+    // generic one: it does not disclose that the default bootstrap password
+    // is still in use (login-body oracle, ANT-276).
+    assert_eq!(resp.json()["detail"], "Invalid username or password.");
+}
+
+#[tokio::test]
+async fn test_default_password_policy_reject_specific_body_under_silent() {
+    // The operator explicitly opted into running on defaults (silent): the
+    // specific body is kept so the user is told exactly what to change.
+    let _root = TempDir::new();
+    let tc = TestClient::new(
+        build_state_with(_root.path(), |s| {
+            s.default_password_policy = "reject".to_string();
+            s.default_db_creds_policy = vreckan::settings::DefaultDbCredsPolicy::Silent;
+        })
+        .await,
+    );
+    let resp = tc
+        .post_json(
+            "/api/auth/login",
+            &json!({ "username": "admin", "password": "admin1234" }),
+        )
+        .await;
+    assert_eq!(resp.status.as_u16(), 401);
+    assert_eq!(
+        resp.json()["detail"],
+        "Still using the default bootstrap password; change it."
+    );
 }
 
 #[tokio::test]
@@ -452,13 +481,84 @@ async fn test_login_rate_limit_buckets_per_username() {
 #[tokio::test]
 async fn test_login_rate_limit_buckets_per_ip() {
     let _root = TempDir::new();
-    let tc = TestClient::new(build_state(_root.path()).await);
+    // The direct peer is a configured trusted proxy, so the X-Forwarded-For
+    // values are honoured for bucketing (ANT-276).
+    let tc = TestClient::new(
+        build_state_with(_root.path(), |s| {
+            s.trusted_proxies = "10.0.0.1".to_string();
+        })
+        .await,
+    );
+    let peer = std::net::SocketAddr::from(([10u8, 0, 0, 1], 443));
     let mut h1 = std::collections::HashMap::new();
     h1.insert("X-Forwarded-For".to_string(), "1.2.3.4".to_string());
     let mut h2 = std::collections::HashMap::new();
     h2.insert("X-Forwarded-For".to_string(), "5.6.7.8".to_string());
     // Five misses from the first address lock only that (ip, username) pair;
     // the same username from a second address stays under the threshold.
+    for _ in 0..5 {
+        tc.request_from(
+            "POST",
+            "/api/auth/login",
+            Some(json!({ "username": "admin", "password": "nope" }).to_string().into_bytes()),
+            Some("application/json"),
+            &h1,
+            peer,
+        )
+        .await;
+    }
+    // Four misses from the second address: still under the five-attempt
+    // threshold, so every response is a plain 401.
+    for _ in 0..4 {
+        let resp = tc
+            .request_from(
+                "POST",
+                "/api/auth/login",
+                Some(json!({ "username": "admin", "password": "nope" }).to_string().into_bytes()),
+                Some("application/json"),
+                &h2,
+                peer,
+            )
+            .await;
+        assert_eq!(resp.status.as_u16(), 401);
+    }
+    // The first pair is now locked out (even the correct password), while the
+    // second pair is still under the threshold.
+    let resp = tc
+        .request_from(
+            "POST",
+            "/api/auth/login",
+            Some(json!({ "username": "admin", "password": "admin1234" }).to_string().into_bytes()),
+            Some("application/json"),
+            &h1,
+            peer,
+        )
+        .await;
+    assert_eq!(resp.status.as_u16(), 429);
+    let resp = tc
+        .request_from(
+            "POST",
+            "/api/auth/login",
+            Some(json!({ "username": "admin", "password": "nope" }).to_string().into_bytes()),
+            Some("application/json"),
+            &h2,
+            peer,
+        )
+        .await;
+    assert_eq!(resp.status.as_u16(), 401);
+}
+
+#[tokio::test]
+async fn test_login_rate_limit_ignores_xff_from_untrusted_peer() {
+    let _root = TempDir::new();
+    // No trusted proxies configured: the XFF header is attacker-rotatable, so
+    // it is ignored and every client on the same direct peer shares one
+    // bucket (ANT-276).
+    let tc = TestClient::new(build_state(_root.path()).await);
+    let mut h1 = std::collections::HashMap::new();
+    h1.insert("X-Forwarded-For".to_string(), "1.2.3.4".to_string());
+    let mut h2 = std::collections::HashMap::new();
+    h2.insert("X-Forwarded-For".to_string(), "5.6.7.8".to_string());
     for _ in 0..5 {
         tc.request(
             "POST",
@@ -469,18 +569,40 @@ async fn test_login_rate_limit_buckets_per_ip() {
         )
         .await;
     }
+    // The sixth miss arrives with a different XFF value, but the untrusted
+    // direct peer is the same bucket — it fails closed with 429.
+    let resp = tc
+        .request(
+            "POST",
+            "/api/auth/login",
+            Some(json!({ "username": "admin", "password": "nope" }).to_string().into_bytes()),
+            Some("application/json"),
+            &h2,
+        )
+        .await;
+    assert_eq!(resp.status.as_u16(), 429);
+}
+
+#[tokio::test]
+async fn test_login_rate_limit_key_is_case_insensitive_username() {
+    let _root = TempDir::new();
+    let tc = TestClient::new(build_state(_root.path()).await);
+    // Misses under a different capitalisation of the same account share the
+    // lockout budget with the canonical username (ANT-276).
     for _ in 0..5 {
-        let resp = tc
-            .request(
-                "POST",
-                "/api/auth/login",
-                Some(json!({ "username": "admin", "password": "nope" }).to_string().into_bytes()),
-                Some("application/json"),
-                &h2,
-            )
-            .await;
-        assert_eq!(resp.status.as_u16(), 401);
+        tc.post_json(
+            "/api/auth/login",
+            &json!({ "username": "Admin", "password": "nope" }),
+        )
+        .await;
     }
+    let resp = tc
+        .post_json(
+            "/api/auth/login",
+            &json!({ "username": "admin", "password": "admin1234" }),
+        )
+        .await;
+    assert_eq!(resp.status.as_u16(), 429);
 }
 
 #[tokio::test]
