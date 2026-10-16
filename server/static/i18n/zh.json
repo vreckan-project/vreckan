@@ -98,7 +98,7 @@
     "cleanroom": "洁净室",
     "roomMode": "以房间模式启动",
     "wayland": "Wayland",
-    "savePreset": "将这些启动选项保存为预设",
+    "savePreset": "保存为预设",
     "uploadStorage": "上传文件到共享存储",
     "pinned": "已固定",
     "activeSessions": "活动会话",
@@ -123,7 +123,10 @@
     "uploadingProgress": "上传中… {done}/{total}",
     "launching": "启动中…",
     "finalizing": "收尾中…",
-    "fileUploaded": "文件 '{name}' 已上传。"
+    "fileUploaded": "文件 '{name}' 已上传。",
+    "urlToOpen": "要打开的 URL",
+    "urlRequired": "输入要打开的 URL。",
+    "options": "启动选项"
   },
   "password": {
     "title": "更改密码",

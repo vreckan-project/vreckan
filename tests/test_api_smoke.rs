@@ -165,6 +165,10 @@ async fn test_status_install_patch_flow() {
         .filter_map(|a| a["name"].as_str())
         .collect();
     assert_eq!(names, vec!["Work Firefox"]);
+    // The payload exposes the store-config app type (data only, for the
+    // frontend; ANT-228).
+    let item = &apps.as_array().unwrap()[0];
+    assert_eq!(item["type"], "browser");
 
     let (status, listing) = sc.call("GET", "/api/admin/apps/installed", None).await;
     assert_eq!(status.as_u16(), 200);

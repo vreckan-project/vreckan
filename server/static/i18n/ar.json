@@ -98,7 +98,7 @@
     "cleanroom": "غرفة نظيفة",
     "roomMode": "الإطلاق في وضع الغرفة",
     "wayland": "Wayland",
-    "savePreset": "احفظ خيارات الإطلاق هذه كإعداد مسبق",
+    "savePreset": "احفظ كإعداد مسبق",
     "uploadStorage": "ارفع ملفًا إلى التخزين المشترك",
     "pinned": "المثبّتة",
     "activeSessions": "الجلسات النشطة",
@@ -123,7 +123,10 @@
     "uploadingProgress": "جارٍ الرفع… {done}/{total}",
     "launching": "جارٍ التشغيل…",
     "finalizing": "جارٍ الإكمال…",
-    "fileUploaded": "رُفع الملف '{name}'."
+    "fileUploaded": "رُفع الملف '{name}'.",
+    "urlToOpen": "الرابط لفتحه",
+    "urlRequired": "أدخل الرابط لفتحه.",
+    "options": "خيارات الإطلاق"
   },
   "password": {
     "title": "تغيير كلمة المرور",

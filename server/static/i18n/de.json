@@ -98,7 +98,7 @@
     "cleanroom": "Cleanroom",
     "roomMode": "Im Raum-Modus starten",
     "wayland": "Wayland",
-    "savePreset": "Diese Startoptionen als Voreinstellung speichern",
+    "savePreset": "Als Voreinstellung speichern",
     "uploadStorage": "Datei in den gemeinsamen Speicher hochladen",
     "pinned": "Angeheftet",
     "activeSessions": "Aktive Sitzungen",
@@ -123,7 +123,10 @@
     "uploadingProgress": "Wird hochgeladen… {done}/{total}",
     "launching": "Wird gestartet…",
     "finalizing": "Wird abgeschlossen…",
-    "fileUploaded": "Datei '{name}' hochgeladen."
+    "fileUploaded": "Datei '{name}' hochgeladen.",
+    "urlToOpen": "Zu öffnende URL",
+    "urlRequired": "Geben Sie die zu öffnende URL ein.",
+    "options": "Startoptionen"
   },
   "password": {
     "title": "Passwort ändern",

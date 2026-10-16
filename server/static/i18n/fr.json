@@ -98,7 +98,7 @@
     "cleanroom": "Cleanroom",
     "roomMode": "Lancer en mode salle",
     "wayland": "Wayland",
-    "savePreset": "Enregistrer ces options de lancement comme préréglage",
+    "savePreset": "Enregistrer comme préréglage",
     "uploadStorage": "Téléverser un fichier dans le stockage partagé",
     "pinned": "Épinglés",
     "activeSessions": "Sessions actives",
@@ -123,7 +123,10 @@
     "uploadingProgress": "Téléversement… {done}/{total}",
     "launching": "Lancement…",
     "finalizing": "Finalisation…",
-    "fileUploaded": "Fichier « {name} » téléversé."
+    "fileUploaded": "Fichier « {name} » téléversé.",
+    "urlToOpen": "URL à ouvrir",
+    "urlRequired": "Saisissez l'URL à ouvrir.",
+    "options": "Options de lancement"
   },
   "password": {
     "title": "Changer le mot de passe",

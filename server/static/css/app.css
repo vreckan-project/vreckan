@@ -554,19 +554,23 @@ h3:has(.nav-beta) .nav-beta {
   display: none;
 }
 
-/* ===== Launch options ===== */
-.launch-options {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 14px;
-  align-items: flex-end;
-  margin-bottom: 28px;
+/* ===== Launch modal (unified per-app — ANT-228 Option A) ===== */
+/* Small section heading inside a modal (e.g. "Launch options"). */
+.modal-section {
+  margin: 14px 0 10px;
+  padding-top: 12px;
+  border-top: 1px solid var(--border);
+  font-size: 0.8rem;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.4px;
+  color: var(--text-muted);
 }
 
-.launch-options .field {
-  flex: 1 1 160px;
-  min-width: 140px;
-  margin: 0;
+/* Launch modal footer: "Save as preset" sits on the left, Cancel/Launch on
+   the right (per the approved Option A wireframe). */
+#modal-launch .modal-actions .btn-save-preset {
+  margin-right: auto;
 }
 
 .field {
@@ -1556,10 +1560,6 @@ label:has(.src-badge) {
   .main-area {
     flex: 1;
     min-height: 0;
-  }
-  .launch-options {
-    flex-direction: column;
-    align-items: stretch;
   }
   .section-title {
     font-size: 1.5rem;

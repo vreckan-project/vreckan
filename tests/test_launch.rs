@@ -68,6 +68,7 @@ struct LaunchArgs {
     env_vars: HashMap<String, String>,
     app_overrides: Option<Value>,
     launch_in_room_mode: bool,
+    wayland_mode: bool,
     session_name: Option<&'static str>,
     check_access: bool,
 }
@@ -81,6 +82,7 @@ impl Default for LaunchArgs {
             env_vars: HashMap::new(),
             app_overrides: None,
             launch_in_room_mode: false,
+            wayland_mode: true,
             session_name: None,
             check_access: true,
         }
@@ -114,7 +116,7 @@ async fn run_launch(sc: &mut SecureClient, args: LaunchArgs) -> (catalog::Launch
         true,
         None,
         args.launch_in_room_mode,
-        true,
+        args.wayland_mode,
         args.session_name,
         args.check_access,
     )
@@ -173,6 +175,49 @@ async fn test_launch_env_volumes_and_title() {
     assert_eq!(record_session["username"], "admin");
     assert_eq!(record_session["name"], "My Session");
     assert_eq!(record_session["container_registry"]["app-1"]["instance_id"], "ctr-1");
+}
+
+/// Wayland off must emit an explicit `PIXELFLUX_WAYLAND=false` so an
+/// image-baked `true` (e.g. linuxserver images) cannot survive (ANT-234
+/// bug 1). The existing test above covers the on -> "true" direction.
+#[tokio::test]
+async fn test_launch_wayland_off_sets_explicit_false() {
+    let _root = TempDir::new();
+    let mut sc = SecureClient::new(build_state(_root.path()).await);
+    let (_, record) = run_launch(
+        &mut sc,
+        LaunchArgs {
+            home_name: Some("default"),
+            wayland_mode: false,
+            ..Default::default()
+        },
+    )
+    .await;
+    assert_eq!(
+        record["launch_kwargs"]["env_vars"]["PIXELFLUX_WAYLAND"].as_str().unwrap(),
+        "false"
+    );
+}
+
+/// Wayland off must also keep the X11-side autostart wiring: no wayland
+/// suffix in the environment decision is out of scope here, but the session
+/// must record the flag it was launched with.
+#[tokio::test]
+async fn test_launch_wayland_off_recorded_on_session() {
+    let _root = TempDir::new();
+    let mut sc = SecureClient::new(build_state(_root.path()).await);
+    let (result, _) = run_launch(
+        &mut sc,
+        LaunchArgs {
+            home_name: Some("default"),
+            wayland_mode: false,
+            ..Default::default()
+        },
+    )
+    .await;
+    let sessions = sc.state.sessions.read().await;
+    let session = sessions.get(&result.session_id).unwrap();
+    assert_eq!(session["wayland_mode"], false);
 }
 
 #[tokio::test]
@@ -482,6 +527,147 @@ async fn test_launch_room_mode() {
     assert_eq!(record_session["master_token"], env["SELKIES_MASTER_TOKEN"]);
     assert_eq!(record_session["controller_token"].as_str().unwrap(), controller_token.as_str());
     assert!(result.session_url.starts_with(&format!("/room/{}?", result.session_id)));
+}
+
+/// Seed the default app and a shared file, then drive `POST
+/// /api/launch/file_path` over HTTP through the fake provider. Returns the
+/// (status, launch body) of the endpoint.
+async fn launch_file_path_over_http(sc: &SecureClient, body: &Value) -> (StatusCode, Value) {
+    make_app(sc, None).await;
+    let shared = std::path::Path::new(&sc.state.settings.storage_path)
+        .join("admin")
+        .join("_vreckan_shared_files");
+    std::fs::create_dir_all(&shared).unwrap();
+    std::fs::write(shared.join("a.txt"), "alpha").unwrap();
+    sc.state.fake_provider.store(true, std::sync::atomic::Ordering::Relaxed);
+    let (status, data) = sc.call("POST", "/api/launch/file_path", Some(body)).await;
+    (status, data.expect("launch_file_path body"))
+}
+
+/// `launch_in_room_mode` on the file_path endpoint: `true` starts a room-mode
+/// session; absent or `false` keeps the current (non-room) behavior.
+#[tokio::test]
+async fn test_file_path_launch_room_mode() {
+    let _root = TempDir::new();
+    let mut sc = SecureClient::new(build_state(_root.path()).await);
+    sc.login("admin", "admin1234").await;
+    sc.handshake().await;
+
+    // `launch_in_room_mode: true` -> room-mode session.
+    let (status, body) = launch_file_path_over_http(
+        &sc,
+        &json!({
+            "application_id": "app-1",
+            "filename": "a.txt",
+            "launch_in_room_mode": true,
+        }),
+    )
+    .await;
+    assert_eq!(status, StatusCode::OK, "{body}");
+    let session_id = body["session_id"].as_str().unwrap().to_string();
+    assert!(
+        body["session_url"]
+            .as_str()
+            .unwrap()
+            .starts_with(&format!("/room/{session_id}?")),
+        "{}",
+        body["session_url"]
+    );
+    {
+        let sessions = sc.state.sessions.read().await;
+        let session = sessions.get(&session_id).unwrap();
+        assert_eq!(session["is_collaboration"], true);
+        assert!(session["master_token"].as_str().map(|s| !s.is_empty()).unwrap_or(false));
+        assert!(session["controller_token"]
+            .as_str()
+            .map(|s| !s.is_empty())
+            .unwrap_or(false));
+    }
+    let record = sc.state.fake_provider_record.lock().unwrap().clone().unwrap();
+    assert_eq!(record["launch_kwargs"]["is_collaboration"], true);
+    assert!(record["launch_kwargs"]["env_vars"]["SELKIES_MASTER_TOKEN"]
+        .as_str()
+        .map(|s| !s.is_empty())
+        .unwrap_or(false));
+
+    // Field absent -> room mode off (backward compatible).
+    sc.state.fake_provider_record.lock().unwrap().take();
+    let (status, body) = launch_file_path_over_http(
+        &sc,
+        &json!({ "application_id": "app-1", "filename": "a.txt" }),
+    )
+    .await;
+    assert_eq!(status, StatusCode::OK, "{body}");
+    let session_id = body["session_id"].as_str().unwrap().to_string();
+    assert!(
+        body["session_url"]
+            .as_str()
+            .unwrap()
+            .starts_with(&format!("/api/apps/session/{session_id}/")),
+        "{}",
+        body["session_url"]
+    );
+    {
+        let sessions = sc.state.sessions.read().await;
+        let session = sessions.get(&session_id).unwrap();
+        assert!(session.get("is_collaboration").is_none());
+        assert!(session.get("master_token").is_none());
+    }
+    let record = sc.state.fake_provider_record.lock().unwrap().clone().unwrap();
+    assert!(record["launch_kwargs"].get("is_collaboration").is_none());
+    assert!(record["launch_kwargs"]["env_vars"].get("SELKIES_MASTER_TOKEN").is_none());
+
+    // Explicit `false` behaves the same as absent.
+    sc.state.fake_provider_record.lock().unwrap().take();
+    let (status, body) = launch_file_path_over_http(
+        &sc,
+        &json!({
+            "application_id": "app-1",
+            "filename": "a.txt",
+            "launch_in_room_mode": false,
+        }),
+    )
+    .await;
+    assert_eq!(status, StatusCode::OK, "{body}");
+    let session_id = body["session_id"].as_str().unwrap().to_string();
+    {
+        let sessions = sc.state.sessions.read().await;
+        let session = sessions.get(&session_id).unwrap();
+        assert!(session.get("is_collaboration").is_none());
+    }
+    let record = sc.state.fake_provider_record.lock().unwrap().clone().unwrap();
+    assert!(record["launch_kwargs"].get("is_collaboration").is_none());
+}
+
+/// `file_path` launches must set `launch_context` the same way the
+/// file-upload path does, so session listings are consistent (ANT-234
+/// optional alignment).
+#[tokio::test]
+async fn test_file_path_launch_sets_file_launch_context() {
+    let _root = TempDir::new();
+    let mut sc = SecureClient::new(build_state(_root.path()).await);
+    sc.login("admin", "admin1234").await;
+    sc.handshake().await;
+    let (status, body) = launch_file_path_over_http(
+        &sc,
+        &json!({ "application_id": "app-1", "filename": "a.txt" }),
+    )
+    .await;
+    assert_eq!(status, StatusCode::OK, "{body}");
+    let session_id = body["session_id"].as_str().unwrap().to_string();
+    {
+        let sessions = sc.state.sessions.read().await;
+        let session = sessions.get(&session_id).unwrap();
+        assert_eq!(
+            session["launch_context"],
+            json!({ "type": "file", "value": "a.txt" })
+        );
+    }
+    let record = sc.state.fake_provider_record.lock().unwrap().clone().unwrap();
+    assert_eq!(
+        record["launch_kwargs"]["env_vars"]["VRECKAN_FILE"].as_str().unwrap(),
+        &format!("{}/Desktop/files/a.txt", sc.state.settings.container_config_path)
+    );
 }
 
 // ---------------------------------------------------------------------------

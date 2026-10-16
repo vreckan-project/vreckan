@@ -98,7 +98,7 @@
     "cleanroom": "클린룸",
     "roomMode": "룸 모드에서 시작",
     "wayland": "Wayland",
-    "savePreset": "이 시작 옵션을 프리셋으로 저장",
+    "savePreset": "프리셋으로 저장",
     "uploadStorage": "파일을 공유 저장소에 업로드",
     "pinned": "고정됨",
     "activeSessions": "활성 세션",
@@ -123,7 +123,10 @@
     "uploadingProgress": "업로드 중… {done}/{total}",
     "launching": "시작 중…",
     "finalizing": "마무리 중…",
-    "fileUploaded": "파일 '{name}' 업로드됨."
+    "fileUploaded": "파일 '{name}' 업로드됨.",
+    "urlToOpen": "열 URL",
+    "urlRequired": "열 URL을 입력하세요.",
+    "options": "시작 옵션"
   },
   "password": {
     "title": "비밀번호 변경",

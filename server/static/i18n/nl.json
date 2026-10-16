@@ -98,7 +98,7 @@
     "cleanroom": "Cleanroom",
     "roomMode": "Start in kamermode",
     "wayland": "Wayland",
-    "savePreset": "Sla deze startopties op als preset",
+    "savePreset": "Opslaan als preset",
     "uploadStorage": "Laad een bestand op naar de gedeelde opslag",
     "pinned": "Vastgezet",
     "activeSessions": "Actieve sessies",
@@ -123,7 +123,10 @@
     "uploadingProgress": "Uploaden… {done}/{total}",
     "launching": "Starten…",
     "finalizing": "Afronden…",
-    "fileUploaded": "Bestand '{name}' geüpload."
+    "fileUploaded": "Bestand '{name}' geüpload.",
+    "urlToOpen": "URL om te openen",
+    "urlRequired": "Voer de URL in om te openen.",
+    "options": "Startopties"
   },
   "password": {
     "title": "Wachtwoord wijzigen",
