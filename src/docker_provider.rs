@@ -182,6 +182,7 @@ impl DockerProvider {
         session_id: &str,
         env_vars: HashMap<String, String>,
         volumes: HashMap<String, VolumeSpec>,
+        path_prefix_map: &HashMap<String, String>,
         gpu_config: Option<GpuInfo>,
         network: Option<String>,
         is_collaboration: bool,
@@ -304,7 +305,7 @@ impl DockerProvider {
                     );
                 }
                 Some("dri3") => {
-                    device_specs.push(format!("{}:{}", gpu.device, gpu.device));
+                    device_specs.push(dri3_device_spec(path_prefix_map, &gpu.device));
                     // Forward this process's supplementary groups (e.g. the host
                     // render/video group) so the app (running as PUID) can open
                     // the render node.
@@ -855,6 +856,19 @@ impl DockerProvider {
     }
 }
 
+/// Build the `host:container` device spec for a DRI3 render node. The
+/// container side keeps the detected in-container path; the host side goes
+/// through the same container->host prefix remap that volume binds use
+/// (identity when the server runs directly on the host, where the map is
+/// empty).
+fn dri3_device_spec(prefix_map: &HashMap<String, String>, device: &str) -> String {
+    format!(
+        "{}:{}",
+        crate::catalog::translate_path_to_host(prefix_map, device),
+        device
+    )
+}
+
 /// Parse a "host:container[:mode]" device spec into a `DeviceMapping`.
 fn parse_device_spec(spec: &str) -> Option<DeviceMapping> {
     let (host, cont) = spec.split_once(':')?;
@@ -947,4 +961,32 @@ fn read_supplementary_groups() -> Result<Vec<u64>, ()> {
 /// A short, log-friendly form of a container id.
 fn short_id(id: &str) -> &str {
     &id[..id.len().min(12)]
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// On the host there is no prefix map, so the spec is the detected path
+    /// on both sides (the historical behavior).
+    #[test]
+    fn dri3_device_spec_identity_without_prefix_map() {
+        assert_eq!(
+            dri3_device_spec(&HashMap::new(), "/dev/dri/renderD128"),
+            "/dev/dri/renderD128:/dev/dri/renderD128"
+        );
+    }
+
+    /// When the server's `/dev/dri` is a bind mount at a different host path,
+    /// the host side of the spec is remapped while the container side keeps
+    /// the detected path (ANT-234 bug 2).
+    #[test]
+    fn dri3_device_spec_remaps_host_side() {
+        let mut map = HashMap::new();
+        map.insert("/dev/dri".to_string(), "/mnt/host-dev/dri".to_string());
+        assert_eq!(
+            dri3_device_spec(&map, "/dev/dri/renderD128"),
+            "/mnt/host-dev/dri/renderD128:/dev/dri/renderD128"
+        );
+    }
 }

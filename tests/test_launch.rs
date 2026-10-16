@@ -68,6 +68,7 @@ struct LaunchArgs {
     env_vars: HashMap<String, String>,
     app_overrides: Option<Value>,
     launch_in_room_mode: bool,
+    wayland_mode: bool,
     session_name: Option<&'static str>,
     check_access: bool,
 }
@@ -81,6 +82,7 @@ impl Default for LaunchArgs {
             env_vars: HashMap::new(),
             app_overrides: None,
             launch_in_room_mode: false,
+            wayland_mode: true,
             session_name: None,
             check_access: true,
         }
@@ -114,7 +116,7 @@ async fn run_launch(sc: &mut SecureClient, args: LaunchArgs) -> (catalog::Launch
         true,
         None,
         args.launch_in_room_mode,
-        true,
+        args.wayland_mode,
         args.session_name,
         args.check_access,
     )
@@ -173,6 +175,49 @@ async fn test_launch_env_volumes_and_title() {
     assert_eq!(record_session["username"], "admin");
     assert_eq!(record_session["name"], "My Session");
     assert_eq!(record_session["container_registry"]["app-1"]["instance_id"], "ctr-1");
+}
+
+/// Wayland off must emit an explicit `PIXELFLUX_WAYLAND=false` so an
+/// image-baked `true` (e.g. linuxserver images) cannot survive (ANT-234
+/// bug 1). The existing test above covers the on -> "true" direction.
+#[tokio::test]
+async fn test_launch_wayland_off_sets_explicit_false() {
+    let _root = TempDir::new();
+    let mut sc = SecureClient::new(build_state(_root.path()).await);
+    let (_, record) = run_launch(
+        &mut sc,
+        LaunchArgs {
+            home_name: Some("default"),
+            wayland_mode: false,
+            ..Default::default()
+        },
+    )
+    .await;
+    assert_eq!(
+        record["launch_kwargs"]["env_vars"]["PIXELFLUX_WAYLAND"].as_str().unwrap(),
+        "false"
+    );
+}
+
+/// Wayland off must also keep the X11-side autostart wiring: no wayland
+/// suffix in the environment decision is out of scope here, but the session
+/// must record the flag it was launched with.
+#[tokio::test]
+async fn test_launch_wayland_off_recorded_on_session() {
+    let _root = TempDir::new();
+    let mut sc = SecureClient::new(build_state(_root.path()).await);
+    let (result, _) = run_launch(
+        &mut sc,
+        LaunchArgs {
+            home_name: Some("default"),
+            wayland_mode: false,
+            ..Default::default()
+        },
+    )
+    .await;
+    let sessions = sc.state.sessions.read().await;
+    let session = sessions.get(&result.session_id).unwrap();
+    assert_eq!(session["wayland_mode"], false);
 }
 
 #[tokio::test]
@@ -592,6 +637,37 @@ async fn test_file_path_launch_room_mode() {
     }
     let record = sc.state.fake_provider_record.lock().unwrap().clone().unwrap();
     assert!(record["launch_kwargs"].get("is_collaboration").is_none());
+}
+
+/// `file_path` launches must set `launch_context` the same way the
+/// file-upload path does, so session listings are consistent (ANT-234
+/// optional alignment).
+#[tokio::test]
+async fn test_file_path_launch_sets_file_launch_context() {
+    let _root = TempDir::new();
+    let mut sc = SecureClient::new(build_state(_root.path()).await);
+    sc.login("admin", "admin1234").await;
+    sc.handshake().await;
+    let (status, body) = launch_file_path_over_http(
+        &sc,
+        &json!({ "application_id": "app-1", "filename": "a.txt" }),
+    )
+    .await;
+    assert_eq!(status, StatusCode::OK, "{body}");
+    let session_id = body["session_id"].as_str().unwrap().to_string();
+    {
+        let sessions = sc.state.sessions.read().await;
+        let session = sessions.get(&session_id).unwrap();
+        assert_eq!(
+            session["launch_context"],
+            json!({ "type": "file", "value": "a.txt" })
+        );
+    }
+    let record = sc.state.fake_provider_record.lock().unwrap().clone().unwrap();
+    assert_eq!(
+        record["launch_kwargs"]["env_vars"]["VRECKAN_FILE"].as_str().unwrap(),
+        &format!("{}/Desktop/files/a.txt", sc.state.settings.container_config_path)
+    );
 }
 
 // ---------------------------------------------------------------------------
