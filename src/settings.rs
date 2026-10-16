@@ -76,9 +76,11 @@ pub const SETTING_DEFINITIONS: &[SettingDef] = &[
     // --- Login rate limiting ---
     SettingDef { name: "login_max_attempts", type_: "int", default: "5", help: "Failed logins from one (client IP, username) pair within the lockout window before the pair is temporarily locked out. 0 disables the limiter." },
     SettingDef { name: "login_lockout_seconds", type_: "int", default: "900", help: "Length of the failed-login window and of the temporary lockout (seconds)." },
+    SettingDef { name: "trusted_proxies", type_: "str", default: "", help: "Comma-separated IPs/CIDRs of reverse proxies that may sit in front of the server (e.g. '10.0.0.0/8, 192.168.1.5'). Only when the direct TCP peer matches this list is the leftmost `X-Forwarded-For` entry honoured for the login rate limiter; otherwise the direct peer address is used. Empty = trust no proxy (fail closed)." },
     // --- ACME (native acmex) ---
     SettingDef { name: "acme_enabled", type_: "bool", default: "false", help: "Issue ACME (Let's Encrypt / ZeroSSL / Google) certificates. When off, the server uses a self-signed certificate." },
-    SettingDef { name: "acme_ca", type_: "str", default: "letsencrypt", help: "The ACME certificate authority to use: 'letsencrypt' (default), 'zerossl', or 'google'. Only letsencrypt honours acme_staging (staging vs production)." },
+    SettingDef { name: "acme_ca", type_: "str", default: "letsencrypt", help: "The ACME certificate authority to use: 'letsencrypt' (default), 'zerossl', 'google', or a full custom ACME directory URL. Only letsencrypt honours acme_staging (staging vs production)." },
+    SettingDef { name: "acme_allow_http_ca", type_: "bool", default: "false", help: "Allow a plaintext http:// custom ACME directory URL (acme_ca). Off by default: https is required so the account-key JWSes and CA responses stay encrypted in transit (ANT-275)." },
     SettingDef { name: "acme_domains", type_: "str", default: "", help: "Comma-separated domain(s) to issue certificates for." },
     SettingDef { name: "acme_auth", type_: "str", default: "dns-cloudflare", help: "ACME challenge method: 'dns-cloudflare' (Cloudflare DNS-01) or 'http-01'." },
     SettingDef { name: "acme_cloudflare_email", type_: "str", default: "", help: "Account email for Let's Encrypt (used with Cloudflare DNS auth)." },
@@ -163,8 +165,14 @@ pub struct Settings {
     pub default_password_policy: String,
     pub login_max_attempts: i64,
     pub login_lockout_seconds: i64,
+    pub trusted_proxies: String,
+    /// The resolved `VRECKAN_ALLOW_DEFAULT_DB_CREDS` escape hatch (ANT-45
+    /// P2-6), captured at settings-build time so callers (startup guard,
+    /// default-password login policy) share one value.
+    pub default_db_creds_policy: DefaultDbCredsPolicy,
     pub acme_enabled: bool,
     pub acme_ca: String,
+    pub acme_allow_http_ca: bool,
     pub acme_domains: String,
     pub acme_auth: String,
     pub acme_cloudflare_email: String,
@@ -243,8 +251,11 @@ impl Settings {
             default_password_policy: get("default_password_policy"),
             login_max_attempts: get_int("login_max_attempts"),
             login_lockout_seconds: get_int("login_lockout_seconds"),
+            trusted_proxies: get("trusted_proxies"),
+            default_db_creds_policy: default_db_creds_policy(),
             acme_enabled: get_bool("acme_enabled"),
             acme_ca: get("acme_ca"),
+            acme_allow_http_ca: get_bool("acme_allow_http_ca"),
             acme_domains: get("acme_domains"),
             acme_auth: get("acme_auth"),
             acme_cloudflare_email: get("acme_cloudflare_email"),
@@ -319,6 +330,7 @@ impl Settings {
             "login_lockout_seconds" => self.login_lockout_seconds.to_string(),
             "acme_enabled" => self.acme_enabled.to_string(),
             "acme_ca" => self.acme_ca.clone(),
+            "acme_allow_http_ca" => self.acme_allow_http_ca.to_string(),
             "acme_domains" => self.acme_domains.clone(),
             "acme_auth" => self.acme_auth.clone(),
             "acme_cloudflare_email" => self.acme_cloudflare_email.clone(),
@@ -416,7 +428,7 @@ impl Settings {
     /// to their sqlx equivalents.
     fn normalize_url(url: &str) -> String {
         if url.starts_with("sqlite+") {
-            let after = url.splitn(2, ':').nth(1).unwrap_or("");
+            let after = url.split_once(':').map(|(_, after)| after).unwrap_or("");
             let sep = if after.contains('?') { "&" } else { "?" };
             let with_mode = if after.contains("mode=") {
                 after.to_string()
@@ -425,10 +437,10 @@ impl Settings {
             };
             format!("sqlite:{}", with_mode)
         } else if url.starts_with("postgresql+") || url.starts_with("postgres+") {
-            let rest = url.splitn(2, "://").nth(1).unwrap_or(url);
+            let rest = url.split_once("://").map(|(_, rest)| rest).unwrap_or(url);
             format!("postgres://{}", rest)
         } else if url.starts_with("mysql+") || url.starts_with("mariadb+") {
-            let rest = url.splitn(2, "://").nth(1).unwrap_or(url);
+            let rest = url.split_once("://").map(|(_, rest)| rest).unwrap_or(url);
             format!("mysql://{}", rest)
         } else {
             url.to_string()
@@ -503,10 +515,8 @@ pub fn default_db_creds_policy() -> DefaultDbCredsPolicy {
         .ok()
         .map(|s| s.trim().to_ascii_lowercase());
     match raw.as_deref() {
-        Some(v) if matches!(v, "1" | "true" | "yes" | "on" | "silent" | "allow") => {
-            DefaultDbCredsPolicy::Silent
-        }
-        Some(v) if matches!(v, "refuse" | "strict" | "fail") => DefaultDbCredsPolicy::Refuse,
+        Some("1" | "true" | "yes" | "on" | "silent" | "allow") => DefaultDbCredsPolicy::Silent,
+        Some("refuse" | "strict" | "fail") => DefaultDbCredsPolicy::Refuse,
         _ => DefaultDbCredsPolicy::Warn,
     }
 }

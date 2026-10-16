@@ -7,8 +7,8 @@
 //! HTTP-01). The resulting certificate chain + key are carried back to the
 //! caller in `AcmeIssueResult` so it can persist them to the config DB (the
 //! authoritative source of truth); they are also written as a best-effort
-//! mirror into the app's `/data/acme` layout (`live/{primary}/cert.pem` +
-//! `privkey.pem`) for backward compatibility.
+//! mirror into the app's `{data_root}/acme` layout
+//! (`live/{primary}/cert.pem` + `privkey.pem`) for backward compatibility.
 //!
 //! DNS-01 is routed through a small provider registry so a user can choose
 //! any of the DNS providers acmex ships (Cloudflare is the default; Route53,
@@ -17,6 +17,8 @@
 //! provider that owns its zone, so multi-domain and wildcard orders work.
 
 use std::collections::HashMap;
+use std::io::Write;
+use std::os::unix::fs::OpenOptionsExt;
 use std::sync::{Arc, Mutex};
 
 use async_trait::async_trait;
@@ -62,6 +64,31 @@ pub fn ca_directory(ca: &str, staging: bool) -> String {
     }
 }
 
+/// The built-in CA identifiers everything else is a custom directory URL for.
+pub const KNOWN_CA_IDS: &[&str] = &["letsencrypt", "zerossl", "google", "google-public-certs"];
+
+/// Resolve the ACME directory URL for `ca`, enforcing the scheme policy for
+/// custom URLs (ANT-275): any value that is not one of [`KNOWN_CA_IDS`] is
+/// treated as a full directory URL and must use `https://` unless
+/// `allow_http_ca` explicitly opts in to plaintext `http://` (which would
+/// expose the account-key JWSes and CA responses in transit). Fails before
+/// any network I/O so a misconfigured CA never leaks to the wire.
+pub fn resolve_ca_directory(ca: &str, staging: bool, allow_http_ca: bool) -> Result<String, String> {
+    if KNOWN_CA_IDS.contains(&ca.trim().to_ascii_lowercase().as_str()) {
+        return Ok(ca_directory(ca, staging));
+    }
+    let url = ca.trim();
+    if url.is_empty() {
+        return Err("custom ACME CA must be a full directory URL (https://…)".to_string());
+    }
+    if url.starts_with("https://") || (allow_http_ca && url.starts_with("http://")) {
+        return Ok(url.to_string());
+    }
+    Err(format!(
+        "custom ACME CA directory {url} must use https:// unless acme_allow_http_ca is enabled (plaintext http:// exposes the account-key JWSes and CA responses)"
+    ))
+}
+
 fn normalize_name(name: &str) -> String {
     name.trim().trim_end_matches('.').to_ascii_lowercase()
 }
@@ -72,6 +99,12 @@ fn normalize_name(name: &str) -> String {
 /// to the provider registered for `example.com`.
 pub struct DnsProviderRegistry {
     providers: HashMap<String, Arc<dyn DnsProvider>>,
+}
+
+impl Default for DnsProviderRegistry {
+    fn default() -> Self {
+        Self::new()
+    }
 }
 
 impl DnsProviderRegistry {
@@ -477,9 +510,44 @@ async fn discover_cloudflare_zone(token: &str, domain: &str) -> Result<String, S
     Ok(best.map(|(_, id)| id).unwrap_or_default())
 }
 
-/// The on-disk location of the persisted ACME account key.
-pub fn account_key_path() -> String {
-    format!("{}/acme-account.key", crate::acme_orchestrator::app_cert_dir())
+/// The on-disk location of the persisted ACME account key (lives in the
+/// app-side cert dir derived from the configured data root, ANT-273).
+pub fn account_key_path(dir: &str) -> String {
+    format!("{dir}/acme-account.key")
+}
+
+/// Write `pem` to `path` owner-only (`0600`), closing the create-then-chmod
+/// race (ANT-274): a fresh file is created owner-only from the first byte,
+/// while a replacement of an existing file (e.g. one left world-readable by
+/// an older version) is rewritten and re-chmodded to `0600`. A failed chmod
+/// is logged instead of swallowed, so a key that could not be tightened is
+/// diagnosable from the log.
+fn write_owner_only(path: &str, pem: &str) -> std::io::Result<()> {
+    match std::fs::OpenOptions::new()
+        .create_new(true)
+        .write(true)
+        .mode(0o600)
+        .open(path)
+    {
+        Ok(mut file) => file.write_all(pem.as_bytes()),
+        // The file exists (or appeared in the meantime): rewrite and
+        // tighten.
+        Err(e) if e.kind() == std::io::ErrorKind::AlreadyExists => {
+            let mut file = std::fs::OpenOptions::new()
+                .write(true)
+                .truncate(true)
+                .open(path)?;
+            file.write_all(pem.as_bytes())?;
+            if let Err(c) = std::fs::set_permissions(
+                path,
+                std::os::unix::fs::PermissionsExt::from_mode(0o600),
+            ) {
+                warn!("could not tighten {path} to 0600: {c}");
+            }
+            Ok(())
+        }
+        Err(e) => Err(e),
+    }
 }
 
 /// Load the persisted ACME account key, or generate and persist a new one.
@@ -492,8 +560,8 @@ pub fn account_key_path() -> String {
 /// (ANT-138). A persisted key of any other type is replaced — its ACME
 /// account, if one was ever registered, is simply orphaned and a new
 /// account is registered under the new key.
-pub async fn load_or_create_account_key() -> Result<KeyPair, String> {
-    let path = account_key_path();
+pub async fn load_or_create_account_key(dir: &str) -> Result<KeyPair, String> {
+    let path = account_key_path(dir);
     if let Ok(kp) = KeyPair::load_from_file(&path) {
         match KeyType::for_key_pair(&kp.0) {
             Ok(KeyType::EcdsaP256) => {
@@ -514,11 +582,10 @@ pub async fn load_or_create_account_key() -> Result<KeyPair, String> {
     if let Some(parent) = std::path::Path::new(&path).parent() {
         let _ = std::fs::create_dir_all(parent);
     }
-    kp.save_to_file(&path).map_err(|e| e.to_string())?;
-    let _ = std::fs::set_permissions(
-        &path,
-        std::os::unix::fs::PermissionsExt::from_mode(0o600),
-    );
+    // Owner-only from the first byte (ANT-274): the previous write-then-chmod
+    // left a world-readable window on first write, and `let _ =` swallowed
+    // chmod failures on odd filesystems.
+    write_owner_only(&path, &kp.serialize_pem()).map_err(|e| e.to_string())?;
     info!("Generated and persisted new ACME account key (ECDSA P-256) at {path}");
     Ok(kp)
 }
@@ -533,6 +600,11 @@ pub struct IssueArgs<'a> {
     pub provider: &'a str,
     pub domains: Vec<String>,
     pub registry: Arc<DnsProviderRegistry>,
+    /// Configurable persistent data root; the account key and the on-disk
+    /// cert mirror live under `{data_root}/acme` (ANT-273).
+    pub data_root: &'a str,
+    /// Allow a plaintext `http://` custom CA directory URL (ANT-275).
+    pub allow_http_ca: bool,
 }
 
 /// The outcome of an issuance attempt.
@@ -552,7 +624,7 @@ pub struct AcmeIssueResult {
 /// fulfil the chosen challenge. On success the issued certificate chain and
 /// private key are carried back in the result (for the caller to persist to
 /// the config DB — the authoritative store) and also written as a best-effort
-/// on-disk mirror in the `/data/acme` layout. Collects human-readable milestone
+/// on-disk mirror in the `{data_root}/acme` layout. Collects human-readable milestone
 /// `logs` so the result can be surfaced to the user (the original "button did
 /// nothing" complaint).
 pub async fn issue_certificate(args: &IssueArgs<'_>) -> AcmeIssueResult {
@@ -565,7 +637,8 @@ pub async fn issue_certificate(args: &IssueArgs<'_>) -> AcmeIssueResult {
         }};
     }
 
-    let key_pair = match load_or_create_account_key().await {
+    let cert_dir = crate::acme_orchestrator::app_cert_dir_from(args.data_root);
+    let key_pair = match load_or_create_account_key(&cert_dir).await {
         Ok(k) => {
             log!("Account key ready.");
             k
@@ -575,7 +648,19 @@ pub async fn issue_certificate(args: &IssueArgs<'_>) -> AcmeIssueResult {
         }
     };
 
-    let directory = ca_directory(args.ca, args.staging);
+    let directory = match resolve_ca_directory(args.ca, args.staging, args.allow_http_ca) {
+        Ok(url) => url,
+        Err(e) => {
+            warn!(target: "acme", "{e}");
+            return AcmeIssueResult {
+                ok: false,
+                logs: logs.join("\n"),
+                error: Some(e),
+                cert_pem: None,
+                key_pem: None,
+            };
+        }
+    };
     let mut config = AcmeConfig::new(directory.clone());
     if !args.email.is_empty() {
         config = config.with_contact(Contact::email(args.email));
@@ -615,10 +700,7 @@ pub async fn issue_certificate(args: &IssueArgs<'_>) -> AcmeIssueResult {
             let cert_pem = bundle.certificate_pem.clone();
             let key_pem = bundle.private_key_pem.clone();
             let primary = args.domains.first().cloned().unwrap_or_default();
-            let live = format!(
-                "{}/live/{primary}",
-                crate::acme_orchestrator::app_cert_dir()
-            );
+            let live = format!("{cert_dir}/live/{primary}");
             // Best-effort on-disk mirror (backward compat with the certbot
             // layout); the DB is authoritative, so a write failure is a
             // warning, not an issuance failure.
@@ -627,7 +709,12 @@ pub async fn issue_certificate(args: &IssueArgs<'_>) -> AcmeIssueResult {
             }
             let cert_path = format!("{live}/cert.pem");
             let key_path = format!("{live}/privkey.pem");
-            if let Err(e) = bundle.save_to_files(&cert_path, &key_path) {
+            // Both mirror files land 0600 through the same owner-only write as
+            // the account key (ANT-274); `privkey.pem` is the same key TLS
+            // serves, so it must not sit at the process umask.
+            let mirror = write_owner_only(&cert_path, &cert_pem)
+                .and_then(|()| write_owner_only(&key_path, &key_pem));
+            if let Err(e) = mirror {
                 warn!("best-effort cert mirror write failed (DB is authoritative): {e}");
             } else {
                 log!("Certificate mirror written to {cert_path} (key {key_path}).");
@@ -690,6 +777,7 @@ pub fn dns_provider_choices() -> Value {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use std::os::unix::fs::PermissionsExt;
 
     #[test]
     fn ca_directory_maps_lets_encrypt() {
@@ -736,5 +824,124 @@ mod tests {
             .find(|x| x.get("id") == Some(&json!("cloudflare")))
             .expect("cloudflare present");
         assert_eq!(cf.get("default"), Some(&json!(true)));
+    }
+
+    // --- ANT-274: owner-only key/mirror files ---
+
+    fn file_mode(path: &std::path::Path) -> u32 {
+        std::fs::metadata(path).unwrap().permissions().mode() & 0o777
+    }
+
+    fn temp_acme_dir() -> std::path::PathBuf {
+        let dir = std::env::temp_dir().join(format!("ant274-acme-{}", uuid::Uuid::new_v4()));
+        std::fs::create_dir_all(&dir).unwrap();
+        dir
+    }
+
+    #[test]
+    fn write_owner_only_fresh_file_lands_0600() {
+        let dir = temp_acme_dir();
+        let path = dir.join("acme-account.key");
+        write_owner_only(path.to_str().unwrap(), "PEM-DATA").unwrap();
+        assert_eq!(file_mode(&path), 0o600, "fresh key file must be owner-only");
+        assert_eq!(std::fs::read_to_string(&path).unwrap(), "PEM-DATA");
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn write_owner_only_replacement_retightens_to_0600() {
+        let dir = temp_acme_dir();
+        let path = dir.join("acme-account.key");
+        // A key left world-readable by an older version (write at umask, no
+        // chmod).
+        std::fs::write(&path, "OLD").unwrap();
+        std::fs::set_permissions(&path, std::os::unix::fs::PermissionsExt::from_mode(0o644)).unwrap();
+        write_owner_only(path.to_str().unwrap(), "NEW").unwrap();
+        assert_eq!(file_mode(&path), 0o600, "replacement must re-tighten to 0600");
+        assert_eq!(std::fs::read_to_string(&path).unwrap(), "NEW");
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    #[tokio::test]
+    async fn load_or_create_account_key_fresh_key_lands_0600() {
+        let dir = temp_acme_dir();
+        let kp = load_or_create_account_key(dir.to_str().unwrap()).await.unwrap();
+        assert_eq!(
+            KeyType::for_key_pair(&kp.0).unwrap(),
+            KeyType::EcdsaP256,
+            "new account key must be ECDSA P-256"
+        );
+        let key = account_key_path(dir.to_str().unwrap());
+        assert_eq!(file_mode(std::path::Path::new(&key)), 0o600, "account key must land 0600");
+        // Round-trip: the persisted key reloads and is the same key.
+        let reloaded = KeyPair::load_from_file(&key).unwrap();
+        assert_eq!(reloaded.serialize_pem(), kp.serialize_pem());
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    #[tokio::test]
+    async fn load_or_create_account_key_replaces_wrong_type_key_and_retightens() {
+        let dir = temp_acme_dir();
+        let key = account_key_path(dir.to_str().unwrap());
+        // Seed a world-readable Ed25519 key (the pre-fix shape).
+        let ed = KeyPair(KeyPairGenerator::ed25519().generate().unwrap());
+        ed.save_to_file(&key).unwrap();
+        std::fs::set_permissions(&key, std::os::unix::fs::PermissionsExt::from_mode(0o644)).unwrap();
+        let kp = load_or_create_account_key(dir.to_str().unwrap()).await.unwrap();
+        assert_eq!(
+            KeyType::for_key_pair(&kp.0).unwrap(),
+            KeyType::EcdsaP256,
+            "wrong-type key must be replaced with ECDSA P-256"
+        );
+        assert_eq!(file_mode(std::path::Path::new(&key)), 0o600, "replacement must land 0600");
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn cert_mirror_files_land_0600() {
+        let dir = temp_acme_dir();
+        let live = format!("{}/live/example.com", dir.display());
+        std::fs::create_dir_all(&live).unwrap();
+        let cert_path = format!("{live}/cert.pem");
+        let key_path = format!("{live}/privkey.pem");
+        write_owner_only(&cert_path, "CERT-PEM").unwrap();
+        write_owner_only(&key_path, "KEY-PEM").unwrap();
+        assert_eq!(file_mode(std::path::Path::new(&cert_path)), 0o600);
+        assert_eq!(file_mode(std::path::Path::new(&key_path)), 0o600);
+        // Re-issuance overwrites both in place and keeps them 0600.
+        write_owner_only(&cert_path, "CERT-PEM-v2").unwrap();
+        write_owner_only(&key_path, "KEY-PEM-v2").unwrap();
+        assert_eq!(std::fs::read_to_string(&cert_path).unwrap(), "CERT-PEM-v2");
+        assert_eq!(file_mode(std::path::Path::new(&cert_path)), 0o600);
+        assert_eq!(file_mode(std::path::Path::new(&key_path)), 0o600);
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn resolve_ca_directory_passthrough_for_known_cas() {
+        assert!(resolve_ca_directory("letsencrypt", true, false)
+            .unwrap()
+            .contains("acme-staging-v02"));
+        assert!(resolve_ca_directory("Google", false, false)
+            .unwrap()
+            .contains("dv.google.com"));
+        assert!(resolve_ca_directory("zerossl", false, false).is_ok());
+    }
+
+    #[test]
+    fn resolve_ca_directory_custom_requires_https() {
+        let https = "https://acme.internal.example:14000/directory";
+        let http = "http://acme.internal.example:14000/directory";
+        // https is always fine, with or without the opt-in.
+        assert_eq!(resolve_ca_directory(https, false, false).unwrap(), https);
+        assert_eq!(resolve_ca_directory(https, false, true).unwrap(), https);
+        // plaintext http is rejected unless the admin explicitly opts in.
+        let err = resolve_ca_directory(http, false, false).unwrap_err();
+        assert!(err.contains("https://"), "{err}");
+        assert!(err.contains("acme_allow_http_ca"), "{err}");
+        assert_eq!(resolve_ca_directory(http, false, true).unwrap(), http);
+        // A bare hostname is not a URL; whitespace-only is empty.
+        assert!(resolve_ca_directory("acme.internal.example", false, true).is_err());
+        assert!(resolve_ca_directory("   ", false, true).is_err());
     }
 }

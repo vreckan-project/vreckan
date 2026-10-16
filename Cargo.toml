@@ -1,6 +1,6 @@
 [package]
 name = "vreckan"
-version = "0.6.5"
+version = "0.7.0"
 edition = "2021"
 description = "Vreckan server (Rust port of the Python/FastAPI server)"
 # MPL-2.0 to match the upstream SealSkin fork this project derives from (see
@@ -173,9 +173,12 @@ tokio-rustls = "0.26"
 #      existing record instead of failing the issuance.
 # We generate ECDSA P-256 account keys (ES256), accepted by all three
 # supported CAs. Revert to the crates.io release once the fixes ship in a
-# published version.
+# published version. The pin is the `vreckan-2026-10-16` tag (ANT-275) on the
+# company-owned fork — a force-push of the branch no longer changes what we
+# build, and Cargo.lock additionally records the resolved commit sha, so a
+# moved tag shows up as a lockfile diff until the next `cargo update`.
 [patch.crates-io]
-acmex = { git = "https://github.com/antitux/acmex", rev = "261817d654bff17e730421861c4a71a57d904c88" }
+acmex = { git = "https://github.com/antitux/acmex", tag = "vreckan-2026-10-16" }
 
 [profile.release]
 opt-level = 3

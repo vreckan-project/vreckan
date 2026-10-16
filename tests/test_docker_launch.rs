@@ -144,7 +144,7 @@ async fn test_launch_stop_lifecycle() {
     let client = bollard::Docker::connect_with_local_defaults().unwrap();
     let launched: Arc<Mutex<Vec<String>>> = Arc::new(Mutex::new(Vec::new()));
     let launched2 = launched.clone();
-    let result: Result<(), String> = (|| async {
+    let result: Result<(), String> = async {
         let (status, body) = sc
             .call("POST", "/api/launch/simple", Some(&json!({ "application_id": app_id })))
             .await;
@@ -197,8 +197,7 @@ async fn test_launch_stop_lifecycle() {
         assert!(!sc.state.sessions.read().await.contains_key(&session_id));
         assert!(client.inspect_container(&instance_id, None).await.is_err());
         Ok(())
-    })()
-    .await;
+    }.await;
     let ids = launched.lock().unwrap().clone();
     if let Err(e) = result {
         force_cleanup(&client, &ids).await;
@@ -225,7 +224,7 @@ async fn test_no_gpu_app_gets_no_device_passthrough() {
     let client = bollard::Docker::connect_with_local_defaults().unwrap();
     let launched: Arc<Mutex<Vec<String>>> = Arc::new(Mutex::new(Vec::new()));
     let launched2 = launched.clone();
-    let result: Result<(), String> = (|| async {
+    let result: Result<(), String> = async {
         let (status, body) = sc
             .call("POST", "/api/launch/simple", Some(&json!({ "application_id": app_id })))
             .await;
@@ -260,8 +259,7 @@ async fn test_no_gpu_app_gets_no_device_passthrough() {
             .unwrap_or_default();
         assert!(!env.iter().any(|e| e.starts_with("DRI_NODE=")));
         Ok(())
-    })()
-    .await;
+    }.await;
     let ids = launched.lock().unwrap().clone();
     if let Err(e) = result {
         force_cleanup(&client, &ids).await;

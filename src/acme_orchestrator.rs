@@ -10,8 +10,8 @@
 //!
 //! The issued certificate (cert chain + private key + metadata) lives in the
 //! config **database** as the source of truth and persists across restarts; a
-//! best-effort mirror is also written to the app's `/data/acme` storage (the
-//! `live/{primary}/` layout shared with the retired certbot flow) for
+//! best-effort mirror is also written to the app's `{data_root}/acme` storage
+//! (the `live/{primary}/` layout shared with the retired certbot flow) for
 //! backward compatibility.
 
 use std::sync::{Arc, Mutex};
@@ -25,8 +25,8 @@ use crate::state::AppState;
 
 /// Where the app reads issued certificates from. A `static` (not a plain
 /// `const`) so tests can point it at a temp tree — mirroring the Python test's
-/// `monkeypatch.setattr(acme_orchestrator, "ACME_CERT_DIR", ...)`. `None` means "use the
-/// default `/data/acme`".
+/// `monkeypatch.setattr(acme_orchestrator, "ACME_CERT_DIR", ...)`. `None`
+/// means "derive `{data_root}/acme` from the configured data root".
 pub static ACME_CERT_DIR: std::sync::RwLock<Option<String>> = std::sync::RwLock::new(None);
 /// Where the app looks for a host-provided /etc/letsencrypt (checked first).
 /// A `static` so tests can point it at a temp tree (mirrors the Python
@@ -34,13 +34,17 @@ pub static ACME_CERT_DIR: std::sync::RwLock<Option<String>> = std::sync::RwLock:
 /// `None` means "use the default `/etc/letsencrypt`".
 pub static ACME_HOST_CERT_DIR: std::sync::RwLock<Option<String>> = std::sync::RwLock::new(None);
 
-/// The effective app-side cert dir (test override or the default `/data/acme`).
-pub fn app_cert_dir() -> String {
-    ACME_CERT_DIR
+/// The effective app-side cert dir: the test override when set, otherwise
+/// `{data_root}/acme` derived from the configured data root (ANT-273).
+pub fn app_cert_dir_from(data_root: &str) -> String {
+    if let Some(dir) = ACME_CERT_DIR
         .read()
         .unwrap_or_else(std::sync::PoisonError::into_inner)
         .clone()
-        .unwrap_or_else(|| "/data/acme".to_string())
+    {
+        return dir;
+    }
+    format!("{data_root}/acme")
 }
 /// The effective host-side cert dir (test override or the default
 /// `/etc/letsencrypt`).
@@ -61,6 +65,7 @@ pub fn host_cert_dir() -> String {
 pub struct AcmeConfig {
     pub acme_enabled: bool,
     pub acme_ca: String,
+    pub acme_allow_http_ca: bool,
     pub acme_domains: String,
     pub acme_auth: String,
     pub acme_staging: bool,
@@ -72,6 +77,9 @@ pub struct AcmeConfig {
     pub acme_dns_provider: String,
     pub acme_cloudflare_zone_id: String,
     pub acme_dns_provider_config: String,
+    /// Configurable persistent data root; the app-side cert dir is derived
+    /// from it as `{data_root}/acme` (ANT-273).
+    pub data_root: String,
 }
 
 /// Build the *effective* ACME settings (``app_settings`` DB override → env →
@@ -82,6 +90,8 @@ pub async fn effective_acme_config(state: &AppState) -> AcmeConfig {
     let acme_enabled = s.get_setting(db, "acme_enabled").await.as_bool().unwrap_or(false);
     let acme_ca = s.get_setting(db, "acme_ca").await.as_str().unwrap_or("").to_string();
     let acme_ca = if acme_ca.is_empty() { "letsencrypt".to_string() } else { acme_ca };
+    let acme_allow_http_ca =
+        s.get_setting(db, "acme_allow_http_ca").await.as_bool().unwrap_or(false);
     let acme_domains = s.get_setting(db, "acme_domains").await.as_str().unwrap_or("").to_string();
     let acme_auth_raw = s.get_setting(db, "acme_auth").await.as_str().unwrap_or("").to_string();
     let acme_auth = if acme_auth_raw.is_empty() {
@@ -139,6 +149,7 @@ pub async fn effective_acme_config(state: &AppState) -> AcmeConfig {
     AcmeConfig {
         acme_enabled,
         acme_ca,
+        acme_allow_http_ca,
         acme_domains,
         acme_auth,
         acme_staging,
@@ -150,6 +161,7 @@ pub async fn effective_acme_config(state: &AppState) -> AcmeConfig {
         acme_dns_provider,
         acme_cloudflare_zone_id,
         acme_dns_provider_config,
+        data_root: s.data_root.clone(),
     }
 }
 
@@ -190,7 +202,32 @@ async fn build_issue_args<'a>(cfg: &'a AcmeConfig) -> Result<crate::acme::IssueA
         provider: &cfg.acme_dns_provider,
         domains,
         registry,
+        data_root: &cfg.data_root,
+        allow_http_ca: cfg.acme_allow_http_ca,
     })
+}
+
+/// Shrink an ACME error for client display (ANT-275). acmex errors can run
+/// long and embed the ACME directory URL — for a custom CA that may be an
+/// internal host we do not want to echo into the admin UI. The directory is
+/// replaced with a placeholder and the string is capped; the full error is
+/// kept in the server log at each call site. Idempotent.
+pub fn sanitize_acme_error(error: &str, cfg: &AcmeConfig) -> String {
+    let ca_l = cfg.acme_ca.trim().to_ascii_lowercase();
+    let known = crate::acme::KNOWN_CA_IDS.contains(&ca_l.as_str());
+    let dir = if known { String::new() } else { cfg.acme_ca.trim().to_string() };
+    let masked = if dir.is_empty() {
+        error.to_string()
+    } else {
+        error.replace(&dir, "<CA directory>")
+    };
+    const MAX_CLIENT_CHARS: usize = 512;
+    if masked.chars().count() <= MAX_CLIENT_CHARS {
+        return masked;
+    }
+    let mut out: String = masked.chars().take(MAX_CLIENT_CHARS).collect();
+    out.push('…');
+    out
 }
 
 /// Test seam: replace the real `crate::acme::issue_certificate` call with a
@@ -213,14 +250,14 @@ fn primary_domain(domains: &[String]) -> &str {
 
 /// Return the cert/key paths for the given domains, or `None` if no
 /// certificate is present. The host `/etc/letsencrypt` is checked first; the
-/// app-side path (`/data/acme`) is the fallback. Mirrors `cert_paths`.
-fn cert_paths(domains: &[String]) -> Option<(String, String, String)> {
+/// app-side path (`{data_root}/acme`) is the fallback. Mirrors `cert_paths`.
+fn cert_paths(domains: &[String], data_root: &str) -> Option<(String, String, String)> {
     let primary = primary_domain(domains);
     if primary.is_empty() {
         return None;
     }
     let host = host_cert_dir();
-    let app = app_cert_dir();
+    let app = app_cert_dir_from(data_root);
     for base in [host, app] {
         let cert = format!("{base}/live/{primary}/cert.pem");
         let key = format!("{base}/live/{primary}/privkey.pem");
@@ -379,11 +416,29 @@ fn status_json(source: &str, cert: &str, key: &str, exp: Option<i64>) -> Value {
     })
 }
 
+/// Elide the private-key PEM from a [`cert_status`] object for admin-UI
+/// responses (ANT-275): when the record is DB-sourced the `key` field is the
+/// full PEM, which we do not want sitting in the admin's browser. Disk
+/// fallbacks report a path instead of the key and are left as-is. Also
+/// records `key_length` so the UI can show the key is present.
+pub fn mask_status_key(status: &mut Value) {
+    if let Some(obj) = status.as_object_mut() {
+        if obj.get("source").and_then(|v| v.as_str()) == Some("acme_db") {
+            if let Some(key) = obj.get("key").and_then(|v| v.as_str()) {
+                let key_len = key.len();
+                obj.insert("key".into(), Value::String("(stored in config DB)".to_string()));
+                obj.insert("key_length".into(), Value::from(key_len));
+            }
+        }
+    }
+}
+
 /// Describe the current certificate for the given domains. The config DB is
 /// the source of truth: a persisted record is returned first (cert / key as
 /// PEM content, `source` = `"acme_db"`). When nothing is persisted yet, the
-/// disk layout (`/etc/letsencrypt`, then `/data/acme`) is used as a migration
-/// fallback (cert / key as on-disk paths, `source` = `"host"`/`"app"`).
+/// disk layout (`/etc/letsencrypt`, then `{data_root}/acme`) is used as a
+/// migration fallback (cert / key as on-disk paths, `source` =
+/// `"host"`/`"app"`).
 /// Mirrors `cert_status`.
 pub async fn cert_status(state: &AppState, domains: &[String]) -> Value {
     if let Some(rec) = acme_cert_record(state).await {
@@ -391,7 +446,7 @@ pub async fn cert_status(state: &AppState, domains: &[String]) -> Value {
             return status_json("acme_db", &rec.cert_pem, &rec.key_pem, rec.expires);
         }
     }
-    match cert_paths(domains) {
+    match cert_paths(domains, &state.settings.data_root) {
         Some((cert, key, base)) => {
             let source = if base == host_cert_dir() { "host" } else { "app" };
             status_json(source, &cert, &key, cert_expiry(&cert))
@@ -476,12 +531,13 @@ async fn run_acme_issue(state: &AppState, cfg: &AcmeConfig, status: &Value) -> V
     let args = match build_issue_args(cfg).await {
         Ok(a) => a,
         Err(e) => {
-            warn!("acmex issuance not configured: {e}");
+            let shown = sanitize_acme_error(&e, cfg);
+            warn!("acmex issuance not configured (full error): {e}");
             let mut result = status.clone();
             if let Some(obj) = result.as_object_mut() {
                 obj.insert("issued".into(), Value::Bool(false));
                 obj.insert("enabled".into(), Value::Bool(true));
-                obj.insert("error".into(), Value::String(e));
+                obj.insert("error".into(), Value::String(shown));
             }
             return result;
         }
@@ -526,7 +582,8 @@ async fn run_acme_issue(state: &AppState, cfg: &AcmeConfig, status: &Value) -> V
             obj.insert("logs".into(), Value::String(r.logs));
         }
         if let Some(err) = r.error {
-            obj.insert("error".into(), Value::String(err));
+            warn!("ACME issuance error (full): {err}");
+            obj.insert("error".into(), Value::String(sanitize_acme_error(&err, cfg)));
         }
     }
     result
@@ -578,13 +635,14 @@ async fn run_acme_renew(state: &AppState, cfg: &AcmeConfig, status: &Value) -> V
     let args = match build_issue_args(cfg).await {
         Ok(a) => a,
         Err(e) => {
-            warn!("acmex renewal not configured: {e}");
+            let shown = sanitize_acme_error(&e, cfg);
+            warn!("acmex renewal not configured (full error): {e}");
             let mut result = status.clone();
             if let Some(obj) = result.as_object_mut() {
                 obj.insert("renewed".into(), Value::Bool(false));
                 obj.insert("due".into(), Value::Bool(true));
                 obj.insert("enabled".into(), Value::Bool(true));
-                obj.insert("error".into(), Value::String(e));
+                obj.insert("error".into(), Value::String(shown));
             }
             return result;
         }
@@ -629,7 +687,8 @@ async fn run_acme_renew(state: &AppState, cfg: &AcmeConfig, status: &Value) -> V
             obj.insert("logs".into(), Value::String(r.logs));
         }
         if let Some(err) = r.error {
-            obj.insert("error".into(), Value::String(err));
+            warn!("ACME renewal error (full): {err}");
+            obj.insert("error".into(), Value::String(sanitize_acme_error(&err, cfg)));
         }
     }
     result
@@ -665,5 +724,59 @@ pub async fn background_acme_renewal_job(state: AppState) {
             cfg.acme_renew_check_hours.saturating_mul(3600) as u64,
         ))
         .await;
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn test_cfg(ca: &str) -> AcmeConfig {
+        AcmeConfig {
+            acme_enabled: true,
+            acme_ca: ca.to_string(),
+            acme_allow_http_ca: false,
+            acme_domains: "example.com".to_string(),
+            acme_auth: "dns-cloudflare".to_string(),
+            acme_staging: false,
+            acme_cloudflare_email: String::new(),
+            acme_cloudflare_token: String::new(),
+            acme_auto_renew: false,
+            acme_renew_check_hours: 6,
+            acme_renew_before_days: 30,
+            acme_dns_provider: "cloudflare".to_string(),
+            acme_cloudflare_zone_id: String::new(),
+            acme_dns_provider_config: String::new(),
+            data_root: "/data".to_string(),
+        }
+    }
+
+    #[test]
+    fn sanitize_caps_long_errors_and_masks_custom_ca_url() {
+        let dir = "http://acme.internal.example:14000/dir/acme/directory";
+        let cfg = test_cfg(dir);
+        let err = format!("{dir} order failed: {}", "x".repeat(2000));
+        let shown = sanitize_acme_error(&err, &cfg);
+        // The (possibly internal) CA URL is replaced, not echoed.
+        assert!(shown.contains("<CA directory>"), "{shown}");
+        assert!(!shown.contains("acme.internal.example"), "{shown}");
+        // The client-facing error is capped (512 chars + ellipsis).
+        assert!(shown.chars().count() <= 513, "{shown}");
+        // Re-sanitizing is a no-op.
+        assert_eq!(sanitize_acme_error(&shown, &cfg), shown);
+    }
+
+    #[test]
+    fn sanitize_keeps_known_ca_urls_intact() {
+        let cfg = test_cfg("letsencrypt");
+        let err = "https://acme-v02.api.letsencrypt.org/directory order failed: unauthorized";
+        let shown = sanitize_acme_error(err, &cfg);
+        assert_eq!(shown, err);
+    }
+
+    #[test]
+    fn sanitize_short_errors_pass_through() {
+        let cfg = test_cfg("letsencrypt");
+        assert_eq!(sanitize_acme_error("boom", &cfg), "boom");
     }
 }

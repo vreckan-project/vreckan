@@ -34,12 +34,12 @@ async fn main() -> anyhow::Result<()> {
     // and `default_db_creds_policy`). Runs before any DB/schema work so a
     // `Refuse` policy fails fast on the startup path.
     if settings.uses_default_postgres_creds() {
-        match vreckan::settings::default_db_creds_policy() {
+        match settings.default_db_creds_policy {
             vreckan::settings::DefaultDbCredsPolicy::Silent => {}
             vreckan::settings::DefaultDbCredsPolicy::Warn => tracing::warn!(
                 "using the bundled Postgres default credentials vreckan/vreckan; \
-                 set VRECKAN_DB_PASS (or VRECKAN_DATABASE_URL) to change them, or \
-                 VRECKAN_ALLOW_DEFAULT_DB_CREDS=1 to silence this (ANT-45 P2-6)"
+                  set VRECKAN_DB_PASS (or VRECKAN_DATABASE_URL) to change them, or \
+                  VRECKAN_ALLOW_DEFAULT_DB_CREDS=1 to silence this (ANT-45 P2-6)"
             ),
             vreckan::settings::DefaultDbCredsPolicy::Refuse => {
                 return Err(anyhow::anyhow!(
