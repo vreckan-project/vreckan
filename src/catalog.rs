@@ -1470,7 +1470,6 @@ pub async fn run_auto_update_tick(state: &AppState) {
     let mut tasks = Vec::new();
     for (image, image_apps) in by_image {
         let state = state.clone();
-        let enabled = enabled;
         tasks.push(tokio::spawn(async move {
             let (local_info, remote_digest) = if state
                 .fake_provider
