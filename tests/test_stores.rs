@@ -942,3 +942,350 @@ async fn test_launch_meta_customize_malformed_body() {
     assert_eq!(status, StatusCode::UNPROCESSABLE_ENTITY);
     assert!(body.unwrap()["detail"].as_str().unwrap().starts_with("Invalid request body"));
 }
+
+// ---------------------------------------------------------------------------
+// Image-metadata warm-up + update checks (ANT-269)
+// ---------------------------------------------------------------------------
+
+/// Install a firefox + a jellyfin app (the fake provider treats the firefox
+/// image as up to date and every other image as having an available update).
+async fn install_two_apps(sc: &SecureClient) {
+    sc.call(
+        "POST",
+        "/api/admin/apps/installed",
+        Some(&install_body("app-1", "Firefox", "lscr.io/linuxserver/firefox:latest")),
+    )
+    .await;
+    sc.call(
+        "POST",
+        "/api/admin/apps/installed",
+        Some(&install_body("app-2", "Jellyfin", "lscr.io/linuxserver/jellyfin:latest")),
+    )
+    .await;
+}
+
+/// Parse the installed-apps listing into a name -> row map.
+fn listing_by_name(listing: Value) -> HashMap<String, Value> {
+    listing
+        .as_array()
+        .unwrap()
+        .iter()
+        .map(|a| (a["name"].as_str().unwrap().to_string(), a.clone()))
+        .collect()
+}
+
+/// The startup warm-up (step 1, the ANT-266 root-cause fix) fills the
+/// metadata cache for pre-existing installed apps, so the table shows the
+/// image identity right after a restart — no user action needed. The builder
+/// runs the same call at state construction; here the apps are installed
+/// afterwards, so the test drives the helper directly (as main.rs does after
+/// `load_installed_apps`).
+#[tokio::test]
+async fn test_warm_image_metadata_populates_installed_list() {
+    let _root = TempDir::new();
+    let state = build_state(_root.path()).await;
+    let sc = admin_client(state).await;
+    sc.state.fake_provider.store(true, std::sync::atomic::Ordering::Relaxed);
+    sc.state.pull_noop.store(true, std::sync::atomic::Ordering::Relaxed);
+    install_two_apps(&sc).await;
+    vreckan::catalog::warm_image_metadata(&sc.state).await;
+    let (status, listing) = sc.call("GET", "/api/admin/apps/installed", None).await;
+    assert_eq!(status, StatusCode::OK);
+    let by_name = listing_by_name(listing.unwrap());
+    assert_eq!(by_name["Firefox"]["image_sha"], "sha256:local");
+    assert_eq!(by_name["Jellyfin"]["image_sha"], "sha256:local");
+    // The warm-up is inspection, not a check: the update fields stay null.
+    assert!(by_name["Firefox"]["update_available"].is_null());
+    assert!(by_name["Firefox"]["last_update_checked_at"].is_null());
+    assert!(by_name["Jellyfin"]["update_available"].is_null());
+    assert!(by_name["Jellyfin"]["last_update_checked_at"].is_null());
+    // The warm-up must not touch pull bookkeeping.
+    let ps = sc.state.pull_status.read().await;
+    assert!(ps.is_empty());
+}
+
+/// `check_update` persists the refreshed metadata and the update-check state
+/// (steps 2 + 6), so the installed-apps table reflects the Check result
+/// (cache-only fields: `update_available` / `last_update_checked_at`).
+#[tokio::test]
+async fn test_check_app_update_persists_check_state() {
+    let _root = TempDir::new();
+    let state = build_state(_root.path()).await;
+    let sc = admin_client(state).await;
+    sc.state.fake_provider.store(true, std::sync::atomic::Ordering::Relaxed);
+    sc.state.pull_noop.store(true, std::sync::atomic::Ordering::Relaxed);
+    install_two_apps(&sc).await;
+    // Up-to-date app.
+    let (status, data) = sc
+        .call("POST", "/api/admin/apps/installed/app-1/check_update", None)
+        .await;
+    assert_eq!(status, StatusCode::OK, "{data:?}");
+    // The `short_id` fix (step 3): the fake provider's short id is surfaced.
+    assert_eq!(data.unwrap()["current_sha"], "local123");
+    assert_eq!(data["update_available"], false);
+    // App with an available update.
+    let (status, data) = sc
+        .call("POST", "/api/admin/apps/installed/app-2/check_update", None)
+        .await;
+    assert_eq!(status, StatusCode::OK, "{data:?}");
+    assert_eq!(data.unwrap()["current_sha"], "local123");
+    assert_eq!(data["update_available"], true);
+    // The table now reflects both checks.
+    let (status, listing) = sc.call("GET", "/api/admin/apps/installed", None).await;
+    assert_eq!(status, StatusCode::OK);
+    let by_name = listing_by_name(listing.unwrap());
+    assert_eq!(by_name["Firefox"]["image_sha"], "sha256:local");
+    assert_eq!(by_name["Firefox"]["update_available"], false);
+    assert!(by_name["Firefox"]["last_update_checked_at"].is_number());
+    assert_eq!(by_name["Jellyfin"]["image_sha"], "sha256:local");
+    assert_eq!(by_name["Jellyfin"]["update_available"], true);
+    assert!(by_name["Jellyfin"]["last_update_checked_at"].is_number());
+    // The raw cache entry carries the registry digest too.
+    let meta = sc.state.image_metadata.read().await;
+    assert_eq!(
+        meta.get("lscr.io/linuxserver/jellyfin:latest")
+            .unwrap()
+            .get("remote_digest")
+            .and_then(|v| v.as_str()),
+        Some("sha256:remote")
+    );
+}
+
+/// `check_all_updates` persists per-app the same way (step 2, bulk).
+#[tokio::test]
+async fn test_check_all_updates_persists_check_state() {
+    let _root = TempDir::new();
+    let state = build_state(_root.path()).await;
+    let sc = admin_client(state).await;
+    sc.state.fake_provider.store(true, std::sync::atomic::Ordering::Relaxed);
+    sc.state.pull_noop.store(true, std::sync::atomic::Ordering::Relaxed);
+    install_two_apps(&sc).await;
+    let (status, data) = sc
+        .call("POST", "/api/admin/apps/installed/check_all_updates", None)
+        .await;
+    assert_eq!(status, StatusCode::OK, "{data:?}");
+    assert_eq!(data.unwrap()["updates_available"], 1);
+    let (status, listing) = sc.call("GET", "/api/admin/apps/installed", None).await;
+    assert_eq!(status, StatusCode::OK);
+    let by_name = listing_by_name(listing.unwrap());
+    assert_eq!(by_name["Firefox"]["update_available"], false);
+    assert!(by_name["Firefox"]["last_update_checked_at"].is_number());
+    assert_eq!(by_name["Jellyfin"]["update_available"], true);
+    assert!(by_name["Jellyfin"]["last_update_checked_at"].is_number());
+    // A check never claims a pull (that is the Update button's job).
+    let ps = sc.state.pull_status.read().await;
+    assert!(ps.is_empty());
+}
+
+/// A launch pulls a missing image on demand and now caches the pulled
+/// image's metadata (step 4, the launch-time `initialize` equivalent).
+#[tokio::test]
+async fn test_launch_caches_image_metadata() {
+    let _root = TempDir::new();
+    let state = build_state(_root.path()).await;
+    let mut sc = admin_client(state).await;
+    sc.state.fake_provider.store(true, std::sync::atomic::Ordering::Relaxed);
+    sc.state.pull_noop.store(true, std::sync::atomic::Ordering::Relaxed);
+    let app: vreckan::catalog::InstalledApp = serde_json::from_value(json!({
+        "id": "app-1",
+        "name": "Firefox",
+        "logo": "x",
+        "url": "x",
+        "source": "Test Store",
+        "source_app_id": "firefox",
+        "provider": "docker",
+        "home_directories": false,
+        "users": ["*"],
+        "groups": [],
+        "app_template": "Default",
+        "provider_config": {
+            "image": "lscr.io/linuxserver/firefox:latest",
+            "port": 3000,
+            "nvidia_support": false,
+            "dri3_support": false,
+            "type": "browser",
+            "url_support": false,
+            "open_support": false,
+            "extensions": [],
+        }
+    }))
+    .unwrap();
+    sc.state
+        .installed_apps
+        .write()
+        .await
+        .insert(app.id.clone(), app);
+    let settings =
+        vreckan::user_manager::get_effective_settings(&sc.state.db, "admin")
+            .await
+            .unwrap();
+    vreckan::catalog::launch_common(
+        &sc.state,
+        "app-1",
+        "admin",
+        &settings,
+        Some("cleanroom"),
+        HashMap::new(),
+        None,
+        None,
+        None,
+        None,
+        false,
+        None,
+        false,
+        false,
+        None,
+        false,
+    )
+    .await
+    .expect("launch_common failed");
+    // The launch-time pull is reflected in the metadata cache and the table.
+    let meta = sc.state.image_metadata.read().await;
+    assert_eq!(
+        meta.get("lscr.io/linuxserver/firefox:latest")
+            .and_then(|m| m.get("sha"))
+            .and_then(|v| v.as_str()),
+        Some("sha256:local")
+    );
+    let (status, listing) = sc.call("GET", "/api/admin/apps/installed", None).await;
+    assert_eq!(status, StatusCode::OK);
+    let by_name = listing_by_name(listing.unwrap());
+    assert_eq!(by_name["Firefox"]["image_sha"], "sha256:local");
+}
+
+/// One auto-update tick (step 7): refreshes the metadata cache with the
+/// local sha/digests + the registry digest, records `update_available`, and
+/// claims a background pull for opted-in apps that have an update — via the
+/// same `pull_status` + `do_pull_and_cache_image` path as the manual Update
+/// button.
+#[tokio::test]
+async fn test_auto_update_tick_persists_and_pulls() {
+    let _root = TempDir::new();
+    let state = build_state_with(_root.path(), |s| s.auto_update_apps = true).await;
+    let sc = admin_client(state).await;
+    sc.state.fake_provider.store(true, std::sync::atomic::Ordering::Relaxed);
+    sc.state.pull_noop.store(true, std::sync::atomic::Ordering::Relaxed);
+    install_two_apps(&sc).await;
+    vreckan::catalog::run_auto_update_tick(&sc.state).await;
+    let meta = sc.state.image_metadata.read().await;
+    let firefox = meta.get("lscr.io/linuxserver/firefox:latest").unwrap();
+    let jellyfin = meta.get("lscr.io/linuxserver/jellyfin:latest").unwrap();
+    assert_eq!(firefox["sha"], "sha256:local");
+    assert_eq!(firefox["update_available"], false);
+    assert!(firefox["last_checked_at"].is_number());
+    assert!(firefox["last_update_checked_at"].is_number());
+    assert_eq!(jellyfin["sha"], "sha256:local");
+    assert_eq!(jellyfin["update_available"], true);
+    assert_eq!(jellyfin["remote_digest"], "sha256:remote");
+    // The up-to-date image was not claimed; the updatable one was (the
+    // pull_noop hook leaves it "queued").
+    let ps = sc.state.pull_status.read().await;
+    assert!(!ps.contains_key("lscr.io/linuxserver/firefox:latest"));
+    assert_eq!(
+        ps.get("lscr.io/linuxserver/jellyfin:latest").map(|s| s.as_str()),
+        Some("queued")
+    );
+    // The table reflects the cached check state.
+    let (status, listing) = sc.call("GET", "/api/admin/apps/installed", None).await;
+    assert_eq!(status, StatusCode::OK);
+    let by_name = listing_by_name(listing.unwrap());
+    assert_eq!(by_name["Firefox"]["update_available"], false);
+    assert_eq!(by_name["Jellyfin"]["update_available"], true);
+}
+
+/// Apps that opted out of auto-update (`auto_update: false`, as for meta
+/// apps) are checked but not pulled.
+#[tokio::test]
+async fn test_auto_update_tick_skips_opted_out_apps() {
+    let _root = TempDir::new();
+    let state = build_state_with(_root.path(), |s| s.auto_update_apps = true).await;
+    let sc = admin_client(state).await;
+    sc.state.fake_provider.store(true, std::sync::atomic::Ordering::Relaxed);
+    sc.state.pull_noop.store(true, std::sync::atomic::Ordering::Relaxed);
+    sc.call(
+        "POST",
+        "/api/admin/apps/installed",
+        Some(&install_body("app-1", "Firefox", "lscr.io/linuxserver/firefox:latest")),
+    )
+    .await;
+    let mut body = install_body("app-2", "Jellyfin", "lscr.io/linuxserver/jellyfin:latest");
+    body["auto_update"] = json!(false);
+    sc.call("POST", "/api/admin/apps/installed", Some(&body)).await;
+    vreckan::catalog::run_auto_update_tick(&sc.state).await;
+    let meta = sc.state.image_metadata.read().await;
+    assert_eq!(
+        meta.get("lscr.io/linuxserver/jellyfin:latest")
+            .unwrap()
+            .get("update_available")
+            .and_then(|v| v.as_bool()),
+        Some(true),
+        "the app is still checked"
+    );
+    // But no pull was claimed for it.
+    let ps = sc.state.pull_status.read().await;
+    assert!(ps.is_empty(), "{:?}", ps);
+}
+
+/// `GET /api/admin/apps/auto_update_status` (step 7): the documented shape —
+/// effective settings, job bookkeeping (`null` before the first tick), the
+/// number of apps with an available update, and the number of opted-in apps.
+#[tokio::test]
+async fn test_auto_update_status_endpoint() {
+    let _root = TempDir::new();
+    let state = build_state_with(_root.path(), |s| s.auto_update_apps = true).await;
+    let sc = admin_client(state).await;
+    sc.state.fake_provider.store(true, std::sync::atomic::Ordering::Relaxed);
+    sc.state.pull_noop.store(true, std::sync::atomic::Ordering::Relaxed);
+    install_two_apps(&sc).await;
+    // Before the first tick completes (e.g. right after a restart), the
+    // bookkeeping is null.
+    let (status, data) = sc
+        .call("GET", "/api/admin/apps/auto_update_status", None)
+        .await;
+    assert_eq!(status, StatusCode::OK, "{data:?}");
+    let data = data.unwrap();
+    assert_eq!(data["enabled"], true);
+    assert_eq!(data["interval_seconds"], 3600);
+    assert!(data["last_check_at"].is_null());
+    assert!(data["next_check_at"].is_null());
+    assert_eq!(data["updates_available"], 0);
+    assert_eq!(data["auto_update_apps_count"], 2);
+    // One tick: one app (jellyfin) has an available update; the job
+    // bookkeeping reflects the completed tick.
+    vreckan::catalog::run_auto_update_tick(&sc.state).await;
+    let now = 1_700_000_000.0_f64;
+    let mut job = sc.state.auto_update_job.write().await;
+    job.last_check_at = Some(now);
+    job.next_check_at = Some(now + 3600.0);
+    let (status, data) = sc
+        .call("GET", "/api/admin/apps/auto_update_status", None)
+        .await;
+    assert_eq!(status, StatusCode::OK, "{data:?}");
+    let data = data.unwrap();
+    assert_eq!(data["enabled"], true);
+    assert_eq!(data["interval_seconds"], 3600);
+    assert_eq!(data["last_check_at"], Value::from(now));
+    assert_eq!(data["next_check_at"], Value::from(now + 3600.0));
+    assert_eq!(data["updates_available"], 1);
+    assert_eq!(data["auto_update_apps_count"], 2);
+}
+
+/// When `auto_update_apps` is off (the test-suite default), the status
+/// endpoint reports the disabled job with a no-op tick cadence.
+#[tokio::test]
+async fn test_auto_update_status_disabled() {
+    let _root = TempDir::new();
+    let state = build_state(_root.path()).await;
+    let sc = admin_client(state).await;
+    let (status, data) = sc
+        .call("GET", "/api/admin/apps/auto_update_status", None)
+        .await;
+    assert_eq!(status, StatusCode::OK, "{data:?}");
+    let data = data.unwrap();
+    assert_eq!(data["enabled"], false);
+    assert_eq!(data["interval_seconds"], 3600);
+    assert!(data["last_check_at"].is_null());
+    assert!(data["next_check_at"].is_null());
+    assert_eq!(data["updates_available"], 0);
+    assert_eq!(data["auto_update_apps_count"], 0);
+}

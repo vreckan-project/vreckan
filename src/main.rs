@@ -93,6 +93,11 @@ async fn main() -> anyhow::Result<()> {
     catalog::load_sessions(&state).await;
     catalog::inspect_self_container(&state).await;
     catalog::load_installed_apps(&state).await;
+    // Warm the in-memory image-metadata cache so the installed-apps table
+    // shows each image's real identity right after a restart instead of
+    // "unknown" (ANT-266/ANT-269). Best-effort: a down Docker daemon is
+    // logged and the apps stay "unknown"; never fails startup.
+    catalog::warm_image_metadata(&state).await;
     catalog::load_app_stores(&state).await;
     catalog::load_app_templates(&state).await;
     catalog::detect_gpus(&state).await;
@@ -113,6 +118,14 @@ async fn main() -> anyhow::Result<()> {
     // is disabled or auto-renew is off. On a successful renewal it hot-reloads
     // the served cert in place. Mirrors the Python lifespan.
     tokio::spawn(acme_orchestrator::background_acme_renewal_job(state.clone()));
+
+    // App auto-update: started unconditionally; each tick re-reads
+    // `auto_update_apps` / `auto_update_interval_seconds` fresh (admin-editable,
+    // no restart needed) and no-ops when auto-update is disabled. The first
+    // tick runs immediately at startup: it re-warms the local image metadata
+    // and compares every installed image against its registry, auto-pulling
+    // opted-in apps that have an available update (ANT-269).
+    tokio::spawn(catalog::background_auto_update_job(state.clone()));
 
     // Build the router.
     let app = app::router(state);
