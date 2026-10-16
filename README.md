@@ -232,6 +232,7 @@ When `VRECKAN_LE_AUTH=dns-cloudflare`, the server writes the Cloudflare API toke
 - **[REWRITE_EVALUATION.md](./REWRITE_EVALUATION.md)** — the feasibility assessment that kicked off the Rust rewrite.
 - **[HISTORY.md](./HISTORY.md)** — the full record of the original SealSkin hard fork (pre-Rust).
 - **[CHANGELOG.md](./CHANGELOG.md)** — development log, newest first (post-fork).
+- **[AGENTS.md](./AGENTS.md)** — agent working conventions, including the public-GitHub @-mention rule.
 
 ## Details
 
