@@ -24,7 +24,7 @@ follow-up does not change the endpoint surface.
 | Backup/restore round-trip incl. chunked restore | ✅ matches |
 | Public shares, pinned behaviors, homedirs, app stores/templates | ✅ matches (cleanup jobs: G2) |
 | Web client (`server/static/`, 68 files) | ✅ **byte-identical** |
-| Test suite | 387 of 388 original tests ported 1:1 by name; 10 Rust-only additions; 2 originals missing (see below) |
+| Test suite | 388 original tests across 21 modules (baseline `e7b2de6`): 376 ported (367 by name, 9 renamed in the le_certbot→acme port); 12 originals without a Rust counterpart; 32 Rust-only additions (see below) |
 | Open gaps | **G1–G11** below (3× P1, 3× P2, 5× P3) |
 
 ## Open gaps
@@ -62,16 +62,40 @@ ANT-1.
 
 ## Test-suite parity notes
 
-All 20 Python test modules map 1:1 to Rust test modules by name, and every
-test name matches except:
+Verified against the Python baseline (`e7b2de6`, v0.5.0) on 2026-10-16
+(ANT-256): **21 Python test modules** against **21 Rust test modules**. All
+21 modules have a Rust counterpart; 20 match by name, and
+`test_le_certbot` became `test_acme` in the native acmex port (ANT-128),
+which also renamed part of the test names. Test-level picture:
 
-- **Missing in Rust:** `test_db::test_concurrent_saves_do_not_lose_data`
-  (10 concurrent full-replace session saves must not lose rows) — covers the
-  same area as G2's session handling; and `test_db::test_sessions_roundtrip`
-  (covered under a different name by `test_postgres::test_pg_sessions_roundtrip`,
-  so no functional gap).
-- **Rust-only additions (10):** extra share-deletion and `launch_from_storage`
-  edge tests in `test_files`, plus `test_admin_sso_in_catalog` in `test_rbac`.
+- **Ported: 376 of 388** — 367 under identical names (354 within
+  same-named modules, plus 13 original `test_le_certbot` names preserved
+  unchanged in `test_acme`), and 9 ported under renamed le→acme names
+  (incl. `test_effective_le_config_reads_env_defaults` →
+  `test_effective_acme_config_defaults`).
+- **Without a Rust counterpart: 12**
+  - `test_db::test_concurrent_saves_do_not_lose_data` (10 concurrent
+    full-replace session saves must not lose rows) — still a real gap;
+    covers the same area as G2's session handling.
+  - `test_db::test_sessions_roundtrip` — covered under a different name by
+    `test_postgres::test_pg_sessions_roundtrip`, so no functional gap.
+    (`test_postgres` is a baseline module, not a Rust addition: all 6 of
+    its tests map 1:1 by name in Rust.)
+  - 10 certbot-CLI tests in `test_le_certbot` (4× `test_certbot_args_*`,
+    6× `test_run_certbot_*`) — bound to the certbot subprocess the Rust
+    port replaced with native acmex (ANT-128); the corresponding
+    issue/renewal paths are exercised by the new `test_acme` tests.
+- **Rust-only additions: 32** — 12 in `test_acme` (DB-persisted cert
+  record, acmex error surfacing, per-CA/per-provider issue paths,
+  hot-reload of the served cert), 12 in `test_auth` (login rate limiting,
+  bootstrap must-change flag, default password policy), 2 in
+  `test_admin_misc` and 1 in `test_templates` (DB write failure → 500),
+  3 in `test_backup` (archive perms, auth-token hygiene in dumps), 1 in
+  `test_files` (pagination bounds), 1 in `test_security` (malformed E2EE
+  IV → 400). The 2026-10-12 audit's "10 additions" counted only the
+  then-current tree; note `test_admin_sso_in_catalog` in `test_rbac` is
+  **not** Rust-only — it exists in the baseline too, and `test_rbac` maps
+  1:1 by name (41/41).
 
 Port the concurrent-saves test together with the G2 fix; run `cargo test` as
 part of closing any gap that touches startup, sessions, or DB writes (the
