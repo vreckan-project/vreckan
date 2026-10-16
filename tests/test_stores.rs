@@ -17,7 +17,7 @@
 mod common;
 
 use base64::Engine;
-use common::{build_state, SecureClient, TempDir};
+use common::{build_state, build_state_with, SecureClient, TempDir};
 use http::StatusCode;
 use serde_json::{json, Value};
 use std::collections::HashMap;
@@ -1021,15 +1021,15 @@ async fn test_check_app_update_persists_check_state() {
         .await;
     assert_eq!(status, StatusCode::OK, "{data:?}");
     // The `short_id` fix (step 3): the fake provider's short id is surfaced.
-    assert_eq!(data.unwrap()["current_sha"], "local123");
-    assert_eq!(data["update_available"], false);
+    assert_eq!(data.as_ref().unwrap()["current_sha"], "local123");
+    assert_eq!(data.as_ref().unwrap()["update_available"], false);
     // App with an available update.
     let (status, data) = sc
         .call("POST", "/api/admin/apps/installed/app-2/check_update", None)
         .await;
     assert_eq!(status, StatusCode::OK, "{data:?}");
-    assert_eq!(data.unwrap()["current_sha"], "local123");
-    assert_eq!(data["update_available"], true);
+    assert_eq!(data.as_ref().unwrap()["current_sha"], "local123");
+    assert_eq!(data.as_ref().unwrap()["update_available"], true);
     // The table now reflects both checks.
     let (status, listing) = sc.call("GET", "/api/admin/apps/installed", None).await;
     assert_eq!(status, StatusCode::OK);
@@ -1083,7 +1083,7 @@ async fn test_check_all_updates_persists_check_state() {
 async fn test_launch_caches_image_metadata() {
     let _root = TempDir::new();
     let state = build_state(_root.path()).await;
-    let mut sc = admin_client(state).await;
+    let sc = admin_client(state).await;
     sc.state.fake_provider.store(true, std::sync::atomic::Ordering::Relaxed);
     sc.state.pull_noop.store(true, std::sync::atomic::Ordering::Relaxed);
     let app: vreckan::catalog::InstalledApp = serde_json::from_value(json!({
