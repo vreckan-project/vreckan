@@ -102,8 +102,8 @@ description: Vreckan streams powerful, containerized desktop applications to any
     <div class="feature">
       <span class="check">✓</span>
       <div class="feature-body">
-        <strong>Let's Encrypt built in</strong>
-        <span>Issue and auto-renew real TLS certificates with certbot — Cloudflare DNS-01 or HTTP-01 — or fall back to a self-signed cert.</span>
+        <strong>ACME certificates built in</strong>
+        <span>Issue and auto-renew real TLS certificates with the built-in ACME client — Let's Encrypt, ZeroSSL, or Google; DNS-01 via eleven providers or HTTP-01 — or fall back to a self-signed cert.</span>
       </div>
     </div>
     <div class="feature">

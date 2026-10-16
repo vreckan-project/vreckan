@@ -8,9 +8,9 @@ audit** (2026-10-12), which verified every route against the Python original
 source of truth for Python↔Rust handler mapping; the [port status
 document](./port-status.md) tracks the residual gaps.
 
-Scale: **104 route registrations covering 103 unique paths** — all 102
-equivalent paths of the Python original, plus representation-level
-differences and one additive endpoint.
+Scale: **104 route registrations covering 101 unique paths** (several paths
+serve multiple methods) — all equivalent paths of the Python original, plus
+representation-level differences and one additive endpoint.
 
 ## How requests are protected
 
@@ -96,7 +96,7 @@ Two orthogonal layers:
 
 | Method | Path | Handler | Auth |
 |---|---|---|---|
-| ANY | `/api/apps/session/{session_id}/` | `initial_session_auth` | first hit: exchange the single-use `access_token` for a session cookie; then session cookie |
+| ANY | `/api/apps/session/{session_id}/` | `initial_session_auth` | first hit: exchange the single-use `access_token` for a session cookie; then session cookie (token is validated but not consumed on the server side — replaying it re-sets the cookie) |
 | ANY | `/api/apps/session/{session_id}/{*path}` | `session_proxy_subpath` | session cookie |
 
 One `any()` registration per route handles both HTTP and WebSocket: an
@@ -141,10 +141,12 @@ consolidation is a representation difference, not a behavior change.)
 | DELETE | `/api/homedirs/{home_name}` | `delete_my_home_dir` | E2EE |
 
 > Trailing-slash note: these collection routes are registered as `"/"` under
-> the `/api/homedirs` / `/api/pinned` nest prefixes, so they serve the prefix
-> roots. The Python original served the same endpoints *without* the trailing
-> slash — a strict client that calls one form against the other port gets
-> 404/405. See gap **G7** in [port status](./port-status.md).
+> the `/api/homedirs` / `/api/pinned` nest prefixes. Axum 0.8 collapses a
+> nested `"/"` route onto the prefix, so the live paths are the **no-slash**
+> forms — `/api/homedirs` and `/api/pinned` — the same forms the Python
+> original served. The trailing-slash forms 404. (The in-tree client and the
+> test suite both use the no-slash forms.) See gap **G7** in
+> [port status](./port-status.md).
 
 ### Pinned behaviors — `files.rs` (E2EE)
 
@@ -311,8 +313,9 @@ is linked:
   path where Python used separate decorators per method — this is why the
   raw registration counts differ (119 Python route objects vs 104 Rust
   `.route()` calls) while the method+path surface is identical.
-- **WebSocket routes are `any()`.** The session-proxy and room WS routes
-  dispatch on the `Upgrade` header in-handler.
+- **WebSocket handling differs by route.** The session-proxy routes are
+  `any()` and dispatch on the `Upgrade` header in-handler; the room WS route
+  (`/ws/room/{session_id}`) is a plain `GET` upgrade.
 - **Trailing slash** on the `/api/homedirs` / `/api/pinned` collection roots
   (gap **G7**).
 - **UUID path params.** Python validated `{session_id:uuid}` at routing

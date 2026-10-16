@@ -231,11 +231,16 @@ issuance (it remains in use for app containers and GPU setup).
   source through its CMake project). See the per-package justifications
   in the `Dockerfile`.
 
-**Upgrading:** pull the new image and `docker compose up -d`. Existing
-`VRECKAN_LE_*` env vars are read as `VRECKAN_ACME_*`; the DB
-`app_settings` keys are migrated from `le_*` to `acme_*` on first
-startup. The `/data/le/` directory is no longer used; the cert mirror
-lives at `/data/acme/`.
+**Upgrading:** pull the new image and `docker compose up -d`. The old
+`VRECKAN_LE_*` env vars are **not** read by the Rust server — set the
+`VRECKAN_ACME_*` names instead, and re-save any settings you had changed
+from the admin Certificates page so they land under the new keys (rows
+stored under the old names are not auto-migrated). The `/data/le/`
+directory is no longer used; the cert mirror lives at `/data/acme/`.
+(ANT-242, 2026-10-16: re-checked the current tree — the originally claimed
+`VRECKAN_LE_*`→`VRECKAN_ACME_*` env fallback and `le_*`→`acme_*` key
+migration are not implemented; flagged to the owner for a follow-up fix
+or doc correction.)
 
 ## 2026-10-14 — Dependency bumps, v0.6.2 (ANT-118)
 

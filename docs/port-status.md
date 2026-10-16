@@ -15,7 +15,7 @@ follow-up does not change the endpoint surface.
 
 | Area | Status |
 |---|---|
-| Endpoint surface | **Complete** — all 103 unique paths of the original present; 102 exact matches; representation-level differences only (see [api.md](./api.md)); 1 additive Rust endpoint (`/api/health`) |
+| Endpoint surface | **Complete** — all unique paths of the original present (101 unique paths in the current tree; see [api.md](./api.md)); representation-level differences only; 1 additive Rust endpoint (`/api/health`) |
 | 13-table config schema + column migrations | ✅ matches (SeaORM schema-sync subsumes Python `init_db` + `migrate_db`) |
 | E2EE handshake (RSA-PSS / RSA-OAEP / AES-GCM, AAD=session) | ✅ matches |
 | Auth (cookie/Bearer tokens), OIDC provisioning + group re-stamp, RBAC | ✅ matches |
@@ -24,7 +24,7 @@ follow-up does not change the endpoint surface.
 | Backup/restore round-trip incl. chunked restore | ✅ matches |
 | Public shares, pinned behaviors, homedirs, app stores/templates | ✅ matches (cleanup jobs: G2) |
 | Web client (`server/static/`, 68 files) | ✅ **byte-identical** |
-| Test suite | 387 of 388 original tests ported 1:1 by name; 10 Rust-only additions; 2 originals missing (see below) |
+| Test suite | 388 original tests across 21 modules (baseline `e7b2de6`): 376 ported (367 by name, 9 renamed in the le_certbot→acme port); 12 originals without a Rust counterpart; 32 Rust-only additions (see below) |
 | Open gaps | **G1–G11** below (3× P1, 3× P2, 5× P3) |
 
 ## Open gaps
@@ -54,7 +54,7 @@ ANT-1.
 
 | ID | Gap | Where | Impact | Status |
 |---|---|---|---|---|
-| **G7** | Trailing-slash divergence on the `/api/homedirs` and `/api/pinned` collection roots (Rust serves the trailing-slash form; Python served no slash) | `files.rs` route registration | Strict clients calling the other form get 404/405; the shipped web client uses the Rust form, so in-tree clients are unaffected | Open (2026-10-12) |
+| **G7** | Trailing-slash direction on the `/api/homedirs` and `/api/pinned` collection roots — as of the 2026-10-16 re-check (ANT-242), axum 0.8 collapses the nested `"/"` route onto the prefix, so **Rust serves the no-slash forms, the same as Python**; only the trailing-slash forms 404 (the original audit had the direction inverted) | `files.rs` route registration | Only strict clients that call the trailing-slash forms get 404; the shipped web client and the test suite both use the no-slash forms | Open (2026-10-12; direction corrected 2026-10-16) |
 | **G8** | UUID path-param validation dropped on session/room paths — Python 422'd malformed ids at routing; Rust matches any string and the handler fails later (404/500) | `catalog.rs`, `session_proxy.rs`, `collaboration.rs` | Different error class/status for malformed ids | Open (2026-10-12) |
 | **G9** | **Startup cache warm-up missing** — initial population of the app-store YAML caches, autostart-script caches, and image-metadata caches (Python does this in lifespan before serving) | consequence of G2 | First client requests on a cold Rust boot pay the fetch latency | Open (2026-10-12) |
 | **G10** | Rust-only `GET /api/health` liveness endpoint (no Python counterpart) | `app.rs` | Additive, non-breaking; strictly an addition, listed for completeness | Additive (2026-10-12) |
@@ -62,16 +62,40 @@ ANT-1.
 
 ## Test-suite parity notes
 
-All 20 Python test modules map 1:1 to Rust test modules by name, and every
-test name matches except:
+Verified against the Python baseline (`e7b2de6`, v0.5.0) on 2026-10-16
+(ANT-256): **21 Python test modules** against **21 Rust test modules**. All
+21 modules have a Rust counterpart; 20 match by name, and
+`test_le_certbot` became `test_acme` in the native acmex port (ANT-128),
+which also renamed part of the test names. Test-level picture:
 
-- **Missing in Rust:** `test_db::test_concurrent_saves_do_not_lose_data`
-  (10 concurrent full-replace session saves must not lose rows) — covers the
-  same area as G2's session handling; and `test_db::test_sessions_roundtrip`
-  (covered under a different name by `test_postgres::test_pg_sessions_roundtrip`,
-  so no functional gap).
-- **Rust-only additions (10):** extra share-deletion and `launch_from_storage`
-  edge tests in `test_files`, plus `test_admin_sso_in_catalog` in `test_rbac`.
+- **Ported: 376 of 388** — 367 under identical names (354 within
+  same-named modules, plus 13 original `test_le_certbot` names preserved
+  unchanged in `test_acme`), and 9 ported under renamed le→acme names
+  (incl. `test_effective_le_config_reads_env_defaults` →
+  `test_effective_acme_config_defaults`).
+- **Without a Rust counterpart: 12**
+  - `test_db::test_concurrent_saves_do_not_lose_data` (10 concurrent
+    full-replace session saves must not lose rows) — still a real gap;
+    covers the same area as G2's session handling.
+  - `test_db::test_sessions_roundtrip` — covered under a different name by
+    `test_postgres::test_pg_sessions_roundtrip`, so no functional gap.
+    (`test_postgres` is a baseline module, not a Rust addition: all 6 of
+    its tests map 1:1 by name in Rust.)
+  - 10 certbot-CLI tests in `test_le_certbot` (4× `test_certbot_args_*`,
+    6× `test_run_certbot_*`) — bound to the certbot subprocess the Rust
+    port replaced with native acmex (ANT-128); the corresponding
+    issue/renewal paths are exercised by the new `test_acme` tests.
+- **Rust-only additions: 32** — 12 in `test_acme` (DB-persisted cert
+  record, acmex error surfacing, per-CA/per-provider issue paths,
+  hot-reload of the served cert), 12 in `test_auth` (login rate limiting,
+  bootstrap must-change flag, default password policy), 2 in
+  `test_admin_misc` and 1 in `test_templates` (DB write failure → 500),
+  3 in `test_backup` (archive perms, auth-token hygiene in dumps), 1 in
+  `test_files` (pagination bounds), 1 in `test_security` (malformed E2EE
+  IV → 400). The 2026-10-12 audit's "10 additions" counted only the
+  then-current tree; note `test_admin_sso_in_catalog` in `test_rbac` is
+  **not** Rust-only — it exists in the baseline too, and `test_rbac` maps
+  1:1 by name (41/41).
 
 Port the concurrent-saves test together with the G2 fix; run `cargo test` as
 part of closing any gap that touches startup, sessions, or DB writes (the
