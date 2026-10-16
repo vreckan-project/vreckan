@@ -64,6 +64,31 @@ pub fn ca_directory(ca: &str, staging: bool) -> String {
     }
 }
 
+/// The built-in CA identifiers everything else is a custom directory URL for.
+pub const KNOWN_CA_IDS: &[&str] = &["letsencrypt", "zerossl", "google", "google-public-certs"];
+
+/// Resolve the ACME directory URL for `ca`, enforcing the scheme policy for
+/// custom URLs (ANT-275): any value that is not one of [`KNOWN_CA_IDS`] is
+/// treated as a full directory URL and must use `https://` unless
+/// `allow_http_ca` explicitly opts in to plaintext `http://` (which would
+/// expose the account-key JWSes and CA responses in transit). Fails before
+/// any network I/O so a misconfigured CA never leaks to the wire.
+pub fn resolve_ca_directory(ca: &str, staging: bool, allow_http_ca: bool) -> Result<String, String> {
+    if KNOWN_CA_IDS.contains(&ca.trim().to_ascii_lowercase().as_str()) {
+        return Ok(ca_directory(ca, staging));
+    }
+    let url = ca.trim();
+    if url.is_empty() {
+        return Err("custom ACME CA must be a full directory URL (https://…)".to_string());
+    }
+    if url.starts_with("https://") || (allow_http_ca && url.starts_with("http://")) {
+        return Ok(url.to_string());
+    }
+    Err(format!(
+        "custom ACME CA directory {url} must use https:// unless acme_allow_http_ca is enabled (plaintext http:// exposes the account-key JWSes and CA responses)"
+    ))
+}
+
 fn normalize_name(name: &str) -> String {
     name.trim().trim_end_matches('.').to_ascii_lowercase()
 }
@@ -572,6 +597,8 @@ pub struct IssueArgs<'a> {
     /// Configurable persistent data root; the account key and the on-disk
     /// cert mirror live under `{data_root}/acme` (ANT-273).
     pub data_root: &'a str,
+    /// Allow a plaintext `http://` custom CA directory URL (ANT-275).
+    pub allow_http_ca: bool,
 }
 
 /// The outcome of an issuance attempt.
@@ -615,7 +642,19 @@ pub async fn issue_certificate(args: &IssueArgs<'_>) -> AcmeIssueResult {
         }
     };
 
-    let directory = ca_directory(args.ca, args.staging);
+    let directory = match resolve_ca_directory(args.ca, args.staging, args.allow_http_ca) {
+        Ok(url) => url,
+        Err(e) => {
+            warn!(target: "acme", "{e}");
+            return AcmeIssueResult {
+                ok: false,
+                logs: logs.join("\n"),
+                error: Some(e),
+                cert_pem: None,
+                key_pem: None,
+            };
+        }
+    };
     let mut config = AcmeConfig::new(directory.clone());
     if !args.email.is_empty() {
         config = config.with_contact(Contact::email(args.email));
@@ -870,5 +909,33 @@ mod tests {
         assert_eq!(file_mode(std::path::Path::new(&cert_path)), 0o600);
         assert_eq!(file_mode(std::path::Path::new(&key_path)), 0o600);
         let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn resolve_ca_directory_passthrough_for_known_cas() {
+        assert!(resolve_ca_directory("letsencrypt", true, false)
+            .unwrap()
+            .contains("acme-staging-v02"));
+        assert!(resolve_ca_directory("Google", false, false)
+            .unwrap()
+            .contains("dv.google.com"));
+        assert!(resolve_ca_directory("zerossl", false, false).is_ok());
+    }
+
+    #[test]
+    fn resolve_ca_directory_custom_requires_https() {
+        let https = "https://acme.internal.example:14000/directory";
+        let http = "http://acme.internal.example:14000/directory";
+        // https is always fine, with or without the opt-in.
+        assert_eq!(resolve_ca_directory(https, false, false).unwrap(), https);
+        assert_eq!(resolve_ca_directory(https, false, true).unwrap(), https);
+        // plaintext http is rejected unless the admin explicitly opts in.
+        let err = resolve_ca_directory(http, false, false).unwrap_err();
+        assert!(err.contains("https://"), "{err}");
+        assert!(err.contains("acme_allow_http_ca"), "{err}");
+        assert_eq!(resolve_ca_directory(http, false, true).unwrap(), http);
+        // A bare hostname is not a URL; whitespace-only is empty.
+        assert!(resolve_ca_directory("acme.internal.example", false, true).is_err());
+        assert!(resolve_ca_directory("   ", false, true).is_err());
     }
 }

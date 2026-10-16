@@ -109,6 +109,7 @@ fn default_cfg() -> acme_orchestrator::AcmeConfig {
     acme_orchestrator::AcmeConfig {
         acme_enabled: true,
         acme_ca: "letsencrypt".to_string(),
+        acme_allow_http_ca: false,
         acme_domains: "example.com".to_string(),
         acme_auth: "dns-cloudflare".to_string(),
         acme_staging: false,
@@ -644,6 +645,7 @@ async fn test_effective_acme_config_defaults() {
     let state = build_state(tmp.path()).await;
     let cfg = acme_orchestrator::effective_acme_config(&state).await;
     assert!(!cfg.acme_enabled); // default
+    assert!(!cfg.acme_allow_http_ca); // default: https required for custom CAs
     assert_eq!(cfg.acme_auth, "dns-cloudflare");
     assert_eq!(cfg.acme_dns_provider, "cloudflare");
     assert_eq!(cfg.acme_renew_before_days, 30);
@@ -658,9 +660,11 @@ async fn test_effective_acme_config_env_override() {
     // the environment at import), so set it to simulate an env override.
     state.settings.acme_enabled = true;
     state.settings.acme_domains = "a.com,b.com".to_string();
+    state.settings.acme_allow_http_ca = true;
     let cfg = acme_orchestrator::effective_acme_config(&state).await;
     assert!(cfg.acme_enabled);
     assert_eq!(cfg.acme_domains, "a.com,b.com");
+    assert!(cfg.acme_allow_http_ca);
 }
 
 // --- admin Certificates endpoints --------------------------------------------
@@ -989,4 +993,171 @@ async fn test_renewal_hot_reloads_served_cert_without_restart() {
         pem_first_cert(&cert_b),
         "the served cert must be the renewed cert read from the DB"
     );
+}
+
+// --- ANT-275: admin surface hardening ----------------------------------------
+
+#[tokio::test]
+async fn test_certificates_get_masks_dns_provider_config() {
+    let _serial = lock_le();
+    let tmp = TempDir::new();
+    let state = build_state(tmp.path()).await;
+    let client = admin_client(state).await;
+    let config = r#"{ "api_token": "sekrit-do-not-leak", "domain": "example.com" }"#;
+    let payload = json!({
+        "acme_enabled": true,
+        "acme_domains": ["example.com"],
+        "acme_auth": "dns-cloudflare",
+        "acme_dns_provider": "digitalocean",
+        "acme_dns_provider_config": config,
+        "acme_allow_http_ca": true,
+    });
+    let (status, _) = client.call("PUT", "/api/admin/certificates", Some(&payload)).await;
+    assert_eq!(status, StatusCode::OK);
+    let (status, data) = client.call("GET", "/api/admin/certificates", None).await;
+    assert_eq!(status, StatusCode::OK);
+    let data = data.expect("body");
+    let v = &data["values"];
+    // The raw JSON (which carries the provider's api_token) is masked.
+    assert_eq!(v["acme_dns_provider_config"], "");
+    assert_eq!(v["dns_provider_config_set"], true);
+    assert_eq!(v["dns_provider_config_length"], config.len() as i64);
+    assert_eq!(v["acme_allow_http_ca"], true);
+    assert_eq!(data["sources"]["acme_dns_provider_config"], "db");
+    assert_eq!(data["sources"]["acme_allow_http_ca"], "db");
+}
+
+#[tokio::test]
+async fn test_certificates_put_blank_provider_config_keeps_existing() {
+    let _serial = lock_le();
+    let tmp = TempDir::new();
+    let state = build_state(tmp.path()).await;
+    let client = admin_client(state).await;
+    let config = r#"{ "api_token": "kept-token" }"#;
+    let first = json!({
+        "acme_enabled": true,
+        "acme_domains": ["example.com"],
+        "acme_auth": "dns-cloudflare",
+        "acme_dns_provider": "digitalocean",
+        "acme_dns_provider_config": config,
+    });
+    client.call("PUT", "/api/admin/certificates", Some(&first)).await;
+    // Save again with the (masked) blank value — the existing config survives.
+    let mut second = first.clone();
+    second["acme_dns_provider_config"] = json!("");
+    client.call("PUT", "/api/admin/certificates", Some(&second)).await;
+    let (status, data) = client.call("GET", "/api/admin/certificates", None).await;
+    assert_eq!(status, StatusCode::OK);
+    let v = &data.expect("body")["values"];
+    assert_eq!(v["dns_provider_config_set"], true);
+    assert_eq!(v["dns_provider_config_length"], config.len() as i64);
+}
+
+#[tokio::test]
+async fn test_certificates_get_masks_db_sourced_key() {
+    let _serial = lock_le();
+    let _paths = acme_paths();
+    let tmp = TempDir::new();
+    let state = build_state(tmp.path()).await;
+    let (cert_pem, key_pem) = make_cert("example.com", 90);
+    acme_orchestrator::acme_persist_cert(
+        &state,
+        &acme_orchestrator::AcmeCertRecord {
+            cert_pem: cert_pem.clone(),
+            key_pem: key_pem.clone(),
+            ca: "letsencrypt".to_string(),
+            domains: "example.com".to_string(),
+            expires: acme_orchestrator::acme_cert_expiry_from_pem(&cert_pem),
+        },
+    )
+    .await;
+    let client = admin_client(state).await;
+    let (status, data) = client.call("GET", "/api/admin/certificates", None).await;
+    assert_eq!(status, StatusCode::OK);
+    let st = &data.expect("body")["status"];
+    assert_eq!(st["source"], "acme_db");
+    // The private-key PEM is elided from the admin's response; the cert
+    // (public material) is still returned in full.
+    assert_eq!(st["key"], "(stored in config DB)");
+    assert_eq!(st["key_length"], key_pem.len() as i64);
+    assert_eq!(st["cert"], cert_pem);
+}
+
+#[tokio::test]
+async fn test_certificates_renew_masks_db_sourced_key() {
+    let _serial = lock_le();
+    let tmp = TempDir::new();
+    let state = build_state(tmp.path()).await;
+    let client = admin_client(state).await;
+    let _paths = acme_paths();
+    let _guard = IssuerGuard::new(FakeAcmeIssuer::ok_issuer());
+    let payload = json!({
+        "acme_enabled": true,
+        "acme_domains": ["example.com"],
+        "acme_auth": "dns-cloudflare",
+        "acme_cloudflare_email": "admin@example.com",
+        "acme_cloudflare_token": "t",
+        "acme_cloudflare_zone_id": "zone-abc",
+        "acme_staging": false,
+        "acme_auto_renew": true,
+        "acme_renew_check_hours": 6,
+        "acme_renew_before_days": 30,
+    });
+    client.call("PUT", "/api/admin/certificates", Some(&payload)).await;
+    let (status, data) = client.call("POST", "/api/admin/certificates/renew", None).await;
+    assert_eq!(status, StatusCode::OK);
+    let st = &data.expect("body");
+    assert_eq!(st["issued"], true);
+    assert_eq!(st["source"], "acme_db");
+    assert_eq!(st["key"], "(stored in config DB)");
+    assert!(st["key_length"].as_i64().unwrap_or(0) > 0);
+}
+
+#[tokio::test]
+async fn test_ensure_acme_cert_sanitizes_custom_ca_error() {
+    let _paths = acme_paths();
+    let state = build_state(TempDir::new().path()).await;
+    let mut cfg = default_cfg();
+    cfg.acme_ca = "http://acme.internal.example:14000/dir/acme/directory".to_string();
+    cfg.acme_allow_http_ca = true;
+    let long = format!("{} order failed: {}", cfg.acme_ca, "x".repeat(2000));
+    let _guard = IssuerGuard::new(FakeAcmeIssuer::failing(&long));
+    let result = acme_orchestrator::ensure_acme_cert(&state, &cfg, false).await;
+    assert_eq!(result["issued"], false);
+    let err = result["error"].as_str().expect("error").to_string();
+    // The (possibly internal) CA URL is masked and the error is capped.
+    assert!(!err.contains("acme.internal.example"), "{err}");
+    assert!(err.contains("<CA directory>"), "{err}");
+    assert!(err.chars().count() <= 513, "{err}");
+}
+
+#[tokio::test]
+async fn test_http_ca_rejected_before_network_without_opt_in() {
+    let _paths = acme_paths();
+    let state = build_state(TempDir::new().path()).await;
+    let mut cfg = default_cfg();
+    cfg.acme_ca = "http://acme.internal.example:14000/dir/acme/directory".to_string();
+    cfg.acme_allow_http_ca = false;
+    // No fake issuer: the real issue_certificate must fail at the scheme
+    // check, before any network traffic to the custom CA.
+    let result = acme_orchestrator::ensure_acme_cert(&state, &cfg, false).await;
+    assert_eq!(result["issued"], false);
+    let err = result["error"].as_str().expect("error");
+    assert!(err.contains("must use https://"), "{err}");
+    assert!(err.contains("acme_allow_http_ca"), "{err}");
+}
+
+#[tokio::test]
+async fn test_http_ca_allowed_with_opt_in() {
+    let _paths = acme_paths();
+    let state = build_state(TempDir::new().path()).await;
+    let mut cfg = default_cfg();
+    // A dead local port: once past the scheme check the order fails with a
+    // transport error, not the scheme error.
+    cfg.acme_ca = "http://127.0.0.1:9/dir/acme/directory".to_string();
+    cfg.acme_allow_http_ca = true;
+    let result = acme_orchestrator::ensure_acme_cert(&state, &cfg, false).await;
+    assert_eq!(result["issued"], false);
+    let err = result["error"].as_str().expect("error");
+    assert!(!err.contains("must use https://"), "{err}");
 }
