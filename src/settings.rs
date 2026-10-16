@@ -76,6 +76,7 @@ pub const SETTING_DEFINITIONS: &[SettingDef] = &[
     // --- Login rate limiting ---
     SettingDef { name: "login_max_attempts", type_: "int", default: "5", help: "Failed logins from one (client IP, username) pair within the lockout window before the pair is temporarily locked out. 0 disables the limiter." },
     SettingDef { name: "login_lockout_seconds", type_: "int", default: "900", help: "Length of the failed-login window and of the temporary lockout (seconds)." },
+    SettingDef { name: "trusted_proxies", type_: "str", default: "", help: "Comma-separated IPs/CIDRs of reverse proxies that may sit in front of the server (e.g. '10.0.0.0/8, 192.168.1.5'). Only when the direct TCP peer matches this list is the leftmost `X-Forwarded-For` entry honoured for the login rate limiter; otherwise the direct peer address is used. Empty = trust no proxy (fail closed)." },
     // --- ACME (native acmex) ---
     SettingDef { name: "acme_enabled", type_: "bool", default: "false", help: "Issue ACME (Let's Encrypt / ZeroSSL / Google) certificates. When off, the server uses a self-signed certificate." },
     SettingDef { name: "acme_ca", type_: "str", default: "letsencrypt", help: "The ACME certificate authority to use: 'letsencrypt' (default), 'zerossl', or 'google'. Only letsencrypt honours acme_staging (staging vs production)." },
@@ -163,6 +164,11 @@ pub struct Settings {
     pub default_password_policy: String,
     pub login_max_attempts: i64,
     pub login_lockout_seconds: i64,
+    pub trusted_proxies: String,
+    /// The resolved `VRECKAN_ALLOW_DEFAULT_DB_CREDS` escape hatch (ANT-45
+    /// P2-6), captured at settings-build time so callers (startup guard,
+    /// default-password login policy) share one value.
+    pub default_db_creds_policy: DefaultDbCredsPolicy,
     pub acme_enabled: bool,
     pub acme_ca: String,
     pub acme_domains: String,
@@ -243,6 +249,8 @@ impl Settings {
             default_password_policy: get("default_password_policy"),
             login_max_attempts: get_int("login_max_attempts"),
             login_lockout_seconds: get_int("login_lockout_seconds"),
+            trusted_proxies: get("trusted_proxies"),
+            default_db_creds_policy: default_db_creds_policy(),
             acme_enabled: get_bool("acme_enabled"),
             acme_ca: get("acme_ca"),
             acme_domains: get("acme_domains"),
