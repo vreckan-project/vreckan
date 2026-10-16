@@ -1037,7 +1037,6 @@ async fn test_certificates_put_blank_provider_config_keeps_existing() {
 
 #[tokio::test]
 async fn test_certificates_get_masks_db_sourced_key() {
-    let _serial = lock_le();
     let _paths = acme_paths();
     let tmp = TempDir::new();
     let state = build_state(tmp.path()).await;
@@ -1067,11 +1066,10 @@ async fn test_certificates_get_masks_db_sourced_key() {
 
 #[tokio::test]
 async fn test_certificates_renew_masks_db_sourced_key() {
-    let _serial = lock_le();
+    let _paths = acme_paths();
     let tmp = TempDir::new();
     let state = build_state(tmp.path()).await;
     let client = admin_client(state).await;
-    let _paths = acme_paths();
     let _guard = IssuerGuard::new(FakeAcmeIssuer::ok_issuer());
     let payload = json!({
         "acme_enabled": true,
