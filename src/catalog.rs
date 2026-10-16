@@ -1013,7 +1013,7 @@ fn abspath(p: &str) -> String {
     cwd.join(path).to_string_lossy().into_owned()
 }
 
-fn translate_path_to_host(map: &HashMap<String, String>, internal_path: &str) -> String {
+pub fn translate_path_to_host(map: &HashMap<String, String>, internal_path: &str) -> String {
     if map.is_empty() || internal_path.is_empty() {
         return internal_path.to_string();
     }
@@ -1394,9 +1394,6 @@ pub async fn launch_common(
     final_env.insert("PASSWORD".into(), password.clone());
     final_env.insert("TZ".into(), "America/Phoenix".into());
     final_env.insert("SELKIES_ALLOWED_ORIGINS".into(), "*".into());
-    if wayland_mode {
-        final_env.insert("PIXELFLUX_WAYLAND".into(), "true".into());
-    }
     if let Some(mt) = &master_token {
         final_env.insert("SELKIES_MASTER_TOKEN".into(), mt.clone());
     }
@@ -1443,6 +1440,15 @@ pub async fn launch_common(
     for env_override in &app.provider_config.env {
         final_env.insert(env_override.name.clone(), env_override.value.clone());
     }
+    // Always emit an explicit PIXELFLUX_WAYLAND value. Images (e.g. the
+    // linuxserver ones) bake `PIXELFLUX_WAYLAND=true` into their config, and a
+    // missing launch-env entry would let that default survive a Wayland-off
+    // launch. Placed after every other env layer so the launch-time choice is
+    // authoritative (on -> "true", off -> "false").
+    final_env.insert(
+        "PIXELFLUX_WAYLAND".into(),
+        if wayland_mode { "true" } else { "false" }.into(),
+    );
     if let Some(sn) = session_name {
         final_env.insert("TITLE".into(), format!("{} - {}", app.name, sn));
     }
@@ -1696,6 +1702,18 @@ pub async fn launch_common(
             }
         }
     }
+    // `file_path` launches point `VRECKAN_FILE` at a server-side file via the
+    // endpoint env; give them the same `launch_context` as the file-upload
+    // path so session listings are consistent (ANT-234).
+    if launch_context.is_none() {
+        if let Some(fp) = final_env.get("VRECKAN_FILE").and_then(|v| Some(v.as_str())) {
+            let fname = std::path::Path::new(fp)
+                .file_name()
+                .and_then(|f| f.to_str())
+                .unwrap_or(fp);
+            launch_context = Some(serde_json::json!({ "type": "file", "value": fname }));
+        }
+    }
     apply_external_mounts(&mut volumes, username, host_mount_path.as_deref());
 
     // --- Launch the container ----------------------------------------------
@@ -1758,6 +1776,7 @@ pub async fn launch_common(
                 &session_id,
                 final_env,
                 volumes,
+                &prefix_map,
                 gpu_config.clone(),
                 network,
                 launch_in_room_mode,
@@ -2584,6 +2603,7 @@ pub async fn recreate_session(
         .and_then(|v| v.as_str())
         .map(|s| s.to_string());
     let registry_map = registry.as_object().cloned().unwrap_or_default();
+    let prefix_map = state.path_prefix_map.read().await.clone();
     let mut primary_restored = false;
     for (app_id, container_info) in registry_map.iter() {
         let Some(app_config) = container_info.get("app_config") else {
@@ -2642,6 +2662,7 @@ pub async fn recreate_session(
                 session_id,
                 env_vars,
                 volumes,
+                &prefix_map,
                 gpu_config,
                 network,
                 is_collaboration,
