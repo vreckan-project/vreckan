@@ -9,7 +9,7 @@ import { $, toast, esc } from "../util.js";
 import { secureFetch } from "../api.js";
 import { openCustomModal, confirmModal } from "../modal.js";
 import { installedApps } from "../app.js";
-import { launchModalApp } from "./launch.js";
+import { launchModalApp, populateLanguageDropdown, resolveLaunchGpu } from "./launch.js";
 import { t } from "../i18n.js";
 
 // The user's saved presets (set by loadPinned); read by app.js (loadMain).
@@ -94,6 +94,17 @@ function renderPinned() {
         await secureFetch(`/api/pinned/${p.id}`, { method: "DELETE" });
         toast(t("pinned.deleted", { name: p.name }));
         await loadPinned();
+        // The deleted preset may have been providing the modal's standing
+        // values (as the default preset, or as the only preset). Restore the
+        // standing values — the remaining default preset when one exists,
+        // otherwise the built-in defaults — mirroring the make-default
+        // handler above.
+        const newDefault = pinnedBehaviors.find((x) => x.is_default);
+        if (newDefault) {
+          applyPreset(newDefault, true);
+        } else if (p.is_default || pinnedBehaviors.length === 0) {
+          resetLaunchOptions();
+        }
       } catch (e) {
         toast(t("homedirs.deleteFailed", { message: e.message }), "error");
       }
@@ -125,6 +136,27 @@ function applyPreset(p, silent = false) {
   if (roomChk) roomChk.checked = !!p.launch_in_room_mode;
   if (waylandChk) waylandChk.checked = p.wayland_mode !== false;
   if (!silent) toast(t("pinned.applied", { name: p.name }));
+}
+
+// Restore the launch-option controls to the built-in defaults — the state a
+// fresh page load has with no presets: Auto home, the browser-guessed
+// language, Auto GPU (or the admin's global default for a GPU-capable app),
+// room mode off, Wayland on. Used after deleting the preset that was
+// supplying the modal's standing values.
+function resetLaunchOptions() {
+  const homeSel = $("opt-home");
+  if (homeSel) homeSel.value = "auto";
+  populateLanguageDropdown();
+  const gpuField = $("field-gpu");
+  const gpuSel = $("opt-gpu");
+  if (gpuSel && !gpuField.hidden) {
+    const value = (launchModalApp && resolveLaunchGpu(launchModalApp)) || "none";
+    if (Array.from(gpuSel.options).some((o) => o.value === value)) gpuSel.value = value;
+  }
+  const roomChk = $("opt-room-mode");
+  const waylandChk = $("opt-wayland");
+  if (roomChk) roomChk.checked = false;
+  if (waylandChk) waylandChk.checked = true;
 }
 
 // Open the "save these launch options" modal (captures the current launch
@@ -227,4 +259,4 @@ function openSavePresetModal() {
   box.querySelector("#preset-name").focus();
 }
 
-export { loadPinned, renderPinned, applyPreset, openSavePresetModal };
+export { loadPinned, renderPinned, applyPreset, resetLaunchOptions, openSavePresetModal };
