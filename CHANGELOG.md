@@ -40,13 +40,24 @@ time. Verified against the T3 QA matrix (11 cases, live server).
   `type` (`app` / `browser` / `desktop` — data only, no client branching
   yet), and `file_path` launches honor room mode like every other launch
   path.
-- **Known issues (root-caused in the T3 QA matrix; fixes pending,
-  tracked on the QA issue):** unchecking Wayland does not reach app
-  images that bake `PIXELFLUX_WAYLAND=true` into the image env (all
-  linuxserver images); explicitly selecting a GPU fails with a 500 when
-  the server's `/dev/dri` is bind-mounted to a different path
-  (containerized deployments); deleting your default preset does not
-  reset the currently open dialog back to defaults.
+- **The three known issues found in the T3 QA matrix are fixed in the
+  fix round and confirmed by the regression re-run** (5/5 pass on v0.6.4,
+  including both launch smoke paths — nothing previously green
+  regressed). None of them remains a known issue for the next release.
+- **Wayland off now reaches the container env.** Unchecking Wayland in
+  the Launch dialog sets `PIXELFLUX_WAYLAND=false` on the launch,
+  overriding the `true` that linuxserver images bake into the image env
+  (ANT-234).
+- **Explicit GPU selection no longer fails with a 500 in containerized
+  deployments.** When the server's `/dev/dri` is bind-mounted at a
+  different host path, the selected device is now remapped onto the real
+  host path on the host side while the container keeps seeing the
+  standard `/dev/dri` node, so an explicit pick launches cleanly
+  (ANT-234).
+- **Deleting your default preset resets the dialog.** After deleting your
+  default preset, the next time the Launch dialog opens it restores the
+  defaults: home `auto`, room off, Wayland on (language reverts to the
+  browser guess, GPU to `Auto`) (ANT-235).
 
 ## 2026-10-15 — rsa 0.10 crypto-stack unification, v0.6.4 (ANT-191)
 

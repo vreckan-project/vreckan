@@ -41,7 +41,7 @@ description: Launching apps, managing files and shares, and the administrator's 
   <ul>
     <li><strong>Home directory</strong> — <em>Auto</em> (a per-app persistent home), <em>Cleanroom</em> (ephemeral storage, wiped after the session), or a named home directory; a <em>Manage</em> link opens the home-directory list (shown when persistent storage is enabled).</li>
     <li><strong>Language</strong> — the locale the app runs under (for example <code>de_DE.UTF-8</code>); the list is pre-filled from your browser language.</li>
-    <li><strong>GPU</strong> — shown only for apps that can use a GPU when the server reports GPUs; pick Auto or a specific device.</li>
+    <li><strong>GPU</strong> — shown only for apps that can use a GPU when the server reports GPUs; pick Auto or a specific device. A device you pick keeps applying to that app on later launches — pick <em>Auto</em> to clear it.</li>
     <li><strong>Room mode</strong> — start the session as a shared room so others can join.</li>
     <li><strong>Wayland</strong> — enabled by default.</li>
   </ul>
