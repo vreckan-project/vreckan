@@ -9,7 +9,7 @@ is committed normally in `vreckan`. The changelog is the authoritative
 record of what shipped in each release — see
 [`docs/release.md`](./docs/release.md) for the conventions.
 
-## 2026-10-16 — Launch options move into the per-app Launch dialog; session name (ANT-228/ANT-229/ANT-230)
+## 2026-10-16 — Launch options move into the per-app Launch dialog; session name, v0.6.5 (ANT-228/ANT-229/ANT-230)
 
 The "Launch options" card at the top of the Apps view is gone. Picking an
 app now opens a per-app **Launch dialog** that shows exactly the fields
@@ -41,9 +41,11 @@ time. Verified against the T3 QA matrix (11 cases, live server).
   yet), and `file_path` launches honor room mode like every other launch
   path.
 - **The three known issues found in the T3 QA matrix are fixed in the
-  fix round and confirmed by the regression re-run** (5/5 pass on v0.6.4,
-  including both launch smoke paths — nothing previously green
-  regressed). None of them remains a known issue for the next release.
+  fix round and confirmed by the regression re-run** (5/5 pass, including
+  both launch smoke paths — nothing previously green regressed; the
+  re-run executed against this tree while it still carried the v0.6.4
+  label, before the 0.6.5 bump in this entry). None of them remains a
+  known issue for v0.6.5.
 - **Wayland off now reaches the container env.** Unchecking Wayland in
   the Launch dialog sets `PIXELFLUX_WAYLAND=false` on the launch,
   overriding the `true` that linuxserver images bake into the image env
@@ -58,6 +60,11 @@ time. Verified against the T3 QA matrix (11 cases, live server).
   default preset, the next time the Launch dialog opens it restores the
   defaults: home `auto`, room off, Wayland on (language reverts to the
   browser guess, GPU to `Auto`) (ANT-235).
+- **Build base advanced to digest
+  sha256:1a5f145d0b719f9fefd939e6d56d46592e81a18a9d3606ba7f8ce19f7a15792d.**
+  The `.base-image-digest` re-point landed on `main` after the v0.6.4 tag
+  (stable `vreckan-base-build` base image, ANT-203), so the v0.6.5 image
+  builds on the new base; no operator action needed (ANT-254).
 
 ## 2026-10-15 — rsa 0.10 crypto-stack unification, v0.6.4 (ANT-191)
 
