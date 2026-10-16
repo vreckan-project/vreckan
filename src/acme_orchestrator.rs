@@ -10,8 +10,8 @@
 //!
 //! The issued certificate (cert chain + private key + metadata) lives in the
 //! config **database** as the source of truth and persists across restarts; a
-//! best-effort mirror is also written to the app's `/data/acme` storage (the
-//! `live/{primary}/` layout shared with the retired certbot flow) for
+//! best-effort mirror is also written to the app's `{data_root}/acme` storage
+//! (the `live/{primary}/` layout shared with the retired certbot flow) for
 //! backward compatibility.
 
 use std::sync::{Arc, Mutex};
@@ -25,8 +25,8 @@ use crate::state::AppState;
 
 /// Where the app reads issued certificates from. A `static` (not a plain
 /// `const`) so tests can point it at a temp tree — mirroring the Python test's
-/// `monkeypatch.setattr(acme_orchestrator, "ACME_CERT_DIR", ...)`. `None` means "use the
-/// default `/data/acme`".
+/// `monkeypatch.setattr(acme_orchestrator, "ACME_CERT_DIR", ...)`. `None`
+/// means "derive `{data_root}/acme` from the configured data root".
 pub static ACME_CERT_DIR: std::sync::RwLock<Option<String>> = std::sync::RwLock::new(None);
 /// Where the app looks for a host-provided /etc/letsencrypt (checked first).
 /// A `static` so tests can point it at a temp tree (mirrors the Python
@@ -34,13 +34,17 @@ pub static ACME_CERT_DIR: std::sync::RwLock<Option<String>> = std::sync::RwLock:
 /// `None` means "use the default `/etc/letsencrypt`".
 pub static ACME_HOST_CERT_DIR: std::sync::RwLock<Option<String>> = std::sync::RwLock::new(None);
 
-/// The effective app-side cert dir (test override or the default `/data/acme`).
-pub fn app_cert_dir() -> String {
-    ACME_CERT_DIR
+/// The effective app-side cert dir: the test override when set, otherwise
+/// `{data_root}/acme` derived from the configured data root (ANT-273).
+pub fn app_cert_dir_from(data_root: &str) -> String {
+    if let Some(dir) = ACME_CERT_DIR
         .read()
         .unwrap_or_else(std::sync::PoisonError::into_inner)
         .clone()
-        .unwrap_or_else(|| "/data/acme".to_string())
+    {
+        return dir;
+    }
+    format!("{data_root}/acme")
 }
 /// The effective host-side cert dir (test override or the default
 /// `/etc/letsencrypt`).
@@ -73,6 +77,9 @@ pub struct AcmeConfig {
     pub acme_dns_provider: String,
     pub acme_cloudflare_zone_id: String,
     pub acme_dns_provider_config: String,
+    /// Configurable persistent data root; the app-side cert dir is derived
+    /// from it as `{data_root}/acme` (ANT-273).
+    pub data_root: String,
 }
 
 /// Build the *effective* ACME settings (``app_settings`` DB override → env →
@@ -154,6 +161,7 @@ pub async fn effective_acme_config(state: &AppState) -> AcmeConfig {
         acme_dns_provider,
         acme_cloudflare_zone_id,
         acme_dns_provider_config,
+        data_root: s.data_root.clone(),
     }
 }
 
@@ -195,6 +203,7 @@ async fn build_issue_args<'a>(cfg: &'a AcmeConfig) -> Result<crate::acme::IssueA
         domains,
         registry,
         allow_http_ca: cfg.acme_allow_http_ca,
+        data_root: &cfg.data_root,
     })
 }
 
@@ -245,14 +254,14 @@ fn primary_domain(domains: &[String]) -> &str {
 
 /// Return the cert/key paths for the given domains, or `None` if no
 /// certificate is present. The host `/etc/letsencrypt` is checked first; the
-/// app-side path (`/data/acme`) is the fallback. Mirrors `cert_paths`.
-fn cert_paths(domains: &[String]) -> Option<(String, String, String)> {
+/// app-side path (`{data_root}/acme`) is the fallback. Mirrors `cert_paths`.
+fn cert_paths(domains: &[String], data_root: &str) -> Option<(String, String, String)> {
     let primary = primary_domain(domains);
     if primary.is_empty() {
         return None;
     }
     let host = host_cert_dir();
-    let app = app_cert_dir();
+    let app = app_cert_dir_from(data_root);
     for base in [host, app] {
         let cert = format!("{base}/live/{primary}/cert.pem");
         let key = format!("{base}/live/{primary}/privkey.pem");
@@ -431,8 +440,9 @@ pub fn mask_status_key(status: &mut Value) {
 /// Describe the current certificate for the given domains. The config DB is
 /// the source of truth: a persisted record is returned first (cert / key as
 /// PEM content, `source` = `"acme_db"`). When nothing is persisted yet, the
-/// disk layout (`/etc/letsencrypt`, then `/data/acme`) is used as a migration
-/// fallback (cert / key as on-disk paths, `source` = `"host"`/`"app"`).
+/// disk layout (`/etc/letsencrypt`, then `{data_root}/acme`) is used as a
+/// migration fallback (cert / key as on-disk paths, `source` =
+/// `"host"`/`"app"`).
 /// Mirrors `cert_status`.
 pub async fn cert_status(state: &AppState, domains: &[String]) -> Value {
     if let Some(rec) = acme_cert_record(state).await {
@@ -440,7 +450,7 @@ pub async fn cert_status(state: &AppState, domains: &[String]) -> Value {
             return status_json("acme_db", &rec.cert_pem, &rec.key_pem, rec.expires);
         }
     }
-    match cert_paths(domains) {
+    match cert_paths(domains, &state.settings.data_root) {
         Some((cert, key, base)) => {
             let source = if base == host_cert_dir() { "host" } else { "app" };
             status_json(source, &cert, &key, cert_expiry(&cert))
@@ -741,6 +751,7 @@ mod tests {
             acme_dns_provider: "cloudflare".to_string(),
             acme_cloudflare_zone_id: String::new(),
             acme_dns_provider_config: String::new(),
+            data_root: "/data".to_string(),
         }
     }
 

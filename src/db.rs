@@ -178,6 +178,27 @@ impl Db {
         Ok(())
     }
 
+    /// The placeholder `dump()` writes into the `value` column of a secret
+    /// `app_settings` row instead of the real value.
+    pub const REDACTED_VALUE: &str = "<redacted>";
+
+    /// `app_settings` rows whose value is a secret and must not ride in
+    /// plaintext in a backup archive (ANT-273): the live ACME TLS private
+    /// key, the Cloudflare Zone.DNS token, the generic DNS-provider
+    /// credential JSON, and the OIDC client secret. Both the env-var form
+    /// (`VRECKAN_*`, written by the admin pages and the ACME persistence
+    /// path) and the raw setting-name form (legacy or foreign rows) are
+    /// covered.
+    pub const SECRET_APP_SETTING_KEYS: &[&str] = &[
+        "VRECKAN_ACME_KEY_PEM",
+        "VRECKAN_ACME_CLOUDFLARE_TOKEN",
+        "VRECKAN_ACME_DNS_PROVIDER_CONFIG",
+        "VRECKAN_OIDC_CLIENT_SECRET",
+        "acme_cloudflare_token",
+        "acme_dns_provider_config",
+        "oidc_client_secret",
+    ];
+
     /// Write a logical, backend-agnostic snapshot of every table to a JSON file.
     ///
     /// The format is `{"version": 1, "tables": {"users": [ {...}, ... ], ...}}`
@@ -188,6 +209,11 @@ impl Db {
     /// not part of a backup (a restore leaves in-flight sessions untouched).
     /// The dump file is written `0600` (owner read/write only) because
     /// `users.password_hash` is included.
+    ///
+    /// Secret `app_settings` rows (see [`Db::SECRET_APP_SETTING_KEYS`]) are
+    /// redacted to [`Db::REDACTED_VALUE`] so an archive copied to another
+    /// host or object store does not carry the ACME TLS private key or the
+    /// DNS/OIDC provider credentials in plaintext (ANT-273).
     pub async fn dump(&self, dest_path: &str) -> Result<(), sea_orm::DbErr> {
         let backend = self.conn.get_database_backend();
         let mut tables = serde_json::Map::new();
@@ -201,7 +227,19 @@ impl Db {
                 .await?;
             let mut out = Vec::new();
             for row in &rows {
-                out.push(row_to_json_object(row));
+                let mut obj = row_to_json_object(row);
+                if table == "app_settings" {
+                    let is_secret = obj
+                        .get("key")
+                        .and_then(|k| k.as_str())
+                        .is_some_and(is_secret_app_setting);
+                    if is_secret {
+                        if let Some(serde_json::Value::String(value)) = obj.get_mut("value") {
+                            *value = Self::REDACTED_VALUE.to_string();
+                        }
+                    }
+                }
+                out.push(obj);
             }
             tables.insert(table.to_string(), serde_json::Value::Array(out));
         }
@@ -221,6 +259,11 @@ impl Db {
     /// Runs inside a single transaction so concurrent readers observe either the
     /// old or the new state, never a partially-restored one. Unknown columns in
     /// the dump (e.g. from a different schema version) are ignored.
+    ///
+    /// A secret `app_settings` row whose dumped value is [`Db::REDACTED_VALUE`]
+    /// is skipped: the archive only records that the key existed, so the live
+    /// value must be re-entered after restore. Older dumps that carry the
+    /// plaintext value restore it as-is (ANT-273).
     pub async fn restore(&self, source_path: &str) -> Result<(), sea_orm::DbErr> {
         let raw = std::fs::read_to_string(source_path)
             .map_err(|e| sea_orm::DbErr::Custom(e.to_string()))?;
@@ -242,6 +285,15 @@ impl Db {
                 .await?;
             if let Some(rows) = tables.get(table).and_then(|v| v.as_array()) {
                 for row in rows {
+                    if table == "app_settings"
+                        && row.get("value").and_then(|v| v.as_str()) == Some(Self::REDACTED_VALUE)
+                        && row
+                            .get("key")
+                            .and_then(|k| k.as_str())
+                            .is_some_and(is_secret_app_setting)
+                    {
+                        continue;
+                    }
                     insert_json_row(&txn, backend, table, row).await?;
                 }
             }
@@ -250,6 +302,13 @@ impl Db {
         info!("Restored configuration database from {source_path}");
         Ok(())
     }
+}
+
+/// Whether an `app_settings` row must be redacted in [`Db::dump`] (and skipped
+/// in [`Db::restore`] when it carries [`Db::REDACTED_VALUE`]) so its value
+/// does not ride plaintext in a backup archive (ANT-273).
+pub fn is_secret_app_setting(key: &str) -> bool {
+    Db::SECRET_APP_SETTING_KEYS.contains(&key)
 }
 
 /// The known columns of each table (in entity order). Used by [`restore`] to

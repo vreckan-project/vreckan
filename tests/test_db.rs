@@ -73,6 +73,94 @@ async fn test_dump_restore_roundtrip() {
 }
 
 #[tokio::test]
+async fn test_dump_redacts_secret_app_settings() {
+    let root = TempDir::new();
+    let settings = test_settings(root.path());
+    let d = connect_db(root.path()).await;
+    let state = vreckan::state::AppState::new(settings, d.clone());
+
+    state
+        .db
+        .set_app_setting("VRECKAN_ACME_KEY_PEM", "SECRET-TLS-KEY-PEM")
+        .await
+        .unwrap();
+    state
+        .db
+        .set_app_setting("VRECKAN_ACME_CLOUDFLARE_TOKEN", "SECRET-CF-TOKEN")
+        .await
+        .unwrap();
+    state
+        .db
+        .set_app_setting(
+            "VRECKAN_ACME_DNS_PROVIDER_CONFIG",
+            r#"{"api_token":"SECRET-DO-TOKEN"}"#,
+        )
+        .await
+        .unwrap();
+    state
+        .db
+        .set_app_setting("VRECKAN_OIDC_CLIENT_SECRET", "SECRET-OIDC")
+        .await
+        .unwrap();
+    state
+        .db
+        .set_app_setting("VRECKAN_ACME_ENABLED", "true")
+        .await
+        .unwrap();
+
+    let dump_path = root.path().join("backup.json");
+    state.db.dump(dump_path.to_str().unwrap()).await.unwrap();
+    let raw = std::fs::read_to_string(&dump_path).unwrap();
+    // The plaintext secrets must not ride in the archive (ANT-273).
+    assert!(!raw.contains("SECRET-TLS-KEY-PEM"));
+    assert!(!raw.contains("SECRET-CF-TOKEN"));
+    assert!(!raw.contains("SECRET-DO-TOKEN"));
+    assert!(!raw.contains("SECRET-OIDC"));
+    assert!(raw.contains(db::Db::REDACTED_VALUE));
+
+    // Wipe everything, then restore from the dump.
+    wipe_db(&state.db).await;
+    state.db.restore(dump_path.to_str().unwrap()).await.unwrap();
+
+    // Redacted rows are skipped: the key no longer holds a value, so the
+    // operator re-enters the secret after restore.
+    assert!(state
+        .db
+        .get_app_setting("VRECKAN_ACME_KEY_PEM")
+        .await
+        .unwrap()
+        .is_none());
+    assert!(state
+        .db
+        .get_app_setting("VRECKAN_ACME_CLOUDFLARE_TOKEN")
+        .await
+        .unwrap()
+        .is_none());
+    assert!(state
+        .db
+        .get_app_setting("VRECKAN_ACME_DNS_PROVIDER_CONFIG")
+        .await
+        .unwrap()
+        .is_none());
+    assert!(state
+        .db
+        .get_app_setting("VRECKAN_OIDC_CLIENT_SECRET")
+        .await
+        .unwrap()
+        .is_none());
+    // Non-secret rows survive the round trip.
+    assert_eq!(
+        state
+            .db
+            .get_app_setting("VRECKAN_ACME_ENABLED")
+            .await
+            .unwrap()
+            .as_deref(),
+        Some("true")
+    );
+}
+
+#[tokio::test]
 async fn test_auth_tokens_prune_expired() {
     let root = TempDir::new();
     let state = build_state(root.path()).await;
