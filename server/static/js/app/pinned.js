@@ -1,11 +1,15 @@
 // Feat 7 — pinned launch options ("save these launch options").
 // The installed-apps list is owned by app.js (set in loadMain); used here to
 // resolve app names in the pinned list and to populate the save-preset app
-// dropdown.
+// dropdown. The launch module is imported for launchModalApp (the app the
+// launch modal is open for, so a preset saved from the modal is tied to that
+// app); the import cycle is safe because both modules only read the
+// other's state at call time, not during evaluation.
 import { $, toast, esc } from "../util.js";
 import { secureFetch } from "../api.js";
 import { openCustomModal, confirmModal } from "../modal.js";
 import { installedApps } from "../app.js";
+import { launchModalApp } from "./launch.js";
 import { t } from "../i18n.js";
 
 // The user's saved presets (set by loadPinned); read by app.js (loadMain).
@@ -214,6 +218,12 @@ function openSavePresetModal() {
       errEl.hidden = false;
     }
   });
+  // When saving from the launch modal, tie the preset to the app whose modal
+  // is open (it is otherwise the first installed app by default).
+  const appSel = box.querySelector("#preset-app");
+  if (launchModalApp && [...appSel.options].some((o) => o.value === launchModalApp.id)) {
+    appSel.value = launchModalApp.id;
+  }
   box.querySelector("#preset-name").focus();
 }
 

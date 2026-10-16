@@ -98,7 +98,7 @@
     "cleanroom": "क्लीनरूम",
     "roomMode": "रूम मोड में शुरू करें",
     "wayland": "Wayland",
-    "savePreset": "इन लॉन्च विकल्पों को प्रीसेट के रूप में सहेजें",
+    "savePreset": "प्रीसेट के रूप में सहेजें",
     "uploadStorage": "फ़ाइल साझा स्टोरेज में अपलोड करें",
     "pinned": "पिन किए गए",
     "activeSessions": "सक्रिय सत्र",
@@ -123,7 +123,10 @@
     "uploadingProgress": "अपलोड हो रहें… {done}/{total}",
     "launching": "लॉन्च हो रहें…",
     "finalizing": "अंतिम रूप दे रहें…",
-    "fileUploaded": "फ़ाइल '{name}' अपलोड हो गयी।"
+    "fileUploaded": "फ़ाइल '{name}' अपलोड हो गयी।",
+    "urlToOpen": "खोलने के लिए URL",
+    "urlRequired": "खोलने के लिए URL दर्ज करें.",
+    "options": "लॉन्च विकल्प"
   },
   "password": {
     "title": "पासवर्ड बदलें",

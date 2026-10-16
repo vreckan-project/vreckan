@@ -98,7 +98,7 @@
     "cleanroom": "Cleanroom",
     "roomMode": "Iniciar em modo sala",
     "wayland": "Wayland",
-    "savePreset": "Salvar estas opções de inicialização como predefinição",
+    "savePreset": "Salvar como predefinição",
     "uploadStorage": "Enviar um arquivo para o armazenamento compartilhado",
     "pinned": "Fixados",
     "activeSessions": "Sessões ativas",
@@ -123,7 +123,10 @@
     "uploadingProgress": "Enviando… {done}/{total}",
     "launching": "Iniciando…",
     "finalizing": "Finalizando…",
-    "fileUploaded": "Arquivo '{name}' enviado."
+    "fileUploaded": "Arquivo '{name}' enviado.",
+    "urlToOpen": "URL a abrir",
+    "urlRequired": "Insira a URL a abrir.",
+    "options": "Opções de inicialização"
   },
   "password": {
     "title": "Alterar senha",

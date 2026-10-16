@@ -98,7 +98,7 @@
     "cleanroom": "Cleanroom",
     "roomMode": "Ilunsad sa room mode",
     "wayland": "Wayland",
-    "savePreset": "I-save ang mga launch options na ito bilang preset",
+    "savePreset": "I-save bilang preset",
     "uploadStorage": "Mag-upload ng file sa shared storage",
     "pinned": "Naka-pin",
     "activeSessions": "Mga aktibong session",
@@ -123,7 +123,10 @@
     "uploadingProgress": "Nag-a-upload… {done}/{total}",
     "launching": "Naglulunsad…",
     "finalizing": "Tinatapos…",
-    "fileUploaded": "Na-upload ang file '{name}'."
+    "fileUploaded": "Na-upload ang file '{name}'.",
+    "urlToOpen": "URL na bubuksan",
+    "urlRequired": "Mag-type ng URL na bubuksan.",
+    "options": "Mga launch options"
   },
   "password": {
     "title": "Baguhin ang password",

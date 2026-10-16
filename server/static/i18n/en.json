@@ -98,7 +98,7 @@
     "cleanroom": "Cleanroom",
     "roomMode": "Launch in room mode",
     "wayland": "Wayland",
-    "savePreset": "Save these launch options as a preset",
+    "savePreset": "Save as preset",
     "uploadStorage": "Upload a file to shared storage",
     "pinned": "Pinned",
     "activeSessions": "Active sessions",
@@ -123,7 +123,10 @@
     "uploadingProgress": "Uploading… {done}/{total}",
     "launching": "Launching…",
     "finalizing": "Finalizing…",
-    "fileUploaded": "File '{name}' uploaded."
+    "fileUploaded": "File '{name}' uploaded.",
+    "urlToOpen": "URL to open",
+    "urlRequired": "Enter a URL to open.",
+    "options": "Launch options"
   },
   "password": {
     "title": "Change password",

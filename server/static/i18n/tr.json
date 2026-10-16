@@ -98,7 +98,7 @@
     "cleanroom": "Cleanroom",
     "roomMode": "Oda modunda başlat",
     "wayland": "Wayland",
-    "savePreset": "Bu başlatma seçeneklerini ön ayar olarak kaydet",
+    "savePreset": "Ön ayar olarak kaydet",
     "uploadStorage": "Bir dosyayı ortak depolamaya yükle",
     "pinned": "Sabitlenmiş",
     "activeSessions": "Aktif oturumlar",
@@ -123,7 +123,10 @@
     "uploadingProgress": "Yükleniyor… {done}/{total}",
     "launching": "Başlatılıyor…",
     "finalizing": "Tamamlanıyor…",
-    "fileUploaded": "'{name}' dosyası yüklendi."
+    "fileUploaded": "'{name}' dosyası yüklendi.",
+    "urlToOpen": "Açılacak URL",
+    "urlRequired": "Açılacak URL'yi girin.",
+    "options": "Başlatma seçenekleri"
   },
   "password": {
     "title": "Parolayı değiştir",

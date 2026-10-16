@@ -98,7 +98,7 @@
     "cleanroom": "Cleanroom",
     "roomMode": "Lanzar en modo sala",
     "wayland": "Wayland",
-    "savePreset": "Guardar estas opciones de inicio como preajuste",
+    "savePreset": "Guardar como preajuste",
     "uploadStorage": "Subir un archivo al almacenamiento compartido",
     "pinned": "Fijados",
     "activeSessions": "Sesiones activas",
@@ -123,7 +123,10 @@
     "uploadingProgress": "Subiendo… {done}/{total}",
     "launching": "Lanzando…",
     "finalizing": "Finalizando…",
-    "fileUploaded": "Archivo '{name}' subido."
+    "fileUploaded": "Archivo '{name}' subido.",
+    "urlToOpen": "URL a abrir",
+    "urlRequired": "Introduzca la URL a abrir.",
+    "options": "Opciones de inicio"
   },
   "password": {
     "title": "Cambiar contraseña",

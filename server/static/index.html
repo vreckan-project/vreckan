@@ -82,46 +82,6 @@
   <!-- ===== Main view ===== -->
   <section id="view-main" class="view" hidden>
     <main class="content">
-      <!-- Launch options -->
-      <div class="launch-options card">
-        <div class="field">
-          <label for="opt-home" data-i18n="launch.homeDirectory">Home directory</label>
-          <div class="field-inline">
-            <select id="opt-home">
-              <option value="auto" selected data-i18n="launch.auto">Auto</option>
-              <option value="cleanroom" data-i18n="launch.cleanroom">Cleanroom</option>
-            </select>
-            <button id="btn-manage-homedirs" class="btn btn-ghost btn-sm" type="button" hidden data-i18n="common.manage">Manage</button>
-          </div>
-        </div>
-        <div class="field">
-          <label for="opt-language" data-i18n="common.language">Language</label>
-          <select id="opt-language"></select>
-        </div>
-        <div class="field" id="field-gpu" hidden>
-          <label for="opt-gpu" data-i18n="common.gpu">GPU</label>
-          <select id="opt-gpu"></select>
-        </div>
-        <div class="field field-row">
-          <label class="check">
-            <input type="checkbox" id="opt-room-mode">
-            <span data-i18n="launch.roomMode">Launch in room mode</span>
-          </label>
-        </div>
-        <div class="field field-row">
-          <label class="check">
-            <input type="checkbox" id="opt-wayland" checked>
-            <span data-i18n="launch.wayland">Wayland</span>
-          </label>
-        </div>
-        <div class="field field-row">
-          <button type="button" class="btn btn-ghost btn-sm" id="btn-save-preset" data-i18n="launch.savePreset">Save these launch options as a preset</button>
-        </div>
-        <div class="field field-row">
-          <button type="button" class="btn btn-ghost btn-sm" id="btn-upload-storage" hidden data-i18n="launch.uploadStorage">Upload a file to shared storage</button>
-        </div>
-      </div>
-
       <!-- Pinned launch options (Feat 7) -->
       <div id="pinned-section" hidden>
         <h2 class="section-title" data-i18n="launch.pinned">Pinned</h2>
@@ -278,36 +238,77 @@
   </div>
 </div>
 
-<!-- ===== Launch modal (file-backed apps — Feat 12) ===== -->
+<!-- ===== Launch modal (unified, per-app — ANT-228 Option A; Feat 12) ===== -->
 <div id="modal-launch" class="modal-backdrop" hidden>
   <div class="modal card">
     <h3 id="launch-title" data-i18n="launch.title">Launch app</h3>
-    <p class="muted" id="launch-sub" data-i18n="launch.subtitle">The app will launch without opening a file. Check "Open file on launch" to pick one.</p>
+    <p class="muted" id="launch-sub" hidden data-i18n="launch.subtitle">The app will launch without opening a file. Check "Open file on launch" to pick one.</p>
     <form id="launch-form">
       <div class="field">
         <label for="launch-name" data-i18n="launch.sessionName">Session name (optional)</label>
         <input type="text" id="launch-name" data-i18n-placeholder="launch.sessionNamePlaceholder" placeholder="Appears in the window title and session list">
       </div>
+      <div class="field" id="field-launch-url" hidden>
+        <label for="launch-url" data-i18n="launch.urlToOpen">URL to open</label>
+        <input type="text" id="launch-url" placeholder="https://">
+      </div>
+      <div id="launch-file-section" hidden>
+        <div class="field field-row">
+          <label class="check">
+            <input type="checkbox" id="launch-open-on-launch">
+            <span data-i18n="launch.openFileOnLaunch">Open file on launch</span>
+          </label>
+        </div>
+        <div id="launch-file-fields" hidden>
+          <div class="field">
+            <label for="launch-file" data-i18n="launch.fileToOpen">File to open (optional, from your computer)</label>
+            <input type="file" id="launch-file">
+          </div>
+          <p id="launch-upload-status" class="muted" hidden></p>
+          <hr>
+          <div class="field">
+            <label for="launch-server-file" data-i18n="launch.serverFile">Or open a file already in shared storage</label>
+            <input type="text" id="launch-server-file" data-i18n-placeholder="launch.serverFilePlaceholder" placeholder="filename in shared storage">
+          </div>
+        </div>
+        <div class="field field-row">
+          <button type="button" class="btn btn-ghost btn-sm" id="btn-upload-storage" hidden data-i18n="launch.uploadStorage">Upload a file to shared storage</button>
+        </div>
+      </div>
+      <div class="modal-section" data-i18n="launch.options">Launch options</div>
+      <div class="field">
+        <label for="opt-home" data-i18n="launch.homeDirectory">Home directory</label>
+        <div class="field-inline">
+          <select id="opt-home">
+            <option value="auto" selected data-i18n="launch.auto">Auto</option>
+            <option value="cleanroom" data-i18n="launch.cleanroom">Cleanroom</option>
+          </select>
+          <button id="btn-manage-homedirs" class="btn btn-ghost btn-sm" type="button" hidden data-i18n="common.manage">Manage</button>
+        </div>
+      </div>
+      <div class="field">
+        <label for="opt-language" data-i18n="common.language">Language</label>
+        <select id="opt-language"></select>
+      </div>
+      <div class="field" id="field-gpu" hidden>
+        <label for="opt-gpu" data-i18n="common.gpu">GPU</label>
+        <select id="opt-gpu"></select>
+      </div>
       <div class="field field-row">
         <label class="check">
-          <input type="checkbox" id="launch-open-on-launch">
-          <span data-i18n="launch.openFileOnLaunch">Open file on launch</span>
+          <input type="checkbox" id="opt-room-mode">
+          <span data-i18n="launch.roomMode">Launch in room mode</span>
         </label>
       </div>
-      <div id="launch-file-fields" hidden>
-        <div class="field">
-          <label for="launch-file" data-i18n="launch.fileToOpen">File to open (optional, from your computer)</label>
-          <input type="file" id="launch-file">
-        </div>
-        <p id="launch-upload-status" class="muted" hidden></p>
-        <hr>
-        <div class="field">
-          <label for="launch-server-file" data-i18n="launch.serverFile">Or open a file already in shared storage</label>
-          <input type="text" id="launch-server-file" data-i18n-placeholder="launch.serverFilePlaceholder" placeholder="filename in shared storage">
-        </div>
+      <div class="field field-row">
+        <label class="check">
+          <input type="checkbox" id="opt-wayland" checked>
+          <span data-i18n="launch.wayland">Wayland</span>
+        </label>
       </div>
       <p id="launch-error" class="error" role="alert" hidden></p>
       <div class="modal-actions">
+        <button type="button" class="btn btn-ghost btn-sm btn-save-preset" id="btn-save-preset" data-i18n="launch.savePreset">Save as preset</button>
         <button type="button" class="btn btn-ghost" id="launch-cancel" data-i18n="common.cancel">Cancel</button>
         <button type="submit" class="btn btn-primary" id="launch-submit" data-i18n="launch.launch">Launch</button>
       </div>

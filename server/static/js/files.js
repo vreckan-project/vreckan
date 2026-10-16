@@ -5,6 +5,7 @@ import { secureFetch } from "./api.js";
 import { base64ToArrayBuffer } from "./crypto.js";
 import { openCustomModal, confirmModal, promptModal, escModal } from "./modal.js";
 import { $, toast, formatBytes, uploadFileChunks } from "./util.js";
+import { resolveLaunchGpu } from "./app/launch.js";
 import { t } from "./i18n.js";
 
 const PER_PAGE = 50;
@@ -431,12 +432,16 @@ async function openInAppModal() {
 
   box.querySelector('[data-act="open-in-app-launch"]').addEventListener("click", async () => {
     const appId = box.querySelector("#open-in-app-select").value;
+    const app = fileApps.find((a) => a.id === appId);
     const openOnLaunch = box.querySelector("#open-in-app-onlaunch").checked;
     const errEl = box.querySelector("#open-in-app-error");
     const launchBtn = box.querySelector('[data-act="open-in-app-launch"]');
     errEl.hidden = true;
     launchBtn.disabled = true;
     try {
+      // The launch-options controls now live in the per-app launch modal
+      // (ANT-228); read the shared ones from there and resolve the GPU the
+      // same way the launch flow does (default preset, then global default).
       const result = await secureFetch("/api/files/launch_from_storage", {
         method: "POST",
         body: {
@@ -445,16 +450,12 @@ async function openInAppModal() {
           application_id: appId,
           open_file_on_launch: openOnLaunch,
           language: $("opt-language").value,
-          selected_gpu: $("field-gpu").hidden
-            ? null
-            : $("opt-gpu").value === "none"
-              ? null
-              : $("opt-gpu").value,
+          selected_gpu: app ? resolveLaunchGpu(app) : null,
           wayland_mode: $("opt-wayland").checked,
         },
       });
       close();
-      const appName = fileApps.find((a) => a.id === appId)?.name || t("files.app");
+      const appName = app?.name || t("files.app");
       toast(t("files.launched", { name: appName }));
       if (result && result.session_url) window.open(result.session_url, "_blank", "noopener");
       window.dispatchEvent(new CustomEvent("vreckan:sessions-changed"));

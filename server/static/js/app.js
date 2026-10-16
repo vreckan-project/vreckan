@@ -24,6 +24,9 @@ import { loadPinned, applyPreset, openSavePresetModal, pinnedBehaviors } from ".
 // ---------------------------------------------------------------------------
 export let currentUser = null;
 export let availableGpus = [];
+// The admin's global default GPU (set in loadMain); applied by the launch
+// modal when an app has no personal default preset of its own.
+export let globalDefaultGpu = null;
 // The current user's effective settings (set in loadMain); read by the
 // home-directory helpers (homedirs.js) and the launch code (launch.js).
 export let currentSettings = {};
@@ -119,16 +122,19 @@ async function loadMain() {
   const settings = (statusData && statusData.settings) || {};
   currentSettings = settings;
   availableGpus = (statusData && statusData.gpus) || [];
+  globalDefaultGpu = (statusData && statusData.global_default_gpu) || null;
   setInstalledApps(appsData);
 
   $("user-label").textContent = statusData.username || currentUser.username;
 
-  // Home directory dropdown: auto + cleanroom always; persistent dirs if enabled.
+  // Home directory dropdown (in the launch modal): auto + cleanroom always;
+  // persistent dirs if enabled.
   await populateHomeSelect();
-  // Self-service "Manage" button: only shown when the user has persistent storage.
+  // The "Manage" and "Upload to storage" buttons (in the launch modal) are
+  // only meaningful when the user has persistent storage; openLaunchModal
+  // re-checks this each time the modal opens.
   const manageBtn = $("btn-manage-homedirs");
   if (manageBtn) manageBtn.hidden = !settings.persistent_storage;
-  // Upload-to-storage button (Feat 10): only meaningful with persistent storage.
   const uploadStorageBtn = $("btn-upload-storage");
   if (uploadStorageBtn) uploadStorageBtn.hidden = !settings.persistent_storage;
 
@@ -139,20 +145,14 @@ async function loadMain() {
   // Pinned launch options (Feat 7).
   await loadPinned();
 
-  // Restore the user's default preset (if any) so their saved launch options
-  // (GPU, home directory, language, …) are remembered between sessions and are
-  // used across every app, not just the one the preset was originally saved for.
+  // The launch-options controls now live inside the per-app launch modal
+  // (ANT-228). Seed their standing values now (the user's default preset, if
+  // any) so non-modal launch flows — e.g. the Files view's "Open in app" —
+  // read the same values the old top bar had; applyModalDefaults re-applies
+  // them each time the modal opens (including the global default GPU, which
+  // only applies per app).
   const defaultPreset = pinnedBehaviors.find((p) => p.is_default);
-  if (defaultPreset) {
-    applyPreset(defaultPreset, true);
-  } else if (
-    statusData.global_default_gpu &&
-    !$("field-gpu").hidden &&
-    availableGpus.some((g) => g.device === statusData.global_default_gpu)
-  ) {
-    // No personal default preset — fall back to the admin's global default GPU.
-    $("opt-gpu").value = statusData.global_default_gpu;
-  }
+  if (defaultPreset) applyPreset(defaultPreset, true);
 
   // File manager tab: only available when persistent storage is enabled.
   if (settings.persistent_storage) {
