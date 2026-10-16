@@ -128,6 +128,8 @@ struct CertificateConfigRequest {
     #[serde(default = "default_acme_ca")]
     acme_ca: String,
     #[serde(default)]
+    acme_allow_http_ca: bool,
+    #[serde(default)]
     acme_domains: Vec<String>,
     #[serde(default = "default_acme_auth")]
     acme_auth: String,
@@ -417,6 +419,7 @@ const SSO_SETTING_FIELDS: &[&str] = &[
 const ACME_SETTING_FIELDS: &[&str] = &[
     "acme_enabled",
     "acme_ca",
+    "acme_allow_http_ca",
     "acme_domains",
     "acme_auth",
     "acme_cloudflare_email",
@@ -954,9 +957,11 @@ async fn get_certificates(
         .filter(|d| !d.is_empty())
         .collect();
     let token = cfg.acme_cloudflare_token.clone();
+    let provider_config = cfg.acme_dns_provider_config.clone();
     let values = serde_json::json!({
         "acme_enabled": cfg.acme_enabled,
         "acme_ca": cfg.acme_ca,
+        "acme_allow_http_ca": cfg.acme_allow_http_ca,
         "acme_domains": domains,
         "acme_auth": cfg.acme_auth,
         "acme_cloudflare_email": cfg.acme_cloudflare_email,
@@ -969,13 +974,20 @@ async fn get_certificates(
         "acme_renew_before_days": cfg.acme_renew_before_days,
         "acme_dns_provider": cfg.acme_dns_provider,
         "acme_cloudflare_zone_id": cfg.acme_cloudflare_zone_id,
-        "acme_dns_provider_config": cfg.acme_dns_provider_config,
+        // Masked like the Cloudflare token: the raw JSON carries the provider's
+        // api_token/client_secret, which we do not want in the admin's browser
+        // (ANT-275). Blank on save = keep the existing config.
+        "acme_dns_provider_config": "",
+        "dns_provider_config_set": !provider_config.is_empty(),
+        "dns_provider_config_length": provider_config.len(),
     });
     let mut sources = serde_json::Map::new();
     for name in ACME_SETTING_FIELDS {
         sources.insert((*name).to_string(), Value::String(setting_source(&state, name).await));
     }
-    let status = crate::acme_orchestrator::cert_status(&state, &domains).await;
+    let mut status = crate::acme_orchestrator::cert_status(&state, &domains).await;
+    // Elide the private-key PEM from the admin's response (ANT-275).
+    crate::acme_orchestrator::mask_status_key(&mut status);
     let value = serde_json::json!({
         "values": values,
         "sources": Value::Object(sources),
@@ -1038,6 +1050,7 @@ async fn save_certificates(
     let payload: HashMap<&str, String> = HashMap::from([
         ("acme_enabled", if req.acme_enabled { "true" } else { "false" }.to_string()),
         ("acme_ca", if req.acme_ca.trim().is_empty() { "letsencrypt".to_string() } else { req.acme_ca.trim().to_string() }),
+        ("acme_allow_http_ca", if req.acme_allow_http_ca { "true" } else { "false" }.to_string()),
         ("acme_domains", req.acme_domains.iter().map(|d| d.trim()).filter(|d| !d.is_empty()).collect::<Vec<_>>().join(",")),
         ("acme_auth", if req.acme_auth.trim().is_empty() { "dns-cloudflare".to_string() } else { req.acme_auth.trim().to_string() }),
         ("acme_cloudflare_email", req.acme_cloudflare_email.trim().to_string()),
@@ -1055,8 +1068,9 @@ async fn save_certificates(
             Some(v) => v.clone(),
             None => continue,
         };
-        if *name == "acme_cloudflare_token" && value.is_empty() {
-            // Blank token = "leave the existing one"; skip the write.
+        if (*name == "acme_cloudflare_token" || *name == "acme_dns_provider_config") && value.is_empty() {
+            // Blank secret = "leave the existing one"; skip the write.
+            // (Both are masked to blank in the GET response, ANT-275.)
             continue;
         }
         let env_var = format!("VRECKAN_{}", name.to_uppercase());
@@ -1131,6 +1145,8 @@ async fn renew_certificates(
     // `logs`/`error` so the UI can explain what happened.
     let result = crate::acme_orchestrator::ensure_acme_cert(&state, &cfg, true).await;
     let mut result = result;
+    // Same private-key masking as the GET endpoint (ANT-275).
+    crate::acme_orchestrator::mask_status_key(&mut result);
     if let Some(obj) = result.as_object_mut() {
         let issued = obj.get("issued").and_then(|v| v.as_bool()).unwrap_or(false);
         obj.insert("renewed".into(), Value::Bool(issued));

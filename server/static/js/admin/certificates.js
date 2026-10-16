@@ -144,7 +144,9 @@ async function renderCertificates() {
         <div class="field flex-1 min-w-220">
           <label>${t("certificates.caLabel")} ${badge("acme_ca")}</label>
           <select id="acme-ca">${caOptions(ca)}</select>
+          <label class="check mt-4"><input type="checkbox" id="acme-allow-http-ca" ${v.acme_allow_http_ca ? "checked" : ""}> ${t("certificates.allowHttpCa")}</label>
           <p class="muted mt-4">${t("certificates.caHelp")}</p>
+          <p class="muted mt-4">${t("certificates.allowHttpCaHelp")}</p>
         </div>
         <div class="field flex-1 min-w-220" id="acme-staging-field">
           <label>${t("certificates.stagingLabel")} ${badge("acme_staging")}</label>
@@ -189,7 +191,7 @@ async function renderCertificates() {
 
       <div class="field mt-12" id="acme-provider-config-field">
         <label>${t("certificates.providerConfigLabel")} ${badge("acme_dns_provider_config")}</label>
-        <textarea id="acme-provider-config" rows="6" placeholder="${esc(t("certificates.providerConfigPlaceholder"))}">${esc(v.acme_dns_provider_config || "")}</textarea>
+        <textarea id="acme-provider-config" rows="6" placeholder="${esc(v.dns_provider_config_set ? t("certificates.providerConfigSet", { length: v.dns_provider_config_length }) : t("certificates.providerConfigPlaceholder"))}">${esc(v.acme_dns_provider_config || "")}</textarea>
         <p class="muted mt-4">${t("certificates.providerConfigHelp")}</p>
       </div>
 
@@ -248,6 +250,7 @@ async function renderCertificates() {
     const payload = {
       acme_enabled: $("acme-enabled").checked,
       acme_ca: $("acme-ca").value,
+      acme_allow_http_ca: $("acme-allow-http-ca").checked,
       acme_domains: readTagInput("acme-domains"),
       acme_auth: $("acme-auth").value,
       acme_dns_provider: $("acme-dns-provider").value,
