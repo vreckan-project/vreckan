@@ -33,7 +33,7 @@ use tracing::{debug, info, warn};
 
 use crate::entities;
 use crate::permissions;
-use crate::settings::Settings;
+use crate::settings::{DefaultDbCredsPolicy, Settings};
 use crate::state::AppState;
 use crate::user_manager::{
     self, db_save_group, db_save_user_row, get_group_row, UserError, UserRecord,
@@ -461,17 +461,89 @@ impl<S: Send + Sync> axum::extract::FromRequestParts<S> for RemoteAddr {
     }
 }
 
+/// Whether the direct TCP peer is one of the configured trusted reverse
+/// proxies (`trusted_proxies`; ANT-276, the same control as H4 for
+/// `X-Forwarded-Proto`). Only then are `X-Forwarded-*` headers honoured: a
+/// client reaching the server directly can otherwise rotate the headers at
+/// will. Public so the remaining H4 call sites can reuse the same gate.
+pub fn peer_is_trusted_proxy(
+    settings: &Settings,
+    remote: Option<std::net::SocketAddr>,
+) -> bool {
+    let Some(ip) = remote.map(|a| a.ip()) else {
+        return false;
+    };
+    settings
+        .trusted_proxies
+        .split(',')
+        .map(str::trim)
+        .filter(|e| !e.is_empty())
+        .any(|entry| entry_matches_ip(entry, ip))
+}
+
+/// Match one `trusted_proxies` entry — a bare IP or an `IP/prefix` CIDR —
+/// against a peer address. Malformed entries never match.
+fn entry_matches_ip(entry: &str, ip: std::net::IpAddr) -> bool {
+    match entry.split_once('/') {
+        Some((network, prefix)) => {
+            let Ok(prefix) = prefix.parse::<u32>() else {
+                return false;
+            };
+            if prefix > 128 {
+                return false;
+            }
+            let Ok(network) = network.parse::<std::net::IpAddr>() else {
+                return false;
+            };
+            ip_in_network(ip, network, prefix as u8)
+        }
+        None => entry.parse::<std::net::IpAddr>() == Ok(ip),
+    }
+}
+
+/// True when `ip` lies inside the `network/prefix` block (v4 and v6; a
+/// version mismatch never matches).
+fn ip_in_network(ip: std::net::IpAddr, network: std::net::IpAddr, prefix: u8) -> bool {
+    match (ip, network) {
+        (std::net::IpAddr::V4(a), std::net::IpAddr::V4(b)) => {
+            let (a, b) = (u32::from(a), u32::from(b));
+            if prefix == 0 {
+                return true;
+            }
+            let mask = u32::MAX << (32 - prefix);
+            (a & mask) == (b & mask)
+        }
+        (std::net::IpAddr::V6(a), std::net::IpAddr::V6(b)) => {
+            let (a, b) = (u128::from(a), u128::from(b));
+            if prefix == 0 {
+                return true;
+            }
+            let mask = u128::MAX << (128 - prefix);
+            (a & mask) == (b & mask)
+        }
+        _ => false,
+    }
+}
+
 /// The client's IP for login rate limiting: the leftmost `X-Forwarded-For`
-/// entry (set by the reverse proxy), falling back to the direct connection
-/// address, then to a shared `"unknown"` bucket (unproxied local clients and
-/// test harnesses).
-fn client_ip(headers: &HeaderMap, remote: Option<std::net::SocketAddr>) -> String {
-    if let Some(v) = headers.get(axum::http::HeaderName::from_static("x-forwarded-for")) {
-        if let Ok(s) = v.to_str() {
-            if let Some(first) = s.split(',').next() {
-                let first = first.trim();
-                if !first.is_empty() {
-                    return first.to_string();
+/// entry when the direct peer is a configured trusted proxy (the proxy
+/// appends the entry, so the client cannot forge it), otherwise the direct
+/// connection address, then to a shared `"unknown"` bucket (unproxied local
+/// clients and test harnesses). An XFF header from an untrusted peer is
+/// ignored: a rotating value would defeat the per-IP lockout (ANT-276).
+fn client_ip(
+    settings: &Settings,
+    headers: &HeaderMap,
+    remote: Option<std::net::SocketAddr>,
+) -> String {
+    if peer_is_trusted_proxy(settings, remote) {
+        if let Some(v) = headers.get(axum::http::HeaderName::from_static("x-forwarded-for")) {
+            if let Ok(s) = v.to_str() {
+                if let Some(first) = s.split(',').next() {
+                    let first = first.trim();
+                    if !first.is_empty() {
+                        return first.to_string();
+                    }
                 }
             }
         }
@@ -525,8 +597,10 @@ async fn login(
     RemoteAddr(remote): RemoteAddr,
     Json(req): Json<LoginRequest>,
 ) -> Response {
-    let ip = client_ip(&headers, remote);
-    let key = format!("{ip}:{}", req.username);
+    let ip = client_ip(&state.settings, &headers, remote);
+    // Lowercase the username in the key: 'Admin' and 'admin' are the same
+    // account for lockout-budget purposes (ANT-276).
+    let key = format!("{ip}:{}", req.username.to_ascii_lowercase());
     let now = now_secs();
     let max_attempts = state.settings.login_max_attempts;
     let window_secs = state.settings.login_lockout_seconds.max(1) as f64;
@@ -595,10 +669,18 @@ async fn login(
         match policy.as_str() {
             "allow" => {}
             "reject" => {
-                return json_error(
-                    StatusCode::UNAUTHORIZED,
-                    "Still using the default bootstrap password; change it.",
-                );
+                // The specific body tells an unauthenticated caller that the
+                // default bootstrap password is still in use (a login-body
+                // oracle, ANT-276). Show it only when the operator explicitly
+                // opted into running on defaults (silent); under the default
+                // warn policy collapse to the generic 401 body.
+                if state.settings.default_db_creds_policy == DefaultDbCredsPolicy::Silent {
+                    return json_error(
+                        StatusCode::UNAUTHORIZED,
+                        "Still using the default bootstrap password; change it.",
+                    );
+                }
+                return json_error(StatusCode::UNAUTHORIZED, "Invalid username or password.");
             }
             _ => warn!(
                 "User '{}' logged in with the default bootstrap password (policy: warn).",
@@ -1412,7 +1494,7 @@ async fn oidc_callback(
     // 1) Validate and consume the one-time state.
     let now = now_secs();
     let st = state.oidc_states.write().await.remove(&q.state);
-    if st.map(|s| s.expires_at >= now).unwrap_or(false) != true {
+    if !st.is_some_and(|s| s.expires_at >= now) {
         return json_error(
             StatusCode::BAD_REQUEST,
             "Invalid or expired OIDC state (CSRF check failed).",
@@ -1555,4 +1637,87 @@ async fn oidc_callback(
         StatusCode::FOUND,
     )
         .into_response()
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use std::net::{IpAddr, Ipv4Addr, Ipv6Addr, SocketAddr};
+
+    fn settings_with_proxies(list: &str) -> Settings {
+        let mut s = Settings::from_env();
+        s.trusted_proxies = list.to_string();
+        s
+    }
+
+    fn xff(value: &str) -> HeaderMap {
+        let mut h = HeaderMap::new();
+        h.insert(
+            axum::http::HeaderName::from_static("x-forwarded-for"),
+            value.parse().unwrap(),
+        );
+        h
+    }
+
+    #[test]
+    fn xff_ignored_when_no_trusted_proxy_configured() {
+        let s = settings_with_proxies("");
+        let remote = SocketAddr::new(IpAddr::V4(Ipv4Addr::new(1, 2, 3, 4)), 1234);
+        assert_eq!(client_ip(&s, &xff("9.9.9.9"), Some(remote)), "1.2.3.4");
+    }
+
+    #[test]
+    fn xff_honoured_only_when_direct_peer_is_trusted() {
+        let remote = SocketAddr::new(IpAddr::V4(Ipv4Addr::new(10, 1, 2, 3)), 1234);
+        // Exact-IP entry matching the direct peer.
+        let s = settings_with_proxies("10.1.2.3");
+        assert_eq!(client_ip(&s, &xff("9.9.9.9"), Some(remote)), "9.9.9.9");
+        // CIDR covering the direct peer; leftmost entry wins.
+        let s = settings_with_proxies("10.0.0.0/8");
+        assert_eq!(
+            client_ip(&s, &xff("9.9.9.9, 10.1.2.3"), Some(remote)),
+            "9.9.9.9"
+        );
+        // A different, untrusted peer: XFF falls back to the direct address.
+        let other = SocketAddr::new(IpAddr::V4(Ipv4Addr::new(203, 0, 113, 7)), 1234);
+        assert_eq!(client_ip(&s, &xff("9.9.9.9"), Some(other)), "203.0.113.7");
+    }
+
+    #[test]
+    fn peer_is_trusted_proxy_match_rules() {
+        // Empty list never matches.
+        let s = settings_with_proxies("");
+        let v4 = SocketAddr::new(IpAddr::V4(Ipv4Addr::new(10, 0, 0, 1)), 1);
+        assert!(!peer_is_trusted_proxy(&s, Some(v4)));
+        // No direct peer (test harnesses) never matches.
+        assert!(!peer_is_trusted_proxy(&s, None));
+        // Bare IP, whitespace-tolerant list, CIDR.
+        let s = settings_with_proxies(" 10.0.0.1 , 192.168.1.0/24 ");
+        assert!(peer_is_trusted_proxy(&s, Some(v4)));
+        let v4b = SocketAddr::new(IpAddr::V4(Ipv4Addr::new(192, 168, 1, 55)), 1);
+        assert!(peer_is_trusted_proxy(&s, Some(v4b)));
+        let v4c = SocketAddr::new(IpAddr::V4(Ipv4Addr::new(192, 168, 2, 55)), 1);
+        assert!(!peer_is_trusted_proxy(&s, Some(v4c)));
+        // IPv6: exact and /128 CIDR.
+        let v6 = SocketAddr::new(IpAddr::V6(Ipv6Addr::new(0, 0, 0, 0, 0, 0, 0, 1)), 1);
+        let s6 = settings_with_proxies("::1/128, ::1");
+        assert!(peer_is_trusted_proxy(&s6, Some(v6)));
+        // Version mismatch never matches.
+        assert!(!peer_is_trusted_proxy(&settings_with_proxies("127.0.0.1/32"), Some(v6)));
+        // /0 matches every v4 peer.
+        let s0 = settings_with_proxies("0.0.0.0/0");
+        assert!(peer_is_trusted_proxy(&s0, Some(v4c)));
+        // Malformed entries never match.
+        let s_bad = settings_with_proxies("10.0.0.0/129, 10.0.0.0.0/8, notanip");
+        assert!(!peer_is_trusted_proxy(&s_bad, Some(v4)));
+    }
+
+    #[test]
+    fn xff_with_empty_leading_entry_falls_back() {
+        let remote = SocketAddr::new(IpAddr::V4(Ipv4Addr::new(10, 1, 2, 3)), 1234);
+        let s = settings_with_proxies("10.1.2.3");
+        assert_eq!(client_ip(&s, &xff(", 9.9.9.9"), Some(remote)), "10.1.2.3");
+        // No remote at all: shared unknown bucket.
+        assert_eq!(client_ip(&s, &xff("9.9.9.9"), None), "unknown");
+    }
 }
