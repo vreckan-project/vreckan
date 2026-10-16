@@ -9,7 +9,7 @@ is committed normally in `vreckan`. The changelog is the authoritative
 record of what shipped in each release — see
 [`docs/release.md`](./docs/release.md) for the conventions.
 
-## 2026-10-16 — Launch options move into the per-app Launch dialog; session name (ANT-228/ANT-229/ANT-230)
+## 2026-10-16 — Launch options move into the per-app Launch dialog; session name; first-sign-in password prompt (ANT-228/ANT-229/ANT-230/ANT-253)
 
 The "Launch options" card at the top of the Apps view is gone. Picking an
 app now opens a per-app **Launch dialog** that shows exactly the fields
@@ -48,6 +48,17 @@ time. Verified against the T3 QA matrix (11 cases, live server).
   the Launch dialog sets `PIXELFLUX_WAYLAND=false` on the launch,
   overriding the `true` that linuxserver images bake into the image env
   (ANT-234).
+- **The web client honors `must_change_password` at first sign-in.**
+  While an account still carries its initial (bootstrap) password the
+  server reports `must_change_password` in the login and `/me`
+  responses; the client now opens the change-password dialog right after
+  sign-in (form login or session restore) with a note explaining why.
+  Closing it never traps the user — `VRECKAN_DEFAULT_PASSWORD_POLICY`
+  still governs logins with the literal default password — and SSO
+  accounts, whose password the identity provider manages, are skipped.
+  This restores the long-documented "prompts for a new password at first
+  sign-in" behavior, and the usage docs are aligned with the actual
+  launch/Wayland/certificate behavior (ANT-253).
 - **Explicit GPU selection no longer fails with a 500 in containerized
   deployments.** When the server's `/dev/dri` is bind-mounted at a
   different host path, the selected device is now remapped onto the real
