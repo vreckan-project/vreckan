@@ -223,7 +223,7 @@ impl Db {
             }
             let rows = self
                 .conn
-                .query_all_raw(Statement::from_string(backend, &format!("SELECT * FROM {table}")))
+                .query_all_raw(Statement::from_string(backend, format!("SELECT * FROM {table}")))
                 .await?;
             let mut out = Vec::new();
             for row in &rows {
@@ -287,7 +287,7 @@ impl Db {
             if table == "auth_tokens" && !has_entry {
                 continue;
             }
-            txn.execute_raw(Statement::from_string(backend, &format!("DELETE FROM {table}")))
+            txn.execute_raw(Statement::from_string(backend, format!("DELETE FROM {table}")))
                 .await?;
             if let Some(rows) = tables.get(table).and_then(|v| v.as_array()) {
                 for row in rows {

@@ -185,7 +185,7 @@ pub async fn handshake_initiate() -> impl IntoResponse {
     // SHA256)` hashes internally, which is why the Python server worked in the
     // browser while the raw-nonce Rust signature did not.)
     let mut rng = rand::rng();
-    let hashed = Sha256::digest(&nonce);
+    let hashed = Sha256::digest(nonce);
     let signature = key
         .sign_with_rng(&mut rng, Pss::<Sha256>::new_with_salt(32), &hashed)
         .expect("RSA-PSS sign failed");

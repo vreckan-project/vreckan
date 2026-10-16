@@ -505,7 +505,7 @@ async fn test_pull_latest_idle_app() {
     sc.state.installed_apps.write().await.insert(app.id.clone(), app);
     assert!(!sc.state.pull_status.read().await.contains_key(image));
     let (status, data) = sc
-        .call("POST", &format!("/api/admin/apps/installed/app-2/pull_latest"), None)
+        .call("POST", "/api/admin/apps/installed/app-2/pull_latest", None)
         .await;
     assert_eq!(status, StatusCode::OK);
     assert_eq!(data, Some(json!({ "status": "pulling", "new_sha": null })));

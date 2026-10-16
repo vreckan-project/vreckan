@@ -410,10 +410,11 @@ async fn test_demote_root_admin_forbidden() {
     assert_eq!(status, StatusCode::FORBIDDEN);
     assert!(body.unwrap()["detail"].as_str().unwrap().contains("cannot be demoted"));
     // ...and it is still an admin.
-    assert_eq!(
-        user_manager::get_user(&sc.state.db, "admin").await.unwrap().unwrap().is_admin,
-        true
-    );
+    assert!(user_manager::get_user(&sc.state.db, "admin")
+        .await
+        .unwrap()
+        .unwrap()
+        .is_admin);
 }
 
 #[tokio::test]

@@ -82,7 +82,7 @@ fn resolve_pg_url() -> Option<String> {
 /// Resolve a container's IP address from its network settings.
 fn container_ip(ci: &bollard::models::ContainerInspectResponse) -> Option<String> {
     let networks = ci.network_settings.as_ref()?.networks.as_ref()?;
-    for (_, ep) in networks.iter() {
+    for ep in networks.values() {
         if let Some(ip) = &ep.ip_address {
             if !ip.is_empty() {
                 return Some(ip.clone());
@@ -163,6 +163,8 @@ async fn spin_up_postgres() -> (String, bollard::Docker, String) {
 }
 
 /// Get (or lazily create) the shared Postgres server.
+// The lock deliberately spans the await points below (double-checked init).
+#[allow(clippy::await_holding_lock)]
 async fn pg_server() -> &'static PgServer {
     if let Some(s) = PG.get() {
         return s;
@@ -219,7 +221,7 @@ impl Drop for PgServer {
         if let Ok(handle) = tokio::runtime::Handle::try_current() {
             let cid = self.container_id.clone();
             let client = self.client.clone();
-            let _ = handle.block_on(async move {
+            handle.block_on(async move {
                 let _ = client
                     .stop_container(
                         &cid,
@@ -265,7 +267,7 @@ async fn new_pg_db() -> (Db, String) {
     let base = db::connect(&s.url).await.expect("connect base db");
     let backend = base.conn.get_database_backend();
     base.conn
-        .execute_raw(Statement::from_string(backend, &format!("CREATE DATABASE {dbname}")))
+        .execute_raw(Statement::from_string(backend, format!("CREATE DATABASE {dbname}")))
         .await
         .expect("create database");
     let d = db::connect(&db_url_for(s, &dbname)).await.expect("connect new db");
@@ -282,7 +284,7 @@ async fn drop_pg_db(s: &PgServer, dbname: &str) {
     let backend = base.conn.get_database_backend();
     let _ = base
         .conn
-        .execute_raw(Statement::from_string(backend, &format!("DROP DATABASE IF EXISTS {dbname}")))
+        .execute_raw(Statement::from_string(backend, format!("DROP DATABASE IF EXISTS {dbname}")))
         .await;
 }
 
@@ -307,7 +309,7 @@ async fn cols(d: &Db, table: &str) -> HashMap<String, String> {
         .conn
         .query_all_raw(Statement::from_string(
             backend,
-            &format!(
+            format!(
                 "SELECT column_name, data_type FROM information_schema.columns WHERE table_name = '{table}'"
             ),
         ))
@@ -355,7 +357,7 @@ async fn wipe_db(d: &Db) {
     for table in db::TABLE_ORDER {
         let _ = d
             .conn
-            .execute_raw(Statement::from_string(backend, &format!("DELETE FROM {table}")))
+            .execute_raw(Statement::from_string(backend, format!("DELETE FROM {table}")))
             .await;
     }
 }
@@ -383,12 +385,12 @@ async fn test_pg_schema_and_jsonb_types() {
     // `json` type — a real JSON type, not the "TEXT" fallback SQLite uses.
     let user_cols = cols(&d, "users").await;
     for col in ["settings", "sso_groups", "roles", "permissions", "groups"] {
-        let dtype = user_cols.get(col).expect(&format!("users.{col} missing"));
+        let dtype = user_cols.get(col).unwrap_or_else(|| panic!("users.{col} missing"));
         assert!(is_json_type(dtype), "users.{col} is {dtype}, expected a JSON type");
     }
     let group_cols = cols(&d, "groups").await;
     for col in ["settings", "roles", "permissions"] {
-        let dtype = group_cols.get(col).expect(&format!("groups.{col} missing"));
+        let dtype = group_cols.get(col).unwrap_or_else(|| panic!("groups.{col} missing"));
         assert!(is_json_type(dtype), "groups.{col} is {dtype}, expected a JSON type");
     }
     drop_pg_db(s, &dbname).await;
@@ -430,7 +432,7 @@ async fn test_pg_migrate_adds_columns_to_legacy_schema() {
     for table in db::TABLE_ORDER.iter().rev() {
         let _ = d
             .conn
-            .execute_raw(Statement::from_string(backend, &format!("DROP TABLE IF EXISTS {table}")))
+            .execute_raw(Statement::from_string(backend, format!("DROP TABLE IF EXISTS {table}")))
             .await;
     }
     d.conn
