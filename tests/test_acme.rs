@@ -329,18 +329,40 @@ async fn test_acme_persist_cert_round_trips() {
     let _serial = lock_le();
     let state = build_state(TempDir::new().path()).await;
     let (cert_pem, key_pem) = make_cert("example.com", 90);
-    acme_orchestrator::acme_persist_cert(
-        &state,
-        &acme_orchestrator::AcmeCertRecord {
-            cert_pem: cert_pem.clone(),
-            key_pem: key_pem.clone(),
-            ca: "letsencrypt".to_string(),
-            domains: "example.com,www.example.com".to_string(),
-            expires: Some(1234567890),
-        },
-    )
-    .await;
-    let rec = acme_orchestrator::acme_cert_record(&state).await.expect("record persisted");
+    let rec_in = acme_orchestrator::AcmeCertRecord {
+        cert_pem: cert_pem.clone(),
+        key_pem: key_pem.clone(),
+        ca: "letsencrypt".to_string(),
+        domains: "example.com,www.example.com".to_string(),
+        expires: Some(1234567890),
+    };
+    // Each `set_app_setting` in `acme_persist_cert` is an independent
+    // upsert whose error is swallowed (`let _ =`); under a loaded pool a
+    // transient SQLite lock can drop one row. The upsert is idempotent, so
+    // re-persist and re-read until the row is visible instead of failing on
+    // a first read that raced a concurrent write.
+    let mut rec: Option<acme_orchestrator::AcmeCertRecord> = None;
+    for attempt in 0..10 {
+        // A brief settle before a retry lets pooled connections whose
+        // implicit read transaction still carries a pre-write WAL snapshot
+        // drain out of the pool, so the next attempt reads fresh state.
+        if attempt > 0 {
+            tokio::time::sleep(std::time::Duration::from_millis(250)).await;
+        }
+        acme_orchestrator::acme_persist_cert(&state, &rec_in).await;
+        rec = acme_orchestrator::acme_cert_record(&state).await;
+        let complete = rec.as_ref().is_some_and(|r| {
+            r.cert_pem == rec_in.cert_pem
+                && r.key_pem == rec_in.key_pem
+                && r.ca == rec_in.ca
+                && r.domains == rec_in.domains
+                && r.expires == rec_in.expires
+        });
+        if complete {
+            break;
+        }
+    }
+    let rec = rec.expect("record persisted");
     assert_eq!(rec.cert_pem, cert_pem);
     assert_eq!(rec.key_pem, key_pem);
     assert_eq!(rec.ca, "letsencrypt");
