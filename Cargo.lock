@@ -5,7 +5,7 @@ version = 4
 [[package]]
 name = "acmex"
 version = "0.8.0"
-source = "git+https://github.com/antitux/acmex?rev=261817d654bff17e730421861c4a71a57d904c88#261817d654bff17e730421861c4a71a57d904c88"
+source = "git+https://github.com/vreckan-project/acmex?tag=vreckan-2026-10-16#261817d654bff17e730421861c4a71a57d904c88"
 dependencies = [
  "async-trait",
  "aws-config",
@@ -6166,7 +6166,7 @@ checksum = "0b928f33d975fc6ad9f86c8f283853ad26bdd5b10b7f1542aa2fa15e2289105a"
 
 [[package]]
 name = "vreckan"
-version = "0.6.4"
+version = "0.6.5"
 dependencies = [
  "acmex",
  "aes-gcm",

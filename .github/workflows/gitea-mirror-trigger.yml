@@ -8,6 +8,10 @@
 #        For PRs, the code is mirrored to a `pr/<number>` branch.
 #     2. Dispatches the Gitea build workflow in vreckan/vreckan-workflow so the
 #        heavy build + test + scan runs on Gitea's own runner.
+#     3. When a push to main changes site/ (diff of the push range), also
+#        dispatches the site build workflow (build-site.yml) so the
+#        vreckan-site image in the Gitea registry tracks main. Pushes that
+#        don't touch site/ cost nothing (the diff check is a local git call).
 #
 #   bump-and-tag  (push to main only)
 #     1. Reads the current VERSION from the repo.
@@ -103,6 +107,57 @@ jobs:
           # evaluator leak a stray '}' into the value (HTTP 422 on dispatch).
           TARGET_BRANCH: ${{ steps.target.outputs.target_branch }}
           TARGET_SHA: ${{ steps.target.outputs.target_sha }}
+        run: |
+          chmod +x scripts/trigger-gitea.sh
+          ./scripts/trigger-gitea.sh
+
+      - name: Check if site/ changed
+        id: site-changed
+        # Pushes to main only: the site image is built from mirror main, so a
+        # PR build (mirrored to pr/<n>) doesn't need a site dispatch.
+        if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+        run: |
+          set -euo pipefail
+          BEFORE="${{ github.event.before }}"
+          AFTER="${{ github.sha }}"
+          ZERO="0000000000000000000000000000000000000000"
+          if [ "$BEFORE" = "$ZERO" ] || ! git cat-file -e "${BEFORE}^{commit}" 2>/dev/null; then
+            # First push to main (or a force-push from off-history): diff
+            # against the empty tree so the first landing of site/ still
+            # counts as a change. fetch-depth: 0 keeps ordinary push
+            # ranges (incl. force-pushes) resolvable.
+            BASE=$(git hash-object -t tree /dev/null)
+          else
+            BASE="$BEFORE"
+          fi
+          # --quiet gates on "any diff at all" without a pipe (pipefail +
+          # head would race to SIGPIPE on large diffs). The name-only call
+          # only runs to log the first changed path, and its exit is
+          # guarded for the same reason.
+          if git diff --quiet "$BASE" "$AFTER" -- site/; then
+            echo "changed=false" >> "$GITHUB_OUTPUT"
+            echo "site/ unchanged in this push — no site build dispatch"
+          else
+            FIRST="$(git diff --name-only "$BASE" "$AFTER" -- site/ | head -n 1 || true)"
+            echo "changed=true" >> "$GITHUB_OUTPUT"
+            echo "site/ changed in this push (first: ${FIRST:-?}) — dispatching build-site.yml"
+          fi
+
+      - name: Trigger Gitea site build
+        if: steps.site-changed.outputs.changed == 'true'
+        env:
+          GITEA_URL: ${{ secrets.GITEA_URL }}
+          GITEA_REPO: ${{ secrets.GITEA_REPO }}
+          GITEA_TOKEN: ${{ secrets.GITEA_TOKEN }}
+          GITEA_WORKFLOW_REPO: vreckan/vreckan-workflow
+          GITEA_WORKFLOW: build-site.yml
+          # The dispatch ref must name a branch in the WORKFLOW repo (where
+          # build-site.yml lives) — that's always main. The branch/SHA to
+          # build is passed as the `branch`/`sha` inputs (the mirror is
+          # already up to date: the Mirror step above ran first).
+          GITEA_REF: "refs/heads/main"
+          TARGET_BRANCH: main
+          TARGET_SHA: ${{ github.sha }}
         run: |
           chmod +x scripts/trigger-gitea.sh
           ./scripts/trigger-gitea.sh

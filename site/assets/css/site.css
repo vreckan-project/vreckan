@@ -296,6 +296,39 @@ a:focus-visible, button:focus-visible, input:focus-visible { outline: 2px solid 
 .doc td { color: var(--text-muted); }
 .doc td code { white-space: nowrap; }
 
+/* Section index (ops/API section navigation) */
+.toc {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  padding: 14px 16px;
+  margin: 0 0 32px;
+}
+.toc .toc-label {
+  color: var(--text-dim);
+  font-size: 0.8rem;
+  font-weight: 700;
+  letter-spacing: 1px;
+  text-transform: uppercase;
+  margin-right: 4px;
+}
+.toc a {
+  color: var(--text-muted);
+  text-decoration: none;
+  font-size: 0.9rem;
+  font-weight: 600;
+  padding: 6px 12px;
+  border-radius: var(--radius-sm);
+  border: 1px solid var(--border);
+}
+.toc a:hover { color: var(--accent); border-color: var(--accent); }
+.toc a.active { color: var(--accent); background: var(--accent-soft); border-color: var(--accent); }
+.toc a.toc-full { color: var(--accent); border-color: var(--accent); }
+
 /* Callouts */
 .callout {
   border: 1px solid var(--border);

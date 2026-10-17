@@ -245,7 +245,8 @@ default), current certificate status, and the available DNS providers:
 | Field | Type | Notes |
 |---|---|---|
 | `values.acme_enabled` | bool | ACME on/off |
-| `values.acme_ca` | string | `letsencrypt` (default) \| `zerossl` \| `google` |
+| `values.acme_ca` | string | `letsencrypt` (default) \| `zerossl` \| `google` \| full custom ACME directory URL |
+| `values.acme_allow_http_ca` | bool | allow a plaintext `http://` custom CA URL (ANT-275) |
 | `values.acme_domains` | string[] | target domains |
 | `values.acme_auth` | string | `dns-cloudflare` (default) \| `http-01` |
 | `values.acme_cloudflare_email` | string | ACME account contact |
@@ -258,12 +259,15 @@ default), current certificate status, and the available DNS providers:
 | `values.acme_renew_before_days` | int | renew-within window (days) |
 | `values.acme_dns_provider` | string | `cloudflare` (default) \| `route53` \| `digitalocean` \| `linode` \| `azure` \| `google` \| `alibaba` \| `godaddy` \| `tencent` \| `huawei` \| `cloudns` |
 | `values.acme_cloudflare_zone_id` | string | optional Cloudflare zone pin |
-| `values.acme_dns_provider_config` | string | JSON credentials for non-Cloudflare providers |
+| `values.acme_dns_provider_config` | string | always `""` (masked — the raw JSON carries the provider's `api_token`/`client_secret`, ANT-275) |
+| `values.dns_provider_config_set` | bool | whether a provider config is stored |
+| `values.dns_provider_config_length` | int | length of the stored provider config |
 | `sources.*` | string | per-field origin: `db` \| `env` \| `default` |
 | `status.present` | bool | a certificate exists |
 | `status.source` | string \| null | `acme_db` (DB is the source of truth) \| `host` \| `app` (disk fallback) |
 | `status.cert` | string \| null | PEM chain (DB) or path (disk) |
-| `status.key` | string \| null | private-key PEM (DB) or path (disk) |
+| `status.key` | string \| null | elided to a marker when `source` is `acme_db` (the PEM stays out of the admin's browser, ANT-275); path for disk fallbacks |
+| `status.key_length` | int \| null | length of the stored private-key PEM, when elided |
 | `status.expiry` | string \| null | RFC 3339 expiry, when parseable |
 | `status.days_remaining` | int \| null | days until expiry |
 | `status.valid` | bool | expiry is in the future |
@@ -271,8 +275,9 @@ default), current certificate status, and the available DNS providers:
 
 **`PUT /api/admin/certificates`** — save the ACME configuration to the
 `app_settings` table. Request body carries the same `acme_*` fields as the
-GET response's `values` (minus `token_set`/`token_length`). A blank
-`acme_cloudflare_token` means "leave the existing token unchanged".
+GET response's `values` (minus the masked indicators). A blank
+`acme_cloudflare_token` or `acme_dns_provider_config` means "leave the
+existing value unchanged" (both are masked to blank in the GET response).
 Response: `{ "ok": true }`.
 
 **`POST /api/admin/certificates/renew`** — issue or renew the certificate
@@ -284,7 +289,7 @@ certificate already exists. Response:
 | `present` | bool | a certificate exists after the call |
 | `source` | string \| null | `acme_db` \| `host` \| `app` |
 | `cert` | string \| null | PEM chain or path |
-| `key` | string \| null | private-key PEM or path |
+| `key` | string \| null | elided to a marker when DB-sourced (ANT-275); path for disk fallbacks |
 | `expiry` | string \| null | RFC 3339 expiry |
 | `days_remaining` | int \| null | days until expiry |
 | `valid` | bool | certificate is currently valid |

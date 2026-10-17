@@ -125,7 +125,9 @@ so `Issue/Renew now` failed with a misleading "Missing location header"
   generates P-256 keys and **rotates** any persisted key of another type
   (the orphaned account is simply re-registered under the new key).
   ES256 is accepted by all three supported CAs.
-- **`acmex` pinned to an `antitux/acmex` fork** of the upstream repo
+- **`acmex` pinned to the project's `vreckan-project/acmex` fork** of the
+  upstream repo (relocated out of the maintainer's personal `antitux/acmex`
+  account, ANT-284)
   (houseme/acmex `f7b06c2`, 2026-10-06, + six fixes) via
   `[patch.crates-io]`: only upstream derives the JWS `alg` and JWK from
   the actual key (`Jwk::for_key_pair`, `JwsSigner::jwa_algorithm`) and
