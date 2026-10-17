@@ -1065,8 +1065,6 @@ async fn test_renewal_hot_reloads_served_cert_without_restart() {
 // The LE serialization lock intentionally spans the whole test.
 #[allow(clippy::await_holding_lock)]
 #[tokio::test]
-// The LE serialization lock intentionally spans the whole test.
-#[allow(clippy::await_holding_lock)]
 async fn test_certificates_get_masks_dns_provider_config() {
     let _serial = lock_le();
     let tmp = TempDir::new();
@@ -1099,8 +1097,6 @@ async fn test_certificates_get_masks_dns_provider_config() {
 // The LE serialization lock intentionally spans the whole test.
 #[allow(clippy::await_holding_lock)]
 #[tokio::test]
-// The LE serialization lock intentionally spans the whole test.
-#[allow(clippy::await_holding_lock)]
 async fn test_certificates_put_blank_provider_config_keeps_existing() {
     let _serial = lock_le();
     let tmp = TempDir::new();
