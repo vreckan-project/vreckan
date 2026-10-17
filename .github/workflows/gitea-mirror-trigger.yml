@@ -12,6 +12,12 @@
 #        dispatches the site build workflow (build-site.yml) so the
 #        vreckan-site image in the Gitea registry tracks main. Pushes that
 #        don't touch site/ cost nothing (the diff check is a local git call).
+#     4. When a PR is closed (merged or dismissed), deletes its Gitea
+#        `pr/<number>` mirror branch so the mirror doesn't accumulate dead
+#        branches (ANT-296). On close, steps 1–2 are skipped: a merged PR is
+#        already covered by the merge's push-to-main run, and dispatching a
+#        Gitea build for a branch we are about to delete would race the
+#        deletion (the build clones the branch by name).
 #
 #   bump-and-tag  (push to main only)
 #     1. Reads the current VERSION from the repo.
@@ -65,6 +71,9 @@ jobs:
           fetch-depth: 0
 
       - name: Determine target branch
+        # On a PR close the branch is deleted instead of mirrored (step
+        # below), so the target only matters for the other events.
+        if: github.event_name != 'pull_request' || github.event.action != 'closed'
         id: target
         run: |
           if [ "${{ github.event_name }}" = "pull_request" ]; then
@@ -79,6 +88,7 @@ jobs:
           fi
 
       - name: Mirror to Gitea
+        if: github.event_name != 'pull_request' || github.event.action != 'closed'
         env:
           GITEA_URL: ${{ secrets.GITEA_URL }}
           GITEA_REPO: ${{ secrets.GITEA_REPO }}
@@ -89,6 +99,7 @@ jobs:
           ./scripts/mirror-to-gitea.sh
 
       - name: Trigger Gitea build
+        if: github.event_name != 'pull_request' || github.event.action != 'closed'
         env:
           GITEA_URL: ${{ secrets.GITEA_URL }}
           GITEA_REPO: ${{ secrets.GITEA_REPO }}
@@ -110,6 +121,48 @@ jobs:
         run: |
           chmod +x scripts/trigger-gitea.sh
           ./scripts/trigger-gitea.sh
+
+      - name: Delete Gitea PR mirror branch
+        # PR closed — merged or dismissed. GitHub fires `pull_request` with
+        # action `closed` for both (the `merged` flag distinguishes them);
+        # either way the mirror branch is dead and should go (ANT-296). The
+        # mirror + build steps above are skipped for this event, so nothing
+        # races the deletion. Idempotent: a 404 means the branch was never
+        # mirrored (fork PRs are skipped by the job-level gate) or was
+        # already swept (e.g. by the daily cleanup job) — both are no-ops.
+        if: github.event_name == 'pull_request' && github.event.action == 'closed'
+        env:
+          GITEA_URL: ${{ secrets.GITEA_URL }}
+          GITEA_REPO: ${{ secrets.GITEA_REPO }}
+          GITEA_TOKEN: ${{ secrets.GITEA_TOKEN }}
+        run: |
+          set -euo pipefail
+          BRANCH="pr/${{ github.event.number }}"
+          REPO="$(echo "$GITEA_REPO" | sed 's#^/###')"
+          CODE=$(curl -sS -o /tmp/gitea-branch-del.json -w '%{http_code}' -X DELETE \
+            -H "Authorization: token ${GITEA_TOKEN}" \
+            "${GITEA_URL}/api/v1/repos/${REPO}/branches/${BRANCH}")
+          # If the secret holds a user password rather than a PAT, the
+          # `token` scheme 401s; fall back to Basic auth with the same
+          # x-access-token form the git mirror remote already uses.
+          if [ "$CODE" = "401" ]; then
+            CODE=$(curl -sS -o /tmp/gitea-branch-del.json -w '%{http_code}' -X DELETE \
+              -u "x-access-token:${GITEA_TOKEN}" \
+              "${GITEA_URL}/api/v1/repos/${REPO}/branches/${BRANCH}")
+          fi
+          case "$CODE" in
+            200 | 204)
+              echo "Deleted Gitea branch ${BRANCH} (PR #${{ github.event.number }} closed)"
+              ;;
+            404)
+              echo "Gitea branch ${BRANCH} not present — nothing to delete"
+              ;;
+            *)
+              echo "Unexpected HTTP ${CODE} deleting ${BRANCH}:" >&2
+              cat /tmp/gitea-branch-del.json >&2 || true
+              exit 1
+              ;;
+          esac
 
       - name: Check if site/ changed
         id: site-changed
