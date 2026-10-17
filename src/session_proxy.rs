@@ -118,11 +118,14 @@ async fn proxy_session_request(
             .into_response();
     };
 
-    // Validate the session cookie.
+    // Validate the session cookie (the owner's bearer token) or, for a
+    // collaboration session, the collab token presented via the
+    // `collab_token_{id}` cookie or a first-hit `?token=` (the controller or a
+    // viewer, as set by the room page). See `session_token_grants_access`.
     let cookie_name = session_cookie_name(&state.settings, session_id);
     let cookie_token = cookie_from_headers(&parts.headers, &cookie_name);
-    let expected = session.get("access_token").and_then(|v| v.as_str()).unwrap_or("");
-    if !tokens_equal(cookie_token.as_deref().unwrap_or(""), expected) {
+    let collab_token = collab_token_from_request(&parts, session_id);
+    if !session_token_grants_access(&session, cookie_token.as_deref().unwrap_or(""), &collab_token) {
         return (
             StatusCode::FORBIDDEN,
             axum::Json(serde_json::json!({ "detail": "Forbidden: Invalid session or token." })),
@@ -240,6 +243,62 @@ fn cookie_from_headers(headers: &HeaderMap, name: &str) -> Option<String> {
         }
     }
     None
+}
+
+/// The collaboration token presented for a session proxy request: the
+/// `collab_token_{id}` cookie (set by the room page and the first-hit
+/// redirect) if present, otherwise the first-hit `?token=` query param. Empty
+/// when neither is present.
+fn collab_token_from_request(parts: &Parts, session_id: &str) -> String {
+    let cookie_name = format!("collab_token_{session_id}");
+    if let Some(v) = cookie_from_headers(&parts.headers, &cookie_name) {
+        return v;
+    }
+    parts
+        .uri
+        .query()
+        .and_then(|q| urlencoded_get(q, "token"))
+        .unwrap_or_default()
+}
+
+/// True when `token` is a valid collaboration token for the session: it equals
+/// the controller token or matches one of the viewers' tokens. Non-collab
+/// sessions carry no collaboration tokens, so the token is never valid there.
+fn collab_token_is_valid(session: &serde_json::Value, token: &str) -> bool {
+    if token.is_empty() {
+        return false;
+    }
+    if !session.get("is_collaboration").and_then(|v| v.as_bool()).unwrap_or(false) {
+        return false;
+    }
+    let controller = session
+        .get("controller_token")
+        .and_then(|v| v.as_str())
+        .unwrap_or("");
+    if tokens_equal(token, controller) {
+        return true;
+    }
+    session
+        .get("viewers")
+        .and_then(|v| v.as_array())
+        .map(|arr| {
+            arr.iter().any(|v| {
+                tokens_equal(token, v.get("token").and_then(|t| t.as_str()).unwrap_or(""))
+            })
+        })
+        .unwrap_or(false)
+}
+
+/// True when the presented session cookie (the owner's bearer token) or, for a
+/// collaboration session, the collab token (the controller or a viewer) grants
+/// access to the session. Used by both the HTTP and WebSocket proxy paths.
+fn session_token_grants_access(
+    session: &serde_json::Value,
+    cookie_token: &str,
+    collab_token: &str,
+) -> bool {
+    let expected = session.get("access_token").and_then(|v| v.as_str()).unwrap_or("");
+    tokens_equal(cookie_token, expected) || collab_token_is_valid(session, collab_token)
 }
 
 /// `GET /api/apps/session/{id}/?access_token=...` — the first hit: validate
@@ -393,11 +452,14 @@ async fn session_proxy_websocket(
         });
     };
 
-    // Validate the session cookie.
+    // Validate the session cookie (the owner's bearer token) or, for a
+    // collaboration session, the collab token presented via the
+    // `collab_token_{id}` cookie or a first-hit `?token=` (the controller or a
+    // viewer). See `session_token_grants_access`.
     let cookie_name = session_cookie_name(&state.settings, &session_id);
     let cookie_token = cookie_from_headers(&parts.headers, &cookie_name);
-    let expected = session.get("access_token").and_then(|v| v.as_str()).unwrap_or("");
-    if !tokens_equal(cookie_token.as_deref().unwrap_or(""), expected) {
+    let collab_token = collab_token_from_request(&parts, &session_id);
+    if !session_token_grants_access(&session, cookie_token.as_deref().unwrap_or(""), &collab_token) {
         return upgrade.on_upgrade(|mut ws| async move {
             let _ = ws.close().await;
         });
