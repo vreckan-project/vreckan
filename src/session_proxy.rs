@@ -139,7 +139,7 @@ async fn proxy_session_request(
     let path = format!("{SESSION_PREFIX}{}", parts.uri.path());
     let mut target_url = format!("http://{upstream_host}{path}");
     if let Some(query) = parts.uri.query() {
-        target_url.push_str("?");
+        target_url.push('?');
         target_url.push_str(query);
     }
 
@@ -299,7 +299,7 @@ async fn initial_session_auth(
     if let Some(query) = parts.uri.query() {
         let filtered = filter_query_param(query, "access_token");
         if !filtered.is_empty() {
-            redirect.push_str("?");
+            redirect.push('?');
             redirect.push_str(&filtered);
         }
     }
@@ -421,7 +421,7 @@ async fn session_proxy_websocket(
     let path = format!("{SESSION_PREFIX}{}", parts.uri.path());
     let mut target_url = format!("ws://{upstream_host}{path}");
     if let Some(query) = parts.uri.query() {
-        target_url.push_str("?");
+        target_url.push('?');
         target_url.push_str(query);
     }
     let mut ws_headers = HeaderMap::new();

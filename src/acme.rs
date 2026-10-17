@@ -103,6 +103,12 @@ pub struct DnsProviderRegistry {
     providers: HashMap<String, Arc<dyn DnsProvider>>,
 }
 
+impl Default for DnsProviderRegistry {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 impl DnsProviderRegistry {
     pub fn new() -> Self {
         Self {

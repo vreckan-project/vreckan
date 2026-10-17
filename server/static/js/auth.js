@@ -36,6 +36,8 @@ export async function logout() {
 }
 
 export async function changePassword(oldPassword, newPassword) {
+  // Plain JSON over TLS by design (ANT-276): /api/auth/* is exempt from the
+  // E2EE wrapper, and at first sign-in no E2EE session exists yet anyway.
   const res = await fetch("/api/auth/change_password", {
     method: "POST",
     headers: { "Content-Type": "application/json" },

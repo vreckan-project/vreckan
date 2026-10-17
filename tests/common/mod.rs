@@ -171,6 +171,34 @@ impl TestClient {
         content_type: Option<&str>,
         extra_headers: &HashMap<String, String>,
     ) -> RawResponse {
+        self.request_with_remote_opt(method, url, body, content_type, extra_headers, None)
+            .await
+    }
+
+    /// Like `request`, but with an explicit direct client address, as
+    /// `into_make_service_with_connect_info` would add behind a real listener.
+    pub async fn request_from(
+        &self,
+        method: &str,
+        url: &str,
+        body: Option<Vec<u8>>,
+        content_type: Option<&str>,
+        extra_headers: &HashMap<String, String>,
+        remote: std::net::SocketAddr,
+    ) -> RawResponse {
+        self.request_with_remote_opt(method, url, body, content_type, extra_headers, Some(remote))
+            .await
+    }
+
+    async fn request_with_remote_opt(
+        &self,
+        method: &str,
+        url: &str,
+        body: Option<Vec<u8>>,
+        content_type: Option<&str>,
+        extra_headers: &HashMap<String, String>,
+        remote: Option<std::net::SocketAddr>,
+    ) -> RawResponse {
         let mut builder = Request::builder().method(method).uri(url);
         if let Some(ct) = content_type {
             builder = builder.header(header::CONTENT_TYPE, ct);
@@ -182,9 +210,13 @@ impl TestClient {
             builder = builder.header(k.as_str(), v.as_str());
         }
         let body_bytes = body.unwrap_or_default();
-        let req = builder
+        let mut req = builder
             .body(http_body_util::Full::new(body_bytes.into()))
             .expect("build request");
+        if let Some(addr) = remote {
+            req.extensions_mut()
+                .insert(axum::extract::ConnectInfo(addr));
+        }
         let resp = self
             .router
             .clone()

@@ -177,7 +177,7 @@ fn apply_retention(settings: &crate::settings::Settings) {
             }
         }
     }
-    backups.sort_by(|a, b| b.1.cmp(&a.1));
+    backups.sort_by_key(|b| std::cmp::Reverse(b.1));
     for (name, _) in backups.iter().skip(keep as usize) {
         match std::fs::remove_file(backup_dir.join(name)) {
             Ok(()) => info!("Backup retention: removed old backup {name}"),
@@ -234,7 +234,7 @@ pub async fn create_backup(
         for (abs_path, arcname) in &entries {
             if abs_path.is_dir() {
                 builder
-                    .append_dir_all(&arcname, abs_path)
+                    .append_dir_all(arcname, abs_path)
                     .map_err(|e| BackupError(format!("Failed to add {arcname}: {e}")))?;
             } else {
                 builder
@@ -365,7 +365,7 @@ fn validate_archive<R: Read>(archive: &mut Archive<R>, root: &Path) -> Result<()
             return Err(BackupError(format!("Archive contains an absolute path: {name}")));
         }
         let parts: Vec<&str> = name.split('/').collect();
-        if parts.iter().any(|p| *p == "..") {
+        if parts.contains(&"..") {
             return Err(BackupError(format!("Archive contains path traversal: {name}")));
         }
         let target = root.join(&name);

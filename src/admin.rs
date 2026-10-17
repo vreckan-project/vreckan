@@ -818,11 +818,15 @@ async fn save_sso_config(
         }
         let env_var = format!("VRECKAN_{}", name.to_uppercase());
         if let Err(e) = state.db.set_app_setting(&env_var, &value).await {
+            // Log the raw DB error (constraint/table names) and send a
+            // generic detail, matching the sibling endpoints — the error
+            // text must not reach the client (ANT-276).
+            warn!("Failed to save SSO setting {name}: {e}");
             return e2ee::encrypt_response(
                 &state,
                 &headers,
                 StatusCode::INTERNAL_SERVER_ERROR,
-                serde_json::json!({ "detail": format!("Failed to save SSO setting {name}: {e}") }),
+                serde_json::json!({ "detail": format!("Failed to save SSO setting {name}.") }),
             )
             .await;
         }
@@ -876,7 +880,7 @@ async fn test_sso_connection(
     }
     // Reuse the same discovery path as the auth flow (mirrors the Python
     // `_oidc_discovery`, which the SSO test endpoint imports).
-    let doc = match auth::oidc_discovery(&issuer).await {
+    let doc = match auth::oidc_discovery(issuer).await {
         Some(d) => d,
         None => {
             return e2ee::encrypt_response(

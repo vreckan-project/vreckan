@@ -29,16 +29,9 @@ async fn get_mounts_for_user(sc: &SecureClient, username: &str, group: &str) -> 
         .unwrap();
     let mut result = Vec::new();
     for m in rows {
-        if m.scope == "user" && m.target == username {
-            result.push(json!({
-                "name": m.name,
-                "host_path": m.host_path,
-                "container_path": m.container_path,
-                "read_only": m.read_only,
-                "scope": m.scope,
-                "target": m.target,
-            }));
-        } else if m.scope == "group" && !m.target.is_empty() && m.target == group {
+        let applies = (m.scope == "user" && m.target == username)
+            || (m.scope == "group" && !m.target.is_empty() && m.target == group);
+        if applies {
             result.push(json!({
                 "name": m.name,
                 "host_path": m.host_path,
