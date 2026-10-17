@@ -964,6 +964,14 @@ async fn install_two_apps(sc: &SecureClient) {
     .await;
 }
 
+/// The install endpoint claims the image's initial pull ("queued"); yield so
+/// the spawned no-op pull tasks finish, then clear `pull_status` so the
+/// operation under test (check / tick / warm-up) owns the pull bookkeeping.
+async fn settle_and_clear_pull_status(sc: &SecureClient) {
+    tokio::task::yield_now().await;
+    sc.state.pull_status.write().await.clear();
+}
+
 /// Parse the installed-apps listing into a name -> row map.
 fn listing_by_name(listing: Value) -> HashMap<String, Value> {
     listing
@@ -988,6 +996,7 @@ async fn test_warm_image_metadata_populates_installed_list() {
     sc.state.fake_provider.store(true, std::sync::atomic::Ordering::Relaxed);
     sc.state.pull_noop.store(true, std::sync::atomic::Ordering::Relaxed);
     install_two_apps(&sc).await;
+    settle_and_clear_pull_status(&sc).await;
     vreckan::catalog::warm_image_metadata(&sc.state).await;
     let (status, listing) = sc.call("GET", "/api/admin/apps/installed", None).await;
     assert_eq!(status, StatusCode::OK);
@@ -1060,6 +1069,7 @@ async fn test_check_all_updates_persists_check_state() {
     sc.state.fake_provider.store(true, std::sync::atomic::Ordering::Relaxed);
     sc.state.pull_noop.store(true, std::sync::atomic::Ordering::Relaxed);
     install_two_apps(&sc).await;
+    settle_and_clear_pull_status(&sc).await;
     let (status, data) = sc
         .call("POST", "/api/admin/apps/installed/check_all_updates", None)
         .await;
@@ -1166,6 +1176,7 @@ async fn test_auto_update_tick_persists_and_pulls() {
     sc.state.fake_provider.store(true, std::sync::atomic::Ordering::Relaxed);
     sc.state.pull_noop.store(true, std::sync::atomic::Ordering::Relaxed);
     install_two_apps(&sc).await;
+    settle_and_clear_pull_status(&sc).await;
     vreckan::catalog::run_auto_update_tick(&sc.state).await;
     let meta = sc.state.image_metadata.read().await;
     let firefox = meta.get("lscr.io/linuxserver/firefox:latest").unwrap();
@@ -1211,6 +1222,7 @@ async fn test_auto_update_tick_skips_opted_out_apps() {
     let mut body = install_body("app-2", "Jellyfin", "lscr.io/linuxserver/jellyfin:latest");
     body["auto_update"] = json!(false);
     sc.call("POST", "/api/admin/apps/installed", Some(&body)).await;
+    settle_and_clear_pull_status(&sc).await;
     vreckan::catalog::run_auto_update_tick(&sc.state).await;
     let meta = sc.state.image_metadata.read().await;
     assert_eq!(
@@ -1254,9 +1266,14 @@ async fn test_auto_update_status_endpoint() {
     // bookkeeping reflects the completed tick.
     vreckan::catalog::run_auto_update_tick(&sc.state).await;
     let now = 1_700_000_000.0_f64;
-    let mut job = sc.state.auto_update_job.write().await;
-    job.last_check_at = Some(now);
-    job.next_check_at = Some(now + 3600.0);
+    // Scope the write guard so it drops BEFORE the follow-up status call:
+    // the handler reads the same lock on this runtime, and holding a write
+    // across the call deadlocks (the test client and the server share it).
+    {
+        let mut job = sc.state.auto_update_job.write().await;
+        job.last_check_at = Some(now);
+        job.next_check_at = Some(now + 3600.0);
+    }
     let (status, data) = sc
         .call("GET", "/api/admin/apps/auto_update_status", None)
         .await;
