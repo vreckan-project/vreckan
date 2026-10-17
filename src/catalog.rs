@@ -617,7 +617,11 @@ pub async fn inspect_self_container(state: &AppState) {
             return;
         }
     };
-    // Find our own container by name "vreckan", else by hostname.
+    // Find our own container by exact name "vreckan", else by hostname. The
+    // daemon's name filter is substring-based, so any other container whose
+    // name merely contains "vreckan" (e.g. "vreckan-site" on CI hosts) must
+    // not be picked up — only an exact match counts, and only then; the
+    // hostname fallback below finds the real self-container otherwise.
     let hostname = std::fs::read_to_string("/etc/hostname")
         .map(|s| s.trim().to_string())
         .unwrap_or_default();
@@ -632,7 +636,12 @@ pub async fn inspect_self_container(state: &AppState) {
         }))
         .await
     {
-        if let Some(c) = list.first() {
+        if let Some(c) = list
+            .iter()
+            .find(|c| c.names.as_ref().map_or(false, |names| {
+                names.iter().any(|n| n.trim_start_matches('/') == "vreckan")
+            }))
+        {
             if let Some(id) = &c.id {
                 container = client.inspect_container(id, None).await.ok();
             }
