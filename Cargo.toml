@@ -92,7 +92,7 @@ jsonwebtoken = { version = "11", features = ["rust_crypto"] }
 # can convert it into the v11 key `jsonwebtoken::decode` consumes. This
 # companion dep drops out when jwks ships a v11-based release (0.5.3 is
 # the latest as of 2026-10).
-jsonwebtoken_v10 = { package = "jsonwebtoken", version = "10" }
+jsonwebtoken_v10 = { package = "jsonwebtoken", version = "11" }
 
 # Docker Engine API
 bollard = "0.21"

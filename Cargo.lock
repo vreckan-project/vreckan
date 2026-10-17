@@ -6187,7 +6187,6 @@ dependencies = [
  "http",
  "http-body-util",
  "hyper",
- "jsonwebtoken 10.4.0",
  "jsonwebtoken 11.1.0",
  "jwks",
  "log",
