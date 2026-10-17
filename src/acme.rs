@@ -17,6 +17,8 @@
 //! provider that owns its zone, so multi-domain and wildcard orders work.
 
 use std::collections::HashMap;
+use std::io::Write;
+use std::os::unix::fs::OpenOptionsExt;
 use std::sync::{Arc, Mutex};
 
 use async_trait::async_trait;
@@ -518,6 +520,40 @@ pub fn account_key_path(dir: &str) -> String {
     format!("{dir}/acme-account.key")
 }
 
+/// Write `pem` to `path` owner-only (`0600`), closing the create-then-chmod
+/// race (ANT-274): a fresh file is created owner-only from the first byte,
+/// while a replacement of an existing file (e.g. one left world-readable by
+/// an older version) is rewritten and re-chmodded to `0600`. A failed chmod
+/// is logged instead of swallowed, so a key that could not be tightened is
+/// diagnosable from the log.
+fn write_owner_only(path: &str, pem: &str) -> std::io::Result<()> {
+    match std::fs::OpenOptions::new()
+        .create_new(true)
+        .write(true)
+        .mode(0o600)
+        .open(path)
+    {
+        Ok(mut file) => file.write_all(pem.as_bytes()),
+        // The file exists (or appeared in the meantime): rewrite and
+        // tighten.
+        Err(e) if e.kind() == std::io::ErrorKind::AlreadyExists => {
+            let mut file = std::fs::OpenOptions::new()
+                .write(true)
+                .truncate(true)
+                .open(path)?;
+            file.write_all(pem.as_bytes())?;
+            if let Err(c) = std::fs::set_permissions(
+                path,
+                std::os::unix::fs::PermissionsExt::from_mode(0o600),
+            ) {
+                warn!("could not tighten {path} to 0600: {c}");
+            }
+            Ok(())
+        }
+        Err(e) => Err(e),
+    }
+}
+
 /// Load the persisted ACME account key, or generate and persist a new one.
 /// Reusing the same key keeps the ACME account stable across restarts so we
 /// don't burn new-account rate limits.
@@ -550,11 +586,10 @@ pub async fn load_or_create_account_key(dir: &str) -> Result<KeyPair, String> {
     if let Some(parent) = std::path::Path::new(&path).parent() {
         let _ = std::fs::create_dir_all(parent);
     }
-    kp.save_to_file(&path).map_err(|e| e.to_string())?;
-    let _ = std::fs::set_permissions(
-        &path,
-        std::os::unix::fs::PermissionsExt::from_mode(0o600),
-    );
+    // Owner-only from the first byte (ANT-274): the previous write-then-chmod
+    // left a world-readable window on first write, and `let _ =` swallowed
+    // chmod failures on odd filesystems.
+    write_owner_only(&path, &kp.serialize_pem()).map_err(|e| e.to_string())?;
     info!("Generated and persisted new ACME account key (ECDSA P-256) at {path}");
     Ok(kp)
 }
@@ -678,7 +713,12 @@ pub async fn issue_certificate(args: &IssueArgs<'_>) -> AcmeIssueResult {
             }
             let cert_path = format!("{live}/cert.pem");
             let key_path = format!("{live}/privkey.pem");
-            if let Err(e) = bundle.save_to_files(&cert_path, &key_path) {
+            // Both mirror files land 0600 through the same owner-only write as
+            // the account key (ANT-274); `privkey.pem` is the same key TLS
+            // serves, so it must not sit at the process umask.
+            let mirror = write_owner_only(&cert_path, &cert_pem)
+                .and_then(|()| write_owner_only(&key_path, &key_pem));
+            if let Err(e) = mirror {
                 warn!("best-effort cert mirror write failed (DB is authoritative): {e}");
             } else {
                 log!("Certificate mirror written to {cert_path} (key {key_path}).");
@@ -741,6 +781,7 @@ pub fn dns_provider_choices() -> Value {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use std::os::unix::fs::PermissionsExt;
 
     #[test]
     fn ca_directory_maps_lets_encrypt() {
@@ -815,5 +856,96 @@ mod tests {
         // A bare hostname is not a URL; whitespace-only is empty.
         assert!(resolve_ca_directory("acme.internal.example", false, true).is_err());
         assert!(resolve_ca_directory("   ", false, true).is_err());
+    }
+
+    // --- ANT-274: owner-only key/mirror files ---
+
+    fn file_mode(path: &std::path::Path) -> u32 {
+        std::fs::metadata(path).unwrap().permissions().mode() & 0o777
+    }
+
+    fn temp_acme_dir() -> std::path::PathBuf {
+        let dir = std::env::temp_dir().join(format!("ant274-acme-{}", uuid::Uuid::new_v4()));
+        std::fs::create_dir_all(&dir).unwrap();
+        dir
+    }
+
+    #[test]
+    fn write_owner_only_fresh_file_lands_0600() {
+        let dir = temp_acme_dir();
+        let path = dir.join("acme-account.key");
+        write_owner_only(path.to_str().unwrap(), "PEM-DATA").unwrap();
+        assert_eq!(file_mode(&path), 0o600, "fresh key file must be owner-only");
+        assert_eq!(std::fs::read_to_string(&path).unwrap(), "PEM-DATA");
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn write_owner_only_replacement_retightens_to_0600() {
+        let dir = temp_acme_dir();
+        let path = dir.join("acme-account.key");
+        // A key left world-readable by an older version (write at umask, no
+        // chmod).
+        std::fs::write(&path, "OLD").unwrap();
+        std::fs::set_permissions(&path, std::os::unix::fs::PermissionsExt::from_mode(0o644)).unwrap();
+        write_owner_only(path.to_str().unwrap(), "NEW").unwrap();
+        assert_eq!(file_mode(&path), 0o600, "replacement must re-tighten to 0600");
+        assert_eq!(std::fs::read_to_string(&path).unwrap(), "NEW");
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    #[tokio::test]
+    async fn load_or_create_account_key_fresh_key_lands_0600() {
+        let dir = temp_acme_dir();
+        let kp = load_or_create_account_key(dir.to_str().unwrap()).await.unwrap();
+        assert_eq!(
+            KeyType::for_key_pair(&kp.0).unwrap(),
+            KeyType::EcdsaP256,
+            "new account key must be ECDSA P-256"
+        );
+        let key = account_key_path(dir.to_str().unwrap());
+        assert_eq!(file_mode(std::path::Path::new(&key)), 0o600, "account key must land 0600");
+        // Round-trip: the persisted key reloads and is the same key.
+        let reloaded = KeyPair::load_from_file(&key).unwrap();
+        assert_eq!(reloaded.serialize_pem(), kp.serialize_pem());
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    #[tokio::test]
+    async fn load_or_create_account_key_replaces_wrong_type_key_and_retightens() {
+        let dir = temp_acme_dir();
+        let key = account_key_path(dir.to_str().unwrap());
+        // Seed a world-readable Ed25519 key (the pre-fix shape).
+        let ed = KeyPair(KeyPairGenerator::ed25519().generate().unwrap());
+        ed.save_to_file(&key).unwrap();
+        std::fs::set_permissions(&key, std::os::unix::fs::PermissionsExt::from_mode(0o644)).unwrap();
+        let kp = load_or_create_account_key(dir.to_str().unwrap()).await.unwrap();
+        assert_eq!(
+            KeyType::for_key_pair(&kp.0).unwrap(),
+            KeyType::EcdsaP256,
+            "wrong-type key must be replaced with ECDSA P-256"
+        );
+        assert_eq!(file_mode(std::path::Path::new(&key)), 0o600, "replacement must land 0600");
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn cert_mirror_files_land_0600() {
+        let dir = temp_acme_dir();
+        let live = format!("{}/live/example.com", dir.display());
+        std::fs::create_dir_all(&live).unwrap();
+        let cert_path = format!("{live}/cert.pem");
+        let key_path = format!("{live}/privkey.pem");
+        write_owner_only(&cert_path, "CERT-PEM").unwrap();
+        write_owner_only(&key_path, "KEY-PEM").unwrap();
+        assert_eq!(file_mode(std::path::Path::new(&cert_path)), 0o600);
+        assert_eq!(file_mode(std::path::Path::new(&key_path)), 0o600);
+        // Re-issuance overwrites both in place and keeps them 0600.
+        write_owner_only(&cert_path, "CERT-PEM-v2").unwrap();
+        write_owner_only(&key_path, "KEY-PEM-v2").unwrap();
+        assert_eq!(std::fs::read_to_string(&cert_path).unwrap(), "CERT-PEM-v2");
+        assert_eq!(file_mode(std::path::Path::new(&cert_path)), 0o600);
+        assert_eq!(file_mode(std::path::Path::new(&key_path)), 0o600);
+        let _ = std::fs::remove_dir_all(&dir);
     }
 }
