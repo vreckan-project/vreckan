@@ -109,6 +109,37 @@ is opened embedded; the session CSP is applied to proxied responses.
 all-methods HTTP sub-path, and a separate WebSocket route — the
 consolidation is a representation difference, not a behavior change.)
 
+### Session shares — `session_shares.rs`
+
+Owner-managed share links that let a session owner hand a specific remote
+session to a named person or a whole room without sharing their own
+credentials. Each share has a mode (`person` or `room`), an optional
+password, and an optional expiry. Visiting a share issues a short-lived
+per-visit token; the proxy lazily promotes the session to secure mode
+(`push_token_table`) when the token is accepted, or falls back to a legacy
+`?role=` viewer grant when the session is not in secure mode.
+
+Owner management (E2EE + the caller must own the session):
+
+| Method | Path | Handler | Auth |
+|---|---|---|---|
+| POST | `/api/sessions/{session_id}/shares` | `create_session_share` | E2EE (owner) |
+| GET | `/api/sessions/{session_id}/shares` | `list_session_shares` | E2EE (owner) |
+| PATCH | `/api/sessions/{session_id}/shares/{share_id}` | `update_session_share` | E2EE (owner) |
+| DELETE | `/api/sessions/{session_id}/shares/{share_id}` | `delete_session_share` | E2EE (owner) |
+
+Account-less public entry (plaintext):
+
+| Method | Path | Handler | Auth |
+|---|---|---|---|
+| GET | `/share/{share_id}` | `public_share_get` | — (entry redirect / password page) |
+| POST | `/share/{share_id}` | `public_share_post` | — (password submission) |
+
+`PATCH` uses a nested `Option<Option<…>>` so an explicit `null` clears a
+password/expiry while an absent field leaves it unchanged. A background
+sweeper (started in `main.rs`, `background_share_cleanup_job` in `files.rs`)
+removes expired shares on the `share_cleanup_interval_seconds` schedule.
+
 ### File management — `files.rs` (E2EE)
 
 | Method | Path | Handler | Auth |

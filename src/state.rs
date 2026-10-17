@@ -122,6 +122,14 @@ pub struct AppState {
     /// Public-share metadata, keyed by share id. Mirrors
     /// `api.PUBLIC_SHARES_METADATA`.
     pub public_shares: Arc<RwLock<HashMap<String, crate::files::PublicShareMetadata>>>,
+    /// Session-share (share-session link) metadata, keyed by share id
+    /// (ANT-305).
+    pub session_shares: Arc<RwLock<HashMap<String, crate::session_shares::SessionShareMetadata>>>,
+    /// Per-visit session-share tokens, keyed by token (ANT-305). The session
+    /// proxy uses this map to admit a visitor whose session was never
+    /// promoted to selkies secure mode; WP3 resolves a visitor's
+    /// capabilities through it.
+    pub session_share_tokens: Arc<RwLock<HashMap<String, crate::session_shares::SessionShareTokenRecord>>>,
     /// Live collaboration-room WebSocket connections, keyed by session id.
     /// Mirrors `collaboration.ROOM_CONNECTIONS`.
     pub room_connections: Arc<RwLock<HashMap<String, crate::collaboration::RoomConnections>>>,
@@ -173,6 +181,8 @@ impl AppState {
             discovered_network: Arc::new(RwLock::new(None)),
             deletion_tasks: Arc::new(RwLock::new(HashMap::new())),
             public_shares: Arc::new(RwLock::new(HashMap::new())),
+            session_shares: Arc::new(RwLock::new(HashMap::new())),
+            session_share_tokens: Arc::new(RwLock::new(HashMap::new())),
             room_connections: Arc::new(RwLock::new(HashMap::new())),
             pull_noop: Arc::new(std::sync::atomic::AtomicBool::new(false)),
             fake_provider: Arc::new(std::sync::atomic::AtomicBool::new(false)),

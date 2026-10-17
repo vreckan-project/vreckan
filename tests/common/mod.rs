@@ -278,6 +278,27 @@ impl TestClient {
         self.request("DELETE", url, None, None, &HashMap::new()).await
     }
 
+    /// POST a `password` form field (the public-share entry form).
+    pub async fn post_form(&self, url: &str, password: &str) -> RawResponse {
+        let mut encoded = String::new();
+        for b in password.bytes() {
+            let c = b as char;
+            if c.is_ascii_alphanumeric() || matches!(c, '-' | '_' | '.' | '~') {
+                encoded.push(c);
+            } else {
+                encoded.push_str(&format!("%{b:02X}"));
+            }
+        }
+        self.request(
+            "POST",
+            url,
+            Some(format!("password={encoded}").into_bytes()),
+            Some("application/x-www-form-urlencoded"),
+            &HashMap::new(),
+        )
+        .await
+    }
+
     /// Log in as `username`/`password`; captures the auth cookie. Returns the
     /// raw response.
     pub async fn login(&mut self, username: &str, password: &str) -> RawResponse {

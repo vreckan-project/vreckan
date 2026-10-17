@@ -416,6 +416,27 @@ pub async fn cleanup_expired_shares(state: &AppState) {
     info!("Expired share cleanup complete.");
 }
 
+/// The scheduled share-cleanup job (docs/port-status.md G2): the first tick
+/// runs immediately at startup, then each tick runs every
+/// `share_cleanup_interval_seconds` re-read fresh (DB-over-env-over-default),
+/// mirroring the ANT-269 auto-update job. Each tick sweeps expired file
+/// shares and expired session shares (the latter also strips the shares'
+/// per-visit tokens from the sessions and the containers).
+pub async fn background_share_cleanup_job(state: AppState) {
+    loop {
+        let interval = state
+            .settings
+            .get_setting(&state.db, "share_cleanup_interval_seconds")
+            .await
+            .as_i64()
+            .unwrap_or(600)
+            .max(30) as u64;
+        cleanup_expired_shares(&state).await;
+        crate::session_shares::cleanup_expired_session_shares(&state).await;
+        tokio::time::sleep(std::time::Duration::from_secs(interval)).await;
+    }
+}
+
 // ---------------------------------------------------------------------------
 // /api/files route handlers (all E2EE-encrypted)
 // ---------------------------------------------------------------------------
@@ -2178,10 +2199,17 @@ async fn download_shared_file(
 }
 
 /// Render the public password page with template substitution + strict CSP.
-/// `status` is the HTTP status to return: 200 when the page is presented on a
-/// GET (the share is password-protected), 401 when a POST submitted a wrong
-/// password (mirrors the Python `access_public_share_post`).
-fn render_password_page(share_id: &str, error_message: &str, status: StatusCode) -> Response {
+/// `action_url` is where the form POSTs (the share's public entry point —
+/// `/public/{share_id}` for file shares, `/share/{share_id}` for session
+/// shares). `status` is the HTTP status to return: 200 when the page is
+/// presented on a GET (the share is password-protected), 401 when a POST
+/// submitted a wrong password (mirrors the Python `access_public_share_post`).
+pub fn render_password_page(
+    action_url: &str,
+    share_id: &str,
+    error_message: &str,
+    status: StatusCode,
+) -> Response {
     let template_path = crate::static_files::static_dir().join("public_password.html");
     let nonce = {
         let mut buf = [0u8; 16];
@@ -2189,10 +2217,18 @@ fn render_password_page(share_id: &str, error_message: &str, status: StatusCode)
         rand::rng().fill_bytes(&mut buf);
         base64::engine::general_purpose::STANDARD.encode(buf)
     };
+    let error_html = if error_message.is_empty() {
+        String::new()
+    } else {
+        format!(
+            r#"<div class="error-message" role="alert" style="margin-top:1rem;font-size:0.9rem;color:var(--color-danger);text-align:center;">{error_message}</div>"#
+        )
+    };
     let html = match std::fs::read_to_string(&template_path) {
         Ok(t) => t
+            .replace("{{ACTION_URL}}", action_url)
             .replace("{{SHARE_ID}}", share_id)
-            .replace("{{ERROR_MESSAGE}}", error_message)
+            .replace("{{ERROR_MESSAGE}}", &error_html)
             .replace("{{CSP_NONCE}}", &nonce),
         Err(_) => "<h1>Password protected</h1>".to_string(),
     };
@@ -2227,7 +2263,7 @@ async fn access_public_share_get(
         }
     }
     if metadata.password_hash.is_some() {
-        return render_password_page(&share_id, "", StatusCode::OK);
+        return render_password_page(&format!("/public/{share_id}"), &share_id, "", StatusCode::OK);
     }
     let file_path = Path::new(&state.settings.public_storage_path).join(&share_id);
     if !file_path.exists() {
@@ -2295,7 +2331,12 @@ async fn access_public_share_post(
             .body(axum::body::Body::empty())
             .unwrap_or_else(|e| (StatusCode::INTERNAL_SERVER_ERROR, e.to_string()).into_response())
     } else {
-        render_password_page(&share_id, "Incorrect password. Please try again.", StatusCode::UNAUTHORIZED)
+        render_password_page(
+            &format!("/public/{share_id}"),
+            &share_id,
+            "Incorrect password. Please try again.",
+            StatusCode::UNAUTHORIZED,
+        )
     }
 }
 

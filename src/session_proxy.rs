@@ -125,7 +125,11 @@ async fn proxy_session_request(
     let cookie_name = session_cookie_name(&state.settings, session_id);
     let cookie_token = cookie_from_headers(&parts.headers, &cookie_name);
     let collab_token = collab_token_from_request(&parts, session_id);
-    if !session_token_grants_access(&session, cookie_token.as_deref().unwrap_or(""), &collab_token) {
+    let cookie_token_ref = cookie_token.as_deref().unwrap_or("");
+    if !session_token_grants_access(&session, cookie_token_ref, &collab_token)
+        && !share_token_for_session(state, session_id, &collab_token).await
+        && !share_token_for_session(state, session_id, cookie_token_ref).await
+    {
         return (
             StatusCode::FORBIDDEN,
             axum::Json(serde_json::json!({ "detail": "Forbidden: Invalid session or token." })),
@@ -141,9 +145,22 @@ async fn proxy_session_request(
     // full `request.url.path` as-is).
     let path = format!("{SESSION_PREFIX}{}", parts.uri.path());
     let mut target_url = format!("http://{upstream_host}{path}");
-    if let Some(query) = parts.uri.query() {
+    let query = parts.uri.query().unwrap_or("");
+    if !query.is_empty() {
         target_url.push('?');
         target_url.push_str(query);
+    }
+    // In selkies "secure mode" the container validates every connection
+    // against its token table, so present the appropriate token: the
+    // visitor's collab token, or the owner's container token. A token
+    // already in the query (e.g. the room iframe's URL) is left as-is.
+    if let Some(upstream_token) =
+        upstream_token_for(&session, cookie_token.as_deref().unwrap_or(""), &collab_token)
+    {
+        if urlencoded_get(query, "token").is_none() {
+            target_url.push_str(if query.is_empty() { "?" } else { "&" });
+            target_url.push_str(&format!("token={upstream_token}"));
+        }
     }
 
     let headers = upstream_headers(&parts.headers, &session, &upstream_host);
@@ -232,13 +249,19 @@ async fn proxy_session_request(
 
 /// Read a cookie value from the `Cookie` header.
 fn cookie_from_headers(headers: &HeaderMap, name: &str) -> Option<String> {
-    let cookie_header = headers.get(header::COOKIE)?;
-    let cookie_str = cookie_header.to_str().ok()?;
-    for part in cookie_str.split(';') {
-        let kv = part.trim();
-        if let Some((k, v)) = kv.split_once('=') {
-            if k == name && !v.is_empty() {
-                return Some(v.to_string());
+    // Multiple `Cookie` headers are legal (proxy chains, or a client that
+    // sends the session cookie and a collab cookie separately); scan them all.
+    for cookie_header in headers.get_all(header::COOKIE) {
+        let cookie_str = match cookie_header.to_str().ok() {
+            Some(s) => s,
+            None => continue,
+        };
+        for part in cookie_str.split(';') {
+            let kv = part.trim();
+            if let Some((k, v)) = kv.split_once('=') {
+                if k == name && !v.is_empty() {
+                    return Some(v.to_string());
+                }
             }
         }
     }
@@ -262,20 +285,31 @@ fn collab_token_from_request(parts: &Parts, session_id: &str) -> String {
 }
 
 /// True when `token` is a valid collaboration token for the session: it equals
-/// the controller token or matches one of the viewers' tokens. Non-collab
-/// sessions carry no collaboration tokens, so the token is never valid there.
+/// the controller token or matches one of the viewers' tokens. Plain sessions
+/// carry no collaboration tokens unless a share has promoted them to selkies
+/// secure mode (a non-empty `master_token`, ANT-305), in which case the same
+/// rules apply.
 fn collab_token_is_valid(session: &serde_json::Value, token: &str) -> bool {
     if token.is_empty() {
         return false;
     }
-    if !session.get("is_collaboration").and_then(|v| v.as_bool()).unwrap_or(false) {
+    let is_collab = session
+        .get("is_collaboration")
+        .and_then(|v| v.as_bool())
+        .unwrap_or(false);
+    let promoted = session
+        .get("master_token")
+        .and_then(|v| v.as_str())
+        .map(|m| !m.is_empty())
+        .unwrap_or(false);
+    if !is_collab && !promoted {
         return false;
     }
     let controller = session
         .get("controller_token")
         .and_then(|v| v.as_str())
         .unwrap_or("");
-    if tokens_equal(token, controller) {
+    if !controller.is_empty() && tokens_equal(token, controller) {
         return true;
     }
     session
@@ -287,6 +321,69 @@ fn collab_token_is_valid(session: &serde_json::Value, token: &str) -> bool {
             })
         })
         .unwrap_or(false)
+}
+
+/// True when the session runs the selkies container in "secure mode" (a
+/// master token is present): the container then validates every data-plane
+/// connection against its token table, so the proxy must present a token.
+fn session_is_secure_mode(session: &serde_json::Value) -> bool {
+    session
+        .get("master_token")
+        .and_then(|v| v.as_str())
+        .map(|m| !m.is_empty())
+        .unwrap_or(false)
+}
+
+/// The token to present to the container for this request, when the session
+/// is in secure mode: the presented collab token if it is valid, otherwise
+/// the owner's container token (the controller token for rooms, the access
+/// token for promoted plain sessions). `None` for legacy sessions — the
+/// container does not validate tokens there.
+fn upstream_token_for(
+    session: &serde_json::Value,
+    cookie_token: &str,
+    collab_token: &str,
+) -> Option<String> {
+    if !session_is_secure_mode(session) {
+        return None;
+    }
+    if !collab_token.is_empty() && collab_token_is_valid(session, collab_token) {
+        return Some(collab_token.to_string());
+    }
+    let access = session
+        .get("access_token")
+        .and_then(|v| v.as_str())
+        .unwrap_or("");
+    if !cookie_token.is_empty() && tokens_equal(cookie_token, access) {
+        if session.get("is_collaboration").and_then(|v| v.as_bool()).unwrap_or(false) {
+            let controller = session
+                .get("controller_token")
+                .and_then(|v| v.as_str())
+                .unwrap_or("");
+            if !controller.is_empty() {
+                return Some(controller.to_string());
+            }
+        }
+        return Some(access.to_string());
+    }
+    None
+}
+
+/// True when `token` is a per-visit token minted for a session share of this
+/// session (ANT-305). The vreckan-side token map is the source of truth for
+/// tokens whose session record was not promoted to secure mode (the container
+/// cannot know about them), and WP3 resolves a visitor's capabilities through
+/// the same map.
+async fn share_token_for_session(state: &AppState, session_id: &str, token: &str) -> bool {
+    if token.is_empty() {
+        return false;
+    }
+    state
+        .session_share_tokens
+        .read()
+        .await
+        .get(token)
+        .is_some_and(|r| r.session_id == session_id)
 }
 
 /// True when the presented session cookie (the owner's bearer token) or, for a
@@ -317,8 +414,32 @@ async fn initial_session_auth(
     let session = state.sessions.read().await.get(&session_id).cloned();
 
     // No access_token: the browser presents the session cookie — proxy it.
+    // A collab/share-token first hit (e.g. a session-share redirect) is
+    // proxied too; when the token is valid for the session, the collab token
+    // cookie is set so the proxied page's sub-requests (file API, WebSocket
+    // re-connections) authenticate by cookie rather than repeating the
+    // token in every URL (ANT-305).
     let Some(token) = token else {
-        return proxy_session_request(&state, &parts, body, &session_id).await;
+        let collab_token =
+            urlencoded_get(parts.uri.query().unwrap_or(""), "token").unwrap_or_default();
+        let mut response = proxy_session_request(&state, &parts, body, &session_id).await;
+        let grant = session
+            .as_ref()
+            .is_some_and(|s| collab_token_is_valid(s, &collab_token))
+            || state
+                .session_share_tokens
+                .read()
+                .await
+                .contains_key(&collab_token);
+        if !collab_token.is_empty() && grant {
+            let set_cookie = format!(
+                "collab_token_{session_id}={collab_token}; Path=/api/apps/session/{session_id}; HttpOnly; Secure; SameSite=none"
+            );
+            if let Ok(hv) = HeaderValue::from_str(&set_cookie) {
+                response.headers_mut().append(header::SET_COOKIE, hv);
+            }
+        }
+        return response;
     };
 
     let Some(session) = session else {
@@ -381,9 +502,17 @@ async fn initial_session_auth(
         ))
         .unwrap_or_default();
 
-    // Collaboration token cookie (if present and this is a collab session).
+    // Collaboration token cookie (collab sessions, and session-share tokens
+    // on promoted plain sessions — ANT-305).
     if let Some(collab_token) = urlencoded_get(parts.uri.query().unwrap_or(""), "token") {
-        if session.get("is_collaboration").and_then(|v| v.as_bool()).unwrap_or(false) {
+        let valid = session.get("is_collaboration").and_then(|v| v.as_bool()).unwrap_or(false)
+            || collab_token_is_valid(&session, &collab_token)
+            || state
+                .session_share_tokens
+                .read()
+                .await
+                .contains_key(&collab_token);
+        if valid {
             let collab_cookie = format!(
                 "collab_token_{session_id}={collab_token}; Path=/api/apps/session/{session_id}; HttpOnly; Secure; SameSite=none"
             );
@@ -459,7 +588,11 @@ async fn session_proxy_websocket(
     let cookie_name = session_cookie_name(&state.settings, &session_id);
     let cookie_token = cookie_from_headers(&parts.headers, &cookie_name);
     let collab_token = collab_token_from_request(&parts, &session_id);
-    if !session_token_grants_access(&session, cookie_token.as_deref().unwrap_or(""), &collab_token) {
+    let cookie_token_ref = cookie_token.as_deref().unwrap_or("");
+    if !session_token_grants_access(&session, cookie_token_ref, &collab_token)
+        && !share_token_for_session(state, &session_id, &collab_token).await
+        && !share_token_for_session(state, &session_id, cookie_token_ref).await
+    {
         return upgrade.on_upgrade(|mut ws| async move {
             let _ = ws.close().await;
         });
@@ -482,9 +615,21 @@ async fn session_proxy_websocket(
     // container's nginx sees the full path, matching Python's `_upstream_path`.
     let path = format!("{SESSION_PREFIX}{}", parts.uri.path());
     let mut target_url = format!("ws://{upstream_host}{path}");
-    if let Some(query) = parts.uri.query() {
+    let query = parts.uri.query().unwrap_or("");
+    if !query.is_empty() {
         target_url.push('?');
         target_url.push_str(query);
+    }
+    // Secure-mode containers validate the data WebSocket against the token
+    // table too (`?token=`); present the appropriate one (same rules as the
+    // HTTP path).
+    if let Some(upstream_token) =
+        upstream_token_for(&session, cookie_token.as_deref().unwrap_or(""), &collab_token)
+    {
+        if urlencoded_get(query, "token").is_none() {
+            target_url.push_str(if query.is_empty() { "?" } else { "&" });
+            target_url.push_str(&format!("token={upstream_token}"));
+        }
     }
     let mut ws_headers = HeaderMap::new();
     for (key, value) in parts.headers.iter() {

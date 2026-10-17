@@ -9,7 +9,9 @@ use std::net::SocketAddr;
 use std::path::PathBuf;
 use tracing::info;
 
-use vreckan::{app, auth, catalog, db, e2ee, files, acme_orchestrator, tls, user_manager};
+use vreckan::{
+    acme_orchestrator, app, auth, catalog, db, e2ee, files, session_shares, tls, user_manager,
+};
 use vreckan::settings::Settings;
 use vreckan::state::AppState;
 
@@ -102,6 +104,7 @@ async fn main() -> anyhow::Result<()> {
     catalog::load_app_templates(&state).await;
     catalog::detect_gpus(&state).await;
     files::load_public_shares(&state).await;
+    session_shares::load_session_shares(&state).await;
 
     // Build the TLS listener config before the renewal job starts, so both the
     // background renewal job and the admin Issue/Renew path can reload it in
@@ -126,6 +129,11 @@ async fn main() -> anyhow::Result<()> {
     // and compares every installed image against its registry, auto-pulling
     // opted-in apps that have an available update (ANT-269).
     tokio::spawn(catalog::background_auto_update_job(state.clone()));
+
+    // Share cleanup (docs/port-status.md G2): sweeps expired file shares and
+    // expired session shares (and their per-visit tokens). The first tick
+    // runs immediately at startup; the interval is re-read fresh each tick.
+    tokio::spawn(files::background_share_cleanup_job(state.clone()));
 
     // Build the router.
     let app = app::router(state);
