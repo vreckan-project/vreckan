@@ -14,10 +14,14 @@
 #        don't touch site/ cost nothing (the diff check is a local git call).
 #     4. When a PR is closed (merged or dismissed), deletes its Gitea
 #        `pr/<number>` mirror branch so the mirror doesn't accumulate dead
-#        branches (ANT-296). On close, steps 1–2 are skipped: a merged PR is
-#        already covered by the merge's push-to-main run, and dispatching a
-#        Gitea build for a branch we are about to delete would race the
-#        deletion (the build clones the branch by name).
+#        branches (ANT-296). Dismissed PRs close via a pull_request run, but
+#        for MERGED PRs GitHub coalesces the close event into the push-to-main
+#        run (the run's event is `push` and no separate pull_request run is
+#        created), so the step also runs on pushes to main and recovers the
+#        PR number from the merge. On a pull_request close, steps 1–2 are
+#        skipped: dispatching a Gitea build for a branch we are about to
+#        delete would race the deletion (the build clones the branch by name);
+#        a merged PR is covered by the same run's main mirror + build anyway.
 #
 #   bump-and-tag  (push to main only)
 #     1. Reads the current VERSION from the repo.
@@ -123,21 +127,50 @@ jobs:
           ./scripts/trigger-gitea.sh
 
       - name: Delete Gitea PR mirror branch
-        # PR closed — merged or dismissed. GitHub fires `pull_request` with
-        # action `closed` for both (the `merged` flag distinguishes them);
-        # either way the mirror branch is dead and should go (ANT-296). The
-        # mirror + build steps above are skipped for this event, so nothing
-        # races the deletion. Idempotent: a 404 means the branch was never
-        # mirrored (fork PRs are skipped by the job-level gate) or was
-        # already swept (e.g. by the daily cleanup job) — both are no-ops.
-        if: github.event_name == 'pull_request' && github.event.action == 'closed'
+        # PR closed — merged or dismissed; either way the mirror branch is
+        # dead and should go (ANT-296). Two entry paths:
+        #   pull_request/closed — a dismissed PR (or a merged PR if GitHub
+        #     did not coalesce the events); the number comes from the event.
+        #   push to main — when a PR is merged, GitHub coalesces the close
+        #     event into this push run (event is `push`, no separate
+        #     pull_request run), so the number is recovered from the merge:
+        #     the merge-commit subject locally first (fast, no network, the
+        #     common case), then the GitHub API (covers squash/rebase, where
+        #     the subject is the PR title, not "Merge pull request #N").
+        #     Ordinary (non-PR) pushes are a no-op.
+        # Idempotent: a 404 means the branch was never mirrored (fork PRs are
+        # skipped by the job-level gate), was already deleted by the other
+        # entry path, or was swept by the daily cleanup job — a no-op.
+        if: >-
+          (github.event_name == 'pull_request' && github.event.action == 'closed')
+          || (github.event_name == 'push' && github.ref == 'refs/heads/main')
         env:
           GITEA_URL: ${{ secrets.GITEA_URL }}
           GITEA_REPO: ${{ secrets.GITEA_REPO }}
           GITEA_TOKEN: ${{ secrets.GITEA_TOKEN }}
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
           set -euo pipefail
-          BRANCH="pr/${{ github.event.number }}"
+          if [ "${{ github.event_name }}" = "pull_request" ]; then
+            PR_NUM="${{ github.event.number }}"
+          else
+            # Merge-commit subject, e.g. "Merge pull request #45 from ..." —
+            # local and reliable for standard merge commits.
+            PR_NUM="$(git log -1 --format=%s "${{ github.sha }}" 2>/dev/null \
+              | grep -oE 'Merge pull request #[0-9]+' | grep -oE '[0-9]+' || true)"
+            if [ -z "$PR_NUM" ]; then
+              # Squash/rebase merges: the commit is associated with the PR in
+              # the GitHub API even though the subject is the PR title.
+              PR_NUM="$(curl -sS -H "Authorization: Bearer $GITHUB_TOKEN" \
+                "https://api.github.com/repos/${{ github.repository }}/commits/${{ github.sha }}/pulls" \
+                | jq -r '.[0].number // empty' 2>/dev/null || true)"
+            fi
+            if [ -z "$PR_NUM" ]; then
+              echo "Push to main is not a PR merge — no mirror branch to delete"
+              exit 0
+            fi
+          fi
+          BRANCH="pr/${PR_NUM}"
           REPO="$(echo "$GITEA_REPO" | sed 's#^/###')"
           CODE=$(curl -sS -o /tmp/gitea-branch-del.json -w '%{http_code}' -X DELETE \
             -H "Authorization: token ${GITEA_TOKEN}" \
@@ -152,7 +185,7 @@ jobs:
           fi
           case "$CODE" in
             200 | 204)
-              echo "Deleted Gitea branch ${BRANCH} (PR #${{ github.event.number }} closed)"
+              echo "Deleted Gitea branch ${BRANCH} (PR #${PR_NUM} closed)"
               ;;
             404)
               echo "Gitea branch ${BRANCH} not present — nothing to delete"
