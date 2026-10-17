@@ -89,7 +89,7 @@ deny = []
 # for now.
 allow-registry = ["https://github.com/rust-lang/crates.io-index"]
 allow-git = [
-  "https://github.com/antitux/acmex",
+  "https://github.com/vreckan-project/acmex",
   "https://github.com/houseme/acmex",
 ]
 unknown-registry = "warn"
