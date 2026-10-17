@@ -228,6 +228,37 @@ async fn admin_client(state: vreckan::state::AppState) -> SecureClient {
     sc
 }
 
+/// Persist `rec` and re-read it until the read-back is complete, returning the
+/// stored record. Each `set_app_setting` in `acme_persist_cert` is an
+/// independent upsert whose error is swallowed; on a loaded pool a transient
+/// lock can drop one row (or a read can race a pooled connection still
+/// carrying a pre-write WAL snapshot), leaving a field empty in the read-back.
+/// The upsert is idempotent, so re-persisting is safe; a short settle between
+/// attempts lets stale pooled connections drain out of the pool.
+async fn persist_until_visible(
+    state: &vreckan::state::AppState,
+    rec: &acme_orchestrator::AcmeCertRecord,
+) -> Option<acme_orchestrator::AcmeCertRecord> {
+    let mut stored: Option<acme_orchestrator::AcmeCertRecord> = None;
+    for attempt in 0..10 {
+        if attempt > 0 {
+            tokio::time::sleep(std::time::Duration::from_millis(250)).await;
+        }
+        acme_orchestrator::acme_persist_cert(state, rec).await;
+        stored = acme_orchestrator::acme_cert_record(state).await;
+        if stored.as_ref().is_some_and(|r| {
+            r.cert_pem == rec.cert_pem
+                && r.key_pem == rec.key_pem
+                && r.ca == rec.ca
+                && r.domains == rec.domains
+                && r.expires == rec.expires
+        }) {
+            break;
+        }
+    }
+    stored
+}
+
 // --- needs_renewal -----------------------------------------------------------
 #[tokio::test]
 async fn test_needs_renewal() {
@@ -336,33 +367,10 @@ async fn test_acme_persist_cert_round_trips() {
         domains: "example.com,www.example.com".to_string(),
         expires: Some(1234567890),
     };
-    // Each `set_app_setting` in `acme_persist_cert` is an independent
-    // upsert whose error is swallowed (`let _ =`); under a loaded pool a
-    // transient SQLite lock can drop one row. The upsert is idempotent, so
-    // re-persist and re-read until the row is visible instead of failing on
-    // a first read that raced a concurrent write.
-    let mut rec: Option<acme_orchestrator::AcmeCertRecord> = None;
-    for attempt in 0..10 {
-        // A brief settle before a retry lets pooled connections whose
-        // implicit read transaction still carries a pre-write WAL snapshot
-        // drain out of the pool, so the next attempt reads fresh state.
-        if attempt > 0 {
-            tokio::time::sleep(std::time::Duration::from_millis(250)).await;
-        }
-        acme_orchestrator::acme_persist_cert(&state, &rec_in).await;
-        rec = acme_orchestrator::acme_cert_record(&state).await;
-        let complete = rec.as_ref().is_some_and(|r| {
-            r.cert_pem == rec_in.cert_pem
-                && r.key_pem == rec_in.key_pem
-                && r.ca == rec_in.ca
-                && r.domains == rec_in.domains
-                && r.expires == rec_in.expires
-        });
-        if complete {
-            break;
-        }
-    }
-    let rec = rec.expect("record persisted");
+    // Bounded against transient pool lock drops / stale read snapshots under
+    // load (see `persist_until_visible`): the last read it returns is the
+    // verified-complete record, so no further read-back is needed here.
+    let rec = persist_until_visible(&state, &rec_in).await.expect("record persisted");
     assert_eq!(rec.cert_pem, cert_pem);
     assert_eq!(rec.key_pem, key_pem);
     assert_eq!(rec.ca, "letsencrypt");
@@ -375,17 +383,14 @@ async fn test_cert_status_reads_from_db() {
     let _paths = acme_paths();
     let state = build_state(TempDir::new().path()).await;
     let (cert_pem, key_pem) = make_cert("example.com", 90);
-    acme_orchestrator::acme_persist_cert(
-        &state,
-        &acme_orchestrator::AcmeCertRecord {
-            cert_pem: cert_pem.clone(),
-            key_pem: key_pem.clone(),
-            ca: "letsencrypt".to_string(),
-            domains: "example.com".to_string(),
-            expires: acme_orchestrator::acme_cert_expiry_from_pem(&cert_pem),
-        },
-    )
-    .await;
+    let rec = acme_orchestrator::AcmeCertRecord {
+        cert_pem: cert_pem.clone(),
+        key_pem: key_pem.clone(),
+        ca: "letsencrypt".to_string(),
+        domains: "example.com".to_string(),
+        expires: acme_orchestrator::acme_cert_expiry_from_pem(&cert_pem),
+    };
+    persist_until_visible(&state, &rec).await;
     let status = acme_orchestrator::cert_status(&state, &["example.com".into()]).await;
     // The DB is the source of truth: cert/key are returned as PEM content.
     assert_eq!(status["present"], true);
@@ -406,17 +411,14 @@ async fn test_cert_status_db_preferred_over_disk() {
     write_cert_tree(std::path::Path::new(&paths.app), "example.com", 90);
     let state = build_state(TempDir::new().path()).await;
     let (db_cert, db_key) = make_cert("db.example.com", 60);
-    acme_orchestrator::acme_persist_cert(
-        &state,
-        &acme_orchestrator::AcmeCertRecord {
-            cert_pem: db_cert.clone(),
-            key_pem: db_key.clone(),
-            ca: "zerossl".to_string(),
-            domains: "db.example.com".to_string(),
-            expires: acme_orchestrator::acme_cert_expiry_from_pem(&db_cert),
-        },
-    )
-    .await;
+    let rec = acme_orchestrator::AcmeCertRecord {
+        cert_pem: db_cert.clone(),
+        key_pem: db_key.clone(),
+        ca: "zerossl".to_string(),
+        domains: "db.example.com".to_string(),
+        expires: acme_orchestrator::acme_cert_expiry_from_pem(&db_cert),
+    };
+    persist_until_visible(&state, &rec).await;
     let status = acme_orchestrator::cert_status(&state, &["example.com".into()]).await;
     assert_eq!(status["source"], "acme_db");
     assert_eq!(status["cert"], db_cert);
@@ -433,8 +435,16 @@ async fn test_ensure_acme_cert_persists_bundle_to_db() {
     let _guard = IssuerGuard::new(fake.clone());
     let result = acme_orchestrator::ensure_acme_cert(&state, &cfg, false).await;
     assert_eq!(result["issued"], true);
-    // The issued bundle is persisted to the config DB with full metadata.
-    let rec = acme_orchestrator::acme_cert_record(&state).await.expect("record persisted");
+    // The issued bundle is persisted to the config DB with full metadata;
+    // the visibility helper bounds the persist against transient pool drops.
+    let expected = acme_orchestrator::AcmeCertRecord {
+        cert_pem: fake.cert_pem.clone(),
+        key_pem: fake.key_pem.clone(),
+        ca: cfg.acme_ca.clone(),
+        domains: cfg.acme_domains.clone(),
+        expires: acme_orchestrator::acme_cert_expiry_from_pem(&fake.cert_pem),
+    };
+    let rec = persist_until_visible(&state, &expected).await.expect("record persisted");
     assert_eq!(rec.cert_pem, fake.cert_pem);
     assert_eq!(rec.key_pem, fake.key_pem);
     assert_eq!(rec.ca, "letsencrypt");
@@ -613,8 +623,16 @@ async fn test_renew_acme_cert_due_and_renews() {
         json!("fake acmex: issued"),
         "renew run should surface logs"
     );
-    // The renewed bundle is now persisted to the config DB (source of truth).
-    let rec = acme_orchestrator::acme_cert_record(&state).await.expect("renewed record persisted");
+    // The renewed bundle is now persisted to the config DB (source of truth);
+    // the visibility helper bounds the persist against transient pool drops.
+    let expected = acme_orchestrator::AcmeCertRecord {
+        cert_pem: fake.cert_pem.clone(),
+        key_pem: fake.key_pem.clone(),
+        ca: cfg.acme_ca.clone(),
+        domains: cfg.acme_domains.clone(),
+        expires: acme_orchestrator::acme_cert_expiry_from_pem(&fake.cert_pem),
+    };
+    let rec = persist_until_visible(&state, &expected).await.expect("renewed record persisted");
     assert_eq!(rec.cert_pem, fake.cert_pem);
     assert!(rec.expires.is_some());
 }
@@ -1005,22 +1023,27 @@ async fn test_renewal_hot_reloads_served_cert_without_restart() {
     let (cert_b, key_b) = make_cert("renew-b.example.com", 90);
     let fake = issuer_returning(&cert_b, &key_b);
     let _guard = IssuerGuard::new(fake.clone());
-    acme_orchestrator::acme_persist_cert(
-        &state,
-        &acme_orchestrator::AcmeCertRecord {
-            cert_pem: cert_a.clone(),
-            key_pem: key_a.clone(),
-            ca: "letsencrypt".to_string(),
-            domains: "renew-a.example.com".to_string(),
-            expires: acme_orchestrator::acme_cert_expiry_from_pem(&cert_a),
-        },
-    )
-    .await;
+    let rec_a = acme_orchestrator::AcmeCertRecord {
+        cert_pem: cert_a.clone(),
+        key_pem: key_a.clone(),
+        ca: "letsencrypt".to_string(),
+        domains: "renew-a.example.com".to_string(),
+        expires: acme_orchestrator::acme_cert_expiry_from_pem(&cert_a),
+    };
+    persist_until_visible(&state, &rec_a).await;
     let cfg = default_cfg();
     let result = acme_orchestrator::renew_acme_cert(&state, &cfg).await;
     assert_eq!(result["renewed"], true, "renewal should have run");
-    // The renewed cert is persisted to the config DB (the source of truth).
-    let rec = acme_orchestrator::acme_cert_record(&state).await.expect("record persisted");
+    // The renewed cert is persisted to the config DB (the source of truth);
+    // the visibility helper bounds the persist against transient pool drops.
+    let expected = acme_orchestrator::AcmeCertRecord {
+        cert_pem: cert_b.clone(),
+        key_pem: key_b.clone(),
+        ca: cfg.acme_ca.clone(),
+        domains: cfg.acme_domains.clone(),
+        expires: acme_orchestrator::acme_cert_expiry_from_pem(&cert_b),
+    };
+    let rec = persist_until_visible(&state, &expected).await.expect("record persisted");
     assert_eq!(rec.cert_pem, cert_b, "the renewed cert is in the DB");
 
     // The SAME running listener (no restart, no rebind) now serves cert B,
@@ -1103,17 +1126,14 @@ async fn test_certificates_get_masks_db_sourced_key() {
     let tmp = TempDir::new();
     let state = build_state(tmp.path()).await;
     let (cert_pem, key_pem) = make_cert("example.com", 90);
-    acme_orchestrator::acme_persist_cert(
-        &state,
-        &acme_orchestrator::AcmeCertRecord {
-            cert_pem: cert_pem.clone(),
-            key_pem: key_pem.clone(),
-            ca: "letsencrypt".to_string(),
-            domains: "example.com".to_string(),
-            expires: acme_orchestrator::acme_cert_expiry_from_pem(&cert_pem),
-        },
-    )
-    .await;
+    let rec = acme_orchestrator::AcmeCertRecord {
+        cert_pem: cert_pem.clone(),
+        key_pem: key_pem.clone(),
+        ca: "letsencrypt".to_string(),
+        domains: "example.com".to_string(),
+        expires: acme_orchestrator::acme_cert_expiry_from_pem(&cert_pem),
+    };
+    persist_until_visible(&state, &rec).await;
     let client = admin_client(state).await;
     let (status, data) = client.call("GET", "/api/admin/certificates", None).await;
     assert_eq!(status, StatusCode::OK);
