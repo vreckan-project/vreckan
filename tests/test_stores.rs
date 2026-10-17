@@ -1029,16 +1029,18 @@ async fn test_check_app_update_persists_check_state() {
         .call("POST", "/api/admin/apps/installed/app-1/check_update", None)
         .await;
     assert_eq!(status, StatusCode::OK, "{data:?}");
+    let data = data.unwrap();
     // The `short_id` fix (step 3): the fake provider's short id is surfaced.
-    assert_eq!(data.as_ref().unwrap()["current_sha"], "local123");
-    assert_eq!(data.as_ref().unwrap()["update_available"], false);
+    assert_eq!(data["current_sha"], "local123");
+    assert_eq!(data["update_available"], false);
     // App with an available update.
     let (status, data) = sc
         .call("POST", "/api/admin/apps/installed/app-2/check_update", None)
         .await;
     assert_eq!(status, StatusCode::OK, "{data:?}");
-    assert_eq!(data.as_ref().unwrap()["current_sha"], "local123");
-    assert_eq!(data.as_ref().unwrap()["update_available"], true);
+    let data = data.unwrap();
+    assert_eq!(data["current_sha"], "local123");
+    assert_eq!(data["update_available"], true);
     // The table now reflects both checks.
     let (status, listing) = sc.call("GET", "/api/admin/apps/installed", None).await;
     assert_eq!(status, StatusCode::OK);

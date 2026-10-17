@@ -150,7 +150,8 @@ tokio-rustls = "0.26"
 # and the `Location`-header check masks the real 400 (ANT-138). Upstream
 # derives the JWS `alg` and JWK from the actual key (`Jwk::for_key_pair`,
 # `JwsSigner::jwa_algorithm`) and adds `KeyPairGenerator`, so we pin an
-# `antitux/acmex` fork (of houseme/acmex @ f7b06c2) with six fixes:
+# `vreckan-project/acmex` fork (of houseme/acmex @ f7b06c2; relocated out of
+# the maintainer's personal `antitux/acmex` repo, ANT-284) with six fixes:
 #   1. the `contact` field in account responses is defaulted — Boulder
 #      omits it when the account has no contacts, which broke parsing;
 #   2. POST-as-GET reads (order/authz/cert lookup, account lookup) use
@@ -178,7 +179,7 @@ tokio-rustls = "0.26"
 # build, and Cargo.lock additionally records the resolved commit sha, so a
 # moved tag shows up as a lockfile diff until the next `cargo update`.
 [patch.crates-io]
-acmex = { git = "https://github.com/antitux/acmex", tag = "vreckan-2026-10-16" }
+acmex = { git = "https://github.com/vreckan-project/acmex", tag = "vreckan-2026-10-16" }
 
 [profile.release]
 opt-level = 3
