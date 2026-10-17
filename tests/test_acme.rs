@@ -1062,6 +1062,8 @@ async fn test_renewal_hot_reloads_served_cert_without_restart() {
 
 // --- ANT-275: admin surface hardening ----------------------------------------
 
+// The LE serialization lock intentionally spans the whole test.
+#[allow(clippy::await_holding_lock)]
 #[tokio::test]
 async fn test_certificates_get_masks_dns_provider_config() {
     let _serial = lock_le();
@@ -1092,6 +1094,8 @@ async fn test_certificates_get_masks_dns_provider_config() {
     assert_eq!(data["sources"]["acme_allow_http_ca"], "db");
 }
 
+// The LE serialization lock intentionally spans the whole test.
+#[allow(clippy::await_holding_lock)]
 #[tokio::test]
 async fn test_certificates_put_blank_provider_config_keeps_existing() {
     let _serial = lock_le();
