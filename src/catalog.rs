@@ -2821,6 +2821,10 @@ pub async fn stop_session(state: &AppState, session_id: &str) {
         warn!("Attempted to stop session {session_id}, but it was not found.");
         return;
     };
+    // Tell any collaboration-room viewers the session has ended so their room
+    // UI shows "session ended" instead of a dead iframe. A no-op for
+    // non-collaboration sessions (they have no room connections).
+    crate::collaboration::notify_session_ended(state, session_id).await;
     let registry = session_data
         .get("container_registry")
         .cloned()
