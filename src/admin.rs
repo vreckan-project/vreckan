@@ -1733,6 +1733,11 @@ async fn list_installed_apps(
         let meta = metadata.get(&image_name).cloned().unwrap_or_default();
         app_dict["image_sha"] = meta.get("sha").cloned().unwrap_or(Value::Null);
         app_dict["last_checked_at"] = meta.get("last_checked_at").cloned().unwrap_or(Value::Null);
+        // Update-check state from the metadata cache (ANT-269): `null` when the
+        // image has never been checked against its registry. The list endpoint
+        // stays cache-only — no live registry calls during a table render.
+        app_dict["update_available"] = meta.get("update_available").cloned().unwrap_or(Value::Null);
+        app_dict["last_update_checked_at"] = meta.get("last_update_checked_at").cloned().unwrap_or(Value::Null);
         app_dict["pull_status"] = pull_status.get(&image_name).cloned().map(Value::from).unwrap_or(Value::Null);
         if let Some(prog) = pull_progress.get(&image_name) {
             let mut clean = serde_json::Map::new();
@@ -2092,6 +2097,9 @@ async fn check_app_update(
         )
     };
     let Some(remote_digest) = remote_digest else {
+        // The registry lookup failed, but a successful local daemon query
+        // still refreshes the table's sha/digests (ANT-269).
+        crate::catalog::persist_image_metadata(&state, &image_name, local_info.as_ref(), None).await;
         return e2ee::encrypt_response(
             &state,
             &headers,
@@ -2106,6 +2114,16 @@ async fn check_app_update(
         .cloned()
         .unwrap_or_default();
     let update_available = !local_digests.iter().any(|d| d.as_str().map(|s| s.contains(&remote_digest)).unwrap_or(false));
+    // Persist the refreshed metadata (sha/digests) plus the update-check
+    // state, so the installed-apps table reflects the Check result
+    // (ANT-269).
+    crate::catalog::persist_image_metadata(
+        &state,
+        &image_name,
+        local_info.as_ref(),
+        Some((remote_digest.as_str(), update_available)),
+    )
+    .await;
     let current_sha = local_info
         .as_ref()
         .and_then(|i| i.get("short_id").and_then(|s| s.as_str()))
@@ -2191,6 +2209,16 @@ async fn check_all_app_updates(
         if update_available {
             updates_available += 1;
         }
+        // Persist the refreshed metadata (sha/digests) plus the update-check
+        // state (only when the registry comparison succeeded), so the
+        // installed-apps table reflects the Check result (ANT-269).
+        crate::catalog::persist_image_metadata(
+            &state,
+            &image_name,
+            local_info.as_ref(),
+            remote_digest.as_deref().map(|rd| (rd, update_available)),
+        )
+        .await;
         let current_sha = local_info
             .as_ref()
             .and_then(|i| i.get("short_id").and_then(|s| s.as_str()))
@@ -2339,6 +2367,171 @@ async fn pull_latest_app_image(
         serde_json::json!({ "status": "pulling", "new_sha": null }),
     )
     .await
+}
+
+/// Request body for `PUT /api/admin/apps/auto_update`. Both fields are
+/// optional; omitted fields are left unchanged.
+#[derive(Deserialize)]
+struct AutoUpdateSettingsRequest {
+    #[serde(default)]
+    enabled: Option<bool>,
+    #[serde(default)]
+    interval_seconds: Option<i64>,
+}
+
+/// `PUT /api/admin/apps/auto_update` — save the global auto-update settings
+/// (`auto_update_apps` + `auto_update_interval_seconds`) into the
+/// `app_settings` table through the same persistence path as the other admin
+/// settings pages, so the background auto-update job picks them up on its
+/// next tick without a restart.
+async fn save_auto_update_settings(
+    State(state): State<AppState>,
+    headers: HeaderMap,
+    body: Bytes,
+) -> Response {
+    let user = match auth::verify_token(&state, &headers).await {
+        Ok(u) => u,
+        Err(e) => {
+            // Auth failures are returned in plaintext (mirroring Python, where
+            // the HTTPException raised in the auth dependency bypasses the
+            // E2EE response wrapper).
+            return (
+                StatusCode::from_u16(e.status()).unwrap_or(StatusCode::INTERNAL_SERVER_ERROR),
+                Json(serde_json::json!({ "detail": e.to_string() })),
+            )
+                .into_response()
+        }
+    };
+    if !require_permission(&user, "admin.apps") {
+        return e2ee::encrypt_response(
+            &state,
+            &headers,
+            StatusCode::FORBIDDEN,
+            serde_json::json!({ "detail": "Admin privileges required." }),
+        )
+        .await;
+    }
+    let decrypted = match e2ee::decrypt_request_body(&state, &headers, body).await {
+        Ok(v) => v,
+        Err((s, d)) => {
+            return e2ee::encrypt_response(&state, &headers, s, serde_json::json!({ "detail": d }))
+                .await
+        }
+    };
+    let req: AutoUpdateSettingsRequest = match serde_json::from_value(decrypted) {
+        Ok(r) => r,
+        Err(e) => {
+            return e2ee::encrypt_response(
+                &state,
+                &headers,
+                StatusCode::UNPROCESSABLE_ENTITY,
+                serde_json::json!({ "detail": format!("Invalid request body: {e}") }),
+            )
+            .await
+        }
+    };
+    let writes: Vec<(&str, String)> = [
+        ("auto_update_apps", req.enabled.map(|b| b.to_string())),
+        ("auto_update_interval_seconds", req.interval_seconds.map(|n| n.to_string())),
+    ]
+    .into_iter()
+    .filter_map(|(name, value)| value.map(|v| (name, v)))
+    .collect();
+    for (name, value) in writes {
+        let env_var = format!("VRECKAN_{}", name.to_uppercase());
+        if let Err(e) = state.db.set_app_setting(&env_var, &value).await {
+            return e2ee::encrypt_response(
+                &state,
+                &headers,
+                StatusCode::INTERNAL_SERVER_ERROR,
+                serde_json::json!({ "detail": format!("Failed to save setting {name}: {e}") }),
+            )
+            .await;
+        }
+    }
+    let enabled = state.settings.get_setting(&state.db, "auto_update_apps").await;
+    let interval_seconds = state.settings.get_setting(&state.db, "auto_update_interval_seconds").await;
+    e2ee::encrypt_response(
+        &state,
+        &headers,
+        StatusCode::OK,
+        serde_json::json!({ "ok": true, "enabled": enabled, "interval_seconds": interval_seconds }),
+    )
+    .await
+}
+
+/// `GET /api/admin/apps/auto_update_status` — read-only bookkeeping for the
+/// background auto-update job (ANT-269): the effective settings (the DB
+/// override wins over the environment), the last/next tick times from the
+/// job (both `null` before the first tick completes, e.g. right after a
+/// restart), how many installed apps currently have an update available per
+/// the metadata cache, and how many installed apps have opted into
+/// auto-update.
+async fn get_auto_update_status(
+    State(state): State<AppState>,
+    headers: HeaderMap,
+) -> Response {
+    let user = match auth::verify_token(&state, &headers).await {
+        Ok(u) => u,
+        Err(e) => {
+            // Auth failures are returned in plaintext (mirroring Python, where
+            // the HTTPException raised in the auth dependency bypasses the
+            // E2EE response wrapper).
+            return (
+                StatusCode::from_u16(e.status()).unwrap_or(StatusCode::INTERNAL_SERVER_ERROR),
+                Json(serde_json::json!({ "detail": e.to_string() })),
+            )
+                .into_response()
+        }
+    };
+    if !require_permission(&user, "admin.apps") {
+        return e2ee::encrypt_response(
+            &state,
+            &headers,
+            StatusCode::FORBIDDEN,
+            serde_json::json!({ "detail": "Admin privileges required." }),
+        )
+        .await;
+    }
+    let enabled = state
+        .settings
+        .get_setting(&state.db, "auto_update_apps")
+        .await
+        .as_bool()
+        .unwrap_or(true);
+    let interval = state
+        .settings
+        .get_setting(&state.db, "auto_update_interval_seconds")
+        .await
+        .as_i64()
+        .unwrap_or(3600);
+    let job = state.auto_update_job.read().await.clone();
+    let apps = state.installed_apps.read().await.values().cloned().collect::<Vec<_>>();
+    let metadata = state.image_metadata.read().await.clone();
+    let mut updates_available = 0;
+    let mut auto_update_apps_count = 0;
+    for app in &apps {
+        if app.auto_update {
+            auto_update_apps_count += 1;
+        }
+        let meta = metadata.get(&app.provider_config.base.image);
+        if meta
+            .and_then(|m| m.get("update_available"))
+            .and_then(|v| v.as_bool())
+            .unwrap_or(false)
+        {
+            updates_available += 1;
+        }
+    }
+    let value = serde_json::json!({
+        "enabled": enabled,
+        "interval_seconds": interval,
+        "last_check_at": job.last_check_at.map(Value::from),
+        "next_check_at": job.next_check_at.map(Value::from),
+        "updates_available": updates_available,
+        "auto_update_apps_count": auto_update_apps_count,
+    });
+    e2ee::encrypt_response(&state, &headers, StatusCode::OK, value).await
 }
 
 // ---------------------------------------------------------------------------
@@ -5040,6 +5233,8 @@ pub fn admin_router() -> Router<AppState> {
         .route("/apps/installed/check_all_updates", post(check_all_app_updates))
         .route("/apps/installed/pull_all_latest", post(pull_all_app_images))
         .route("/apps/installed/{app_id}/pull_latest", post(pull_latest_app_image))
+        .route("/apps/auto_update", put(save_auto_update_settings))
+        .route("/apps/auto_update_status", get(get_auto_update_status))
         // Templates
         .route("/apps/templates", get(get_app_templates).post(save_app_template))
         .route("/apps/templates/schema", get(get_template_schema).post(save_template_schema))

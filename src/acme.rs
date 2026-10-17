@@ -73,11 +73,7 @@ pub const KNOWN_CA_IDS: &[&str] = &["letsencrypt", "zerossl", "google", "google-
 /// `allow_http_ca` explicitly opts in to plaintext `http://` (which would
 /// expose the account-key JWSes and CA responses in transit). Fails before
 /// any network I/O so a misconfigured CA never leaks to the wire.
-pub fn resolve_ca_directory(
-    ca: &str,
-    staging: bool,
-    allow_http_ca: bool,
-) -> Result<String, String> {
+pub fn resolve_ca_directory(ca: &str, staging: bool, allow_http_ca: bool) -> Result<String, String> {
     if KNOWN_CA_IDS.contains(&ca.trim().to_ascii_lowercase().as_str()) {
         return Ok(ca_directory(ca, staging));
     }
@@ -604,11 +600,11 @@ pub struct IssueArgs<'a> {
     pub provider: &'a str,
     pub domains: Vec<String>,
     pub registry: Arc<DnsProviderRegistry>,
-    /// Allow a plaintext `http://` custom CA directory URL (ANT-275).
-    pub allow_http_ca: bool,
     /// Configurable persistent data root; the account key and the on-disk
     /// cert mirror live under `{data_root}/acme` (ANT-273).
     pub data_root: &'a str,
+    /// Allow a plaintext `http://` custom CA directory URL (ANT-275).
+    pub allow_http_ca: bool,
 }
 
 /// The outcome of an issuance attempt.

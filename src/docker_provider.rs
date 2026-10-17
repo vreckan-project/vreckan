@@ -96,9 +96,11 @@ impl DockerProvider {
             .unwrap_or(&Value::Null)
     }
 
-    /// Pull the app's image. Mirrors `initialize()` (called on-demand at launch
-    /// when the image is missing locally).
-    pub async fn initialize(&self) -> Result<(), LaunchError> {
+    /// Pull the app's image, then cache the pulled image's metadata (sha +
+    /// digests) into `state.image_metadata` so the installed-apps table is
+    /// accurate without admin action (ANT-269). Mirrors `initialize()` (called
+    /// on-demand at launch when the image is missing locally).
+    pub async fn initialize(&self, state: &crate::state::AppState) -> Result<(), LaunchError> {
         let image = self
             .provider_config()
             .get("image")
@@ -110,17 +112,24 @@ impl DockerProvider {
             self.app_config.get("name").and_then(|v| v.as_str()).unwrap_or(&image)
         );
         self.pull_image(&image, None).await?;
+        crate::catalog::cache_local_image_metadata(state, &image).await;
         Ok(())
     }
 
     /// Inspect a locally-present image. Returns `None` if it is not found.
+    /// `short_id` is the Docker-style short identifier: the image ID (minus
+    /// its `sha256:` prefix) truncated to 12 chars (ANT-269).
     /// Mirrors `get_local_image_info`.
     pub async fn get_local_image_info(&self, image_name: &str) -> Option<Value> {
         match self.client.inspect_image(image_name).await {
-            Ok(img) => Some(serde_json::json!({
-                "id": img.id,
-                "digests": img.repo_digests,
-            })),
+            Ok(img) => {
+                let id = img.id.clone().unwrap_or_default();
+                Some(serde_json::json!({
+                    "id": id,
+                    "short_id": short_id(&id),
+                    "digests": img.repo_digests,
+                }))
+            }
             Err(e) => {
                 debug!("Local image '{image_name}' not found: {e}");
                 None
@@ -958,9 +967,12 @@ fn read_supplementary_groups() -> Result<Vec<u64>, ()> {
     Err(())
 }
 
-/// A short, log-friendly form of a container id.
+/// A short, Docker-style identifier: the ID (minus any `sha256:` prefix)
+/// truncated to its first 12 characters. Used for container IDs in logs and
+/// for image IDs in `get_local_image_info` (ANT-269).
 fn short_id(id: &str) -> &str {
-    &id[..id.len().min(12)]
+    let hex = id.strip_prefix("sha256:").unwrap_or(id);
+    &hex[..hex.len().min(12)]
 }
 
 #[cfg(test)]
@@ -988,5 +1000,17 @@ mod tests {
             dri3_device_spec(&map, "/dev/dri/renderD128"),
             "/mnt/host-dev/dri/renderD128:/dev/dri/renderD128"
         );
+    }
+
+    /// Image IDs arrive with a `sha256:` digest prefix; the short form
+    /// strips it and truncates to 12 chars, Docker-style (ANT-269).
+    #[test]
+    fn short_id_strips_digest_prefix_and_truncates() {
+        assert_eq!(
+            short_id("sha256:0123456789abcdef0123456789abcdef"),
+            "0123456789ab"
+        );
+        assert_eq!(short_id("ctr1234567890abcdef"), "ctr123456789");
+        assert_eq!(short_id("short"), "short");
     }
 }

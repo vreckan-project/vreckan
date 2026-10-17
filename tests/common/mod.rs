@@ -119,6 +119,13 @@ pub async fn build_state_with(
     // Load the app stores (seeds the default "Vreckan Apps" store on first
     // run). Mirrors the lifespan startup.
     vreckan::catalog::load_app_stores(&state).await;
+    // Load the installed apps and warm the image-metadata cache (the
+    // lifespan startup path, ANT-269). Fresh test databases have no
+    // installed apps yet, so the warm-up is a no-op unless a test seeds the
+    // `installed_apps` table before calling `build_state_with`; the
+    // `fake_provider` / `pull_noop` hooks are honored by the helpers.
+    vreckan::catalog::load_installed_apps(&state).await;
+    vreckan::catalog::warm_image_metadata(&state).await;
     state
 }
 

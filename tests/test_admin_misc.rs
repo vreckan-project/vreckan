@@ -561,7 +561,7 @@ async fn test_sso_save_db_write_failure_returns_500() {
                 "oidc_client_id": "cid",
                 "oidc_client_secret": "",
                 "oidc_redirect_uri": "",
-                "oidc_scopes": "openid email profile",
+                "oidc_scopes": "openid email password",
                 "oidc_allow_signup": true,
                 "oidc_state_ttl_seconds": 600,
                 "oidc_admin_groups": ["vdi-admins"],
@@ -572,4 +572,59 @@ async fn test_sso_save_db_write_failure_returns_500() {
     assert_eq!(status, StatusCode::INTERNAL_SERVER_ERROR, "{:?}", data);
     assert!(data.as_ref().unwrap().get("detail").is_some(), "{:?}", data);
     assert_ne!(data.as_ref().unwrap().get("ok"), Some(&json!(true)));
+}
+
+// ---------------------------------------------------------------------------
+// Auto-update settings (global enable + interval)
+// ---------------------------------------------------------------------------
+
+#[tokio::test]
+async fn test_auto_update_settings_save() {
+    let _root = TempDir::new();
+    let mut sc = SecureClient::new(build_state(_root.path()).await);
+    sc.http.login("admin", "admin1234").await;
+    sc.handshake().await;
+    // An empty body changes nothing; the response reflects the effective
+    // values (the test state forces auto_update_apps off so no background
+    // job runs).
+    let (status, data) = sc.call("PUT", "/api/admin/apps/auto_update", Some(&json!({}))).await;
+    assert_eq!(status, StatusCode::OK, "{:?}", data);
+    assert_eq!(data.as_ref().unwrap()["enabled"], false);
+    assert_eq!(data.as_ref().unwrap()["interval_seconds"], 3600);
+    // Save custom values; they persist through the `app_settings` table and
+    // round-trip as the resolved values.
+    let (status, data) = sc
+        .call(
+            "PUT",
+            "/api/admin/apps/auto_update",
+            Some(&json!({ "enabled": true, "interval_seconds": 21600 })),
+        )
+        .await;
+    assert_eq!(status, StatusCode::OK, "{:?}", data);
+    assert_eq!(data.as_ref().unwrap()["enabled"], true);
+    assert_eq!(data.as_ref().unwrap()["interval_seconds"], 21600);
+    assert_eq!(
+        sc.state.db.get_app_setting("VRECKAN_AUTO_UPDATE_APPS").await.unwrap().as_deref(),
+        Some("true")
+    );
+    assert_eq!(
+        sc.state
+            .db
+            .get_app_setting("VRECKAN_AUTO_UPDATE_INTERVAL_SECONDS")
+            .await
+            .unwrap()
+            .as_deref(),
+        Some("21600")
+    );
+    // Partial update: only the interval changes.
+    let (status, data) = sc
+        .call(
+            "PUT",
+            "/api/admin/apps/auto_update",
+            Some(&json!({ "interval_seconds": 86400 })),
+        )
+        .await;
+    assert_eq!(status, StatusCode::OK, "{:?}", data);
+    assert_eq!(data.as_ref().unwrap()["enabled"], true);
+    assert_eq!(data.as_ref().unwrap()["interval_seconds"], 86400);
 }

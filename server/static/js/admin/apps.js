@@ -52,8 +52,10 @@ function updatePullProgressRow(appId, app) {
     wrap.hidden = true;
     // The pull reached a terminal state — refresh the status badge in place so
     // it no longer reads "pulling"/"waiting to start" (the badge is otherwise
-    // only refreshed on a full table re-render).
-    const badge = wrap.closest("td")?.querySelector(".badge");
+    // only refreshed on a full table re-render). The status badge is the last
+    // badge in the image cell (the first is the short-SHA badge).
+    const badges = wrap.closest(".image-meta")?.querySelectorAll(".badge") || [];
+    const badge = badges[badges.length - 1];
     if (badge) {
       if (ps === "pull_failed") {
         badge.textContent = t("apps.pullFailed");
@@ -394,10 +396,43 @@ async function openAppEditModal(app) {
   input.select();
 }
 
+// Human duration ("58 min", "3 h 12 min", "2 d 4 h") for the auto-update
+// status line's "next check in …" part.
+function fmtDuration(seconds) {
+  const s = Math.max(0, Math.round(seconds));
+  if (s < 60) return `${s} ${t("apps.unitMinutes")}`;
+  const mins = Math.floor(s / 60);
+  if (mins < 60) return `${mins} ${t("apps.unitMinutes")}`;
+  const hours = Math.floor(mins / 60);
+  const remMin = mins % 60;
+  if (hours < 48) return remMin ? `${hours} ${t("apps.unitHours")} ${remMin} ${t("apps.unitMinutes")}` : `${hours} ${t("apps.unitHours")}`;
+  const days = Math.floor(hours / 24);
+  const remH = hours % 24;
+  return remH ? `${days} ${t("apps.unitDays")} ${remH} ${t("apps.unitHours")}` : `${days} ${t("apps.unitDays")}`;
+}
+
+// "Next check in 58 min · Last checked 14:02 · 3 of 7 apps set to auto-update"
+function autoUpdateStatusText(status, totalApps, optedCount) {
+  const parts = [];
+  if (status && status.next_check_at) {
+    const ms = new Date(status.next_check_at).getTime() - Date.now();
+    parts.push(t("apps.nextCheckIn", { time: ms > 0 ? fmtDuration(ms / 1000) : `0 ${t("apps.unitMinutes")}` }));
+  }
+  if (status && status.last_check_at) {
+    const d = new Date(status.last_check_at);
+    const hh = String(d.getHours()).padStart(2, "0");
+    const mm = String(d.getMinutes()).padStart(2, "0");
+    parts.push(t("apps.lastCheckedAt", { time: `${hh}:${mm}` }));
+  }
+  parts.push(t("apps.autoUpdateOptInCount", { count: optedCount, total: totalApps }));
+  return parts.join(" · ");
+}
+
 async function renderApps() {
-  const [installedRes, storesRes] = await Promise.all([
+  const [installedRes, storesRes, autoUpdateRes] = await Promise.all([
     request("/api/admin/apps/installed", "GET"),
     request("/api/admin/apps/stores", "GET"),
+    request("/api/admin/apps/auto_update_status", "GET"),
   ]);
   if (installedRes.error) {
     setPanel(`<div class="card"><h3>${t("apps.heading")}</h3><div class="error">${esc(installedRes.error.message)}</div></div>`);
@@ -410,13 +445,23 @@ async function renderApps() {
   const rows = apps
     .map((a) => {
       const pulling = a.pull_status === "pulling" || a.pull_status === "queued";
+      const updateAvailable = a.update_available === true;
       const statusBadge = pulling
         ? `<span class="badge badge-pull">${a.pull_status === "queued" ? t("apps.waitingToStart") : t("apps.pulling")}</span>`
         : a.pull_status === "pull_failed"
         ? `<span class="badge badge-warn">${t("apps.pullFailed")}</span>`
+        : updateAvailable
+        ? `<span class="badge badge-warn">${t("apps.updateAvailable")}</span>`
         : a.image_sha
         ? `<span class="badge badge-ok">${t("apps.upToDate")}</span>`
         : `<span class="badge">${t("apps.unknown")}</span>`;
+      // The image reference is the row's actionable identity (which image it
+      // runs); the short SHA and status badges sit on the line below. When the
+      // SHA is unknown, name the image and say why instead of a bare "—".
+      const imageRef = (a.provider_config || {}).image || "";
+      const shaPart = a.image_sha
+        ? `<span class="badge" title="${esc(a.image_sha)}">${shortSha(a.image_sha)}</span>`
+        : `<span class="muted fs-xs" title="${t("apps.imageNotInspected")}">${t("apps.imageNotInspected")}</span>`;
       // Always render the progress wrap (hidden unless pulling) so the
       // in-place progress updater can find it right after a re-render.
       const progress = `<div class="row-progress" data-progress-for="${esc(a.id)}" ${pulling ? "" : "hidden"}><div class="progress-track"><div class="progress-fill" ></div></div><div class="progress-pct muted"></div></div>`;
@@ -427,16 +472,22 @@ async function renderApps() {
         <td>${a.home_directories ? t("apps.yes") : t("apps.no")}</td>
         <td>${a.users ? a.users.join(", ") : ""}</td>
         <td>${(a.groups || []).join(", ") || "—"}</td>
-        <td><span class="badge">${shortSha(a.image_sha)}</span> ${statusBadge}${progress}</td>
+        <td>
+          ${imageRef ? `<div class="image-ref" title="${esc(imageRef)}">${esc(imageRef)}</div>` : ""}
+          <div class="image-meta">${shaPart} ${statusBadge}${progress}</div>
+        </td>
         <td class="admin-actions">
           <button class="btn btn-sm btn-ghost" data-act="edit" data-id="${esc(a.id)}">${t("common.edit")}</button>
           <button class="btn btn-sm btn-ghost" data-act="check" data-id="${esc(a.id)}">${t("apps.check")}</button>
-          <button class="btn btn-sm btn-ghost" data-act="pull" data-id="${esc(a.id)}">${t("apps.pull")}</button>
+          <button class="btn btn-sm ${updateAvailable ? "btn-warning" : "btn-ghost"}" data-act="pull" data-id="${esc(a.id)}">${t("apps.pull")}</button>
+          <label class="auto-toggle" title="${t("apps.auto")}"><input type="checkbox" data-act="auto" data-id="${esc(a.id)}"${a.auto_update ? " checked" : ""}> ${t("apps.auto")}</label>
           <button class="btn btn-sm btn-danger" data-act="del" data-id="${esc(a.id)}">${t("common.delete")}</button>
         </td>
       </tr>`;
     })
     .join("");
+
+  const anyUpdatable = apps.some((a) => a.update_available === true);
 
   setPanel(`
     <div class="card">
@@ -444,8 +495,20 @@ async function renderApps() {
         <h3 class="mb-0">${t("apps.installedTitle")}</h3>
         <div class="row gap-8">
           <button class="btn btn-sm btn-ghost" id="apps-check-all" type="button">${t("apps.checkAll")}</button>
-          <button class="btn btn-sm btn-ghost" id="apps-update-all" type="button">${t("apps.updateAll")}</button>
+          <button class="btn btn-sm ${anyUpdatable ? "btn-warning" : "btn-ghost"}" id="apps-update-all" type="button">${t("apps.updateAll")}</button>
         </div>
+      </div>
+      <div class="auto-update-row row" id="auto-update-controls">
+        <label>${t("apps.autoUpdate")} <input type="checkbox" id="auto-update-enabled"></label>
+        <label>${t("apps.autoUpdateCheckEvery")}
+          <select id="auto-update-interval">
+            <option value="3600">${t("apps.interval1h")}</option>
+            <option value="21600">${t("apps.interval6h")}</option>
+            <option value="43200">${t("apps.interval12h")}</option>
+            <option value="86400">${t("apps.interval24h")}</option>
+          </select>
+        </label>
+        <span class="muted fs-xs flex-grow" id="auto-update-status"></span>
       </div>
       <table class="admin-table">
         <thead><tr><th>${t("files.app")}</th><th>${t("apps.source")}</th><th>${t("apps.homeDirs")}</th><th>${t("apps.users")}</th><th>${t("apps.groups")}</th><th>${t("apps.image")}</th><th></th></tr></thead>
@@ -560,6 +623,7 @@ async function renderApps() {
       if (r.error) return toast(r.error.message, "error");
       const upd = r.data && r.data.update_available;
       toast(upd ? t("apps.updateAvailable") : t("apps.upToDate"), upd ? "error" : "success");
+      render(); // reflect the fresh SHA / status / button color immediately
       return;
     }
     if (btn.dataset.act === "pull") {
@@ -585,6 +649,7 @@ async function renderApps() {
       if (r.error) return toast(r.error.message, "error");
       const n = r.data && r.data.updates_available;
       toast(n ? t("apps.updatesAvailable", { count: n }) : t("apps.allUpToDate"), n ? "error" : "success");
+      render(); // show the fresh per-app SHA / status / button color
     });
   }
 
@@ -606,6 +671,92 @@ async function renderApps() {
       trackAllPulls();
     });
   }
+
+  // Per-app "Auto" checkbox: persist the app's auto_update flag through the
+  // existing installed-app PUT endpoint (the full app round-trips, like the
+  // edit modal does).
+  $("app-rows").addEventListener("change", async (e) => {
+    const input = e.target.closest('input[data-act="auto"]');
+    if (!input) return;
+    const app = (apps || []).find((x) => x.id === input.dataset.id);
+    if (!app) return;
+    const next = input.checked;
+    if (app.auto_update === next) return;
+    input.disabled = true;
+    const r = await request(`/api/admin/apps/installed/${app.id}`, "PUT", { ...app, auto_update: next });
+    if (r.error) {
+      toast(r.error.message, "error");
+      input.disabled = false;
+      input.checked = !next;
+      return;
+    }
+    render();
+  });
+
+  // Auto-update controls: enable toggle + interval select persist through
+  // the admin settings path; the muted line mirrors the read-only job status
+  // (which may not exist yet on older server builds — then the controls
+  // fall back to the code defaults and say so).
+  const auEnabled = $("auto-update-enabled");
+  const auInterval = $("auto-update-interval");
+  const auStatus = $("auto-update-status");
+  const AUTO_UPDATE_INTERVAL_PRESETS = [
+    [3600, "apps.interval1h"],
+    [21600, "apps.interval6h"],
+    [43200, "apps.interval12h"],
+    [86400, "apps.interval24h"],
+  ];
+  let autoUpdateState = autoUpdateRes.error ? null : autoUpdateRes.data || null;
+  const optedInCount = () =>
+    autoUpdateState && Number.isInteger(autoUpdateState.auto_update_apps_count)
+      ? autoUpdateState.auto_update_apps_count
+      : apps.filter((a) => a.auto_update).length;
+
+  function applyAutoUpdateControls() {
+    if (!auEnabled || !auInterval) return;
+    const enabled = autoUpdateState && typeof autoUpdateState.enabled === "boolean" ? autoUpdateState.enabled : true;
+    const interval = autoUpdateState && Number.isInteger(autoUpdateState.interval_seconds) ? autoUpdateState.interval_seconds : 3600;
+    auEnabled.checked = enabled;
+    auInterval.innerHTML = AUTO_UPDATE_INTERVAL_PRESETS.map(([s, key]) => `<option value="${s}">${t(key)}</option>`).join("");
+    if (![...auInterval.options].some((o) => Number(o.value) === interval)) {
+      const opt = document.createElement("option");
+      opt.value = interval;
+      opt.textContent = t("apps.intervalCustom", { seconds: interval });
+      auInterval.appendChild(opt);
+    }
+    auInterval.value = String(interval);
+    if (autoUpdateState) {
+      auStatus.textContent = autoUpdateStatusText(autoUpdateState, apps.length, optedInCount());
+    } else {
+      auStatus.textContent = t("apps.autoUpdateStatusUnavailable");
+    }
+  }
+
+  async function saveAutoUpdate() {
+    const enabled = auEnabled.checked;
+    const intervalSeconds = Number(auInterval.value);
+    auEnabled.disabled = true;
+    auInterval.disabled = true;
+    const r = await request("/api/admin/apps/auto_update", "PUT", { enabled, interval_seconds: intervalSeconds });
+    auEnabled.disabled = false;
+    auInterval.disabled = false;
+    if (r.error) return toast(r.error.message, "error");
+    toast(t("common.saved"));
+    // Refresh the live status line (and control values) from the job status.
+    // When that endpoint isn't available on this build, keep the just-saved
+    // values in the controls instead of snapping back to the defaults.
+    const s = await request("/api/admin/apps/auto_update_status", "GET");
+    if (!s.error && s.data) {
+      autoUpdateState = s.data;
+    } else {
+      autoUpdateState = autoUpdateState ? { ...autoUpdateState, enabled, interval_seconds: intervalSeconds } : { enabled, interval_seconds: intervalSeconds };
+    }
+    applyAutoUpdateControls();
+  }
+
+  applyAutoUpdateControls();
+  if (auEnabled) auEnabled.addEventListener("change", saveAutoUpdate);
+  if (auInterval) auInterval.addEventListener("change", saveAutoUpdate);
 }
 
 // Follow the aggregate "update all" pull: poll the installed-apps list until

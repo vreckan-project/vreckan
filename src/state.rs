@@ -40,6 +40,16 @@ pub struct DownloadTokenRecord {
     pub expires_at: f64,
 }
 
+/// Bookkeeping for the background auto-update job (ANT-269): the wall-clock
+/// times (unix seconds) of the last completed tick and the next scheduled
+/// tick. In-memory only — after a restart both are `None` until the first
+/// tick completes.
+#[derive(Clone, Debug, Default)]
+pub struct AutoUpdateJobState {
+    pub last_check_at: Option<f64>,
+    pub next_check_at: Option<f64>,
+}
+
 /// Login-attempt accounting for one (client IP, username) pair, used by the
 /// brute-force limiter on `/api/auth/login`.
 #[derive(Clone, Debug, Default)]
@@ -79,9 +89,15 @@ pub struct AppState {
     /// Live image-pull status, keyed by image name
     /// ("queued" / "pulling" / "pull_failed"). Mirrors `api.PULL_STATUS`.
     pub pull_status: Arc<RwLock<HashMap<String, String>>>,
-    /// Cached image metadata (sha + last_checked_at), keyed by image name.
+    /// Cached image metadata, keyed by image name. Besides the local `sha`
+    /// (image ID) / `digests` / `last_checked_at`, entries may carry the
+    /// registry comparison from an update check: `remote_digest`,
+    /// `update_available`, and `last_update_checked_at` (ANT-269).
     /// Mirrors `api.IMAGE_METADATA`.
     pub image_metadata: Arc<RwLock<HashMap<String, serde_json::Value>>>,
+    /// Bookkeeping for the background auto-update job (ANT-269): last
+    /// completed tick + next scheduled tick (unix seconds). In-memory only.
+    pub auto_update_job: Arc<RwLock<AutoUpdateJobState>>,
     /// Installed applications, keyed by app id (the application catalog).
     pub installed_apps: Arc<RwLock<HashMap<String, crate::catalog::InstalledApp>>>,
     /// The configured app stores (name + catalog URL).
@@ -146,6 +162,7 @@ impl AppState {
             pull_progress: Arc::new(Mutex::new(HashMap::new())),
             pull_status: Arc::new(RwLock::new(HashMap::new())),
             image_metadata: Arc::new(RwLock::new(HashMap::new())),
+            auto_update_job: Arc::new(RwLock::new(AutoUpdateJobState::default())),
             installed_apps: Arc::new(RwLock::new(HashMap::new())),
             app_stores: Arc::new(RwLock::new(Vec::new())),
             app_templates: Arc::new(RwLock::new(HashMap::new())),
