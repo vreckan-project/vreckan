@@ -7,8 +7,8 @@
 //! HTTP-01). The resulting certificate chain + key are carried back to the
 //! caller in `AcmeIssueResult` so it can persist them to the config DB (the
 //! authoritative source of truth); they are also written as a best-effort
-//! mirror into the app's `/data/acme` layout (`live/{primary}/cert.pem` +
-//! `privkey.pem`) for backward compatibility.
+//! mirror into the app's `{data_root}/acme` layout
+//! (`live/{primary}/cert.pem` + `privkey.pem`) for backward compatibility.
 //!
 //! DNS-01 is routed through a small provider registry so a user can choose
 //! any of the DNS providers acmex ships (Cloudflare is the default; Route53,
@@ -512,9 +512,10 @@ async fn discover_cloudflare_zone(token: &str, domain: &str) -> Result<String, S
     Ok(best.map(|(_, id)| id).unwrap_or_default())
 }
 
-/// The on-disk location of the persisted ACME account key.
-pub fn account_key_path() -> String {
-    format!("{}/acme-account.key", crate::acme_orchestrator::app_cert_dir())
+/// The on-disk location of the persisted ACME account key (lives in the
+/// app-side cert dir derived from the configured data root, ANT-273).
+pub fn account_key_path(dir: &str) -> String {
+    format!("{dir}/acme-account.key")
 }
 
 /// Load the persisted ACME account key, or generate and persist a new one.
@@ -527,8 +528,8 @@ pub fn account_key_path() -> String {
 /// (ANT-138). A persisted key of any other type is replaced — its ACME
 /// account, if one was ever registered, is simply orphaned and a new
 /// account is registered under the new key.
-pub async fn load_or_create_account_key() -> Result<KeyPair, String> {
-    let path = account_key_path();
+pub async fn load_or_create_account_key(dir: &str) -> Result<KeyPair, String> {
+    let path = account_key_path(dir);
     if let Ok(kp) = KeyPair::load_from_file(&path) {
         match KeyType::for_key_pair(&kp.0) {
             Ok(KeyType::EcdsaP256) => {
@@ -570,6 +571,9 @@ pub struct IssueArgs<'a> {
     pub registry: Arc<DnsProviderRegistry>,
     /// Allow a plaintext `http://` custom CA directory URL (ANT-275).
     pub allow_http_ca: bool,
+    /// Configurable persistent data root; the account key and the on-disk
+    /// cert mirror live under `{data_root}/acme` (ANT-273).
+    pub data_root: &'a str,
 }
 
 /// The outcome of an issuance attempt.
@@ -589,7 +593,7 @@ pub struct AcmeIssueResult {
 /// fulfil the chosen challenge. On success the issued certificate chain and
 /// private key are carried back in the result (for the caller to persist to
 /// the config DB — the authoritative store) and also written as a best-effort
-/// on-disk mirror in the `/data/acme` layout. Collects human-readable milestone
+/// on-disk mirror in the `{data_root}/acme` layout. Collects human-readable milestone
 /// `logs` so the result can be surfaced to the user (the original "button did
 /// nothing" complaint).
 pub async fn issue_certificate(args: &IssueArgs<'_>) -> AcmeIssueResult {
@@ -602,7 +606,8 @@ pub async fn issue_certificate(args: &IssueArgs<'_>) -> AcmeIssueResult {
         }};
     }
 
-    let key_pair = match load_or_create_account_key().await {
+    let cert_dir = crate::acme_orchestrator::app_cert_dir_from(args.data_root);
+    let key_pair = match load_or_create_account_key(&cert_dir).await {
         Ok(k) => {
             log!("Account key ready.");
             k
@@ -664,10 +669,7 @@ pub async fn issue_certificate(args: &IssueArgs<'_>) -> AcmeIssueResult {
             let cert_pem = bundle.certificate_pem.clone();
             let key_pem = bundle.private_key_pem.clone();
             let primary = args.domains.first().cloned().unwrap_or_default();
-            let live = format!(
-                "{}/live/{primary}",
-                crate::acme_orchestrator::app_cert_dir()
-            );
+            let live = format!("{cert_dir}/live/{primary}");
             // Best-effort on-disk mirror (backward compat with the certbot
             // layout); the DB is authoritative, so a write failure is a
             // warning, not an issuance failure.

@@ -121,6 +121,7 @@ fn default_cfg() -> acme_orchestrator::AcmeConfig {
         acme_dns_provider: "cloudflare".to_string(),
         acme_cloudflare_zone_id: "test-zone-id".to_string(),
         acme_dns_provider_config: String::new(),
+        data_root: "/data".to_string(),
     }
 }
 
@@ -620,6 +621,23 @@ async fn test_renew_acme_cert_acmex_error() {
     assert_eq!(result["due"], true);
     assert_eq!(result["renewed"], false);
     assert!(result["error"].as_str().unwrap().contains("rate limited"));
+}
+
+// --- app cert dir derivation (ANT-273) ----------------------------------------
+#[test]
+fn test_app_cert_dir_derives_from_data_root() {
+    let _guard = lock_le();
+    // No test override: the dir is `{data_root}/acme`.
+    *acme_orchestrator::ACME_CERT_DIR.write().unwrap() = None;
+    assert_eq!(acme_orchestrator::app_cert_dir_from("/data"), "/data/acme");
+    assert_eq!(
+        acme_orchestrator::app_cert_dir_from("/srv/vreckan"),
+        "/srv/vreckan/acme"
+    );
+    // A test override still wins over the data_root derivation.
+    *acme_orchestrator::ACME_CERT_DIR.write().unwrap() = Some("/override/acme".to_string());
+    assert_eq!(acme_orchestrator::app_cert_dir_from("/data"), "/override/acme");
+    *acme_orchestrator::ACME_CERT_DIR.write().unwrap() = None;
 }
 
 // --- effective_acme_config ---------------------------------------------------
