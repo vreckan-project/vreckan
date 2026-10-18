@@ -21,6 +21,7 @@ pub mod acme_orchestrator;
 pub mod permissions;
 pub mod security;
 pub mod session_proxy;
+pub mod session_shares;
 pub mod settings;
 pub mod state;
 pub mod static_files;

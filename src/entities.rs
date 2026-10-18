@@ -276,3 +276,20 @@ pub mod app_setting {
     #[async_trait::async_trait]
     impl ActiveModelBehavior for ActiveModel {}
 }
+
+
+pub mod session_share {
+    use sea_orm::entity::prelude::*;
+
+    #[sea_orm::model]
+    #[derive(Clone, Debug, PartialEq, DeriveEntityModel)]
+    #[sea_orm(table_name = "session_shares")]
+    pub struct Model {
+        #[sea_orm(primary_key)]
+        pub share_id: String,
+        pub data: Json,
+    }
+
+    #[async_trait::async_trait]
+    impl ActiveModelBehavior for ActiveModel {}
+}

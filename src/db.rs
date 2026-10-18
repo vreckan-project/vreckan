@@ -33,7 +33,7 @@ use crate::entities;
 /// Tables in a sensible restore order. No foreign-key constraints are declared
 /// (cross-references are handled in application code), so the order is only for
 /// readability of the logical backup.
-pub const TABLE_ORDER: [&str; 13] = [
+pub const TABLE_ORDER: [&str; 14] = [
     "users",
     "groups",
     "roles",
@@ -45,6 +45,7 @@ pub const TABLE_ORDER: [&str; 13] = [
     "pinned_behaviors",
     "app_settings",
     "public_shares",
+    "session_shares",
     "sessions",
     "auth_tokens",
 ];
@@ -134,6 +135,7 @@ impl Db {
             .register(entities::session_record::Entity)
             .register(entities::auth_token::Entity)
             .register(entities::public_share::Entity)
+            .register(entities::session_share::Entity)
             .register(entities::app_template::Entity)
             .register(entities::template_schema_setting::Entity)
             .register(entities::pinned_behavior::Entity)
@@ -348,6 +350,7 @@ fn known_columns(table: &str) -> Vec<&'static str> {
         "sessions" => vec!["session_id", "data"],
         "auth_tokens" => vec!["token", "username", "expires_at"],
         "public_shares" => vec!["share_id", "data"],
+        "session_shares" => vec!["share_id", "data"],
         "app_templates" => vec!["name", "settings"],
         "template_schema_settings" => vec![
             "name",
@@ -491,6 +494,7 @@ fn json_columns(table: &str) -> Vec<&'static str> {
         "installed_apps" => vec!["data"],
         "sessions" => vec!["data"],
         "public_shares" => vec!["data"],
+        "session_shares" => vec!["data"],
         "app_templates" => vec!["settings"],
         "template_schema_settings" => vec!["options"],
         "pinned_behaviors" => vec!["data"],

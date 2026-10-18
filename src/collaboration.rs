@@ -227,7 +227,7 @@ async fn collaborative_room(
                 "permission": permission,
             }));
         }
-        broadcast_token_state(&state, &session_id, &session_data).await;
+        push_token_table(&state, &session_id, &session_data).await;
         *state.sessions.write().await.entry(session_id.clone()).or_insert(Value::Object(
             serde_json::Map::new(),
         )) = session_data.clone();
@@ -466,29 +466,50 @@ async fn broadcast_state(state: &AppState, session_id: &str) {
 
 /// Push the per-token state (slots + MK control) to the app container's token
 /// endpoint. Mirrors `broadcast_token_state`.
-async fn broadcast_token_state(_state: &AppState, session_id: &str, session_data: &Value) {
+///
+/// Returns true when the table was actually accepted by the container (a 2xx
+/// from its token endpoint). A viewer entry may carry an explicit `role`
+/// (used by session shares: a full share on a promoted plain session lists
+/// its visitor as `controller`); entries without one default to `viewer`.
+pub async fn push_token_table(_state: &AppState, session_id: &str, session_data: &Value) -> bool {
     let mk_owner = session_data.get("mk_owner_token").and_then(|v| v.as_str());
     let controller_token = session_data
         .get("controller_token")
         .and_then(|v| v.as_str())
         .unwrap_or("");
+    // A plain (non-room) session has no controller token; its owner is
+    // addressed in the token table by the session's access token (relevant
+    // once a share session is promoted to secure mode, ANT-305).
+    let owner_token = if controller_token.is_empty() {
+        session_data
+            .get("access_token")
+            .and_then(|v| v.as_str())
+            .unwrap_or("")
+    } else {
+        controller_token
+    };
 
     let mut all_tokens = serde_json::Map::new();
-    all_tokens.insert(
-        controller_token.to_string(),
-        serde_json::json!({
-            "role": "controller",
-            "slot": session_data.get("controller_slot").cloned().unwrap_or(Value::Null),
-            "mk_control": if mk_owner.is_some() { mk_owner == Some(controller_token) } else { true },
-        }),
-    );
+    if !owner_token.is_empty() {
+        all_tokens.insert(
+            owner_token.to_string(),
+            serde_json::json!({
+                "role": "controller",
+                "slot": session_data.get("controller_slot").cloned().unwrap_or(Value::Null),
+                "mk_control": if mk_owner.is_some() { mk_owner == Some(owner_token) } else { true },
+            }),
+        );
+    }
     if let Some(viewers) = session_data.get("viewers").and_then(|v| v.as_array()) {
         for v in viewers {
             let vtoken = v.get("token").and_then(|t| t.as_str()).unwrap_or("");
+            if vtoken.is_empty() {
+                continue;
+            }
             all_tokens.insert(
                 vtoken.to_string(),
                 serde_json::json!({
-                    "role": "viewer",
+                    "role": v.get("role").and_then(|r| r.as_str()).unwrap_or("viewer"),
                     "slot": v.get("slot").cloned().unwrap_or(Value::Null),
                     "mk_control": mk_owner == Some(vtoken),
                 }),
@@ -514,7 +535,7 @@ async fn broadcast_token_state(_state: &AppState, session_id: &str, session_data
         }
     }
     if targets.is_empty() {
-        return;
+        return false;
     }
 
     let master_token = session_data
@@ -540,7 +561,12 @@ async fn broadcast_token_state(_state: &AppState, session_id: &str, session_data
     for (ip, port) in targets {
         let mut urls: Vec<String> = Vec::new();
         if let Some(p) = port {
-            urls.push(format!("http://{ip}:{p}/{session_id}/api/tokens"));
+            // Selkies serves its token API under the session's SUBFOLDER
+            // (`/api/apps/session/{id}/`), so the endpoint is
+            // `/api/apps/session/{id}/api/tokens`, not `/{id}/api/tokens`.
+            urls.push(format!(
+                "http://{ip}:{p}/api/apps/session/{session_id}/api/tokens"
+            ));
         }
         urls.push(format!("http://{ip}:8083/tokens"));
         for url in urls {
@@ -553,11 +579,21 @@ async fn broadcast_token_state(_state: &AppState, session_id: &str, session_data
             } else {
                 req = req.header("Authorization", bearer.clone());
             }
-            if req.send().await.is_ok() {
-                break;
+            match req.send().await {
+                // A 2xx means the container accepted the table. Other
+                // statuses (e.g. 404 "not in secure mode" from selkies 3.x,
+                // or 401 from an older image with a different master token)
+                // try the next candidate URL.
+                Ok(resp) => {
+                    if resp.status().is_success() {
+                        return true;
+                    }
+                }
+                Err(_) => {}
             }
         }
     }
+    false
 }
 
 // ---------------------------------------------------------------------------
@@ -646,7 +682,7 @@ async fn handle_assign_slot(
         notifications.push(format!("{target_username} was unassigned from Gamepad {old}."));
     }
 
-    broadcast_token_state(state, session_id, &session_data).await;
+    push_token_table(state, session_id, &session_data).await;
     state.sessions.write().await.insert(session_id.to_string(), session_data);
     catalog::save_sessions(state).await;
 
@@ -695,7 +731,7 @@ async fn handle_assign_mk(state: &AppState, session_id: &str, target_token: Opti
             }
         }
     }
-    broadcast_token_state(state, session_id, &session_data).await;
+    push_token_table(state, session_id, &session_data).await;
     state.sessions.write().await.insert(session_id.to_string(), session_data);
     catalog::save_sessions(state).await;
     let now_ms = (std::time::SystemTime::now()
@@ -1293,7 +1329,7 @@ async fn cleanup_disconnect(
         if input_released {
             let sd = state.sessions.read().await.get(session_id).cloned();
             if let Some(sd) = sd {
-                broadcast_token_state(state, session_id, &sd).await;
+                push_token_table(state, session_id, &sd).await;
             }
         }
     }
