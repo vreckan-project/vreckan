@@ -8,9 +8,11 @@ audit** (2026-10-12), which verified every route against the Python original
 source of truth for Python↔Rust handler mapping; the [port status
 document](./port-status.md) tracks the residual gaps.
 
-Scale: **104 route registrations covering 101 unique paths** (several paths
-serve multiple methods) — all equivalent paths of the Python original, plus
-representation-level differences and one additive endpoint.
+Scale: **112 route registrations covering 106 unique paths** (143
+method+path routes; several paths serve multiple methods) — all
+equivalent paths of the Python original, plus representation-level
+differences and additive endpoints (the Rust-only liveness probe and the
+share-session links routes).
 
 ## How requests are protected
 
@@ -22,9 +24,11 @@ Two orthogonal layers:
    public-password pages use a per-response nonce CSP; proxied session traffic
    gets the looser session CSP.
 2. **Authentication & E2EE:**
-   - **Auth routes** (`/api/auth/*`, handshake, public shares, room, session
-     proxy, static) use **plaintext** bodies. The web-login credential is the
-     `vreckan_auth` cookie (opaque server-issued token, 8 h TTL by default).
+    - **Auth routes** (`/api/auth/*`, handshake, public shares, the
+      session-share public entry, room, session proxy, static) use
+      **plaintext** bodies. The web-login credential is the
+      `vreckan_auth` cookie (opaque server-issued token, 8 h TTL by
+      default).
    - **E2EE routes** (catalog, launch, sessions, files, upload, homedirs,
      pinned, and all of `/api/admin/*`) require the same token and
      **AES-256-GCM-encrypted request/response bodies**. The client first runs
@@ -96,8 +100,21 @@ Two orthogonal layers:
 
 | Method | Path | Handler | Auth |
 |---|---|---|---|
-| ANY | `/api/apps/session/{session_id}/` | `initial_session_auth` | first hit: exchange the single-use `access_token` for a session cookie; then session cookie (token is validated but not consumed on the server side — replaying it re-sets the cookie) |
-| ANY | `/api/apps/session/{session_id}/{*path}` | `session_proxy_subpath` | session cookie |
+| ANY | `/api/apps/session/{session_id}/` | `initial_session_auth` | first hit: `?access_token=` (the owner's token) is validated constant-time and exchanged for the `vreckan_session_token_{id}` cookie via a 303 to the same URL with the token stripped (the token is not consumed — replaying it re-sets the cookie); a valid collab or share-visit `?token=` in the same URL additionally sets the `collab_token_{id}` cookie so the page's sub-requests authenticate by cookie |
+| ANY | `/api/apps/session/{session_id}/{*path}` | `session_proxy_subpath` | any admitted credential (below) |
+
+Admitted credentials (HTTP and WebSocket paths, both routes): the
+owner's session cookie; for collaboration sessions — and for plain
+sessions promoted to selkies secure mode by a session share — the
+collaboration token (the controller token or one of the viewers'
+tokens) presented via the `collab_token_{id}` cookie or a first-hit
+`?token=`; and the per-visit tokens minted by session shares (the
+vreckan-side token map is the source of truth for tokens the container
+cannot know about). Anything else is 403 `Forbidden: Invalid session or
+token.` When the container runs in secure mode the proxy presents the
+request's own valid token to the upstream (falling back to the owner's
+container token for the owner), so each participant is individually
+authenticated by the container.
 
 One `any()` registration per route handles both HTTP and WebSocket: an
 `Upgrade` header dispatches to the WebSocket bridge (client leg
@@ -111,13 +128,15 @@ consolidation is a representation difference, not a behavior change.)
 
 ### Session shares — `session_shares.rs`
 
-Owner-managed share links that let a session owner hand a specific remote
-session to a named person or a whole room without sharing their own
-credentials. Each share has a mode (`person` or `room`), an optional
-password, and an optional expiry. Visiting a share issues a short-lived
-per-visit token; the proxy lazily promotes the session to secure mode
-(`push_token_table`) when the token is accepted, or falls back to a legacy
-`?role=` viewer grant when the session is not in secure mode.
+Owner-managed share links that let a session owner hand one of their
+running sessions — plain or room — to a recipient who has no Vreckan
+account, without sharing the owner's own credentials. Each share has a
+**role** — `full` (input plus every file capability) or `view_only`
+(no input; browse and download on by default) — freely combinable file
+capabilities (`file_browse`, `file_download`, `file_upload`), an optional
+password (argon2id, the file-share verifier), an optional expiry, and
+per-link revocation. The owner routes are E2EE-encrypted and owner-only;
+the public entry is plaintext and account-less.
 
 Owner management (E2EE + the caller must own the session):
 
@@ -126,19 +145,97 @@ Owner management (E2EE + the caller must own the session):
 | POST | `/api/sessions/{session_id}/shares` | `create_session_share` | E2EE (owner) |
 | GET | `/api/sessions/{session_id}/shares` | `list_session_shares` | E2EE (owner) |
 | PATCH | `/api/sessions/{session_id}/shares/{share_id}` | `update_session_share` | E2EE (owner) |
-| DELETE | `/api/sessions/{session_id}/shares/{share_id}` | `delete_session_share` | E2EE (owner) |
+| DELETE | `/api/sessions/{session_id}/shares/{share_id}` | `revoke_session_share` | E2EE (owner) |
 
 Account-less public entry (plaintext):
 
 | Method | Path | Handler | Auth |
 |---|---|---|---|
-| GET | `/share/{share_id}` | `public_share_get` | — (entry redirect / password page) |
-| POST | `/share/{share_id}` | `public_share_post` | — (password submission) |
+| GET | `/share/{share_id}` | `access_session_share_get` | — (303 entry redirect, or the password page) |
+| POST | `/share/{share_id}` | `access_session_share_post` | — (password submission) |
 
-`PATCH` uses a nested `Option<Option<…>>` so an explicit `null` clears a
-password/expiry while an absent field leaves it unchanged. A background
-sweeper (started in `main.rs`, `background_share_cleanup_job` in `files.rs`)
-removes expired shares on the `share_cleanup_interval_seconds` schedule.
+The share's wire shape (every owner route takes and returns it,
+E2EE-encrypted):
+
+| Field | Type | Notes |
+|---|---|---|
+| `share_id` | string | UUID; the public link is `/share/{share_id}` |
+| `session_id` | string | the shared session |
+| `role` | string | `full` \| `view_only` |
+| `caps` | object | `{ input, file_browse, file_download, file_upload }`, all bool |
+| `created_at` | number | unix seconds |
+| `expiry_timestamp` | number \| null | unix seconds; `null` = no expiry |
+| `has_password` | bool | indicator only — the hash never leaves the server |
+| `revoked` | bool | revoked links stay listed; the public entry answers 410 |
+| `url` | string | `/share/{share_id}` |
+
+**`POST /api/sessions/{session_id}/shares`** — create. Request body:
+
+| Field | Type | Required | Notes |
+|---|---|---|---|
+| `role` | string | yes | `full` \| `view_only`; anything else → 422 |
+| `caps` | object | no | partial override `{input?, file_browse?, file_download?, file_upload?}`; absent fields take the role's defaults |
+| `password` | string | no | non-empty sets the password (argon2id); absent/blank = none |
+| `expiry_hours` | number | no | must be `> 0`; sets `expiry_timestamp = now + hours·3600` |
+
+Role invariants: `full` ⇒ every cap on; `view_only` ⇒ `input` off, file
+caps freely combinable. Response 200: the new share. Errors: 404 unknown
+session; 403 not the owner's session; 422 invalid body or role.
+
+**`GET /api/sessions/{session_id}/shares`** — response 200: a JSON array
+of the session's shares (newest first), same shape as above.
+
+**`PATCH /api/sessions/{session_id}/shares/{share_id}`** — edit. Every
+body field is optional, and **an absent field leaves the share
+unchanged while an explicit `null` clears** (deserialized as a nested
+`Option<Option<…>>` so the two are told apart; `""` also clears the
+password):
+
+| Field | Type | Semantics |
+|---|---|---|
+| `role` | string \| null | `full` \| `view_only`. Switching to `full` turns every cap on; switching to `view_only` removes only `input` — the file caps stay as configured |
+| `caps` | object | partial override, as at create |
+| `password` | string \| null | non-empty sets it; `""` or `null` clears it |
+| `expiry_hours` | number \| null | positive sets a new expiry from now; `null` clears it |
+
+Response 200: the updated share. Errors: 404 unknown share (or a share
+belonging to a different session); 422 invalid role.
+
+**`DELETE /api/sessions/{session_id}/shares/{share_id}`** — revoke.
+Response 204, empty body. Revocation marks the link dead (the public
+entry answers 410) and strips **every per-visit token the link has ever
+minted** — from the session's `viewers` list, the container's selkies
+token table, and the vreckan-side token map — without stopping the
+session.
+
+**Public entry.** `GET /share/{share_id}`: 404 `Share not found.`; 410
+when revoked, expired, or the session has ended (plain-page message in
+each case); the public password page (200) when a password is set;
+otherwise a 303 redirect. `POST /share/{share_id}` (form field
+`password`): 303 on a correct password; the password page re-rendered
+with 401 on a wrong one; 400 when the share has no password. The 303
+target:
+
+| Session kind | Redirect |
+|---|---|
+| Room | `/room/{session_id}?token={visit_token}` |
+| Plain, promoted to secure mode | `/api/apps/session/{session_id}/?token={visit_token}` |
+| Plain, legacy container (no selkies token control plane), input on | same URL — the legacy default role is controller |
+| Plain, legacy container, input off | same URL plus `&role=viewer` |
+
+Each visit mints a fresh per-visit token (128-bit random) and records
+the visitor in the session's `viewers` list; the session proxy admits
+the token on every subsequent request and (WP3) gates the in-container
+file API by the share's caps. A plain session is **lazily promoted** to
+selkies secure mode on its first share visit: a `master_token` is minted
+and the full token table is pushed to the container's
+`/{session_id}/api/tokens`; when that endpoint answers 404/401 or is
+unreachable (older selkies images without the control plane) the session
+stays legacy and the role rides the `?role=` query parameter instead.
+A background sweeper (started in `main.rs`,
+`background_share_cleanup_job` in `files.rs`) removes expired shares on
+the `share_cleanup_interval_seconds` schedule and strips their tokens
+(port-status gap G2, closed).
 
 ### File management — `files.rs` (E2EE)
 
@@ -198,8 +295,8 @@ removes expired shares on the `share_cleanup_interval_seconds` schedule.
 
 ### Admin — `admin.rs` (E2EE + per-permission RBAC)
 
-46 registrations, 61 method+path routes (matches the Python admin router's
-61 exactly).
+48 registrations, 62 method+path routes (the parity-audit's 61, plus the
+two auto-update endpoints added in v0.7.0).
 
 | Method | Path | Handler |
 |---|---|---|
@@ -227,6 +324,8 @@ removes expired shares on the `share_cleanup_interval_seconds` schedule.
 | POST | `/api/admin/apps/installed/check_all_updates` | `check_all_app_updates` |
 | POST | `/api/admin/apps/installed/pull_all_latest` | `pull_all_app_images` |
 | POST | `/api/admin/apps/installed/{app_id}/pull_latest` | `pull_latest_app_image` |
+| PUT | `/api/admin/apps/auto_update` | `save_auto_update_settings` |
+| GET | `/api/admin/apps/auto_update_status` | `get_auto_update_status` |
 | GET | `/api/admin/apps/templates` | `get_app_templates` |
 | POST | `/api/admin/apps/templates` | `save_app_template` |
 | DELETE | `/api/admin/apps/templates/{template_name}` | `delete_app_template` |
@@ -348,7 +447,8 @@ is linked:
 - **Multi-method routes collapse.** axum registers `get(...).post(...)` on one
   path where Python used separate decorators per method — this is why the
   raw registration counts differ (119 Python route objects vs 104 Rust
-  `.route()` calls) while the method+path surface is identical.
+  `.route()` calls at audit time; 112 in the current code) while the
+  method+path surface is identical.
 - **WebSocket handling differs by route.** The session-proxy routes are
   `any()` and dispatch on the `Upgrade` header in-handler; the room WS route
   (`/ws/room/{session_id}`) is a plain `GET` upgrade.
