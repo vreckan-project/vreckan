@@ -737,9 +737,13 @@ async fn access_session_share_post(
 }
 
 fn see_other(redirect: String) -> Response {
+    // The redirect URL carries the visitor's per-visit token (ANT-322, F5):
+    // keep it out of any caching proxy's store so one visitor's token is not
+    // served to another.
     Response::builder()
         .status(StatusCode::SEE_OTHER)
         .header(header::LOCATION, redirect)
+        .header(header::CACHE_CONTROL, "private, no-store")
         .body(axum::body::Body::empty())
         .unwrap_or_else(|e| (StatusCode::INTERNAL_SERVER_ERROR, e.to_string()).into_response())
 }

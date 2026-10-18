@@ -117,6 +117,8 @@ fn files_resp(status: &str, extra_header: &str, body: &str) -> String {
 /// A throwaway upstream that emulates the selkies web client's file API
 /// (ANT-306, the surface enumerated in container `ant-306-endpoints`):
 ///
+/// - `api/files` (the no-slash root) → 301 to the slash-terminated listing,
+///   as the real container does
 /// - `api/files/<dir>/` → 200 HTML listing (no `Content-Disposition`)
 /// - `api/files/<dir>` (no trailing slash) → 301 to the slash-terminated
 ///   listing, as the real container does
@@ -157,7 +159,15 @@ async fn spawn_files_upstream() -> (String, tokio::task::JoinHandle<()>) {
                     .and_then(|l| l.split_whitespace().nth(1))
                     .map(|p| p.split('?').next().unwrap_or(p))
                     .unwrap_or("");
-                let resp = if path.contains("/api/files/") {
+                let resp = if path.ends_with("/api/files") {
+                    // The no-slash root: the container 301s to the
+                    // slash-terminated listing.
+                    files_resp(
+                        "301 Moved Permanently",
+                        &format!("Location: {path}/"),
+                        "",
+                    )
+                } else if path.contains("/api/files/") {
                     let tree = path
                         .split_once("/api/files/")
                         .map(|(_, rest)| rest)
@@ -744,6 +754,40 @@ async fn test_password_page_flow() {
         .to_string();
     let resp = sc.http.post_form(&format!("/share/{share_id2}"), "x").await;
     assert_eq!(resp.status, StatusCode::BAD_REQUEST);
+}
+
+/// ANT-322 F5: the public-entry 303 carries the visitor's per-visit token,
+/// so it must not be storable by a caching proxy.
+#[tokio::test]
+async fn test_share_redirect_no_store_cache_header() {
+    let _root = TempDir::new();
+    let sc = admin_client(_root.path()).await;
+    let (upstream, _u) = spawn_http_upstream().await;
+    let (sid, _access) = seed_plain_session(&sc.state, &upstream).await;
+
+    let (status, body) = sc
+        .call(
+            "POST",
+            &format!("/api/sessions/{sid}/shares"),
+            Some(&json!({ "role": "view_only" })),
+        )
+        .await;
+    assert_eq!(status, StatusCode::OK, "create: {body:?}");
+    let share_id = body
+        .expect("body")
+        .get("share_id")
+        .and_then(|v| v.as_str())
+        .unwrap()
+        .to_string();
+
+    let grant = sc.http.get(&format!("/share/{share_id}")).await;
+    assert_eq!(grant.status, StatusCode::SEE_OTHER, "body: {:?}", grant.body);
+    assert_eq!(
+        grant.header("cache-control"),
+        Some("private, no-store".to_string()),
+        "the 303 must carry Cache-Control: private, no-store: {:?}",
+        grant.headers
+    );
 }
 
 // ---------------------------------------------------------------------------
@@ -1660,5 +1704,116 @@ async fn test_room_share_visitor_file_caps_gate() {
         StatusCode::OK,
         "owner upload: {:?}",
         owner_upload.body
+    );
+}
+
+/// ANT-322 F6: the no-slash `api/files` root is the browse side. A
+/// browse-disabled share visitor is refused there with the browse 403
+/// (previously the container's 301 to the listing passed the gate), while
+/// owner traffic resolves the listing as before.
+#[tokio::test]
+async fn test_noslash_files_root_browse_gate() {
+    let _root = TempDir::new();
+    let sc = admin_client(_root.path()).await;
+    let (upstream, _u) = spawn_files_upstream().await;
+    let (sid, access) = seed_plain_session(&sc.state, &upstream).await;
+
+    // View-only share with browse switched off (download stays on).
+    let (status, body) = sc
+        .call(
+            "POST",
+            &format!("/api/sessions/{sid}/shares"),
+            Some(&json!({ "role": "view_only", "caps": { "file_browse": false } })),
+        )
+        .await;
+    assert_eq!(status, StatusCode::OK, "create: {body:?}");
+    let share_id = body
+        .expect("body")
+        .get("share_id")
+        .and_then(|v| v.as_str())
+        .unwrap()
+        .to_string();
+
+    // Visit: the per-visit token snapshots the share's caps.
+    let grant = sc.http.get(&format!("/share/{share_id}")).await;
+    assert_eq!(grant.status, StatusCode::SEE_OTHER, "body: {:?}", grant.body);
+    let t1 = location(&grant)
+        .strip_prefix(&format!("/api/apps/session/{sid}/?token="))
+        .and_then(|rest| rest.split('&').next())
+        .expect("token in redirect: {location(&grant)}")
+        .to_string();
+    let h1 = collab_headers(&sid, &t1);
+
+    // The no-slash root: the container 301s to the listing; the browse gate
+    // refuses the visitor before the redirect is followed.
+    let root = sc
+        .http
+        .request("GET", &format!("/api/apps/session/{sid}/api/files"), None, None, &h1)
+        .await;
+    assert_eq!(
+        root.status,
+        StatusCode::FORBIDDEN,
+        "no-slash root is the browse side: {:?}",
+        root.body
+    );
+    assert_eq!(
+        proxy_detail(&root),
+        "Forbidden: File browsing is disabled for this share."
+    );
+    // The slash-terminated listing is refused too (the pre-existing gate).
+    let listing = sc
+        .http
+        .request("GET", &format!("/api/apps/session/{sid}/api/files/"), None, None, &h1)
+        .await;
+    assert_eq!(
+        listing.status,
+        StatusCode::FORBIDDEN,
+        "listing gate: {:?}",
+        listing.body
+    );
+    // Download is still on in this share.
+    let download = sc
+        .http
+        .request(
+            "GET",
+            &format!("/api/apps/session/{sid}/api/files/hello.txt"),
+            None,
+            None,
+            &h1,
+        )
+        .await;
+    assert_eq!(download.status, StatusCode::OK, "download: {:?}", download.body);
+
+    // Owner traffic is unaffected by the browse gate: the no-slash root
+    // resolves (via the container's 301) to the listing.
+    let first = sc
+        .http
+        .get(&format!("/api/apps/session/{sid}/?access_token={access}"))
+        .await;
+    assert_eq!(first.status, StatusCode::SEE_OTHER, "owner first hit: {:?}", first.body);
+    let owner_cookie = format!("{}_{}", sc.state.settings.session_cookie_name, sid);
+    let oh = HashMap::from([(
+        "cookie".to_string(),
+        format!("{owner_cookie}={access}"),
+    )]);
+    let owner_root = sc
+        .http
+        .request("GET", &format!("/api/apps/session/{sid}/api/files"), None, None, &oh)
+        .await;
+    assert_eq!(
+        owner_root.status,
+        StatusCode::OK,
+        "owner no-slash root resolves to the listing: {:?}",
+        owner_root.body
+    );
+    let owner_listing = sc
+        .http
+        .request("GET", &format!("/api/apps/session/{sid}/api/files/"), None, None, &oh)
+        .await;
+    assert_eq!(
+        owner_listing.status,
+        StatusCode::OK,
+        "owner listing: {:?}",
+        owner_listing.body
     );
 }
