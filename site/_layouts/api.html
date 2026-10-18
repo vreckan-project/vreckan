@@ -24,9 +24,10 @@ layout: default
     that verified every route against the Python original (v0.5.0). The audit's full
     per-route matrix is the source of truth for Python↔Rust handler mapping; the
     <a href="https://github.com/vreckan-project/vreckan/blob/main/docs/port-status.md">port status document</a>
-    tracks the residual gaps. Scale: <strong>104 route registrations covering 101 unique paths</strong>
-    (several paths serve multiple methods) — all equivalent paths of the Python original,
-    plus representation-level differences and one additive endpoint.
+    tracks the residual gaps. Scale: <strong>112 route registrations covering 106 unique paths</strong>
+    (143 method+path routes; several paths serve multiple methods) — all equivalent paths of the Python
+    original, plus representation-level differences and additive endpoints (the Rust-only liveness
+    probe and the share-session links routes).
     {% else %}
     Section of the <a href="{{ '/docs/api' | relative_url }}">Vreckan API reference</a> ({{ page.title }}).
     {% endif %}
@@ -56,7 +57,7 @@ layout: default
       <li>
         <strong>Authentication &amp; E2EE:</strong>
         <ul>
-          <li><strong>Auth routes</strong> (<code>/api/auth/*</code>, handshake, public shares, room, session proxy, static) use <strong>plaintext</strong> bodies. The web-login credential is the <code>vreckan_auth</code> cookie (opaque server-issued token, 8 h TTL by default).</li>
+          <li><strong>Auth routes</strong> (<code>/api/auth/*</code>, handshake, public shares, the session-share public entry, room, session proxy, static) use <strong>plaintext</strong> bodies. The web-login credential is the <code>vreckan_auth</code> cookie (opaque server-issued token, 8 h TTL by default).</li>
           <li><strong>E2EE routes</strong> (catalog, launch, sessions, files, upload, homedirs, pinned, and all of <code>/api/admin/*</code>) require the same token and <strong>AES-256-GCM-encrypted request/response bodies</strong>. The client first runs the handshake (<code>/api/handshake/*</code>) to establish the per-session crypto key (RSA-PSS-signed nonce → RSA-OAEP key wrap → AES-GCM; the AAD binds the key to the session id, and <code>X-Session-ID</code> carries it).</li>
           <li><strong>Admin routes</strong> additionally enforce per-permission RBAC (18-permission catalog; the <code>admin</code> super-permission implies all). Auth-failure responses are deliberately plaintext in both ports (401 bypasses the E2EE wrapper).</li>
         </ul>
@@ -149,11 +150,93 @@ layout: default
         <tr><th scope="col">Method</th><th scope="col">Path</th><th scope="col">Handler</th><th scope="col">Auth</th></tr>
       </thead>
       <tbody>
-        <tr><td>ANY</td><td><code>/api/apps/session/{session_id}/</code></td><td><code>initial_session_auth</code></td><td>first hit: exchange the single-use <code>access_token</code> for a session cookie; then session cookie (token is validated but not consumed on the server side — replaying it re-sets the cookie)</td></tr>
-        <tr><td>ANY</td><td><code>/api/apps/session/{session_id}/{*path}</code></td><td><code>session_proxy_subpath</code></td><td>session cookie</td></tr>
+        <tr><td>ANY</td><td><code>/api/apps/session/{session_id}/</code></td><td><code>initial_session_auth</code></td><td>first hit: <code>?access_token=</code> (the owner's token) is validated constant-time and exchanged for the <code>vreckan_session_token_{id}</code> cookie via a 303 to the same URL with the token stripped (the token is not consumed — replaying it re-sets the cookie); a valid collab or share-visit <code>?token=</code> in the same URL additionally sets the <code>collab_token_{id}</code> cookie so the page's sub-requests authenticate by cookie</td></tr>
+        <tr><td>ANY</td><td><code>/api/apps/session/{session_id}/{*path}</code></td><td><code>session_proxy_subpath</code></td><td>any admitted credential (below)</td></tr>
       </tbody>
     </table>
+    <p>Admitted credentials (HTTP and WebSocket paths, both routes): the owner's session cookie; for collaboration sessions — and for plain sessions promoted to selkies secure mode by a session share — the collaboration token (the controller token or one of the viewers' tokens) presented via the <code>collab_token_{id}</code> cookie or a first-hit <code>?token=</code>; and the per-visit tokens minted by session shares (the vreckan-side token map is the source of truth for tokens the container cannot know about). Anything else is 403 <code>Forbidden: Invalid session or token.</code> When the container runs in secure mode the proxy presents the request's own valid token to the upstream (falling back to the owner's container token for the owner), so each participant is individually authenticated by the container.</p>
     <p>One <code>any()</code> registration per route handles both HTTP and WebSocket: an <code>Upgrade</code> header dispatches to the WebSocket bridge (client leg <code>axum::ws</code>, upstream leg <code>tokio-tungstenite</code>), everything else to the streaming HTTP proxy. Raw content-encoded bodies pass through undecoded; hop-by-hop headers are dropped; <code>SameSite=None</code> is set when the session page is opened embedded; the session CSP is applied to proxied responses. (Python registered the same surface as three routes — all-methods HTTP root, all-methods HTTP sub-path, and a separate WebSocket route — the consolidation is a representation difference, not a behavior change.)</p>
+
+    <h3>Session shares — <code>session_shares.rs</code></h3>
+    <p>Owner-managed share links that let a session owner hand one of their running sessions — plain or room — to a recipient who has no Vreckan account, without sharing the owner's own credentials. Each share has a <strong>role</strong> — <code>full</code> (input plus every file capability) or <code>view_only</code> (no input; browse and download on by default) — freely combinable file capabilities (<code>file_browse</code>, <code>file_download</code>, <code>file_upload</code>), an optional password, an optional expiry, and per-link revocation. The owner routes are E2EE-encrypted and owner-only; the public entry is plaintext and account-less.</p>
+    <table>
+      <thead>
+        <tr><th scope="col">Method</th><th scope="col">Path</th><th scope="col">Handler</th><th scope="col">Auth</th></tr>
+      </thead>
+      <tbody>
+        <tr><td>POST</td><td><code>/api/sessions/{session_id}/shares</code></td><td><code>create_session_share</code></td><td>E2EE (owner)</td></tr>
+        <tr><td>GET</td><td><code>/api/sessions/{session_id}/shares</code></td><td><code>list_session_shares</code></td><td>E2EE (owner)</td></tr>
+        <tr><td>PATCH</td><td><code>/api/sessions/{session_id}/shares/{share_id}</code></td><td><code>update_session_share</code></td><td>E2EE (owner)</td></tr>
+        <tr><td>DELETE</td><td><code>/api/sessions/{session_id}/shares/{share_id}</code></td><td><code>revoke_session_share</code></td><td>E2EE (owner)</td></tr>
+      </tbody>
+    </table>
+    <table>
+      <thead>
+        <tr><th scope="col">Method</th><th scope="col">Path</th><th scope="col">Handler</th><th scope="col">Auth</th></tr>
+      </thead>
+      <tbody>
+        <tr><td>GET</td><td><code>/share/{share_id}</code></td><td><code>access_session_share_get</code></td><td>— (303 entry redirect, or the password page)</td></tr>
+        <tr><td>POST</td><td><code>/share/{share_id}</code></td><td><code>access_session_share_post</code></td><td>— (password submission)</td></tr>
+      </tbody>
+    </table>
+    <p>The share's wire shape (every owner route takes and returns it, E2EE-encrypted):</p>
+    <table>
+      <thead>
+        <tr><th scope="col">Field</th><th scope="col">Type</th><th scope="col">Notes</th></tr>
+      </thead>
+      <tbody>
+        <tr><td><code>share_id</code></td><td>string</td><td>UUID; the public link is <code>/share/{share_id}</code></td></tr>
+        <tr><td><code>session_id</code></td><td>string</td><td>the shared session</td></tr>
+        <tr><td><code>role</code></td><td>string</td><td><code>full</code> | <code>view_only</code></td></tr>
+        <tr><td><code>caps</code></td><td>object</td><td><code>{input, file_browse, file_download, file_upload}</code>, all bool</td></tr>
+        <tr><td><code>created_at</code></td><td>number</td><td>unix seconds</td></tr>
+        <tr><td><code>expiry_timestamp</code></td><td>number | null</td><td>unix seconds; <code>null</code> = no expiry</td></tr>
+        <tr><td><code>has_password</code></td><td>bool</td><td>indicator only — the hash never leaves the server</td></tr>
+        <tr><td><code>revoked</code></td><td>bool</td><td>revoked links stay listed; the public entry answers 410</td></tr>
+        <tr><td><code>url</code></td><td>string</td><td><code>/share/{share_id}</code></td></tr>
+      </tbody>
+    </table>
+    <p><strong><code>POST /api/sessions/{session_id}/shares</code></strong> — create. Request body:</p>
+    <table>
+      <thead>
+        <tr><th scope="col">Field</th><th scope="col">Type</th><th scope="col">Required</th><th scope="col">Notes</th></tr>
+      </thead>
+      <tbody>
+        <tr><td><code>role</code></td><td>string</td><td>yes</td><td><code>full</code> | <code>view_only</code>; anything else → 422</td></tr>
+        <tr><td><code>caps</code></td><td>object</td><td>no</td><td>partial override <code>{input?, file_browse?, file_download?, file_upload?}</code>; absent fields take the role's defaults</td></tr>
+        <tr><td><code>password</code></td><td>string</td><td>no</td><td>non-empty sets the password; absent/blank = none</td></tr>
+        <tr><td><code>expiry_hours</code></td><td>number</td><td>no</td><td>must be &gt; 0; sets <code>expiry_timestamp = now + hours·3600</code></td></tr>
+      </tbody>
+    </table>
+    <p>Role invariants: <code>full</code> ⇒ every cap on; <code>view_only</code> ⇒ <code>input</code> off, file caps freely combinable. Response 200: the new share. Errors: 404 unknown session; 403 not the owner's session; 422 invalid body or role.</p>
+    <p><strong><code>GET /api/sessions/{session_id}/shares</code></strong> — response 200: a JSON array of the session's shares (newest first), same shape as above.</p>
+    <p><strong><code>PATCH /api/sessions/{session_id}/shares/{share_id}</code></strong> — edit. Every body field is optional, and <strong>an absent field leaves the share unchanged while an explicit <code>null</code> clears</strong> (deserialized as a nested <code>Option&lt;Option&lt;…&gt;&gt;</code> so the two are told apart; <code>""</code> also clears the password):</p>
+    <table>
+      <thead>
+        <tr><th scope="col">Field</th><th scope="col">Type</th><th scope="col">Semantics</th></tr>
+      </thead>
+      <tbody>
+        <tr><td><code>role</code></td><td>string | null</td><td><code>full</code> | <code>view_only</code>. Switching to <code>full</code> turns every cap on; switching to <code>view_only</code> removes only <code>input</code> — the file caps stay as configured</td></tr>
+        <tr><td><code>caps</code></td><td>object</td><td>partial override, as at create</td></tr>
+        <tr><td><code>password</code></td><td>string | null</td><td>non-empty sets it; <code>""</code> or <code>null</code> clears it</td></tr>
+        <tr><td><code>expiry_hours</code></td><td>number | null</td><td>positive sets a new expiry from now; <code>null</code> clears it</td></tr>
+      </tbody>
+    </table>
+    <p>Response 200: the updated share. Errors: 404 unknown share (or a share belonging to a different session); 422 invalid role.</p>
+    <p><strong><code>DELETE /api/sessions/{session_id}/shares/{share_id}</code></strong> — revoke. Response 204, empty body. Revocation marks the link dead (the public entry answers 410) and strips <strong>every per-visit token the link has ever minted</strong> — from the session's viewers list, the container's selkies token table, and the vreckan-side token map — without stopping the session.</p>
+    <p><strong>Public entry.</strong> <code>GET /share/{share_id}</code>: 404 <code>Share not found.</code>; 410 when revoked, expired, or the session has ended; the public password page (200) when a password is set; otherwise a 303 redirect. <code>POST /share/{share_id}</code> (form field <code>password</code>): 303 on a correct password; the password page re-rendered with 401 on a wrong one; 400 when the share has no password. The 303 target:</p>
+    <table>
+      <thead>
+        <tr><th scope="col">Session kind</th><th scope="col">Redirect</th></tr>
+      </thead>
+      <tbody>
+        <tr><td>Room</td><td><code>/room/{session_id}?token={visit_token}</code></td></tr>
+        <tr><td>Plain, promoted to secure mode</td><td><code>/api/apps/session/{session_id}/?token={visit_token}</code></td></tr>
+        <tr><td>Plain, legacy container (no selkies token control plane), input on</td><td>same URL — the legacy default role is controller</td></tr>
+        <tr><td>Plain, legacy container, input off</td><td>same URL plus <code>&amp;role=viewer</code></td></tr>
+      </tbody>
+    </table>
+    <p>Each visit mints a fresh per-visit token and records the visitor in the session's viewers list; the session proxy admits the token on every subsequent request and gates the in-container file API by the share's caps. A plain session is <strong>lazily promoted</strong> to selkies secure mode on its first share visit: a <code>master_token</code> is minted and the full token table is pushed to the container's <code>/{session_id}/api/tokens</code>; when that endpoint answers 404/401 or is unreachable (older selkies images without the control plane) the session stays legacy and the role rides the <code>?role=</code> query parameter instead. A background sweeper removes expired shares on the <code>share_cleanup_interval_seconds</code> schedule and strips their tokens.</p>
 
     <h3>File management — <code>files.rs</code> (E2EE)</h3>
     <table>
@@ -227,7 +310,7 @@ layout: default
     </table>
 
     <h3>Admin — <code>admin.rs</code> (E2EE + per-permission RBAC)</h3>
-    <p>46 registrations, 61 method+path routes (matches the Python admin router's 61 exactly).</p>
+    <p>48 registrations, 62 method+path routes (the parity-audit's 61, plus the two auto-update endpoints added in v0.7.0).</p>
     <table>
       <thead>
         <tr><th scope="col">Method</th><th scope="col">Path</th><th scope="col">Handler</th></tr>
@@ -257,6 +340,8 @@ layout: default
         <tr><td>POST</td><td><code>/api/admin/apps/installed/check_all_updates</code></td><td><code>check_all_app_updates</code></td></tr>
         <tr><td>POST</td><td><code>/api/admin/apps/installed/pull_all_latest</code></td><td><code>pull_all_app_images</code></td></tr>
         <tr><td>POST</td><td><code>/api/admin/apps/installed/{app_id}/pull_latest</code></td><td><code>pull_latest_app_image</code></td></tr>
+        <tr><td>PUT</td><td><code>/api/admin/apps/auto_update</code></td><td><code>save_auto_update_settings</code></td></tr>
+        <tr><td>GET</td><td><code>/api/admin/apps/auto_update_status</code></td><td><code>get_auto_update_status</code></td></tr>
         <tr><td>GET</td><td><code>/api/admin/apps/templates</code></td><td><code>get_app_templates</code></td></tr>
         <tr><td>POST</td><td><code>/api/admin/apps/templates</code></td><td><code>save_app_template</code></td></tr>
         <tr><td>DELETE</td><td><code>/api/admin/apps/templates/{template_name}</code></td><td><code>delete_app_template</code></td></tr>
@@ -378,7 +463,7 @@ layout: default
     <h2>Representation differences vs the Python original</h2>
     <p>Verified in the parity audit; none change functionality except where a gap is linked:</p>
     <ul>
-      <li><strong>Multi-method routes collapse.</strong> axum registers <code>get(...).post(...)</code> on one path where Python used separate decorators per method — this is why the raw registration counts differ (119 Python route objects vs 104 Rust <code>.route()</code> calls) while the method+path surface is identical.</li>
+      <li><strong>Multi-method routes collapse.</strong> axum registers <code>get(...).post(...)</code> on one path where Python used separate decorators per method — this is why the raw registration counts differ (119 Python route objects vs 104 Rust <code>.route()</code> calls at audit time; 112 in the current code) while the method+path surface is identical.</li>
       <li><strong>WebSocket handling differs by route.</strong> The session-proxy routes are <code>any()</code> and dispatch on the <code>Upgrade</code> header in-handler; the room WS route (<code>/ws/room/{session_id}</code>) is a plain <code>GET</code> upgrade.</li>
       <li><strong>Trailing slash</strong> on the <code>/api/homedirs</code> / <code>/api/pinned</code> collection roots (gap <strong>G7</strong> in the <a href="https://github.com/vreckan-project/vreckan/blob/main/docs/port-status.md">port status document</a>).</li>
       <li><strong>UUID path params.</strong> Python validated <code>{session_id:uuid}</code> at routing (malformed → 422); Rust matches any string and the handler fails later (gap <strong>G8</strong>).</li>

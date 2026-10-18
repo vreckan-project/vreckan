@@ -9,6 +9,56 @@ is committed normally in `vreckan`. The changelog is the authoritative
 record of what shipped in each release — see
 [`docs/release.md`](./docs/release.md) for the conventions.
 
+## 2026-10-18 — Share-session links: full & view-only share links with per-link capabilities, password, expiry and revoke, plus the room-mode display fix, v0.8.0 (ANT-303; ANT-304/ANT-305/ANT-306/ANT-307)
+
+You can now share a running app session with anyone — no Vreckan account
+needed. Each running session gets a **Share** action: create a link with a
+role (**Full** — they can use the app — or **View-only** — they can watch,
+no input), per-capability file access (browse / download / upload), an
+optional password, and an optional expiry; active links can be edited and
+revoked individually, without stopping the session.
+
+- **Managed share links.** Recipients open `/share/{id}` with no account;
+  a password-protected link shows the password page first. Each visit mints
+  a fresh per-visit token, so two people opening the same link hold
+  different tokens, and revoking or expiring a link strips every token that
+  link ever minted — one leaked link no longer lights up everything. A
+  **full** link on a plain session lets the recipient drive the app; a
+  **view-only** link refuses their input server-side (v1 scope: room and
+  secure-mode sessions — on a plain legacy session the viewer role rides
+  the `?role=` query parameter and the input refusal is enforced
+  client-side, an accepted v1 limitation), and the file capability
+  toggles are enforced by the session proxy on every file request
+  (ANT-304/ANT-305/ANT-306).
+- **Lazy secure-mode promotion.** The first share visit to a plain session
+  promotes it to Selkies secure mode (a master token is minted and the
+  token table is pushed into the container); on older base images without
+  the token control plane the session stays legacy and the recipient's role
+  rides a `?role=` query parameter instead, so share links degrade
+  gracefully across app images (ANT-305).
+- **Room-mode display fix.** Room invite links (participant and read-only
+  viewer) now show the live display for invitees: the session proxy accepts
+  the room's collaboration tokens — the controller token or a viewer's —
+  over HTTP and WebSocket, instead of only the owner's session cookie.
+  Stopping a room now notifies its viewers ("session ended") instead of
+  leaving a dead iframe (ANT-304).
+- **The expired-share sweeper is finally scheduled.** The share-cleanup job
+  runs on the `share_cleanup_interval_seconds` schedule and covers both
+  file shares and session shares, so expired links die on their own (closes
+  port-status gap G2; ANT-305).
+- **Quick links stay documented.** The zero-setup options remain: the
+  session URL itself (full access), `#shared` (server-enforced view-only),
+  and `#player2`–`#player4` (gamepad co-play). The new site page
+  "Sharing a session" documents all three sharing methods, the trust model
+  (the server operator is in the middle of the app stream; E2EE covers the
+  management API only), and the security notes (the link is a capability —
+  send it over a trusted channel; the per-visit token sits in the URL only
+  until the first redirect strips it) (ANT-308).
+- **API docs.** `docs/api.md` and the site API reference document the new
+  routes with request/response shapes: owner CRUD on
+  `/api/sessions/{id}/shares` (E2EE) and the account-less
+  `GET/POST /share/{id}` entry (ANT-308).
+
 ## 2026-10-16 — Installed Apps image identity, scheduled auto-update, and the ANT-267 security batch, v0.7.0 (ANT-266/ANT-268/ANT-269/ANT-270 + ANT-273/ANT-274/ANT-275/ANT-276/ANT-277)
 
 The Apps Control **Installed Apps** table now shows each app's real image
