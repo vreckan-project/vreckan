@@ -24,9 +24,12 @@ revoked individually, without stopping the session.
   different tokens, and revoking or expiring a link strips every token that
   link ever minted — one leaked link no longer lights up everything. A
   **full** link on a plain session lets the recipient drive the app; a
-  **view-only** link refuses their input server-side, and the file
-  capability toggles are enforced by the session proxy on every file
-  request (ANT-304/ANT-305/ANT-306).
+  **view-only** link refuses their input server-side (v1 scope: room and
+  secure-mode sessions — on a plain legacy session the viewer role rides
+  the `?role=` query parameter and the input refusal is enforced
+  client-side, an accepted v1 limitation), and the file capability
+  toggles are enforced by the session proxy on every file request
+  (ANT-304/ANT-305/ANT-306).
 - **Lazy secure-mode promotion.** The first share visit to a plain session
   promotes it to Selkies secure mode (a master token is minted and the
   token table is pushed into the container); on older base images without
