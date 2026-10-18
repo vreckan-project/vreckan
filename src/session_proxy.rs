@@ -79,6 +79,9 @@ fn session_cookie_name(settings: &crate::settings::Settings, session_id: &str) -
 /// Named constants keep an image that moves these routes to a constant
 /// change here.
 const SELKIES_FILE_API: &str = "api/files/";
+/// The no-slash root of the file tree: the container 301s it to
+/// `SELKIES_FILE_API`, so it is the browse side too (ANT-322, F6).
+const SELKIES_FILE_API_ROOT: &str = "api/files";
 const SELKIES_FILE_UPLOAD: &str = "api/upload";
 
 /// A file-manager capability the session proxy enforces for share visitors
@@ -106,9 +109,10 @@ fn caps_allow(caps: &SessionShareCaps, cap: FileCap) -> bool {
 /// The capability the files route requires for this upstream response: a
 /// served file (its `Content-Disposition: attachment`) needs *download*;
 /// everything else the route answers with — an HTML listing, the no-slash
-/// directory 301, a 404, the container's own 403 — is the *browse* side.
+/// 301 (the root or a directory subpath), a 404, the container's own 403 —
+/// is the *browse* side.
 fn files_response_cap(in_container_path: &str, headers: &HeaderMap) -> Option<FileCap> {
-    if !in_container_path.starts_with(SELKIES_FILE_API) {
+    if !in_container_path.starts_with(SELKIES_FILE_API) && in_container_path != SELKIES_FILE_API_ROOT {
         return None;
     }
     let download = headers
@@ -1214,11 +1218,23 @@ mod tests {
         assert_eq!(files_response_cap("api/upload", &listing), None);
         assert_eq!(files_response_cap("index.html", &listing), None);
         assert_eq!(files_response_cap("api/status", &listing), None);
+        // The no-slash root 301s to the slash-terminated listing; the
+        // redirect is the browse side, so it is gated like any listing
+        // (ANT-322, F6).
+        let mut root_redirect = HeaderMap::new();
+        root_redirect.insert(
+            header::LOCATION,
+            "/api/apps/session/s/api/files/".parse().unwrap(),
+        );
+        assert_eq!(
+            files_response_cap("api/files", &root_redirect),
+            Some(FileCap::Browse),
+            "the no-slash root is the browse side"
+        );
         assert_eq!(
             files_response_cap("api/files", &listing),
-            None,
-            "the no-slash root is outside the prefix; the container 301s it \
-             to the gated slash-terminated root"
+            Some(FileCap::Browse),
+            "the no-slash root is the browse side regardless of headers"
         );
     }
 
