@@ -77,12 +77,20 @@ pub struct SessionShareMetadata {
 }
 
 /// A per-visit token for a session share (in-memory only, mirroring the
-/// `download_tokens` pattern). WP3 looks a visitor's token up here to find
-/// the share (and with it the capability set) that granted it.
+/// `download_tokens` pattern). The session proxy (WP3) looks a visitor's
+/// token up here to find the share that granted it and enforces the
+/// capability set against the in-container file API.
+///
+/// `caps` is a *snapshot* of the share's caps taken when the visit was
+/// minted: a mid-visit edit to the share's caps therefore applies on the
+/// visitor's next open, not live (the cheap semantics chosen in ANT-306).
+/// Revocation is the exception — it removes the record, so a revoked link
+/// cuts its visits immediately.
 #[derive(Clone, Debug)]
 pub struct SessionShareTokenRecord {
     pub share_id: String,
     pub session_id: String,
+    pub caps: SessionShareCaps,
 }
 
 /// The wire representation of a share for the owner management API.
@@ -764,7 +772,8 @@ pub async fn grant_session_share_access(
     };
 
     // Record the per-visit token on the vreckan side (WP3 resolves a
-    // visitor's caps through this map).
+    // visitor's caps through this map). The caps snapshot is what gives a
+    // mid-visit cap edit its "next open" semantics (ANT-306).
     {
         let mut tokens = state.session_share_tokens.write().await;
         tokens.insert(
@@ -772,6 +781,7 @@ pub async fn grant_session_share_access(
             SessionShareTokenRecord {
                 share_id: share_id.to_string(),
                 session_id: session_id.clone(),
+                caps: share.caps.clone(),
             },
         );
     }

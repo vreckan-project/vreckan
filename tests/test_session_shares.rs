@@ -3,11 +3,14 @@
 //! the owner management API (`/api/sessions/{id}/shares`), the account-less
 //! public entry (`GET/POST /share/{id}`), per-visit tokens, lazy
 //! secure-mode promotion (with the legacy `?role=` fallback), and the
-//! cleanup job.
+//! cleanup job. WP3 (ANT-306): the session proxy's server-side enforcement
+//! of a share's file capabilities (browse / download / upload), its
+//! next-open cap semantics, and the owner/room-traffic exemptions.
 //!
 //! Drives the real axum router (via the `common` harness); app containers
 //! are faked with throwaway HTTP upstreams that answer (or refuse) the
-//! selkies `/api/tokens` control-plane POST.
+//! selkies `/api/tokens` control-plane POST and emulate the selkies web
+//! client's file API (`api/files/...` listings/downloads, `api/upload`).
 
 mod common;
 
@@ -90,6 +93,100 @@ async fn spawn_legacy_upstream() -> (String, tokio::task::JoinHandle<()>) {
                     body.len(),
                     std::str::from_utf8(body).unwrap()
                 );
+                let _ = socket.write_all(resp.as_bytes()).await;
+                let _ = socket.shutdown().await;
+            });
+        }
+    });
+    (format!("127.0.0.1:{}", addr.port()), handle)
+}
+
+/// A raw HTTP response for the file-API fake.
+fn files_resp(status: &str, extra_header: &str, body: &str) -> String {
+    let extra_line = if extra_header.is_empty() {
+        String::new()
+    } else {
+        format!("{extra_header}\r\n")
+    };
+    format!(
+        "HTTP/1.1 {status}\r\n{extra_line}Content-Length: {}\r\n\r\n{body}",
+        body.len()
+    )
+}
+
+/// A throwaway upstream that emulates the selkies web client's file API
+/// (ANT-306, the surface enumerated in container `ant-306-endpoints`):
+///
+/// - `api/files/<dir>/` → 200 HTML listing (no `Content-Disposition`)
+/// - `api/files/<dir>` (no trailing slash) → 301 to the slash-terminated
+///   listing, as the real container does
+/// - `api/files/<file>` → 200 bytes with `Content-Disposition: attachment`
+/// - `api/upload` → 200
+/// - `api/tokens` → 200 (a promotion-capable container)
+///
+/// Paths arrive with the session prefix the proxy forwards intact.
+async fn spawn_files_upstream() -> (String, tokio::task::JoinHandle<()>) {
+    use tokio::io::{AsyncReadExt, AsyncWriteExt};
+    let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+    let addr = listener.local_addr().unwrap();
+    let handle = tokio::spawn(async move {
+        loop {
+            let (mut socket, _) = match listener.accept().await {
+                Ok(v) => v,
+                Err(_) => break,
+            };
+            tokio::spawn(async move {
+                let mut buf = [0u8; 8192];
+                let mut n = 0usize;
+                // Read until the request head is in so the path can be seen.
+                while n < buf.len() {
+                    match socket.read(&mut buf[n..]).await {
+                        Ok(0) => break,
+                        Ok(k) => n += k,
+                        Err(_) => break,
+                    }
+                    if std::str::from_utf8(&buf[..n]).unwrap_or("").contains("\r\n\r\n") {
+                        break;
+                    }
+                }
+                let head = std::str::from_utf8(&buf[..n]).unwrap_or("");
+                // The request line's path, without its query string.
+                let path = head
+                    .lines()
+                    .next()
+                    .and_then(|l| l.split_whitespace().nth(1))
+                    .map(|p| p.split('?').next().unwrap_or(p))
+                    .unwrap_or("");
+                let resp = if path.contains("/api/files/") {
+                    let tree = path
+                        .split_once("/api/files/")
+                        .map(|(_, rest)| rest)
+                        .unwrap_or("");
+                    if tree.is_empty() || tree.ends_with('/') {
+                        files_resp("200 OK", "Content-Type: text/html", "<html>listing</html>")
+                    } else if !tree.contains('.') {
+                        // A directory requested without its trailing slash:
+                        // the container 301s to the slash URL.
+                        files_resp(
+                            "301 Moved Permanently",
+                            &format!("Location: {path}/"),
+                            "",
+                        )
+                    } else {
+                        let name = tree.rsplit('/').next().unwrap_or("");
+                        files_resp(
+                            "200 OK",
+                            &format!("Content-Disposition: attachment; filename=\"{name}\""),
+                            "file-bytes",
+                        )
+                    }
+                } else if path.contains("/api/upload") {
+                    files_resp("200 OK", "", "uploaded")
+                } else if path.contains("/api/tokens") {
+                    files_resp("200 OK", "", "accepted")
+                } else {
+                    files_resp("200 OK", "Content-Type: text/html", "<html>upstream</html>")
+                };
                 let _ = socket.write_all(resp.as_bytes()).await;
                 let _ = socket.shutdown().await;
             });
@@ -1061,4 +1158,507 @@ async fn test_session_share_load_save_roundtrip() {
     assert!(reloaded.password_hash.is_some());
     assert!(reloaded.expiry_timestamp.is_some());
     assert!(!reloaded.revoked);
+}
+
+// ---------------------------------------------------------------------------
+// WP3 (ANT-306): server-side capability enforcement in the session proxy
+// ---------------------------------------------------------------------------
+
+/// The `collab_token_{sid}` cookie header for a share visit token — what the
+/// browser presents to the session proxy after the first-hit redirect.
+fn collab_headers(sid: &str, token: &str) -> HashMap<String, String> {
+    let mut h = HashMap::new();
+    h.insert("cookie".to_string(), format!("collab_token_{sid}={token}"));
+    h
+}
+
+/// The `detail` field of a proxy 403 body.
+fn proxy_detail(resp: &common::RawResponse) -> String {
+    resp.json()
+        .get("detail")
+        .and_then(|v| v.as_str())
+        .unwrap_or_default()
+        .to_string()
+}
+
+fn upload_body() -> Vec<u8> {
+    b"filedata".to_vec()
+}
+
+/// View-only share on a promoted plain session: the preset allows browse and
+/// download and blocks upload; a mid-visit cap edit leaves the in-flight
+/// visit on its snapshot and cuts the next open; the owner's cookie traffic
+/// is never gated.
+#[tokio::test]
+async fn test_share_visitor_file_caps_gate() {
+    let _root = TempDir::new();
+    let sc = admin_client(_root.path()).await;
+    let (upstream, _u) = spawn_files_upstream().await;
+    let (sid, access) = seed_plain_session(&sc.state, &upstream).await;
+
+    // The view-only preset: browse + download on, upload off.
+    let (status, body) = sc
+        .call(
+            "POST",
+            &format!("/api/sessions/{sid}/shares"),
+            Some(&json!({ "role": "view_only" })),
+        )
+        .await;
+    assert_eq!(status, StatusCode::OK, "create: {body:?}");
+    let share_id = body
+        .expect("body")
+        .get("share_id")
+        .and_then(|v| v.as_str())
+        .unwrap()
+        .to_string();
+
+    // Visit 1: the per-visit token admits the proxy.
+    let grant = sc.http.get(&format!("/share/{share_id}")).await;
+    assert_eq!(grant.status, StatusCode::SEE_OTHER, "body: {:?}", grant.body);
+    let t1 = location(&grant)
+        .strip_prefix(&format!("/api/apps/session/{sid}/?token="))
+        .and_then(|rest| rest.split('&').next())
+        .expect("token in redirect: {location(&grant)}")
+        .to_string();
+
+    let h1 = collab_headers(&sid, &t1);
+    // Browse (listing) and download are allowed by the preset.
+    let listing = sc
+        .http
+        .request("GET", &format!("/api/apps/session/{sid}/api/files/"), None, None, &h1)
+        .await;
+    assert_eq!(listing.status, StatusCode::OK, "browse: {:?}", listing.body);
+    let download = sc
+        .http
+        .request(
+            "GET",
+            &format!("/api/apps/session/{sid}/api/files/hello.txt"),
+            None,
+            None,
+            &h1,
+        )
+        .await;
+    assert_eq!(download.status, StatusCode::OK, "download: {:?}", download.body);
+    assert!(
+        download.header("content-disposition").is_some(),
+        "download keeps its attachment disposition: {:?}",
+        download.headers
+    );
+    // Upload is off in the preset: 403 before the body is charged.
+    let upload = sc
+        .http
+        .request(
+            "POST",
+            &format!("/api/apps/session/{sid}/api/upload"),
+            Some(upload_body()),
+            Some("application/octet-stream"),
+            &h1,
+        )
+        .await;
+    assert_eq!(upload.status, StatusCode::FORBIDDEN, "upload: {:?}", upload.body);
+    assert_eq!(proxy_detail(&upload), "Forbidden: File upload is disabled for this share.");
+    // The no-slash directory request: the container 301s to the
+    // slash-terminated listing and the proxy's upstream client follows it,
+    // so the visitor receives the final listing — the browse side, allowed.
+    let noslash = sc
+        .http
+        .request(
+            "GET",
+            &format!("/api/apps/session/{sid}/api/files/sub"),
+            None,
+            None,
+            &h1,
+        )
+        .await;
+    assert_eq!(
+        noslash.status,
+        StatusCode::OK,
+        "no-slash dir resolves to the listing: {:?}",
+        noslash.body
+    );
+
+    // Mid-visit cap edit: browse + download off (view_only keeps file caps).
+    let (status, body) = sc
+        .call(
+            "PATCH",
+            &format!("/api/sessions/{sid}/shares/{share_id}"),
+            Some(&json!({ "caps": { "file_browse": false, "file_download": false } })),
+        )
+        .await;
+    assert_eq!(status, StatusCode::OK, "patch: {body:?}");
+
+    // Next-open semantics: the in-flight visit keeps the caps it was minted
+    // with (a new snapshot is taken only when the share is opened again).
+    let mid_listing = sc
+        .http
+        .request("GET", &format!("/api/apps/session/{sid}/api/files/"), None, None, &h1)
+        .await;
+    assert_eq!(
+        mid_listing.status,
+        StatusCode::OK,
+        "in-flight visit keeps its snapshot (browse): {:?}",
+        mid_listing.body
+    );
+    let mid_download = sc
+        .http
+        .request(
+            "GET",
+            &format!("/api/apps/session/{sid}/api/files/hello.txt"),
+            None,
+            None,
+            &h1,
+        )
+        .await;
+    assert_eq!(
+        mid_download.status,
+        StatusCode::OK,
+        "in-flight visit keeps its snapshot (download)"
+    );
+
+    // Visit 2: the fresh mint snapshots the edited caps — every file path
+    // is now blocked.
+    let grant2 = sc.http.get(&format!("/share/{share_id}")).await;
+    assert_eq!(grant2.status, StatusCode::SEE_OTHER, "body: {:?}", grant2.body);
+    let t2 = location(&grant2)
+        .strip_prefix(&format!("/api/apps/session/{sid}/?token="))
+        .and_then(|rest| rest.split('&').next())
+        .expect("token in redirect: {location(&grant2)}")
+        .to_string();
+    let h2 = collab_headers(&sid, &t2);
+
+    let blocked_listing = sc
+        .http
+        .request("GET", &format!("/api/apps/session/{sid}/api/files/"), None, None, &h2)
+        .await;
+    assert_eq!(
+        blocked_listing.status,
+        StatusCode::FORBIDDEN,
+        "browse gate: {:?}",
+        blocked_listing.body
+    );
+    assert_eq!(
+        proxy_detail(&blocked_listing),
+        "Forbidden: File browsing is disabled for this share."
+    );
+    // The no-slash directory resolves (via the container's 301) to the
+    // slash-terminated listing — the browse side, so it is gated too.
+    let blocked_noslash = sc
+        .http
+        .request("GET", &format!("/api/apps/session/{sid}/api/files/sub"), None, None, &h2)
+        .await;
+    assert_eq!(
+        blocked_noslash.status,
+        StatusCode::FORBIDDEN,
+        "no-slash dir is the browse side: {:?}",
+        blocked_noslash.body
+    );
+    let blocked_download = sc
+        .http
+        .request(
+            "GET",
+            &format!("/api/apps/session/{sid}/api/files/hello.txt"),
+            None,
+            None,
+            &h2,
+        )
+        .await;
+    assert_eq!(
+        blocked_download.status,
+        StatusCode::FORBIDDEN,
+        "download gate: {:?}",
+        blocked_download.body
+    );
+    assert_eq!(
+        proxy_detail(&blocked_download),
+        "Forbidden: File download is disabled for this share."
+    );
+    let blocked_upload = sc
+        .http
+        .request(
+            "POST",
+            &format!("/api/apps/session/{sid}/api/upload"),
+            Some(upload_body()),
+            Some("application/octet-stream"),
+            &h2,
+        )
+        .await;
+    assert_eq!(
+        blocked_upload.status,
+        StatusCode::FORBIDDEN,
+        "upload gate: {:?}",
+        blocked_upload.body
+    );
+    assert_eq!(
+        proxy_detail(&blocked_upload),
+        "Forbidden: File upload is disabled for this share."
+    );
+    // Control-plane paths are not file-manager access and stay open.
+    let status_path = sc
+        .http
+        .request("GET", &format!("/api/apps/session/{sid}/api/status"), None, None, &h2)
+        .await;
+    assert_eq!(
+        status_path.status,
+        StatusCode::OK,
+        "api/status is not a file path: {:?}",
+        status_path.body
+    );
+
+    // Owner traffic (the session cookie) is never gated, even with the
+    // share's file caps all off.
+    let first = sc
+        .http
+        .get(&format!("/api/apps/session/{sid}/?access_token={access}"))
+        .await;
+    assert_eq!(first.status, StatusCode::SEE_OTHER, "owner first hit: {:?}", first.body);
+    let owner_cookie = format!("{}_{}", sc.state.settings.session_cookie_name, sid);
+    let oh = HashMap::from([(
+        "cookie".to_string(),
+        format!("{owner_cookie}={access}"),
+    )]);
+    let owner_listing = sc
+        .http
+        .request("GET", &format!("/api/apps/session/{sid}/api/files/"), None, None, &oh)
+        .await;
+    assert_eq!(
+        owner_listing.status,
+        StatusCode::OK,
+        "owner browse: {:?}",
+        owner_listing.body
+    );
+    let owner_download = sc
+        .http
+        .request(
+            "GET",
+            &format!("/api/apps/session/{sid}/api/files/hello.txt"),
+            None,
+            None,
+            &oh,
+        )
+        .await;
+    assert_eq!(
+        owner_download.status,
+        StatusCode::OK,
+        "owner download: {:?}",
+        owner_download.body
+    );
+    let owner_upload = sc
+        .http
+        .request(
+            "POST",
+            &format!("/api/apps/session/{sid}/api/upload"),
+            Some(upload_body()),
+            Some("application/octet-stream"),
+            &oh,
+        )
+        .await;
+    assert_eq!(
+        owner_upload.status,
+        StatusCode::OK,
+        "owner upload: {:?}",
+        owner_upload.body
+    );
+}
+
+/// The same gate on a room (collaboration) session: a full share passes
+/// every file path; flipping the share to view-only with the file caps off
+/// cuts the next open; the room's owner cookie stays ungated.
+#[tokio::test]
+async fn test_room_share_visitor_file_caps_gate() {
+    let _root = TempDir::new();
+    let sc = admin_client(_root.path()).await;
+    let (upstream, _u) = spawn_files_upstream().await;
+    let (sid, access, _master) = seed_room_session(&sc.state, &upstream).await;
+
+    // A full share: every capability on.
+    let (status, body) = sc
+        .call(
+            "POST",
+            &format!("/api/sessions/{sid}/shares"),
+            Some(&json!({ "role": "full" })),
+        )
+        .await;
+    assert_eq!(status, StatusCode::OK, "create: {body:?}");
+    let share_id = body
+        .expect("body")
+        .get("share_id")
+        .and_then(|v| v.as_str())
+        .unwrap()
+        .to_string();
+
+    // Visit: the room redirect carries the per-visit token.
+    let grant = sc.http.get(&format!("/share/{share_id}")).await;
+    assert_eq!(grant.status, StatusCode::SEE_OTHER, "body: {:?}", grant.body);
+    let t1 = location(&grant)
+        .strip_prefix(&format!("/room/{sid}?token="))
+        .expect("room redirect: {location(&grant)}")
+        .to_string();
+
+    // The full share passes all three file gates (the room's MK/slot model
+    // provides the input; the file caps are independent).
+    let h1 = collab_headers(&sid, &t1);
+    let listing = sc
+        .http
+        .request("GET", &format!("/api/apps/session/{sid}/api/files/"), None, None, &h1)
+        .await;
+    assert_eq!(listing.status, StatusCode::OK, "browse: {:?}", listing.body);
+    let download = sc
+        .http
+        .request(
+            "GET",
+            &format!("/api/apps/session/{sid}/api/files/hello.txt"),
+            None,
+            None,
+            &h1,
+        )
+        .await;
+    assert_eq!(download.status, StatusCode::OK, "download: {:?}", download.body);
+    let upload = sc
+        .http
+        .request(
+            "POST",
+            &format!("/api/apps/session/{sid}/api/upload"),
+            Some(upload_body()),
+            Some("application/octet-stream"),
+            &h1,
+        )
+        .await;
+    assert_eq!(upload.status, StatusCode::OK, "upload: {:?}", upload.body);
+
+    // The owner flips the share to view-only and switches every file cap
+    // off. (A role flip alone only forces `input` off — the file caps stay
+    // as configured, WP2's role-invariant semantics — so the caps are
+    // named explicitly.)
+    let (status, body) = sc
+        .call(
+            "PATCH",
+            &format!("/api/sessions/{sid}/shares/{share_id}"),
+            Some(&json!({
+                "role": "view_only",
+                "caps": {
+                    "file_browse": false,
+                    "file_download": false,
+                    "file_upload": false
+                }
+            })),
+        )
+        .await;
+    assert_eq!(status, StatusCode::OK, "patch: {body:?}");
+
+    // The next open is blocked on every file path.
+    let grant2 = sc.http.get(&format!("/share/{share_id}")).await;
+    assert_eq!(grant2.status, StatusCode::SEE_OTHER, "body: {:?}", grant2.body);
+    let t2 = location(&grant2)
+        .strip_prefix(&format!("/room/{sid}?token="))
+        .expect("room redirect: {location(&grant2)}")
+        .to_string();
+    let h2 = collab_headers(&sid, &t2);
+    let blocked_listing = sc
+        .http
+        .request("GET", &format!("/api/apps/session/{sid}/api/files/"), None, None, &h2)
+        .await;
+    assert_eq!(
+        blocked_listing.status,
+        StatusCode::FORBIDDEN,
+        "browse gate: {:?}",
+        blocked_listing.body
+    );
+    assert_eq!(
+        proxy_detail(&blocked_listing),
+        "Forbidden: File browsing is disabled for this share."
+    );
+    let blocked_download = sc
+        .http
+        .request(
+            "GET",
+            &format!("/api/apps/session/{sid}/api/files/hello.txt"),
+            None,
+            None,
+            &h2,
+        )
+        .await;
+    assert_eq!(
+        blocked_download.status,
+        StatusCode::FORBIDDEN,
+        "download gate: {:?}",
+        blocked_download.body
+    );
+    assert_eq!(
+        proxy_detail(&blocked_download),
+        "Forbidden: File download is disabled for this share."
+    );
+    let blocked_upload = sc
+        .http
+        .request(
+            "POST",
+            &format!("/api/apps/session/{sid}/api/upload"),
+            Some(upload_body()),
+            Some("application/octet-stream"),
+            &h2,
+        )
+        .await;
+    assert_eq!(
+        blocked_upload.status,
+        StatusCode::FORBIDDEN,
+        "upload gate: {:?}",
+        blocked_upload.body
+    );
+    assert_eq!(
+        proxy_detail(&blocked_upload),
+        "Forbidden: File upload is disabled for this share."
+    );
+
+    // The room owner's session cookie is never gated.
+    let first = sc
+        .http
+        .get(&format!("/api/apps/session/{sid}/?access_token={access}"))
+        .await;
+    assert_eq!(first.status, StatusCode::SEE_OTHER, "owner first hit: {:?}", first.body);
+    let owner_cookie = format!("{}_{}", sc.state.settings.session_cookie_name, sid);
+    let oh = HashMap::from([(
+        "cookie".to_string(),
+        format!("{owner_cookie}={access}"),
+    )]);
+    let owner_listing = sc
+        .http
+        .request("GET", &format!("/api/apps/session/{sid}/api/files/"), None, None, &oh)
+        .await;
+    assert_eq!(
+        owner_listing.status,
+        StatusCode::OK,
+        "owner browse: {:?}",
+        owner_listing.body
+    );
+    let owner_download = sc
+        .http
+        .request(
+            "GET",
+            &format!("/api/apps/session/{sid}/api/files/hello.txt"),
+            None,
+            None,
+            &oh,
+        )
+        .await;
+    assert_eq!(
+        owner_download.status,
+        StatusCode::OK,
+        "owner download: {:?}",
+        owner_download.body
+    );
+    let owner_upload = sc
+        .http
+        .request(
+            "POST",
+            &format!("/api/apps/session/{sid}/api/upload"),
+            Some(upload_body()),
+            Some("application/octet-stream"),
+            &oh,
+        )
+        .await;
+    assert_eq!(
+        owner_upload.status,
+        StatusCode::OK,
+        "owner upload: {:?}",
+        owner_upload.body
+    );
 }
