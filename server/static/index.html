@@ -222,20 +222,116 @@
   </div>
 </div>
 
-<!-- ===== Share modal ===== -->
-<div id="modal-share" class="modal-backdrop" hidden>
+<!-- ===== Session share modal (one surface, two states — ANT-307 / D6) ===== -->
+<div id="modal-session-share" class="modal-backdrop" hidden>
   <div class="modal card">
-    <h3 data-i18n="common.share">Share</h3>
-    <form id="share-form">
-      <label data-i18n="share.withLabel">Share with
-        <input type="text" id="sh-to" required>
-      </label>
-      <p id="sh-error" class="error" role="alert" hidden></p>
+    <h3 id="ss-title">Share session</h3>
+    <p id="ss-subtitle" class="muted" data-i18n="shareSession.subtitle">They open a web link — no Vreckan account needed.</p>
+
+    <!-- Create / edit state -->
+    <form id="session-share-form" novalidate>
+      <div class="modal-section" data-i18n="shareSession.whoLabel">Who can do what?</div>
+      <div class="field">
+        <div class="ss-segmented" role="radiogroup" aria-label="Who can do what?">
+          <label class="ss-seg">
+            <input type="radio" name="ss-role" id="ss-role-viewonly" value="view_only" checked>
+            <span data-i18n="shareSession.viewOnly">View-only</span>
+          </label>
+          <label class="ss-seg">
+            <input type="radio" name="ss-role" id="ss-role-full" value="full">
+            <span data-i18n="shareSession.full">Full access</span>
+          </label>
+        </div>
+        <p id="ss-role-desc" class="muted" data-i18n="shareSession.viewOnlyDesc">They can watch; no input</p>
+      </div>
+
+      <div id="ss-files-section">
+        <div class="modal-section" data-i18n="shareSession.files">Files</div>
+        <div class="field">
+          <div class="ss-presets">
+            <button type="button" class="btn btn-ghost btn-sm ss-preset is-active" id="ss-preset-standard" data-i18n="shareSession.presetStandard">Standard view-only</button>
+            <button type="button" class="btn btn-ghost btn-sm ss-preset" id="ss-preset-none" data-i18n="shareSession.presetNone">No file access</button>
+            <button type="button" class="btn btn-ghost btn-sm ss-preset" id="ss-preset-full" data-i18n="shareSession.presetFull">Full access</button>
+          </div>
+          <div class="field-row">
+            <button type="button" class="ss-customize" id="ss-customize" data-i18n="shareSession.customize">Customize…</button>
+            <span class="muted" data-i18n="shareSession.customizeHint">Pick the exact file permissions.</span>
+          </div>
+          <div class="ss-cap-row" id="ss-cap-row" hidden>
+            <label class="check">
+              <input type="checkbox" id="ss-cap-browse" checked>
+              <span data-i18n="shareSession.capBrowse">Browse</span>
+            </label>
+            <label class="check">
+              <input type="checkbox" id="ss-cap-download" checked>
+              <span data-i18n="shareSession.capDownload">Download</span>
+            </label>
+            <label class="check">
+              <input type="checkbox" id="ss-cap-upload">
+              <span data-i18n="shareSession.capUpload">Upload</span>
+            </label>
+          </div>
+        </div>
+      </div>
+
+      <div class="modal-section ss-collapsible" id="ss-options-toggle" data-i18n="shareSession.options">Options</div>
+      <div id="ss-options-body" hidden>
+        <div class="field">
+          <label for="ss-password" data-i18n="shareSession.passwordLabel">Password (optional)</label>
+          <input type="password" id="ss-password" autocomplete="new-password">
+          <p id="ss-pw-hint" class="muted" hidden data-i18n="shareSession.passwordKeptHint">A password is set. Leave this empty to keep it.</p>
+          <div class="field-row" id="ss-clear-pw-wrap" hidden>
+            <label class="check">
+              <input type="checkbox" id="ss-clear-pw">
+              <span data-i18n="shareSession.clearPassword">Remove password</span>
+            </label>
+          </div>
+        </div>
+        <div class="field">
+          <label data-i18n="shareSession.expiryLabel">Expiry</label>
+          <div class="ss-expiry">
+            <label class="check">
+              <input type="radio" name="ss-expiry" id="ss-expiry-none" value="" checked>
+              <span data-i18n="shareSession.expiryNone">No expiry</span>
+            </label>
+            <label class="check">
+              <input type="radio" name="ss-expiry" id="ss-expiry-1h" value="1">
+              <span data-i18n="shareSession.expiry1h">1 h</span>
+            </label>
+            <label class="check">
+              <input type="radio" name="ss-expiry" id="ss-expiry-24h" value="24">
+              <span data-i18n="shareSession.expiry24h">24 h</span>
+            </label>
+            <label class="check">
+              <input type="radio" name="ss-expiry" id="ss-expiry-7d" value="168">
+              <span data-i18n="shareSession.expiry7d">7 d</span>
+            </label>
+            <label class="check">
+              <input type="radio" name="ss-expiry" id="ss-expiry-custom" value="custom">
+              <span data-i18n="shareSession.expiryCustom">Custom</span>
+            </label>
+            <input type="number" id="ss-expiry-hours" min="1" max="8760" class="ss-expiry-hours" hidden data-i18n-placeholder="shareSession.expiryHours" placeholder="hours">
+          </div>
+        </div>
+      </div>
+
+      <p id="ss-preview" class="ss-preview" role="status"></p>
+      <p id="ss-error" class="error" role="alert" hidden></p>
       <div class="modal-actions">
-        <button type="button" class="btn btn-ghost" id="sh-cancel" data-i18n="common.cancel">Cancel</button>
-        <button type="submit" class="btn btn-primary" data-i18n="common.share">Share</button>
+        <button type="button" class="btn btn-ghost" id="ss-cancel" data-i18n="common.cancel">Cancel</button>
+        <button type="submit" class="btn btn-primary" id="ss-submit" data-i18n="shareSession.create">Create link</button>
       </div>
     </form>
+
+    <!-- Manage state -->
+    <div id="ss-manage" hidden>
+      <div class="modal-section" data-i18n="shareSession.activeLinks">Active links</div>
+      <div id="ss-links-list"></div>
+      <div class="modal-actions">
+        <button type="button" class="btn btn-ghost ss-new-link" id="ss-new-link" data-i18n="shareSession.newLink">+ New link</button>
+        <button type="button" class="btn btn-primary" id="ss-close" data-i18n="common.close">Close</button>
+      </div>
+    </div>
   </div>
 </div>
 

@@ -9,7 +9,7 @@ import { initFilesView, showFilesTab, loadHomedirs } from "./files.js";
 import { initAdminView, showAdminTab, refreshAdminSection } from "./admin.js";
 import { loadTranslator, applyTranslations, setLanguage, t, activeLanguage, SUPPORTED_UI_LANGS, resolveLanguage } from "./i18n.js";
 import { showView, activateView, refreshMainLists } from "./app/nav.js";
-import { renderSessions, loadSessions } from "./app/sessions.js";
+import { renderSessions, loadSessions, refreshShareBadges } from "./app/sessions.js";
 import { populateLanguageDropdown, populateGpuDropdown, handleAppSelection, launchModalApp, syncLaunchFileFields, handleLaunchConfirm, pickFileForStorageUpload } from "./app/launch.js";
 import { populateHomeSelect, openHomeDirsModal } from "./app/homedirs.js";
 import { loadPinned, applyPreset, openSavePresetModal, pinnedBehaviors } from "./app/pinned.js";
@@ -142,6 +142,9 @@ async function loadMain() {
   populateLanguageDropdown();
   renderAppApps(appsData);
   renderSessions(Array.isArray(sessionsData) ? sessionsData : []);
+  // Share badges (ANT-307) need a per-session share fetch; they land a beat
+  // after the initial render.
+  refreshShareBadges(sessionsData).catch(() => {});
   // Pinned launch options (Feat 7).
   await loadPinned();
 

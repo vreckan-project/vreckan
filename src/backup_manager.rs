@@ -27,6 +27,7 @@ use tracing::{info, warn};
 
 use crate::catalog;
 use crate::files;
+use crate::session_shares;
 use crate::state::AppState;
 use crate::user_manager;
 
@@ -419,6 +420,7 @@ async fn reload_state(state: &AppState) {
     catalog::load_installed_apps(state).await;
     catalog::load_app_templates(state).await;
     files::load_public_shares(state).await;
+    session_shares::load_session_shares(state).await;
     info!("Backup restore: reloaded in-memory configuration.");
 }
 

@@ -23,6 +23,7 @@ use crate::e2ee;
 use crate::files;
 use crate::security;
 use crate::session_proxy;
+use crate::session_shares;
 use crate::state::AppState;
 use crate::static_files;
 
@@ -47,6 +48,10 @@ pub fn router(state: AppState) -> Router {
         .nest("/api/admin", admin::admin_router())
         // Plaintext public-share download routes.
         .merge(files::public_router())
+        // E2EE session-share management API (mirrors the catalog session routes).
+        .nest("/api", session_shares::owner_router())
+        // Plaintext, account-less session-share public entry.
+        .merge(session_shares::public_router())
         // Collaboration room (page, static assets, room WebSocket).
         .merge(collaboration::room_router())
         // Registered last so it never shadows explicit API/session routes.

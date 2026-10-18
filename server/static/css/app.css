@@ -912,6 +912,167 @@ label.checkbox input {
   margin-top: 14px;
 }
 
+/* ===== Session share modal (ANT-307 / D6) ===== */
+/* Segmented role toggle (Full | View-only), same look as the launch modal's
+   segmented controls: a bordered group, the active segment highlighted. */
+.ss-segmented {
+  display: inline-flex;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  overflow: hidden;
+}
+
+.ss-seg {
+  position: relative;
+}
+
+.ss-seg input {
+  position: absolute;
+  opacity: 0;
+  pointer-events: none;
+}
+
+.ss-seg span {
+  display: block;
+  padding: 6px 14px;
+  font-size: 0.85rem;
+  color: var(--text-muted);
+  cursor: pointer;
+  user-select: none;
+}
+
+.ss-seg:hover span {
+  color: var(--text);
+}
+
+.ss-seg input:checked + span {
+  background: var(--surface-2);
+  color: var(--text);
+  font-weight: 600;
+}
+
+/* File-access preset row. The active preset is highlighted like a selected
+   tab; "Customize…" is a plain text action that reveals the checkboxes. */
+.ss-presets {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.ss-preset.is-active {
+  background: var(--surface-2);
+  border-color: var(--accent);
+  color: var(--text);
+}
+
+.ss-customize {
+  background: none;
+  border: none;
+  padding: 0;
+  font-size: 0.85rem;
+  color: var(--accent);
+  cursor: pointer;
+}
+
+.ss-customize:hover,
+.ss-customize.is-active {
+  text-decoration: underline;
+}
+
+.ss-cap-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 14px;
+}
+
+/* Collapsible "Options" section: the divider doubles as the toggle. */
+.ss-collapsible {
+  cursor: pointer;
+  user-select: none;
+}
+
+.ss-collapsible::before {
+  content: "▸";
+  margin-right: 6px;
+}
+
+.ss-collapsible.open::before {
+  content: "▾";
+}
+
+/* Expiry choices sit on one wrapped row; the custom-hours input appears
+   inline after "Custom" is selected. */
+.ss-expiry {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 14px;
+  align-items: center;
+}
+
+.ss-expiry-hours {
+  width: 90px;
+}
+
+/* Live recipient-preview line under the controls. */
+.ss-preview {
+  margin: 10px 0 0;
+  padding: 8px 12px;
+  font-size: 0.85rem;
+  color: var(--text-muted);
+  background: var(--bg);
+  border: 1px solid var(--border);
+  border-left: 3px solid var(--accent);
+  border-radius: var(--radius-sm);
+}
+
+/* Manage-state link rows: the newest link is outlined in the accent color;
+   dead links (revoked/expired) are dimmed. */
+.ss-share-row.is-new {
+  border: 1px solid var(--accent);
+  border-radius: var(--radius-sm);
+  background: var(--bg);
+}
+
+.ss-share-row.is-dead .share-meta,
+.ss-share-row.is-dead code {
+  opacity: 0.55;
+}
+
+.share-ss-actions {
+  display: flex;
+  gap: 8px;
+  align-items: center;
+}
+
+/* Manage-state footer: "New link" sits on the left, Close on the right
+   (same convention as the launch modal's footer). */
+.ss-new-link {
+  margin-right: auto;
+}
+
+/* A long link list can outgrow the viewport; keep the whole modal on screen
+   and let its body scroll (the shared `.modal` has no height cap of its own). */
+#modal-session-share .modal {
+  max-height: calc(100vh - 40px);
+  overflow-y: auto;
+}
+
+/* "(N links)" badge on a session row — a quiet, clickable pill. */
+.session-share-badge {
+  font: inherit;
+  font-size: 0.8rem;
+  color: var(--accent);
+  background: var(--accent-soft);
+  border: 1px solid rgba(0, 255, 255, 0.35);
+  border-radius: 999px;
+  padding: 1px 10px;
+  cursor: pointer;
+}
+
+.session-share-badge:hover {
+  border-color: var(--accent);
+}
+
 /* ===== Toasts ===== */
 .toasts {
   position: fixed;

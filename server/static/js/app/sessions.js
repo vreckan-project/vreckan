@@ -1,9 +1,11 @@
-// Sessions list (main view): render, refresh, and per-session file send.
+// Sessions list (main view): render, refresh, per-session file send, and the
+// per-session Share action (ANT-307).
 import { $, toast, formatLogoSrc, uploadFileChunks } from "../util.js";
 import { secureFetch } from "../api.js";
 import { t } from "../i18n.js";
+import { openSessionShareModal } from "./session-share.js";
 
-function renderSessions(sessions) {
+function renderSessions(sessions, sharesBySession = {}) {
   const list = $("sessions-list");
   list.innerHTML = "";
   if (!sessions.length) {
@@ -36,6 +38,21 @@ function renderSessions(sessions) {
     metaLine.textContent = when.toLocaleString();
     if (s.is_collaboration) metaLine.textContent += ` · ${t("sessions.roomMode")}`;
     if (s.out_of_date) metaLine.textContent += ` · ${t("sessions.outOfDate")}`;
+    const activeShares = (sharesBySession[s.session_id] || []).filter(
+      (sh) => !sh.revoked && (!sh.expiry_timestamp || sh.expiry_timestamp * 1000 > Date.now())
+    );
+    if (activeShares.length) {
+      const badge = document.createElement("button");
+      badge.type = "button";
+      badge.className = "session-share-badge";
+      badge.textContent =
+        activeShares.length === 1
+          ? t("shareSession.linkCount", { count: activeShares.length })
+          : t("shareSession.linkCountPlural", { count: activeShares.length });
+      badge.title = t("shareSession.linksBadgeTitle");
+      badge.addEventListener("click", () => openSessionShareModal(s, { manage: true }));
+      metaLine.appendChild(badge);
+    }
     info.appendChild(metaLine);
     item.appendChild(info);
 
@@ -49,6 +66,13 @@ function renderSessions(sessions) {
     open.rel = "noopener";
     open.textContent = t("common.open");
     actions.appendChild(open);
+
+    const share = document.createElement("button");
+    share.className = "btn btn-ghost btn-sm";
+    share.textContent = t("common.share");
+    share.title = t("shareSession.shareTitle");
+    share.addEventListener("click", () => openSessionShareModal(s));
+    actions.appendChild(share);
 
     if (s.out_of_date) {
       const recreate = document.createElement("button");
@@ -97,10 +121,35 @@ function renderSessions(sessions) {
   }
 }
 
+// Fetch the share list for each session (in parallel, best-effort) so the
+// row badge can show how many active share links a session has.
+async function fetchSessionShares(sessions) {
+  const results = await Promise.allSettled(
+    sessions.map(async (s) => {
+      const shares = await secureFetch(`/api/sessions/${s.session_id}/shares`, { method: "GET" });
+      return [s.session_id, Array.isArray(shares) ? shares : []];
+    })
+  );
+  const bySession = {};
+  for (const r of results) {
+    if (r.status === "fulfilled") bySession[r.value[0]] = r.value[1];
+  }
+  return bySession;
+}
+
+export async function refreshShareBadges(sessions) {
+  const list = $("sessions-list");
+  if (!list) return;
+  const sharesBySession = await fetchSessionShares(Array.isArray(sessions) ? sessions : []);
+  renderSessions(Array.isArray(sessions) ? sessions : [], sharesBySession);
+}
+
 async function loadSessions() {
   try {
     const sessions = await secureFetch("/api/sessions", { method: "GET" });
-    renderSessions(Array.isArray(sessions) ? sessions : []);
+    const safe = Array.isArray(sessions) ? sessions : [];
+    const sharesBySession = await fetchSessionShares(safe);
+    renderSessions(safe, sharesBySession);
   } catch (e) {
     if (!e.message.includes("401")) toast(`Sessions: ${e.message}`, "error");
   }
