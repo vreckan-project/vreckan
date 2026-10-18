@@ -56,7 +56,7 @@
 # changes. Re-bakes move the `latest` tag, but not this stage: the FROM
 # below pins the base by digest, and the nightly's base-bump PR re-points
 # the pin (and `.base-image-digest`) when the tag moves.
-FROM repo.vreckanproject.com/vreckan/vreckan-base-build@sha256:c4fa6f98750e7e305cf5fe1017e83036829a90ae991b39d9f218c28b443c5ea8 AS build
+FROM repo.vreckanproject.com/vreckan/vreckan-base-build@sha256:36447a187b3c4d631338dac531481405a2a33ae8f0bf5eb5caabe7579993bc5c AS build
 WORKDIR /app
 
 # sccache: shared compile cache that persists across builds via a BuildKit
