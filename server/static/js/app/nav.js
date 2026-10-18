@@ -5,7 +5,7 @@ import { secureFetch } from "../api.js";
 import { activateAdminSection } from "../admin.js";
 import { loadHomedirs } from "../files.js";
 import { installedApps, renderAppApps, setInstalledApps } from "../app.js";
-import { renderSessions } from "./sessions.js";
+import { renderSessions, refreshShareBadges } from "./sessions.js";
 import { loadPinned } from "./pinned.js";
 
 // Feat 5: the persistent sidebar highlights the active destination. For the
@@ -71,6 +71,7 @@ async function refreshMainLists() {
     setInstalledApps(appsData);
     renderAppApps(installedApps);
     renderSessions(Array.isArray(sessionsData) ? sessionsData : []);
+    refreshShareBadges(sessionsData).catch(() => {});
     await loadPinned();
   } catch (e) {
     /* non-fatal — the lists refresh on the next full load */
