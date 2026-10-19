@@ -8,7 +8,7 @@
 //! `/public/...` routes from `server/api`.
 
 use std::collections::HashMap;
-use std::path::Path;
+use std::path::{Path, PathBuf};
 
 use axum::body::Bytes;
 use axum::extract::{Path as PathParam, Query, State};
@@ -1384,6 +1384,25 @@ async fn launch_from_storage(
 // /api/upload route handlers (all E2EE-encrypted)
 // ---------------------------------------------------------------------------
 
+/// Create (if needed) and tighten the per-user upload directory to
+/// owner-only (`0700`). `create_dir_all` leaves umask permissions in both
+/// cases — a freshly created directory and one that already exists — so the
+/// chmod must run unconditionally: a pre-existing directory previously kept
+/// its umask mode, letting other local users on a multi-user host see a
+/// user's in-flight uploads (ANT-345). The chmod is best effort: a
+/// non-writable directory must not fail the upload.
+pub(crate) fn ensure_upload_dir(settings: &crate::settings::Settings, upload_id: &str) -> PathBuf {
+    let upload_path = Path::new(&settings.upload_dir).join(upload_id);
+    if let Err(e) = std::fs::create_dir_all(&upload_path) {
+        warn!("Failed to create upload dir: {e}");
+    }
+    let _ = std::fs::set_permissions(
+        &upload_path,
+        std::os::unix::fs::PermissionsExt::from_mode(0o700),
+    );
+    upload_path
+}
+
 /// `POST /api/upload/initiate`
 async fn upload_initiate(
     State(state): State<AppState>,
@@ -1425,11 +1444,7 @@ async fn upload_initiate(
         }
     };
     let upload_id = catalog::random_uuid();
-    let upload_path = Path::new(&state.settings.upload_dir).join(&upload_id);
-    if let Err(e) = std::fs::create_dir_all(&upload_path) {
-        let _ = std::fs::set_permissions(&upload_path, std::os::unix::fs::PermissionsExt::from_mode(0o700));
-        warn!("Failed to create upload dir: {e}");
-    }
+    let upload_path = ensure_upload_dir(&state.settings, &upload_id);
     let now = std::time::SystemTime::now()
         .duration_since(std::time::UNIX_EPOCH)
         .map(|d| d.as_secs_f64())
@@ -2384,4 +2399,62 @@ pub fn public_router() -> Router<AppState> {
         .route("/public/download/{token}", get(download_shared_file))
         .route("/public/{share_id}", get(access_public_share_get))
         .route("/public/{share_id}", post(access_public_share_post))
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use std::os::unix::fs::PermissionsExt;
+
+    fn tmp_dir(name: &str) -> std::path::PathBuf {
+        let dir = std::env::temp_dir().join(format!(
+            "vreckan-files-test-{}-{}",
+            std::process::id(),
+            name
+        ));
+        let _ = std::fs::remove_dir_all(&dir);
+        std::fs::create_dir_all(&dir).unwrap();
+        dir
+    }
+
+    fn settings_with_upload_dir(uploads: &std::path::Path) -> crate::settings::Settings {
+        let mut s = crate::settings::Settings::from_env();
+        s.upload_dir = uploads.to_string_lossy().to_string();
+        s
+    }
+
+    #[test]
+    fn ensure_upload_dir_tightens_preexisting_dir() {
+        let dir = tmp_dir("existing");
+        let uploads = dir.join("uploads");
+        let existing = uploads.join("upload-1");
+        // A directory left at umask permissions by an older version (or a
+        // prior run on a multi-user host).
+        std::fs::create_dir_all(&existing).unwrap();
+        std::fs::set_permissions(&existing, PermissionsExt::from_mode(0o755)).unwrap();
+        let s = settings_with_upload_dir(&uploads);
+        let p = ensure_upload_dir(&s, "upload-1");
+        assert_eq!(p, existing);
+        assert_eq!(
+            p.metadata().unwrap().permissions().mode() & 0o777,
+            0o700,
+            "pre-existing upload dir must be tightened to 0700"
+        );
+        std::fs::remove_dir_all(&dir).ok();
+    }
+
+    #[test]
+    fn ensure_upload_dir_creates_and_tightens_missing_dir() {
+        let dir = tmp_dir("missing");
+        let uploads = dir.join("uploads");
+        let s = settings_with_upload_dir(&uploads);
+        let p = ensure_upload_dir(&s, "upload-2");
+        assert!(p.is_dir(), "missing upload dir must be created");
+        assert_eq!(
+            p.metadata().unwrap().permissions().mode() & 0o777,
+            0o700,
+            "fresh upload dir must land 0700"
+        );
+        std::fs::remove_dir_all(&dir).ok();
+    }
 }

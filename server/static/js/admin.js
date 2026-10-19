@@ -239,7 +239,23 @@ export async function render() {
     return;
   }
   panel.innerHTML = `<div class="muted">${t("common.loading")}</div>`;
-  await SECTION_RENDERERS[currentSection]();
+  try {
+    await SECTION_RENDERERS[currentSection]();
+  } catch (err) {
+    // A throwing section renderer must not leave the whole admin view on
+    // "Loading…" forever — swap in an error card with a retry instead.
+    console.error(`[admin] section "${currentSection}" failed to render:`, err);
+    const msg = err && typeof err.message === "string" ? err.message : String(err);
+    setPanel(`
+      <div class="card">
+        <div class="error" role="alert">${esc(t("common.loadFailed", { message: msg }))}</div>
+        <div class="row gap-8 mt-12">
+          <button class="btn btn-ghost btn-sm" id="admin-render-retry" type="button">${t("common.refresh")}</button>
+        </div>
+      </div>
+    `);
+    $("admin-render-retry")?.addEventListener("click", () => render());
+  }
 }
 
 // Shared management-data fetch used by several sections (accounts, groups,

@@ -517,12 +517,13 @@ pub fn account_key_path(dir: &str) -> String {
 }
 
 /// Write `pem` to `path` owner-only (`0600`), closing the create-then-chmod
-/// race (ANT-274): a fresh file is created owner-only from the first byte,
-/// while a replacement of an existing file (e.g. one left world-readable by
-/// an older version) is rewritten and re-chmodded to `0600`. A failed chmod
-/// is logged instead of swallowed, so a key that could not be tightened is
-/// diagnosable from the log.
-fn write_owner_only(path: &str, pem: &str) -> std::io::Result<()> {
+/// race (ANT-274; shared with the E2EE server key and the self-signed dev
+/// TLS key per ANT-345): a fresh file is created owner-only from the first
+/// byte, while a replacement of an existing file (e.g. one left
+/// world-readable by an older version) is rewritten and re-chmodded to
+/// `0600`. A failed chmod is logged instead of swallowed, so a key that
+/// could not be tightened is diagnosable from the log.
+pub(crate) fn write_owner_only(path: &str, pem: &str) -> std::io::Result<()> {
     match std::fs::OpenOptions::new()
         .create_new(true)
         .write(true)
