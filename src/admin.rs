@@ -840,6 +840,7 @@ async fn test_sso_connection(
     State(state): State<AppState>,
     headers: HeaderMap,
     uri: OriginalUri,
+    auth::RemoteAddr(remote): auth::RemoteAddr,
 ) -> Response {
     let user = match auth::verify_token(&state, &headers).await {
         Ok(u) => u,
@@ -895,7 +896,7 @@ async fn test_sso_connection(
     // Prefer the configured redirect_uri (DB-over-env); otherwise derive it
     // from the request's public base URL (mirrors the Python `_oidc_redirect_uri`).
     let redirect_uri = if cfg.redirect_uri.trim().is_empty() {
-        let scheme = auth::request_scheme(&headers);
+        let scheme = auth::request_scheme(&state.settings, &headers, remote);
         let host = auth::public_host(&headers, &uri);
         format!("{scheme}://{host}/api/auth/oidc/callback")
     } else {
