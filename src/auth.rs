@@ -174,13 +174,23 @@ pub fn auth_cookie(settings: &Settings, token: Option<&str>, secure: bool) -> St
     s
 }
 
-/// The request's effective scheme, honoring the `X-Forwarded-Proto` header
-/// (set by a reverse proxy) and falling back to `https` (the server always
-/// terminates TLS).
-pub fn request_scheme(headers: &axum::http::HeaderMap) -> &str {
-    if let Some(v) = headers.get(axum::http::HeaderName::from_static("x-forwarded-proto")) {
-        if let Ok(s) = v.to_str() {
-            return s;
+/// The request's effective scheme. The `X-Forwarded-Proto` header (set by a
+/// reverse proxy) is honored only when the direct TCP peer is a configured
+/// trusted proxy (`trusted_proxies`; ANT-346 — the same gate as `client_ip`
+/// for `X-Forwarded-For`): a client reaching the origin port directly can
+/// otherwise set or omit the header at will and flip the `Secure` attribute
+/// on its own session cookie. Otherwise the actual connection scheme applies,
+/// which is always `https` (the server always terminates TLS).
+pub fn request_scheme<'h>(
+    settings: &Settings,
+    headers: &'h axum::http::HeaderMap,
+    remote: Option<std::net::SocketAddr>,
+) -> &'h str {
+    if peer_is_trusted_proxy(settings, remote) {
+        if let Some(v) = headers.get(axum::http::HeaderName::from_static("x-forwarded-proto")) {
+            if let Ok(s) = v.to_str() {
+                return s;
+            }
         }
     }
     "https"
@@ -442,9 +452,10 @@ fn user_error_response(e: UserError) -> Response {
 /// The client's remote address as seen by the server: the `ConnectInfo`
 /// extension added by `into_make_service_with_connect_info` in `main.rs`, or
 /// `None` (unproxied local clients and direct-router test harnesses). Infallible
-/// so the handler works on a plain router too.
+/// so the handler works on a plain router too. Public so other route modules
+/// (e.g. the admin SSO test endpoint) can share the same trusted-peer gate.
 #[derive(Clone, Copy, Debug, Default)]
-struct RemoteAddr(Option<std::net::SocketAddr>);
+pub struct RemoteAddr(pub Option<std::net::SocketAddr>);
 
 impl<S: Send + Sync> axum::extract::FromRequestParts<S> for RemoteAddr {
     type Rejection = std::convert::Infallible;
@@ -718,7 +729,7 @@ async fn login(
         user.permissions.clone()
     };
     let me = me_response(&state, &user, &effective, perms).await;
-    let secure = request_scheme(&headers) == "https";
+    let secure = request_scheme(&state.settings, &headers, remote) == "https";
     let cookie = auth_cookie(&state.settings, Some(&token), secure);
     (
         [
@@ -732,12 +743,16 @@ async fn login(
 
 /// `POST /api/auth/logout` — revoke the caller's server token (cookie or
 /// Bearer) and clear the cookie.
-async fn logout(State(state): State<AppState>, headers: HeaderMap) -> Response {
+async fn logout(
+    State(state): State<AppState>,
+    headers: HeaderMap,
+    RemoteAddr(remote): RemoteAddr,
+) -> Response {
     if let Some(token) = extract_token(&state, &headers).await {
         revoke_auth_token(&state, &token).await;
         let _ = save_auth_tokens(&state).await;
     }
-    let secure = request_scheme(&headers) == "https";
+    let secure = request_scheme(&state.settings, &headers, remote) == "https";
     let cookie = auth_cookie(&state.settings, None, secure);
     (
         [(header::SET_COOKIE, cookie)],
@@ -752,6 +767,7 @@ async fn logout(State(state): State<AppState>, headers: HeaderMap) -> Response {
 async fn revoke_sessions(
     State(state): State<AppState>,
     headers: HeaderMap,
+    RemoteAddr(remote): RemoteAddr,
     body: Bytes,
 ) -> Response {
     let user = match verify_token(&state, &headers).await {
@@ -788,7 +804,7 @@ async fn revoke_sessions(
     info!(
         "Self-revoke: user '{caller}' revoked {revoked} of their own web token(s)."
     );
-    let secure = request_scheme(&headers) == "https";
+    let secure = request_scheme(&state.settings, &headers, remote) == "https";
     let cookie = auth_cookie(&state.settings, None, secure);
     (
         [(header::SET_COOKIE, cookie)],
@@ -1033,21 +1049,36 @@ pub fn public_host(headers: &HeaderMap, uri: &Uri) -> String {
 }
 
 /// Derive the public base URL for a request (scheme + host), honoring
-/// reverse-proxy headers (`X-Forwarded-Proto` / `Host`) when present.
-fn oidc_base_url(headers: &HeaderMap, uri: &Uri) -> String {
-    let scheme = request_scheme(headers);
+/// reverse-proxy headers (`X-Forwarded-Proto` / `Host`) when present. The
+/// scheme is trusted only from a configured trusted proxy (ANT-346).
+fn oidc_base_url(
+    settings: &Settings,
+    headers: &HeaderMap,
+    uri: &Uri,
+    remote: Option<std::net::SocketAddr>,
+) -> String {
+    let scheme = request_scheme(settings, headers, remote);
     let host = public_host(headers, uri);
     format!("{scheme}://{host}")
 }
 
 /// The redirect_uri registered with the provider. Prefer the explicit setting;
 /// otherwise derive it from the request's public base URL.
-fn oidc_redirect_uri(cfg: &OidcConfig, headers: &HeaderMap, uri: &Uri) -> String {
+fn oidc_redirect_uri(
+    cfg: &OidcConfig,
+    settings: &Settings,
+    headers: &HeaderMap,
+    uri: &Uri,
+    remote: Option<std::net::SocketAddr>,
+) -> String {
     let configured = cfg.redirect_uri.trim();
     if !configured.is_empty() {
         return configured.to_string();
     }
-    format!("{}/api/auth/oidc/callback", oidc_base_url(headers, uri))
+    format!(
+        "{}/api/auth/oidc/callback",
+        oidc_base_url(settings, headers, uri, remote)
+    )
 }
 
 /// The OIDC discovery-document cache (issuer -> document), mirroring
@@ -1391,6 +1422,7 @@ async fn oidc_authorize(
     State(state): State<AppState>,
     headers: HeaderMap,
     uri: OriginalUri,
+    RemoteAddr(remote): RemoteAddr,
 ) -> Response {
     let cfg = oidc_config(&state).await;
     let issuer = oidc_effective_issuer(&cfg);
@@ -1452,7 +1484,7 @@ async fn oidc_authorize(
         ("client_id".to_string(), cfg.client_id.clone()),
         (
             "redirect_uri".to_string(),
-            oidc_redirect_uri(&cfg, &headers, &uri),
+            oidc_redirect_uri(&cfg, &state.settings, &headers, &uri, remote),
         ),
         (
             "scope".to_string(),
@@ -1490,6 +1522,7 @@ async fn oidc_callback(
     headers: HeaderMap,
     uri: OriginalUri,
     Query(q): Query<OidcCallbackQuery>,
+    RemoteAddr(remote): RemoteAddr,
 ) -> Response {
     // 1) Validate and consume the one-time state.
     let now = now_secs();
@@ -1502,7 +1535,7 @@ async fn oidc_callback(
     }
     let cfg = oidc_config(&state).await;
     let issuer = oidc_effective_issuer(&cfg);
-    let redirect_uri = oidc_redirect_uri(&cfg, &headers, &uri);
+    let redirect_uri = oidc_redirect_uri(&cfg, &state.settings, &headers, &uri, remote);
 
     // 2) Exchange the authorization code for tokens.
     let discovery = match oidc_discovery(&issuer).await {
@@ -1627,7 +1660,7 @@ async fn oidc_callback(
     };
     let _ = save_auth_tokens(&state).await;
     // 6) Redirect to the app root.
-    let secure = request_scheme(&headers) == "https";
+    let secure = request_scheme(&state.settings, &headers, remote) == "https";
     let cookie = auth_cookie(&state.settings, Some(&token), secure);
     (
         [
@@ -1654,6 +1687,15 @@ mod tests {
         let mut h = HeaderMap::new();
         h.insert(
             axum::http::HeaderName::from_static("x-forwarded-for"),
+            value.parse().unwrap(),
+        );
+        h
+    }
+
+    fn xfp(value: &str) -> HeaderMap {
+        let mut h = HeaderMap::new();
+        h.insert(
+            axum::http::HeaderName::from_static("x-forwarded-proto"),
             value.parse().unwrap(),
         );
         h
@@ -1719,5 +1761,44 @@ mod tests {
         assert_eq!(client_ip(&s, &xff(", 9.9.9.9"), Some(remote)), "10.1.2.3");
         // No remote at all: shared unknown bucket.
         assert_eq!(client_ip(&s, &xff("9.9.9.9"), None), "unknown");
+    }
+
+    #[test]
+    fn request_scheme_defaults_to_https() {
+        let s = settings_with_proxies("10.0.0.0/8");
+        let remote = SocketAddr::new(IpAddr::V4(Ipv4Addr::new(10, 1, 2, 3)), 1234);
+        // No header at all: the actual connection scheme (always TLS here).
+        assert_eq!(request_scheme(&s, &HeaderMap::new(), Some(remote)), "https");
+        // No direct peer (direct-router test harnesses): same fallback.
+        assert_eq!(request_scheme(&Settings::from_env(), &HeaderMap::new(), None), "https");
+    }
+
+    #[test]
+    fn request_scheme_ignores_xfp_from_untrusted_peer() {
+        // No trusted proxies configured: the header is attacker-rotatable, so
+        // a direct client cannot flip the scheme with it (ANT-346).
+        let s = settings_with_proxies("");
+        let remote = SocketAddr::new(IpAddr::V4(Ipv4Addr::new(203, 0, 113, 7)), 1234);
+        assert_eq!(request_scheme(&s, &xfp("http"), Some(remote)), "https");
+        // A configured list that does not cover the peer behaves the same.
+        let s2 = settings_with_proxies("10.0.0.1");
+        assert_eq!(request_scheme(&s2, &xfp("http"), Some(remote)), "https");
+        // No direct peer at all: the gate fails closed.
+        assert_eq!(request_scheme(&s2, &xfp("http"), None), "https");
+    }
+
+    #[test]
+    fn request_scheme_honours_xfp_only_from_trusted_peer() {
+        let remote = SocketAddr::new(IpAddr::V4(Ipv4Addr::new(10, 1, 2, 3)), 1234);
+        // Exact-IP entry matching the direct peer.
+        let s = settings_with_proxies("10.1.2.3");
+        assert_eq!(request_scheme(&s, &xfp("http"), Some(remote)), "http");
+        // CIDR covering the direct peer.
+        let s = settings_with_proxies("10.0.0.0/8");
+        assert_eq!(request_scheme(&s, &xfp("http"), Some(remote)), "http");
+        assert_eq!(request_scheme(&s, &xfp("https"), Some(remote)), "https");
+        // A different, untrusted peer: the header falls back to https.
+        let other = SocketAddr::new(IpAddr::V4(Ipv4Addr::new(203, 0, 113, 7)), 1234);
+        assert_eq!(request_scheme(&s, &xfp("http"), Some(other)), "https");
     }
 }

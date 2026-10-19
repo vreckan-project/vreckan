@@ -343,8 +343,17 @@ async fn setup_oidc(root: &std::path::Path) -> (vreckan::state::AppState, MockId
     state.settings.oidc_admin_groups = String::new();
     state.settings.oidc_user_groups = String::new();
     state.settings.oidc_redirect_uri = String::new();
+    // The testserver requests originate from `TEST_PEER`, configured as a
+    // trusted proxy so their `x-forwarded-proto: http` header is honoured
+    // (ANT-346) and the derived base URL stays `http://testserver`.
+    state.settings.trusted_proxies = "10.9.0.0/24".to_string();
     (state, idp)
 }
+
+/// The direct peer the `testserver` test requests originate from; covered by
+/// the `trusted_proxies` entry configured in `setup_oidc` (ANT-346).
+const TEST_PEER: std::net::SocketAddr =
+    std::net::SocketAddr::new(std::net::IpAddr::V4(std::net::Ipv4Addr::new(10, 9, 0, 1)), 443);
 
 /// Headers that make the server derive an `http://testserver` base URL
 /// (mirrors the Python test client's `http://testserver` scheme).
@@ -357,7 +366,16 @@ fn testserver_headers() -> HashMap<String, String> {
 
 /// Start the flow and return the generated `state` from the redirect.
 async fn state_from_authorize(client: &common::TestClient) -> String {
-    let auth = client.get_with("/api/auth/oidc/authorize", &testserver_headers()).await;
+    let auth = client
+        .request_from(
+            "GET",
+            "/api/auth/oidc/authorize",
+            None,
+            None,
+            &testserver_headers(),
+            TEST_PEER,
+        )
+        .await;
     assert_eq!(auth.status, StatusCode::FOUND, "{:?}", auth.body);
     let location = auth.header("location").unwrap();
     let url = url::Url::parse(&location).unwrap();
@@ -414,7 +432,16 @@ async fn test_authorize_redirects_to_provider() {
     let _root = TempDir::new();
     let (state, idp) = setup_oidc(_root.path()).await;
     let client = common::TestClient::new(state.clone());
-    let resp = client.get_with("/api/auth/oidc/authorize", &testserver_headers()).await;
+    let resp = client
+        .request_from(
+            "GET",
+            "/api/auth/oidc/authorize",
+            None,
+            None,
+            &testserver_headers(),
+            TEST_PEER,
+        )
+        .await;
     assert_eq!(resp.status, StatusCode::FOUND);
     let location = resp.header("location").unwrap();
     let parsed = url::Url::parse(&location).unwrap();
