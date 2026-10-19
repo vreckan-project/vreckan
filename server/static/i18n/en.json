@@ -575,6 +575,7 @@
     "lastCheckedAt": "Last checked {time}",
     "autoUpdateOptInCount": "{count} of {total} apps set to auto-update",
     "autoUpdateStatusUnavailable": "Auto-update status unavailable",
+    "checkingForUpdates": "Checking for updates…",
     "unitMinutes": "min",
     "unitHours": "h",
     "unitDays": "d"

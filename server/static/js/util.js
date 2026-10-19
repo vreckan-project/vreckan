@@ -15,16 +15,21 @@ export function $(id) {
   return document.getElementById(id);
 }
 
-// Append a transient toast to #toasts. `kind` is a CSS modifier
-// ("success" | "error" | ""); the toast removes itself after 4 seconds.
-export function toast(message, kind = "success") {
+// Append a toast to #toasts. `kind` is a CSS modifier ("success" | "error" |
+// ""); by default the toast removes itself after 4 seconds. Pass
+// `{ ttl: null }` for a sticky toast that stays until the caller removes it,
+// or `{ ttl: <ms> }` for a custom lifetime. Returns the toast element (call
+// `.remove()` on it to dismiss it early) or null when there is no #toasts
+// container.
+export function toast(message, kind = "success", { ttl = 4000 } = {}) {
   const container = $("toasts");
-  if (!container) return;
+  if (!container) return null;
   const el = document.createElement("div");
   el.className = `toast ${kind || ""}`.trim();
   el.textContent = message;
   container.appendChild(el);
-  setTimeout(() => el.remove(), 4000);
+  if (ttl != null) setTimeout(() => el.remove(), ttl);
+  return el;
 }
 
 // Escape ALL five HTML-special chars. The div.textContent->innerHTML
