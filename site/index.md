@@ -88,6 +88,13 @@ description: Vreckan streams powerful, containerized desktop applications to any
     <div class="feature">
       <span class="check">✓</span>
       <div class="feature-body">
+        <strong>Share-session links</strong>
+        <span>Hand a running session — plain or room — to a recipient with no account: full or view-only, with per-link file capabilities, optional password and expiry, and per-link revocation. Each visit carries its own per-visit token, so one revoked link is one dead link (v0.8.0).</span>
+      </div>
+    </div>
+    <div class="feature">
+      <span class="check">✓</span>
+      <div class="feature-body">
         <strong>Containerized backend</strong>
         <span>Docker runs every application in an isolated, sandboxed environment — with optional GPU passthrough.</span>
       </div>
