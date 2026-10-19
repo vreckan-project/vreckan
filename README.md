@@ -51,9 +51,10 @@ The interaction between the web client and the server follows a secure and orche
 *   **End-to-End Encrypted API:** All management communication between the client and server is encrypted, protecting sensitive data like launch parameters and user information.
 *   **Flexible Authentication:** Users sign in with a password or via single sign-on (OIDC — authentik, Keycloak, Entra ID, ...), with sessions maintained by secure, server-issued tokens.
 *   **Session Proxy:** Live application traffic is reverse-proxied by the server, so application containers are never directly exposed to the internet.
+*   **Share-session links:** A session owner can hand a running session — plain or room — to a recipient with no Vreckan account: **full** links let them drive the app, **view-only** links let them watch; each link carries its own file capabilities (browse / download / upload), an optional password, an optional expiry, and per-link revocation, and each visit mints its own per-visit token, so revoking a link strips every token it ever issued (v0.8.0).
 *   **Containerized Application Backend:** Uses Docker as the provider to run applications in isolated, sandboxed environments.
 *   **Role-Based Access Control (RBAC):** A clear distinction between Admins (full system control) and Users (can only launch and manage their own sessions).
-*   **Database-backed configuration:** Users, groups, apps, sessions, tokens, and shares live in a database (SQLite by default, PostgreSQL supported), so there are no config files to manage by hand.
+*   **Database-backed configuration:** Users, groups, apps, sessions, tokens, and shares live in a database (SQLite by default; PostgreSQL and MySQL supported), so there are no config files to manage by hand.
 *   **ACME certificates:** Optional automatic issuance and renewal of real TLS certificates via a built-in ACME client (Let's Encrypt, ZeroSSL, or Google; DNS-01 via eleven providers or HTTP-01), configurable from the admin UI.
 *   **No Installation Required:** The full client experience, including launching apps, managing files, and administration, runs entirely in the browser.
 *   **Full Admin UI:** A dedicated admin area provides a complete management dashboard for administrators, allowing for user, group, application, template, SSO, and certificate management directly from the browser.
@@ -81,7 +82,7 @@ tag points at the published `ghcr.io/vreckan-project/vreckan` tag (Rust
 cutover complete, ANT-40); `build: .` is the local fallback — it always
 builds the Rust image from this repo when the tag is not present, so a local
 checkout runs the Rust server either way. Versioned image tags (e.g.
-`:v0.6.0`) are published alongside `latest` for every release — see the
+`:v0.8.1`) are published alongside `latest` for every release — see the
 [release process](./docs/release.md).
 
 To run from source instead (e.g. for development): install the Rust toolchain

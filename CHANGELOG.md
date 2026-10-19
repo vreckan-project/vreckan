@@ -43,6 +43,30 @@ No behaviour change for single-user deployments: every tightening is
 best-effort, so a read-only or non-writable directory degrades to a log line
 instead of failing boot.
 
+## 2026-10-19 — Share-session link hardening (no-store share redirect, browse-gated file root) and build-base bump, v0.8.1 (ANT-322)
+
+A follow-up hardening release for the v0.8.0 share-session links: it fixes
+the two findings (F5/F6) from the v0.8.0 review, plus the scheduled nightly
+re-point of the pinned build base.
+
+- **The share redirect is no longer cacheable.** The 303 that
+  `GET /share/{id}` answers (into the app, with the fresh per-visit token in
+  the target URL) now carries `Cache-Control: private, no-store`, so a
+  caching proxy in front of the server cannot hand one visitor's token to
+  another (F5; `src/session_shares.rs`).
+- **The no-slash `api/files` root joins the browse gate.** The container
+  301s the no-slash file API root to the slash-terminated listing; that
+  redirect previously sat outside the session-proxy's capability check, so a
+  share visitor without the file-browse cap saw the 301 instead of the
+  browse 403. The root is now gated like any listing (F6;
+  `src/session_proxy.rs`).
+- **Regression tests** cover both fixes
+  (`test_share_redirect_no_store_cache_header`,
+  `test_noslash_files_root_browse_gate`).
+- **Build-base bump.** The nightly re-pointed the pinned `vreckan-base-build`
+  digest (rust:1.99-slim) in both `.base-image-digest` and the `Dockerfile`
+  build-stage pin, per the digest convention in `docs/ops.md`.
+
 ## 2026-10-18 — Share-session links: full & view-only share links with per-link capabilities, password, expiry and revoke, plus the room-mode display fix, v0.8.0 (ANT-303; ANT-304/ANT-305/ANT-306/ANT-307)
 
 You can now share a running app session with anyone — no Vreckan account
@@ -78,8 +102,9 @@ revoked individually, without stopping the session.
   leaving a dead iframe (ANT-304).
 - **The expired-share sweeper is finally scheduled.** The share-cleanup job
   runs on the `share_cleanup_interval_seconds` schedule and covers both
-  file shares and session shares, so expired links die on their own (closes
-  port-status gap G2; ANT-305).
+  file shares and session shares, so expired links die on their own (the
+  share-sweeper portion of port-status gap G2 — the gap itself stays open
+  for the missing crypto-session sweeper; ANT-305).
 - **Quick links stay documented.** The zero-setup options remain: the
   session URL itself (full access), `#shared` (server-enforced view-only),
   and `#player2`–`#player4` (gamepad co-play). The new site page
@@ -92,6 +117,11 @@ revoked individually, without stopping the session.
   routes with request/response shapes: owner CRUD on
   `/api/sessions/{id}/shares` (E2EE) and the account-less
   `GET/POST /share/{id}` entry (ANT-308).
+- **Website build-base bump.** The site's nginx runtime base moved from
+  1.27 (alpine 3.21) to 1.30 (alpine 3.24) and is now pinned by the
+  tag-level digest in `site/.base-image-digest` instead of the floating
+  tag — clearing the nightly Trivy findings on the site image (ANT-315,
+  following the ANT-277 digest convention).
 
 ## 2026-10-16 — Installed Apps image identity, scheduled auto-update, and the ANT-267 security batch, v0.7.0 (ANT-266/ANT-268/ANT-269/ANT-270 + ANT-273/ANT-274/ANT-275/ANT-276/ANT-277)
 

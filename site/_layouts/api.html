@@ -237,6 +237,7 @@ layout: default
       </tbody>
     </table>
     <p>Each visit mints a fresh per-visit token and records the visitor in the session's viewers list; the session proxy admits the token on every subsequent request and gates the in-container file API by the share's caps. A plain session is <strong>lazily promoted</strong> to selkies secure mode on its first share visit: a <code>master_token</code> is minted and the full token table is pushed to the container's <code>/{session_id}/api/tokens</code>; when that endpoint answers 404/401 or is unreachable (older selkies images without the control plane) the session stays legacy and the role rides the <code>?role=</code> query parameter instead. A background sweeper removes expired shares on the <code>share_cleanup_interval_seconds</code> schedule and strips their tokens.</p>
+    <p><strong>v0.8.1 hardening (F5/F6).</strong> The 303 answers from both public-entry routes carry <code>Cache-Control: private, no-store</code>, so a caching proxy cannot serve one visitor's per-visit token to another (F5). And the no-slash <code>api/files</code> root — which the container 301s to the slash-terminated listing — is on the browse side of the file-capability gate: a share visitor without the file-browse capability gets the browse 403 there instead of the previously un-gated 301 (F6).</p>
 
     <h3>File management — <code>files.rs</code> (E2EE)</h3>
     <table>
@@ -310,7 +311,7 @@ layout: default
     </table>
 
     <h3>Admin — <code>admin.rs</code> (E2EE + per-permission RBAC)</h3>
-    <p>48 registrations, 62 method+path routes (the parity-audit's 61, plus the two auto-update endpoints added in v0.7.0).</p>
+    <p>48 registrations, 63 method+path routes (the parity-audit's 61, plus the two auto-update endpoints added in v0.7.0).</p>
     <table>
       <thead>
         <tr><th scope="col">Method</th><th scope="col">Path</th><th scope="col">Handler</th></tr>

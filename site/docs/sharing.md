@@ -11,7 +11,7 @@ description: Share a running app session with anyone — zero-setup quick links,
 
   <table>
     <thead>
-      <tr><th>Method</th><th>What the recipient gets</th><th>Control you keep</th></tr>
+      <tr><th scope="col">Method</th><th scope="col">What the recipient gets</th><th scope="col">Control you keep</th></tr>
     </thead>
     <tbody>
       <tr><td><strong>Quick links</strong> (the session URL, <code>#shared</code>, <code>#player2</code>–<code>#player4</code>)</td><td>Full control, view-only, or gamepad co-play — zero setup</td><td>Only by stopping the session</td></tr>
@@ -55,7 +55,7 @@ description: Share a running app session with anyone — zero-setup quick links,
   <h3>What the recipient experiences</h3>
   <ul>
     <li>Opening the link takes them straight to the session (a password page first, if you set one). No login, no extension — desktop or phone browser.</li>
-    <li><strong>View-only</strong> recipients see the live app with input refused server-side; file browse/download/upload work exactly as you toggled them, enforced by the server for every request.</li>
+    <li><strong>View-only</strong> recipients see the live app with input refused; file browse/download/upload work exactly as you toggled them, enforced by the server for every request. The input refusal is enforced server-side for room sessions and for plain sessions on a selkies image with the token control plane (a plain session is promoted to that mode on its first share visit) — on an older legacy container image the viewer role rides a <code>?role=</code> query parameter and the refusal is enforced client-side, an accepted v1 limitation.</li>
     <li><strong>Full</strong> recipients get the interactive app — on a plain session they can drive it alongside you; on a room session they join the room's participant flow (input handover, gamepad slots).</li>
   </ul>
   <div class="callout">
@@ -75,7 +75,7 @@ description: Share a running app session with anyone — zero-setup quick links,
   <p>Vreckan runs two planes over one HTTPS endpoint, and they are <em>not</em> protected equally:</p>
   <table>
     <thead>
-      <tr><th>Plane</th><th>Covers</th><th>Protection</th></tr>
+      <tr><th scope="col">Plane</th><th scope="col">Covers</th><th scope="col">Protection</th></tr>
     </thead>
     <tbody>
       <tr><td><strong>Control plane</strong> (management API)</td><td>Login, launching apps, session management, files, share management, admin</td><td>End-to-end encrypted (E2EE) between the client and the server</td></tr>

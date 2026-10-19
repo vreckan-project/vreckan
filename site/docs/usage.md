@@ -24,7 +24,7 @@ description: Launching apps, managing files and shares, and the administrator's 
   <p>Every app opens the same per-app Launch dialog; only the extra fields differ, based on what the app can do:</p>
   <table>
     <thead>
-      <tr><th>Field</th><th>Browser apps</th><th>File apps</th><th>Plain apps</th></tr>
+      <tr><th scope="col">Field</th><th scope="col">Browser apps</th><th scope="col">File apps</th><th scope="col">Plain apps</th></tr>
     </thead>
     <tbody>
       <tr><td><strong>Session name</strong> (optional)</td><td>Shown</td><td>Shown</td><td>Shown</td></tr>

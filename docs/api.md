@@ -235,7 +235,17 @@ stays legacy and the role rides the `?role=` query parameter instead.
 A background sweeper (started in `main.rs`,
 `background_share_cleanup_job` in `files.rs`) removes expired shares on
 the `share_cleanup_interval_seconds` schedule and strips their tokens
-(port-status gap G2, closed).
+(port-status gap G2, share-sweeper portion; the gap stays open for the
+crypto-session sweeper).
+
+**v0.8.1 hardening (F5/F6).** The 303 answers from both public-entry
+routes carry `Cache-Control: private, no-store`, so a caching proxy
+cannot serve one visitor's per-visit token to another (F5,
+`src/session_shares.rs`). And the no-slash `api/files` root — which the
+container 301s to the slash-terminated listing — is on the browse side
+of the file-cap gate: a share visitor without the file-browse cap gets
+the browse 403 there instead of the previously un-gated 301 (F6,
+`src/session_proxy.rs`).
 
 ### File management — `files.rs` (E2EE)
 
@@ -295,7 +305,7 @@ the `share_cleanup_interval_seconds` schedule and strips their tokens
 
 ### Admin — `admin.rs` (E2EE + per-permission RBAC)
 
-48 registrations, 62 method+path routes (the parity-audit's 61, plus the
+48 registrations, 63 method+path routes (the parity-audit's 61, plus the
 two auto-update endpoints added in v0.7.0).
 
 | Method | Path | Handler |
