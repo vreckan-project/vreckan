@@ -26,6 +26,7 @@ use tracing::{debug, info, warn};
 
 use crate::session_shares::SessionShareCaps;
 use crate::state::AppState;
+use crate::tokens::tokens_equal;
 
 /// The public path prefix this router is mounted under (see `app.rs`). The
 /// nested router strips this prefix from `parts.uri.path()`, so handlers that
@@ -138,11 +139,6 @@ fn session_upstream_host(session: &serde_json::Value) -> Option<String> {
     let ip = session.get("ip")?.as_str()?;
     let port = session.get("port")?.as_i64()?;
     Some(format!("{ip}:{port}"))
-}
-
-/// Constant-time token comparison. Mirrors `secrets.compare_digest`.
-fn tokens_equal(a: &str, b: &str) -> bool {
-    a.len() == b.len() && a.as_bytes().iter().zip(b.as_bytes()).all(|(x, y)| x == y)
 }
 
 /// Build the upstream request headers: drop hop-by-hop headers, set `Host`,

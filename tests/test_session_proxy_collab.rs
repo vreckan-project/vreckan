@@ -172,8 +172,9 @@ async fn ws_connect(url: &str, cookie: Option<&str>) -> WsStream {
         builder = builder.header("cookie", c);
     }
     let request = builder.body(()).expect("build ws request");
-    let (stream, _resp) =
-        tokio_tungstenite::connect_async(request).await.expect("ws connect succeeded");
+    let (stream, _resp) = tokio_tungstenite::connect_async(request)
+        .await
+        .expect("ws connect succeeded");
     stream
 }
 
@@ -398,7 +399,13 @@ async fn test_http_bad_collab_token_is_forbidden() {
     );
     let resp = sc
         .http
-        .request("GET", &format!("/api/apps/session/{sid}/"), None, None, &headers)
+        .request(
+            "GET",
+            &format!("/api/apps/session/{sid}/"),
+            None,
+            None,
+            &headers,
+        )
         .await;
     assert_eq!(resp.status, StatusCode::FORBIDDEN);
 }
@@ -431,7 +438,13 @@ async fn test_http_noncollab_session_ignores_collab_token() {
     headers.insert("cookie".to_string(), format!("collab_token_{sid}=viewer-1"));
     let resp = sc
         .http
-        .request("GET", &format!("/api/apps/session/{sid}/"), None, None, &headers)
+        .request(
+            "GET",
+            &format!("/api/apps/session/{sid}/"),
+            None,
+            None,
+            &headers,
+        )
         .await;
     assert_eq!(resp.status, StatusCode::FORBIDDEN);
 
@@ -444,9 +457,60 @@ async fn test_http_noncollab_session_ignores_collab_token() {
     );
     let resp = sc
         .http
-        .request("GET", &format!("/api/apps/session/{sid}/"), None, None, &ok_headers)
+        .request(
+            "GET",
+            &format!("/api/apps/session/{sid}/"),
+            None,
+            None,
+            &ok_headers,
+        )
         .await;
     assert_eq!(resp.status, StatusCode::OK);
+}
+
+// ---------------------------------------------------------------------------
+// Room page: visitor invite redirect
+// ---------------------------------------------------------------------------
+
+#[tokio::test]
+async fn test_room_page_visitor_redirect_is_no_store() {
+    // A new visitor's invite-token 303 carries their fresh per-visit token in
+    // the Location: it must be marked `private, no-store`, or a caching proxy
+    // could hand one visitor's token to another (ANT-344, item 2 — the same
+    // gap class ANT-322 closed for the share redirect).
+    let _root = TempDir::new();
+    let sc = SecureClient::new(build_state(_root.path()).await);
+    let (sid, _access, _ctrl) = seed_collab_session(&sc.state, None, Vec::new()).await;
+    let invite = format!("invite-{}", uuid::Uuid::new_v4());
+    sc.state
+        .sessions
+        .write()
+        .await
+        .get_mut(&sid)
+        .unwrap()
+        .as_object_mut()
+        .unwrap()
+        .insert("participant_invite_token".to_string(), json!(invite));
+
+    let room = sc.http.get(&format!("/room/{sid}?token={invite}")).await;
+    assert_eq!(
+        room.status,
+        StatusCode::SEE_OTHER,
+        "body: {:?}",
+        String::from_utf8_lossy(&room.body)
+    );
+    assert_eq!(
+        room.header("cache-control").as_deref(),
+        Some("private, no-store"),
+        "the visitor 303 must not be cacheable"
+    );
+    let location = room
+        .header("location")
+        .expect("visitor 303 carries a Location");
+    let new_token = location
+        .strip_prefix(&format!("/room/{sid}?token="))
+        .expect("Location is the room URL with the new viewer token");
+    assert_ne!(new_token, invite, "the redirect mints a fresh viewer token");
 }
 
 // ---------------------------------------------------------------------------
@@ -514,21 +578,17 @@ async fn test_ws_bad_collab_token_is_closed() {
     let mut stream = ws_connect(&url, Some(&cookie)).await;
 
     // An invalid collab token upgrades (101) but immediately closes the client
-    // side — no upstream frame is ever relayed.
+    // side — no upstream frame is ever relayed. The match is exhaustive and
+    // every arm either records the close or diverges, so a single read suffices
+    // (a `loop` here would never actually loop — clippy `never_loop`, ANT-344
+    // item 5).
     let mut saw_close = false;
-    loop {
-        match tokio::time::timeout(Duration::from_secs(3), stream.next()).await {
-            Ok(Some(Ok(WsMessage::Close(_)))) => {
-                saw_close = true;
-                break;
-            }
-            Ok(Some(Ok(m))) => {
-                panic!("unexpected frame for a bad collab token: {m:?}")
-            }
-            Ok(Some(Err(e))) => panic!("stream error: {e}"),
-            Ok(None) => break,
-            Err(_) => panic!("timed out waiting for the close of a bad collab token"),
-        }
+    match tokio::time::timeout(Duration::from_secs(3), stream.next()).await {
+        Ok(Some(Ok(WsMessage::Close(_)))) => saw_close = true,
+        Ok(Some(Ok(m))) => panic!("unexpected frame for a bad collab token: {m:?}"),
+        Ok(Some(Err(e))) => panic!("stream error: {e}"),
+        Ok(None) => {}
+        Err(_) => panic!("timed out waiting for the close of a bad collab token"),
     }
     assert!(
         saw_close,
@@ -603,8 +663,7 @@ async fn test_room_ws_readonly_input_dropped() {
 async fn test_stop_session_broadcasts_session_ended_to_room() {
     let _root = TempDir::new();
     let sc = SecureClient::new(build_state(_root.path()).await);
-    let (sid, _access, controller_token) =
-        seed_collab_session(&sc.state, None, Vec::new()).await;
+    let (sid, _access, controller_token) = seed_collab_session(&sc.state, None, Vec::new()).await;
     let (host_port, _server) = serve_app(sc.state.clone()).await;
 
     // A live controller in the room (the session must exist and be a collab
@@ -632,5 +691,8 @@ async fn test_stop_session_broadcasts_session_ended_to_room() {
             Err(_) => panic!("timed out waiting for the session_ended broadcast"),
         }
     }
-    assert!(saw_session_ended, "stop_session should broadcast session_ended");
+    assert!(
+        saw_session_ended,
+        "stop_session should broadcast session_ended"
+    );
 }
