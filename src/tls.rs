@@ -153,13 +153,10 @@ fn generate_self_signed(
 
     let cert: Certificate = params.self_signed(&key_pair)?;
     std::fs::write(cert_path, cert.pem())?;
-    std::fs::write(key_path, key_pair.serialize_pem())?;
-    // The key is private — same mode as the ACME account key and the E2EE
-    // key (ANT-275).
-    let _ = std::fs::set_permissions(
-        key_path,
-        std::os::unix::fs::PermissionsExt::from_mode(0o600),
-    );
+    // The key is private — created owner-only from the first byte (same
+    // mode as the ACME account key and the E2EE key, ANT-275; no
+    // write-then-chmod window on a multi-user host, ANT-345).
+    crate::acme::write_owner_only(&key_path.to_string_lossy(), &key_pair.serialize_pem())?;
     // Record the expiry so `dev_cert_needs_generation` can retire an expired
     // cert instead of reusing it on `exists()` alone.
     std::fs::write(expiry_path, format!("{}\n", not_after.unix_timestamp()))?;
@@ -230,6 +227,39 @@ mod tests {
         assert!((3 * 365 - 2..=3 * 365 + 2).contains(&delta_days), "delta_days={delta_days}");
         // And the pair no longer needs regeneration.
         assert!(!dev_cert_needs_generation(&cert, &key, &exp));
+        std::fs::remove_dir_all(&dir).ok();
+    }
+
+    #[test]
+    fn generate_self_signed_replaces_legacy_key_and_lands_0600() {
+        let dir = test_dir("replace");
+        let cert = dir.join("c.crt");
+        let key = dir.join("c.key");
+        let exp = dir.join("c.expiry");
+        // Seed a legacy pair left world-readable by an older version, with
+        // an expired record forcing regeneration.
+        std::fs::write(&cert, "old-cert").unwrap();
+        std::fs::write(&key, "old-key").unwrap();
+        std::fs::set_permissions(&key, PermissionsExt::from_mode(0o644)).unwrap();
+        let past = std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .unwrap()
+            .as_secs() as i64
+            - 1;
+        std::fs::write(&exp, past.to_string()).unwrap();
+        assert!(dev_cert_needs_generation(&cert, &key, &exp));
+        generate_self_signed(&cert, &key, &exp).unwrap();
+        let mode = std::fs::metadata(&key)
+            .unwrap()
+            .permissions()
+            .mode()
+            & 0o777;
+        assert_eq!(mode, 0o600, "replaced key must land 0600");
+        assert_ne!(
+            std::fs::read_to_string(&key).unwrap(),
+            "old-key",
+            "replaced key must carry fresh material"
+        );
         std::fs::remove_dir_all(&dir).ok();
     }
 }

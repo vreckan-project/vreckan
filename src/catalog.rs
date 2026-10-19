@@ -1581,9 +1581,12 @@ pub async fn background_auto_update_job(state: AppState) {
             run_auto_update_tick(&state).await;
         }
         let now = now_unix_secs();
-        let mut job = state.auto_update_job.write().await;
-        job.last_check_at = Some(now);
-        job.next_check_at = Some(now + interval as f64);
+        {
+            let mut job = state.auto_update_job.write().await;
+            job.last_check_at = Some(now);
+            job.next_check_at = Some(now + interval as f64);
+        } // write guard dropped here — readers (e.g. the auto_update_status
+        // endpoint) no longer block for the whole sleep (ANT-348)
         tokio::time::sleep(std::time::Duration::from_secs(interval)).await;
     }
 }

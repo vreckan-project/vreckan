@@ -259,6 +259,27 @@ async fn persist_until_visible(
     stored
 }
 
+/// Read `cert_status` until the DB-sourced record is visible, returning the
+/// status. The record can be fully persisted (see `persist_until_visible`)
+/// while the next read still lands on a pooled connection carrying a
+/// pre-write WAL snapshot, in which case `cert_status` falls through to the
+/// disk path and reports `source: null`. A short settle between attempts
+/// lets stale pooled connections drain out of the pool (ANT-328).
+async fn cert_status_until_db(
+    state: &vreckan::state::AppState,
+    domains: &[String],
+) -> serde_json::Value {
+    let mut status = acme_orchestrator::cert_status(state, domains).await;
+    for _ in 0..10 {
+        if status.get("source").and_then(|v| v.as_str()) == Some("acme_db") {
+            break;
+        }
+        tokio::time::sleep(std::time::Duration::from_millis(250)).await;
+        status = acme_orchestrator::cert_status(state, domains).await;
+    }
+    status
+}
+
 // --- needs_renewal -----------------------------------------------------------
 #[tokio::test]
 async fn test_needs_renewal() {
@@ -391,7 +412,7 @@ async fn test_cert_status_reads_from_db() {
         expires: acme_orchestrator::acme_cert_expiry_from_pem(&cert_pem),
     };
     persist_until_visible(&state, &rec).await;
-    let status = acme_orchestrator::cert_status(&state, &["example.com".into()]).await;
+    let status = cert_status_until_db(&state, &["example.com".into()]).await;
     // The DB is the source of truth: cert/key are returned as PEM content.
     assert_eq!(status["present"], true);
     assert_eq!(status["source"], "acme_db");
@@ -419,7 +440,7 @@ async fn test_cert_status_db_preferred_over_disk() {
         expires: acme_orchestrator::acme_cert_expiry_from_pem(&db_cert),
     };
     persist_until_visible(&state, &rec).await;
-    let status = acme_orchestrator::cert_status(&state, &["example.com".into()]).await;
+    let status = cert_status_until_db(&state, &["example.com".into()]).await;
     assert_eq!(status["source"], "acme_db");
     assert_eq!(status["cert"], db_cert);
     assert_eq!(status["key"], db_key);
@@ -451,7 +472,7 @@ async fn test_ensure_acme_cert_persists_bundle_to_db() {
     assert_eq!(rec.domains, "example.com");
     assert!(rec.expires.is_some(), "expiry persisted");
     // And cert_status reads it back from the DB (not disk).
-    let status = acme_orchestrator::cert_status(&state, &["example.com".into()]).await;
+    let status = cert_status_until_db(&state, &["example.com".into()]).await;
     assert_eq!(status["source"], "acme_db");
     assert_eq!(status["cert"], fake.cert_pem);
     assert_eq!(status["key"], fake.key_pem);
