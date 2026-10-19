@@ -9,17 +9,20 @@ is committed normally in `vreckan`. The changelog is the authoritative
 record of what shipped in each release — see
 [`docs/release.md`](./docs/release.md) for the conventions.
 
-## Unreleased — Control page no longer hangs on the auto-update status check (ANT-348)
+## 2026-10-19 — Control-page auto-update fix + admin-UI hardening, multi-user file-permission discipline, v0.8.2 (ANT-345; ANT-347/ANT-348/ANT-349)
+
+The "Control page stuck on Loading…" bug (ANT-347) is fixed on both ends:
+the server no longer holds the auto-update job's write lock while sleeping
+between ticks, and the admin UI now paints immediately, treating a slow or
+failing `auto_update_status` endpoint as non-fatal. The release also ships
+the multi-user file-permission discipline from finding B of the October
+monthly security posture review (ANT-336) — minor severity, exploitable
+only by other local users on the host, which is not the default v1
+deployment.
 
 - **The Control page no longer sticks on "Loading…" behind the auto-update check.** `GET /api/admin/apps/auto_update_status` reads the job's state under a read lock, but the background auto-update job held the matching **write** lock for the entire update interval (default one hour) while sleeping between ticks — so the endpoint stayed pending for almost the whole interval and the Control page's `Promise.all` kept the whole panel on "Loading…". The job now drops the write lock immediately after recording `last_check_at` / `next_check_at`, and the status endpoint — the only reader of that state — answers promptly again (reported in ANT-347; no API or schema change).
-
-## Unreleased — Multi-user host file-permission discipline (ANT-345)
-
-File-permission tightening for multi-user hosts, from finding B of the
-October monthly security posture review (ANT-336) — minor severity,
-exploitable only by other local users on the host, which is not the default
-v1 deployment.
-
+- **The admin UI no longer waits on the auto-update status to paint.** `renderApps()` now paints the installed-apps table and store cards from `installed`/`stores` first; `auto_update_status` is non-fatal and fills the status line and the enable/interval controls when it lands, falling back to the code defaults and an "Auto-update status unavailable" line while it is pending or on error. A late arrival never clobbers a value the admin saved in the meantime (ANT-349).
+- **A "Checking for updates…" toast makes a slow status fetch visible.** While the `auto_update_status` request is merely slow (not failed), the Control page shows a sticky lower-right toast and keeps the status line neutral instead of claiming the status is unavailable; both clear the moment the response lands (ANT-349, board direction on ANT-347).
 - **The live SQLite database is tightened to 0600 at boot.** When the server
   connects with a SQLite URL, the database file and its WAL/SHM sidecars are
   best-effort `chmod 0600`, so other local users can no longer read users,
