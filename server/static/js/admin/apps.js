@@ -429,10 +429,25 @@ function autoUpdateStatusText(status, totalApps, optedCount) {
 }
 
 async function renderApps() {
-  const [installedRes, storesRes, autoUpdateRes] = await Promise.all([
+  // Kick off auto_update_status in parallel but do NOT await it before the
+  // first paint: a slow or hung status endpoint (see ANT-347/ANT-348) must
+  // not keep the installed table and store cards on "Loading…" forever.
+  // While the fetch is in flight a sticky "Checking for updates…" toast marks
+  // the wait; the status line and controls pick the value up when it lands
+  // (at the end of this function) and fall back to the code defaults until
+  // then.
+  const autoUpdatePromise = request("/api/admin/apps/auto_update_status", "GET");
+  // Track whether that fetch has settled — even if it settles before we get
+  // to await it — so the "checking" UI below never flashes when the response
+  // is fast.
+  let autoUpdateSettled = false;
+  autoUpdatePromise.then(
+    () => { autoUpdateSettled = true; },
+    () => { autoUpdateSettled = true; }
+  );
+  const [installedRes, storesRes] = await Promise.all([
     request("/api/admin/apps/installed", "GET"),
     request("/api/admin/apps/stores", "GET"),
-    request("/api/admin/apps/auto_update_status", "GET"),
   ]);
   if (installedRes.error) {
     setPanel(`<div class="card"><h3>${t("apps.heading")}</h3><div class="error">${esc(installedRes.error.message)}</div></div>`);
@@ -695,8 +710,10 @@ async function renderApps() {
 
   // Auto-update controls: enable toggle + interval select persist through
   // the admin settings path; the muted line mirrors the read-only job status
-  // (which may not exist yet on older server builds — then the controls
-  // fall back to the code defaults and say so).
+  // (which may not exist yet on older server builds, or may simply be slow —
+  // until the status lands the controls fall back to the code defaults, the
+  // line reads "checking" while the fetch is in flight, and settles on
+  // "unavailable" only when the fetch actually fails).
   const auEnabled = $("auto-update-enabled");
   const auInterval = $("auto-update-interval");
   const auStatus = $("auto-update-status");
@@ -706,7 +723,7 @@ async function renderApps() {
     [43200, "apps.interval12h"],
     [86400, "apps.interval24h"],
   ];
-  let autoUpdateState = autoUpdateRes.error ? null : autoUpdateRes.data || null;
+  let autoUpdateState = null;
   const optedInCount = () =>
     autoUpdateState && Number.isInteger(autoUpdateState.auto_update_apps_count)
       ? autoUpdateState.auto_update_apps_count
@@ -727,6 +744,11 @@ async function renderApps() {
     auInterval.value = String(interval);
     if (autoUpdateState) {
       auStatus.textContent = autoUpdateStatusText(autoUpdateState, apps.length, optedInCount());
+    } else if (!autoUpdateSettled) {
+      // The initial status fetch is still in flight (it can hang for a long
+      // time — see ANT-347/ANT-348): the endpoint is not "unavailable", it is
+      // merely slow, so the line says so instead of claiming a failure.
+      auStatus.textContent = t("apps.checkingForUpdates");
     } else {
       auStatus.textContent = t("apps.autoUpdateStatusUnavailable");
     }
@@ -757,6 +779,32 @@ async function renderApps() {
   applyAutoUpdateControls();
   if (auEnabled) auEnabled.addEventListener("change", saveAutoUpdate);
   if (auInterval) auInterval.addEventListener("change", saveAutoUpdate);
+  // The panel is painted. While the initial status fetch is still in flight
+  // (ANT-347: it can hang for a long time while the server's auto-update job
+  // holds its lock), make the wait visible: a sticky "Checking for updates…"
+  // toast in the lower-right corner (util.js toast({ ttl: null })) — removed
+  // the moment the fetch settles, success or error — and the status line
+  // itself reads "checking" until then. If the fetch already settled before
+  // this point, skip the toast so a fast response never causes a flash. A
+  // failure (or a hang) leaves the controls on their code defaults, and a
+  // late arrival never clobbers a value the admin already saved while the
+  // fetch was in flight.
+  let pendingToast = null;
+  if (!autoUpdateSettled) {
+    pendingToast = toast(t("apps.checkingForUpdates"), "", { ttl: null });
+  }
+  try {
+    const autoUpdateRes = await autoUpdatePromise;
+    if (autoUpdateState === null && autoUpdateRes && !autoUpdateRes.error && autoUpdateRes.data) {
+      autoUpdateState = autoUpdateRes.data;
+    }
+  } catch (_) {
+    /* status unavailable — controls keep their defaults */
+  } finally {
+    autoUpdateSettled = true;
+    if (pendingToast) pendingToast.remove();
+    applyAutoUpdateControls();
+  }
 }
 
 // Follow the aggregate "update all" pull: poll the installed-apps list until
