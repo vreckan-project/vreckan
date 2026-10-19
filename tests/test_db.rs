@@ -6,6 +6,7 @@ mod common;
 
 use common::{build_state, connect_db, test_settings, TempDir};
 use sea_orm::ConnectionTrait;
+use std::os::unix::fs::PermissionsExt;
 use vreckan::db;
 use vreckan::user_manager;
 
@@ -185,6 +186,39 @@ async fn test_auth_tokens_prune_expired() {
     let tokens = state.auth_tokens.read().await;
     let keys: Vec<&str> = tokens.keys().map(|k| k.as_str()).collect();
     assert_eq!(keys, vec!["fresh"]);
+}
+
+#[tokio::test]
+async fn test_connect_tightens_sqlite_db_to_0600() {
+    let root = TempDir::new();
+    let db_path = root.path().join("test.db");
+    // Seed a pre-existing database at umask permissions (the pre-fix shape):
+    // boot must tighten it (ANT-345).
+    std::fs::write(&db_path, "").unwrap();
+    std::fs::set_permissions(
+        &db_path,
+        std::os::unix::fs::PermissionsExt::from_mode(0o644),
+    )
+    .unwrap();
+    let d = connect_db(root.path()).await;
+    let _ = d;
+    let mode = std::fs::metadata(&db_path)
+        .unwrap()
+        .permissions()
+        .mode()
+        & 0o777;
+    assert_eq!(mode, 0o600, "live sqlite db must land 0600");
+    // The WAL pragma creates the sidecars; any that exist must be tightened.
+    for p in [root.path().join("test.db-wal"), root.path().join("test.db-shm")] {
+        if p.exists() {
+            let m = std::fs::metadata(&p)
+                .unwrap()
+                .permissions()
+                .mode()
+                & 0o777;
+            assert_eq!(m, 0o600, "{} must land 0600", p.display());
+        }
+    }
 }
 
 /// Delete every row from every table (mirrors the Python `_wipe_db`).

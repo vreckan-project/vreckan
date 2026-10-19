@@ -9,6 +9,33 @@ is committed normally in `vreckan`. The changelog is the authoritative
 record of what shipped in each release — see
 [`docs/release.md`](./docs/release.md) for the conventions.
 
+## Unreleased — Multi-user host file-permission discipline (ANT-345)
+
+File-permission tightening for multi-user hosts, from finding B of the
+October monthly security posture review (ANT-336) — minor severity,
+exploitable only by other local users on the host, which is not the default
+v1 deployment.
+
+- **The live SQLite database is tightened to 0600 at boot.** When the server
+  connects with a SQLite URL, the database file and its WAL/SHM sidecars are
+  best-effort `chmod 0600`, so other local users can no longer read users,
+  sessions, and auth tokens straight off disk. The tightening is best effort:
+  a non-writable directory cannot fail boot.
+- **Per-user upload directories are always tightened to 0700.** The
+  per-upload directory created at upload initiation is now `chmod 0700`
+  whether it was just created or already existed; previously the tightening
+  only ran in the error branch, so a pre-existing directory kept its umask
+  permissions and another local user could watch a user's in-flight uploads.
+- **Private keys are created owner-only from the first byte.** The E2EE
+  server key and the self-signed dev TLS key are now created with `O_CREAT`
+  mode `0600` instead of being written at umask permissions and chmodded
+  afterwards, closing a transient window another local user could race on a
+  multi-user host (same fix class as ANT-274/ANT-275).
+
+No behaviour change for single-user deployments: every tightening is
+best-effort, so a read-only or non-writable directory degrades to a log line
+instead of failing boot.
+
 ## 2026-10-18 — Share-session links: full & view-only share links with per-link capabilities, password, expiry and revoke, plus the room-mode display fix, v0.8.0 (ANT-303; ANT-304/ANT-305/ANT-306/ANT-307)
 
 You can now share a running app session with anyone — no Vreckan account

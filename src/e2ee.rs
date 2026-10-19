@@ -68,11 +68,13 @@ static SERVER_PUBLIC_KEY_PEM: OnceLock<String> = OnceLock::new();
 /// The key is a 2048-bit RSA key stored as unencrypted PKCS#8 PEM at
 /// `settings.server_private_key_path` (default: under the persistent data
 /// root, so it survives container recreation). The file is written
-/// `0600` — owner read/write only. The key is *not* encrypted at rest; on a
-/// multi-user host restrict access to the data root (the non-root container
-/// user owns the file, so the `0600` mode is enforced by that same user).
-/// If the file is missing a fresh key is generated and written there, so a
-/// first run "just works".
+/// `0600` — owner read/write only — and created owner-only from the first
+/// byte, so there is no transient window at umask permissions on a
+/// multi-user host (ANT-345, same fix class as ANT-274). The key is *not*
+/// encrypted at rest; on a multi-user host restrict access to the data root
+/// (the non-root container user owns the file, so the `0600` mode is
+/// enforced by that same user). If the file is missing a fresh key is
+/// generated and written there, so a first run "just works".
 pub fn init_server_key(settings: &Settings) -> anyhow::Result<()> {
     let path = std::path::PathBuf::from(&settings.server_private_key_path);
     if !path.exists() {
@@ -81,13 +83,9 @@ pub fn init_server_key(settings: &Settings) -> anyhow::Result<()> {
         if let Some(parent) = path.parent() {
             std::fs::create_dir_all(parent)?;
         }
-        std::fs::write(&path, &pem)?;
-        // Owner-only, since the key is unencrypted. Written by the runtime
-        // (non-root) user, so ownership is already correct.
-        let _ = std::fs::set_permissions(
-            &path,
-            std::os::unix::fs::PermissionsExt::from_mode(0o600),
-        );
+        // Owner-only from the first byte (the `AlreadyExists` fallback
+        // covers a key that appears between the check and the create).
+        crate::acme::write_owner_only(&path.to_string_lossy(), &pem)?;
         info!("generated new E2EE server key at {}", path.display());
     } else if let Ok(prev) = std::fs::metadata(&path) {
         // Best effort: tighten a pre-existing key (e.g. one left at default
@@ -393,5 +391,65 @@ pub async fn encrypt_response(
             Json(serde_json::json!({ "detail": "Encryption failed server-side." })),
         )
             .into_response(),
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn tmp_dir(name: &str) -> std::path::PathBuf {
+        let dir = std::env::temp_dir().join(format!(
+            "vreckan-e2ee-test-{}-{}",
+            std::process::id(),
+            name
+        ));
+        let _ = std::fs::remove_dir_all(&dir);
+        std::fs::create_dir_all(&dir).unwrap();
+        dir
+    }
+
+    fn settings_with_key(path: &std::path::Path) -> Settings {
+        let mut s = Settings::from_env();
+        s.server_private_key_path = path.to_string_lossy().to_string();
+        s
+    }
+
+    fn mode_of(p: &std::path::Path) -> u32 {
+        std::fs::metadata(p).unwrap().permissions().mode() & 0o777
+    }
+
+    #[test]
+    fn init_server_key_fresh_key_lands_0600() {
+        let dir = tmp_dir("fresh");
+        let path = dir.join("server_key.pem");
+        init_server_key(&settings_with_key(&path)).unwrap();
+        assert_eq!(
+            mode_of(&path),
+            0o600,
+            "fresh E2EE server key must land 0600"
+        );
+        std::fs::remove_dir_all(&dir).ok();
+    }
+
+    #[test]
+    fn init_server_key_retightens_legacy_key() {
+        let dir = tmp_dir("legacy");
+        let path = dir.join("server_key.pem");
+        // Seed a key left at umask permissions by an older version.
+        let key = RsaPrivateKey::new(&mut rand::rng(), 2048).unwrap();
+        std::fs::write(
+            &path,
+            key.to_pkcs8_pem(LineEnding::LF).unwrap().to_string(),
+        )
+        .unwrap();
+        std::fs::set_permissions(&path, PermissionsExt::from_mode(0o644)).unwrap();
+        init_server_key(&settings_with_key(&path)).unwrap();
+        assert_eq!(
+            mode_of(&path),
+            0o600,
+            "legacy key must be tightened to 0600"
+        );
+        std::fs::remove_dir_all(&dir).ok();
     }
 }
