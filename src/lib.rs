@@ -26,4 +26,5 @@ pub mod settings;
 pub mod state;
 pub mod static_files;
 pub mod tls;
+pub mod tokens;
 pub mod user_manager;

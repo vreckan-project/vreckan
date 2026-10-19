@@ -724,3 +724,105 @@ async fn test_login_rate_limit_disabled_via_zero() {
     // ... and the correct password still logs in.
     assert_eq!(tc.login("admin", "admin1234").await.status.as_u16(), 200);
 }
+
+// ---------------------------------------------------------------------------
+// ANT-346: the session cookie's Secure attribute follows the trusted-proxy
+// gate — a direct client rotating X-Forwarded-Proto cannot flip it.
+// ---------------------------------------------------------------------------
+
+#[tokio::test]
+async fn test_secure_cookie_forged_xfp_from_untrusted_peer() {
+    let _root = TempDir::new();
+    // No trusted proxies configured (the default): forwarded headers are
+    // attacker-rotatable and the TLS connection's scheme (https -> Secure)
+    // must win.
+    let tc = TestClient::new(build_state(_root.path()).await);
+    let peer = std::net::SocketAddr::from(([203u8, 0, 113, 7], 51234));
+    // Forged `X-Forwarded-Proto: http` from the direct peer: the Secure
+    // flag must survive.
+    let mut h = std::collections::HashMap::new();
+    h.insert("X-Forwarded-Proto".to_string(), "http".to_string());
+    let resp = tc
+        .request_from(
+            "POST",
+            "/api/auth/login",
+            Some(json!({ "username": ADMIN.0, "password": ADMIN.1 }).to_string().into_bytes()),
+            Some("application/json"),
+            &h,
+            peer,
+        )
+        .await;
+    assert_eq!(resp.status.as_u16(), 200);
+    let set_cookie = resp.header("set-cookie").unwrap_or_default();
+    assert!(
+        set_cookie.to_lowercase().contains("secure"),
+        "forged X-Forwarded-Proto must not clear the Secure flag: {set_cookie}"
+    );
+    // Omitting the header from the same peer yields the same (Secure) result.
+    let resp = tc
+        .request_from(
+            "POST",
+            "/api/auth/login",
+            Some(json!({ "username": ADMIN.0, "password": ADMIN.1 }).to_string().into_bytes()),
+            Some("application/json"),
+            &std::collections::HashMap::new(),
+            peer,
+        )
+        .await;
+    assert_eq!(resp.status.as_u16(), 200);
+    let set_cookie = resp.header("set-cookie").unwrap_or_default();
+    assert!(
+        set_cookie.to_lowercase().contains("secure"),
+        "direct request without XFP keeps the connection scheme: {set_cookie}"
+    );
+}
+
+#[tokio::test]
+async fn test_secure_cookie_xfp_honoured_from_trusted_proxy() {
+    let _root = TempDir::new();
+    let tc = TestClient::new(
+        build_state_with(_root.path(), |s| {
+            s.trusted_proxies = "10.0.0.1".to_string();
+        })
+        .await,
+    );
+    let peer = std::net::SocketAddr::from(([10u8, 0, 0, 1], 443));
+    // The direct peer is a configured trusted proxy, so its X-Forwarded-Proto
+    // is honoured: an http edge produces a non-Secure cookie.
+    let mut h = std::collections::HashMap::new();
+    h.insert("X-Forwarded-Proto".to_string(), "http".to_string());
+    let resp = tc
+        .request_from(
+            "POST",
+            "/api/auth/login",
+            Some(json!({ "username": ADMIN.0, "password": ADMIN.1 }).to_string().into_bytes()),
+            Some("application/json"),
+            &h,
+            peer,
+        )
+        .await;
+    assert_eq!(resp.status.as_u16(), 200);
+    let set_cookie = resp.header("set-cookie").unwrap_or_default();
+    assert!(
+        !set_cookie.to_lowercase().contains("secure"),
+        "trusted proxy reports an http edge: the Secure flag must be cleared: {set_cookie}"
+    );
+    // And `https` from the same trusted proxy sets the flag again.
+    h.insert("X-Forwarded-Proto".to_string(), "https".to_string());
+    let resp = tc
+        .request_from(
+            "POST",
+            "/api/auth/login",
+            Some(json!({ "username": ADMIN.0, "password": ADMIN.1 }).to_string().into_bytes()),
+            Some("application/json"),
+            &h,
+            peer,
+        )
+        .await;
+    assert_eq!(resp.status.as_u16(), 200);
+    let set_cookie = resp.header("set-cookie").unwrap_or_default();
+    assert!(
+        set_cookie.to_lowercase().contains("secure"),
+        "trusted proxy reports an https edge: the Secure flag must be set: {set_cookie}"
+    );
+}
