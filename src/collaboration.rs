@@ -28,6 +28,8 @@ use tracing::{info, warn};
 use crate::catalog;
 use crate::security;
 use crate::state::AppState;
+use crate::tokens::opt_tokens_equal;
+use crate::tokens::tokens_equal;
 
 // ---------------------------------------------------------------------------
 // Room connection state (mirrors `collaboration.ROOM_CONNECTIONS`)
@@ -139,26 +141,40 @@ async fn collaborative_room(
         .get("controller_token")
         .and_then(|v| v.as_str())
         .unwrap_or("");
+    let access_token = session_data
+        .get("access_token")
+        .and_then(|v| v.as_str())
+        .unwrap_or("");
     let is_controller_by_session = main_access_token
         .as_deref()
-        .map(|t| t == session_data.get("access_token").and_then(|v| v.as_str()).unwrap_or(""))
-        .unwrap_or(false);
-    let is_controller_by_collab = collab_token.as_deref() == Some(controller_token);
+        .is_some_and(|t| tokens_equal(t, access_token));
+    let is_controller_by_collab = collab_token
+        .as_deref()
+        .is_some_and(|t| tokens_equal(t, controller_token));
     let is_viewer_by_collab = session_data
         .get("viewers")
         .and_then(|v| v.as_array())
         .map(|arr| {
-            arr.iter().any(|v| v.get("token").and_then(|t| t.as_str()) == collab_token.as_deref())
+            arr.iter().any(|v| {
+                opt_tokens_equal(
+                    v.get("token").and_then(|t| t.as_str()),
+                    collab_token.as_deref(),
+                )
+            })
         })
         .unwrap_or(false);
-    let is_new_participant_by_collab = collab_token.as_deref()
-        == session_data
+    let is_new_participant_by_collab = opt_tokens_equal(
+        collab_token.as_deref(),
+        session_data
             .get("participant_invite_token")
-            .and_then(|v| v.as_str());
-    let is_new_readonly_by_collab = collab_token.as_deref()
-        == session_data
+            .and_then(|v| v.as_str()),
+    );
+    let is_new_readonly_by_collab = opt_tokens_equal(
+        collab_token.as_deref(),
+        session_data
             .get("readonly_invite_token")
-            .and_then(|v| v.as_str());
+            .and_then(|v| v.as_str()),
+    );
 
     if !(is_controller_by_session
         || is_controller_by_collab
@@ -202,7 +218,10 @@ async fn collaborative_room(
         user_token = collab_token.clone();
         if let Some(viewers) = session_data.get("viewers").and_then(|v| v.as_array()) {
             if let Some(vd) = viewers.iter().find(|v| {
-                v.get("token").and_then(|t| t.as_str()) == collab_token.as_deref()
+                opt_tokens_equal(
+                    v.get("token").and_then(|t| t.as_str()),
+                    collab_token.as_deref(),
+                )
             }) {
                 user_permission = vd
                     .get("permission")
@@ -232,11 +251,14 @@ async fn collaborative_room(
             serde_json::Map::new(),
         )) = session_data.clone();
         catalog::save_sessions(&state).await;
-        // Redirect with the new viewer token.
+        // Redirect with the new viewer token. The Location carries the
+        // visitor's per-visit token, so keep it out of any caching proxy's
+        // store, as the share redirect does (ANT-322 F5; ANT-344, item 2).
         let redirect = format!("/room/{session_id}?token={new_viewer_token}");
         return Response::builder()
             .status(StatusCode::SEE_OTHER)
             .header(header::LOCATION, redirect)
+            .header(header::CACHE_CONTROL, "private, no-store")
             .body(axum::body::Body::empty())
             .unwrap_or_else(|e| (StatusCode::INTERNAL_SERVER_ERROR, e.to_string()).into_response());
     } else {
@@ -250,6 +272,12 @@ async fn collaborative_room(
     let user_token = user_token.unwrap_or_default();
     let iframe_src = format!("/api/apps/session/{session_id}/?token={user_token}");
 
+    // The live tokens are injected as static JS below. Any script execution
+    // on the room page (XSS) could read them. Accepted under the v1
+    // "viewers trust the server operator" premise (board decision D1,
+    // ANT-310): the page ships a strict per-request nonce CSP, so only
+    // operator-served same-origin scripts run. Hardening path: short-lived
+    // one-time join tokens exchanged at the WS upgrade (ANT-344, item 4).
     let mut client_data = serde_json::json!({
         "sessionId": session_id,
         "userRole": user_role,
@@ -342,6 +370,17 @@ fn cookie_from_headers(headers: &HeaderMap, name: &str) -> Option<String> {
     None
 }
 
+/// The first 8 chars of a token, for logs: enough to tell two viewers apart,
+/// too short to recover the token (ANT-344, item 1). Char-boundary safe for
+/// any string.
+fn short_token(token: &str) -> &str {
+    let mut end = token.len().min(8);
+    while end > 0 && !token.is_char_boundary(end) {
+        end -= 1;
+    }
+    &token[..end]
+}
+
 // ---------------------------------------------------------------------------
 // Broadcast helpers
 // ---------------------------------------------------------------------------
@@ -382,14 +421,14 @@ async fn broadcast_binary_to_room(
     };
     let mut senders: Vec<tokio::sync::mpsc::Sender<Message>> = Vec::new();
     if let Some(c) = &conns.controller {
-        if is_controller && c.token == sender_token {
+        if is_controller && tokens_equal(&c.token, sender_token) {
             // skip the controller sender (it's the originator)
         } else {
             senders.push(c.sender.clone());
         }
     }
     for v in conns.viewers.values() {
-        if v.token != sender_token {
+        if !tokens_equal(&v.token, sender_token) {
             senders.push(v.sender.clone());
         }
     }
@@ -431,7 +470,7 @@ async fn broadcast_state(state: &AppState, session_id: &str) {
         "username": "Controller",
         "slot": session_data.get("controller_slot").cloned().unwrap_or(Value::Null),
         "online": controller_online,
-        "has_mk": mk_owner == Some(controller_token) || mk_owner.is_none(),
+        "has_mk": mk_owner.is_none() || mk_owner.is_some_and(|o| tokens_equal(o, controller_token)),
         "permission": "controller",
         "publicId": controller_public_id_value,
     });
@@ -445,7 +484,10 @@ async fn broadcast_state(state: &AppState, session_id: &str) {
             let vtoken = v.get("token").and_then(|t| t.as_str()).unwrap_or("");
             let is_online = online_viewer_tokens.contains(vtoken);
             if let Some(obj) = viewer_info.as_object_mut() {
-                obj.insert("has_mk".into(), serde_json::json!(mk_owner == Some(vtoken)));
+                obj.insert(
+                    "has_mk".into(),
+                    serde_json::json!(mk_owner.is_some_and(|o| tokens_equal(o, vtoken))),
+                );
                 obj.insert("online".into(), serde_json::json!(is_online));
                 if is_online {
                     if let Some(conn) = conns.viewers.get(vtoken) {
@@ -496,7 +538,11 @@ pub async fn push_token_table(_state: &AppState, session_id: &str, session_data:
             serde_json::json!({
                 "role": "controller",
                 "slot": session_data.get("controller_slot").cloned().unwrap_or(Value::Null),
-                "mk_control": if mk_owner.is_some() { mk_owner == Some(owner_token) } else { true },
+                "mk_control": if mk_owner.is_some() {
+                    mk_owner.is_some_and(|o| tokens_equal(o, owner_token))
+                } else {
+                    true
+                },
             }),
         );
     }
@@ -511,7 +557,7 @@ pub async fn push_token_table(_state: &AppState, session_id: &str, session_data:
                 serde_json::json!({
                     "role": v.get("role").and_then(|r| r.as_str()).unwrap_or("viewer"),
                     "slot": v.get("slot").cloned().unwrap_or(Value::Null),
-                    "mk_control": mk_owner == Some(vtoken),
+                    "mk_control": mk_owner.is_some_and(|o| tokens_equal(o, vtoken)),
                 }),
             );
         }
@@ -623,14 +669,16 @@ async fn handle_assign_slot(
 
     let mut notifications: Vec<String> = Vec::new();
 
-    if viewer_token == controller_token {
+    if tokens_equal(viewer_token, &controller_token) {
         target_username = "Controller".to_string();
         old_slot_for_target = session_data
             .get("controller_slot")
             .and_then(|v| v.as_i64());
     } else if let Some(viewers) = session_data.get_mut("viewers").and_then(|v| v.as_array_mut()) {
         if let Some(v) = viewers.iter_mut().find(|v| {
-            v.get("token").and_then(|t| t.as_str()) == Some(viewer_token)
+            v.get("token")
+                .and_then(|t| t.as_str())
+                .is_some_and(|t| tokens_equal(t, viewer_token))
         }) {
             target_username = v.get("username").and_then(|u| u.as_str()).unwrap_or("Unnamed").to_string();
             old_slot_for_target = v.get("slot").and_then(|s| s.as_i64());
@@ -641,7 +689,7 @@ async fn handle_assign_slot(
     if let Some(slot) = slot {
         let mut previous_owner_cleared = false;
         if session_data.get("controller_slot").and_then(|v| v.as_i64()) == Some(slot)
-            && controller_token != viewer_token
+            && !tokens_equal(&controller_token, viewer_token)
         {
             session_data["controller_slot"] = Value::Null;
             notifications.push(format!("Controller was unassigned from Gamepad {slot}."));
@@ -651,7 +699,9 @@ async fn handle_assign_slot(
             if let Some(viewers) = session_data.get_mut("viewers").and_then(|v| v.as_array_mut()) {
                 if let Some(v) = viewers.iter_mut().find(|v| {
                     v.get("slot").and_then(|s| s.as_i64()) == Some(slot)
-                        && v.get("token").and_then(|t| t.as_str()) != Some(viewer_token)
+                        && v.get("token")
+                            .and_then(|t| t.as_str())
+                            .is_none_or(|t| !tokens_equal(t, viewer_token))
                 }) {
                     v["slot"] = Value::Null;
                     notifications.push(format!(
@@ -664,11 +714,13 @@ async fn handle_assign_slot(
     }
 
     // Set the slot on the target.
-    if viewer_token == controller_token {
+    if tokens_equal(viewer_token, &controller_token) {
         session_data["controller_slot"] = slot.map(Value::from).unwrap_or(Value::Null);
     } else if let Some(viewers) = session_data.get_mut("viewers").and_then(|v| v.as_array_mut()) {
         if let Some(v) = viewers.iter_mut().find(|v| {
-            v.get("token").and_then(|t| t.as_str()) == Some(viewer_token)
+            v.get("token")
+                .and_then(|t| t.as_str())
+                .is_some_and(|t| tokens_equal(t, viewer_token))
         }) {
             v["slot"] = slot.map(Value::from).unwrap_or(Value::Null);
         }
@@ -712,11 +764,14 @@ async fn handle_assign_mk(state: &AppState, session_id: &str, target_token: Opti
         .and_then(|v| v.as_str())
         .unwrap_or("");
     let mut target_token = target_token.map(|s| s.to_string());
-    if target_token.as_deref() == Some(controller_token) {
+    if target_token
+        .as_deref()
+        .is_some_and(|t| tokens_equal(t, controller_token))
+    {
         target_token = None;
     }
     let current_owner = session_data.get("mk_owner_token").and_then(|v| v.as_str());
-    if current_owner == target_token.as_deref() {
+    if opt_tokens_equal(current_owner, target_token.as_deref()) {
         return;
     }
     session_data["mk_owner_token"] = target_token.clone().map(Value::from).unwrap_or(Value::Null);
@@ -725,7 +780,9 @@ async fn handle_assign_mk(state: &AppState, session_id: &str, target_token: Opti
     if let Some(tt) = &target_token {
         if let Some(viewers) = session_data.get("viewers").and_then(|v| v.as_array()) {
             if let Some(v) = viewers.iter().find(|v| {
-                v.get("token").and_then(|t| t.as_str()) == Some(tt.as_str())
+                v.get("token")
+                    .and_then(|t| t.as_str())
+                    .is_some_and(|t| tokens_equal(t, tt))
             }) {
                 username = v.get("username").and_then(|u| u.as_str()).unwrap_or("User").to_string();
             }
@@ -794,11 +851,17 @@ async fn room_websocket(
         .get("controller_token")
         .and_then(|v| v.as_str())
         .unwrap_or("");
-    let is_controller = token == controller_token;
+    let is_controller = tokens_equal(&token, controller_token);
     let viewer_data_ref: Option<Value> = session_data
         .get("viewers")
         .and_then(|v| v.as_array())
-        .and_then(|arr| arr.iter().find(|v| v.get("token").and_then(|t| t.as_str()) == Some(token.as_str())))
+        .and_then(|arr| {
+            arr.iter().find(|v| {
+                v.get("token")
+                    .and_then(|t| t.as_str())
+                    .is_some_and(|t| tokens_equal(t, &token))
+            })
+        })
         .cloned();
     let is_viewer = viewer_data_ref.is_some();
     if !is_controller && !is_viewer {
@@ -945,7 +1008,7 @@ async fn room_websocket(
                             .and_then(|s| s.get("designated_speaker").and_then(|v| v.as_str()));
                         let is_audio_packet = bytes.len() > 8 && bytes[8] == 0x02;
                         if let Some(ds) = designated_speaker {
-                            if is_audio_packet && ds != token_clone {
+                            if is_audio_packet && !tokens_equal(ds, &token_clone) {
                                 continue;
                             }
                         }
@@ -1036,7 +1099,9 @@ async fn route_message(
             if let Some(s) = sessions.get_mut(session_id) {
                 if let Some(viewers) = s.get_mut("viewers").and_then(|v| v.as_array_mut()) {
                     if let Some(v) = viewers.iter_mut().find(|v| {
-                        v.get("token").and_then(|t| t.as_str()) == Some(token)
+                        v.get("token")
+                            .and_then(|t| t.as_str())
+                            .is_some_and(|t| tokens_equal(t, token))
                     }) {
                         let old = v.get("username").and_then(|u| u.as_str()).unwrap_or("").to_string();
                         if old == new_username {
@@ -1261,23 +1326,38 @@ async fn cleanup_disconnect(
     if is_controller {
         info!("[{session_id}] Controller disconnected from collab room.");
     } else {
-        info!("[{session_id}] Viewer {token} disconnected from collab room.");
+        // A viewer token is valid room access until revoked, so log a short
+        // prefix instead of the raw token: on hosts where logs are shared or
+        // world-readable the full value would be a live credential (ANT-344,
+        // item 1).
+        info!(
+            "[{session_id}] Viewer {} disconnected from collab room.",
+            short_token(token)
+        );
         // Release slots / MK / designated speaker for the disconnected viewer.
         let mut sessions = state.sessions.write().await;
         let mut state_changed = false;
         let mut input_released = false;
         if let Some(s) = sessions.get_mut(session_id) {
-            if s.get("designated_speaker").and_then(|v| v.as_str()) == Some(token) {
+            if s.get("designated_speaker")
+                .and_then(|v| v.as_str())
+                .is_some_and(|t| tokens_equal(t, token))
+            {
                 s["designated_speaker"] = Value::Null;
                 state_changed = true;
             }
             // Read the MK ownership before mutably borrowing the viewers list.
-            let mk_is_owner = s.get("mk_owner_token").and_then(|v| v.as_str()) == Some(token);
+            let mk_is_owner = s
+                .get("mk_owner_token")
+                .and_then(|v| v.as_str())
+                .is_some_and(|t| tokens_equal(t, token));
             let mut slot_to_release: Option<i64> = None;
             let mut viewer_uname = "A user".to_string();
             if let Some(viewers) = s.get_mut("viewers").and_then(|v| v.as_array_mut()) {
                 if let Some(v) = viewers.iter_mut().find(|v| {
-                    v.get("token").and_then(|t| t.as_str()) == Some(token)
+                    v.get("token")
+                        .and_then(|t| t.as_str())
+                        .is_some_and(|t| tokens_equal(t, token))
                 }) {
                     viewer_uname = v
                         .get("username")
