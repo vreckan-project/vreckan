@@ -18,6 +18,7 @@
 //! missing columns to existing ones (mirroring the Python `init_db` +
 //! `migrate_db` pair).
 
+use std::os::unix::fs::PermissionsExt;
 use std::time::Duration;
 
 use log::LevelFilter;
@@ -26,7 +27,7 @@ use sea_orm::{
     ActiveValue, ConnectOptions, ConnectionTrait, Database, DatabaseConnection, DbBackend,
     EntityTrait, QueryResult, QueryTrait, Statement, TransactionTrait, Value,
 };
-use tracing::info;
+use tracing::{info, warn};
 
 use crate::entities;
 
@@ -78,6 +79,52 @@ fn dialect_from_url(url: &str) -> String {
     }
 }
 
+/// Extract the database file path from a sqlx SQLite URL
+/// (`sqlite://<path>?<query>`), e.g. `sqlite:///data/vreckan.db?mode=rwc`.
+/// Returns `None` for in-memory databases and non-SQLite URLs.
+pub(crate) fn sqlite_file_path(url: &str) -> Option<String> {
+    let rest = url.strip_prefix("sqlite://")?;
+    let path = rest.split('?').next()?.trim();
+    if path.is_empty() || path == ":memory:" {
+        return None;
+    }
+    Some(path.to_string())
+}
+
+/// Best-effort tightening of a SQLite database file and its `-wal`/`-shm`
+/// sidecars to owner-only (`0600`). The configuration database holds users,
+/// sessions, and auth tokens, and the driver creates the file with the
+/// process umask, so on a multi-user host other local users could read it
+/// straight off disk (ANT-345). Missing sidecars are expected — SQLite
+/// creates them as needed — and other errors are logged rather than
+/// propagated, so a non-writable directory cannot fail boot.
+pub(crate) fn tighten_sqlite_file(path: &str) {
+    for suffix in ["", "-wal", "-shm"] {
+        let file = format!("{path}{suffix}");
+        let meta = match std::fs::metadata(&file) {
+            Ok(m) => m,
+            Err(e) if e.kind() == std::io::ErrorKind::NotFound => continue,
+            Err(e) => {
+                warn!(
+                    "could not stat SQLite file {file}: {e} (leaving permissions as-is)"
+                );
+                continue;
+            }
+        };
+        let mode = meta.permissions().mode() & 0o777;
+        if mode == 0o600 {
+            continue;
+        }
+        match std::fs::set_permissions(
+            &file,
+            std::os::unix::fs::PermissionsExt::from_mode(0o600),
+        ) {
+            Ok(()) => info!("tightened SQLite file to 0600: {file}"),
+            Err(e) => warn!("could not tighten SQLite file to 0600: {file}: {e}"),
+        }
+    }
+}
+
 /// Connect to the configuration database.
 ///
 /// `url` should be a sqlx-format URL (see `Settings::build_database_url`). A
@@ -105,6 +152,12 @@ pub async fn connect(url: &str) -> Result<Db, sea_orm::DbErr> {
         let _ = conn
             .execute_raw(Statement::from_string(backend, "PRAGMA journal_mode=WAL;"))
             .await;
+        // Tighten the database file and WAL/SHM sidecars to owner-only,
+        // after the WAL pragma has created the sidecars (ANT-345).
+        // Best effort: see `tighten_sqlite_file`.
+        if let Some(path) = sqlite_file_path(url) {
+            tighten_sqlite_file(&path);
+        }
     }
 
     info!("Configuration database ready ({dialect})");
@@ -499,5 +552,99 @@ fn json_columns(table: &str) -> Vec<&'static str> {
         "template_schema_settings" => vec!["options"],
         "pinned_behaviors" => vec!["data"],
         _ => vec![],
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use std::os::unix::fs::PermissionsExt;
+
+    fn tmp_dir(name: &str) -> std::path::PathBuf {
+        let dir = std::env::temp_dir().join(format!(
+            "vreckan-db-test-{}-{}",
+            std::process::id(),
+            name
+        ));
+        let _ = std::fs::remove_dir_all(&dir);
+        std::fs::create_dir_all(&dir).unwrap();
+        dir
+    }
+
+    fn mode_of(path: &std::path::Path) -> u32 {
+        std::fs::metadata(path).unwrap().permissions().mode() & 0o777
+    }
+
+    #[test]
+    fn sqlite_file_path_parses_sqlite_urls() {
+        assert_eq!(
+            sqlite_file_path("sqlite:///var/lib/vreckan/vreckan.db?mode=rwc"),
+            Some("/var/lib/vreckan/vreckan.db".to_string())
+        );
+        assert_eq!(
+            sqlite_file_path("sqlite:///data/vreckan.db"),
+            Some("/data/vreckan.db".to_string())
+        );
+        assert_eq!(sqlite_file_path("sqlite://:memory:"), None);
+        // A bare root path is pathological but well-formed; the tightening
+        // stays best-effort if the location turns out to be unwritable.
+        assert_eq!(sqlite_file_path("sqlite:///?mode=rwc"), Some("/".to_string()));
+        assert_eq!(sqlite_file_path("postgres://u:p@h:5432/vreckan"), None);
+    }
+
+    #[test]
+    fn tighten_sqlite_file_tightens_db_and_sidecars() {
+        let dir = tmp_dir("tighten");
+        let db = dir.join("vreckan.db");
+        let wal = dir.join("vreckan.db-wal");
+        let shm = dir.join("vreckan.db-shm");
+        for p in [&db, &wal, &shm] {
+            std::fs::write(p, "x").unwrap();
+            std::fs::set_permissions(p, PermissionsExt::from_mode(0o644)).unwrap();
+        }
+        tighten_sqlite_file(db.to_str().unwrap());
+        assert_eq!(mode_of(&db), 0o600, "db file must land 0600");
+        assert_eq!(mode_of(&wal), 0o600, "wal sidecar must land 0600");
+        assert_eq!(mode_of(&shm), 0o600, "shm sidecar must land 0600");
+        // A second pass is a no-op (already 0600) and must not fail.
+        tighten_sqlite_file(db.to_str().unwrap());
+        std::fs::remove_dir_all(&dir).ok();
+    }
+
+    #[test]
+    fn tighten_sqlite_file_tolerates_missing_sidecars() {
+        let dir = tmp_dir("tighten-missing");
+        let db = dir.join("vreckan.db");
+        std::fs::write(&db, "x").unwrap();
+        std::fs::set_permissions(&db, PermissionsExt::from_mode(0o644)).unwrap();
+        // -wal/-shm absent: the main file must still be tightened, without
+        // treating the missing sidecars as errors.
+        tighten_sqlite_file(db.to_str().unwrap());
+        assert_eq!(mode_of(&db), 0o600, "db file must land 0600");
+        assert!(!dir.join("vreckan.db-wal").exists());
+        std::fs::remove_dir_all(&dir).ok();
+    }
+
+    #[tokio::test]
+    async fn connect_tightens_live_sqlite_db_to_0600() {
+        let dir = tmp_dir("connect");
+        let db = dir.join("live.db");
+        // Seed a pre-existing database at umask permissions (the pre-fix
+        // shape): connect must tighten it on boot.
+        std::fs::write(&db, "").unwrap();
+        std::fs::set_permissions(&db, PermissionsExt::from_mode(0o644)).unwrap();
+        let d = connect(&format!("sqlite://{}?mode=rwc", db.display()))
+            .await
+            .unwrap();
+        assert_eq!(d.dialect, "sqlite");
+        assert_eq!(mode_of(&db), 0o600, "db file must land 0600");
+        // The WAL pragma creates the sidecars; any that exist must be
+        // tightened too.
+        for p in [&dir.join("live.db-wal"), &dir.join("live.db-shm")] {
+            if p.exists() {
+                assert_eq!(mode_of(p), 0o600, "{} must land 0600", p.display());
+            }
+        }
+        std::fs::remove_dir_all(&dir).ok();
     }
 }
