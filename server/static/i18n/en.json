@@ -27,6 +27,7 @@
     "apply": "Apply",
     "saved": "Saved",
     "loading": "Loading…",
+    "loadFailed": "Failed to load: {message}",
     "remove": "Remove",
     "connect": "Connect"
   },

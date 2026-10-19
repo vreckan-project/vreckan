@@ -429,10 +429,15 @@ function autoUpdateStatusText(status, totalApps, optedCount) {
 }
 
 async function renderApps() {
-  const [installedRes, storesRes, autoUpdateRes] = await Promise.all([
+  // Kick off auto_update_status in parallel but do NOT await it before the
+  // first paint: a slow or hung status endpoint (see ANT-347/ANT-348) must
+  // not keep the installed table and store cards on "Loading…" forever. The
+  // status line and controls pick the value up when it lands (at the end of
+  // this function) and fall back to the code defaults until then.
+  const autoUpdatePromise = request("/api/admin/apps/auto_update_status", "GET");
+  const [installedRes, storesRes] = await Promise.all([
     request("/api/admin/apps/installed", "GET"),
     request("/api/admin/apps/stores", "GET"),
-    request("/api/admin/apps/auto_update_status", "GET"),
   ]);
   if (installedRes.error) {
     setPanel(`<div class="card"><h3>${t("apps.heading")}</h3><div class="error">${esc(installedRes.error.message)}</div></div>`);
@@ -695,8 +700,9 @@ async function renderApps() {
 
   // Auto-update controls: enable toggle + interval select persist through
   // the admin settings path; the muted line mirrors the read-only job status
-  // (which may not exist yet on older server builds — then the controls
-  // fall back to the code defaults and say so).
+  // (which may not exist yet on older server builds, or may simply be slow —
+  // until the status lands the controls fall back to the code defaults and
+  // the line says the status is unavailable).
   const auEnabled = $("auto-update-enabled");
   const auInterval = $("auto-update-interval");
   const auStatus = $("auto-update-status");
@@ -706,7 +712,7 @@ async function renderApps() {
     [43200, "apps.interval12h"],
     [86400, "apps.interval24h"],
   ];
-  let autoUpdateState = autoUpdateRes.error ? null : autoUpdateRes.data || null;
+  let autoUpdateState = null;
   const optedInCount = () =>
     autoUpdateState && Number.isInteger(autoUpdateState.auto_update_apps_count)
       ? autoUpdateState.auto_update_apps_count
@@ -757,6 +763,19 @@ async function renderApps() {
   applyAutoUpdateControls();
   if (auEnabled) auEnabled.addEventListener("change", saveAutoUpdate);
   if (auInterval) auInterval.addEventListener("change", saveAutoUpdate);
+  // The panel is painted; absorb the non-fatal status response now. A
+  // failure (or a hang) leaves the controls on their code defaults — the
+  // same fallback as an unavailable endpoint — and a late arrival never
+  // clobbers a value the admin already saved while the fetch was in flight.
+  try {
+    const autoUpdateRes = await autoUpdatePromise;
+    if (autoUpdateState === null && autoUpdateRes && !autoUpdateRes.error && autoUpdateRes.data) {
+      autoUpdateState = autoUpdateRes.data;
+      applyAutoUpdateControls();
+    }
+  } catch (_) {
+    /* status unavailable — controls keep their defaults */
+  }
 }
 
 // Follow the aggregate "update all" pull: poll the installed-apps list until
