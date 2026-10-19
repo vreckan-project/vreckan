@@ -9,6 +9,10 @@ is committed normally in `vreckan`. The changelog is the authoritative
 record of what shipped in each release — see
 [`docs/release.md`](./docs/release.md) for the conventions.
 
+## Unreleased — Control page no longer hangs on the auto-update status check (ANT-348)
+
+- **The Control page no longer sticks on "Loading…" behind the auto-update check.** `GET /api/admin/apps/auto_update_status` reads the job's state under a read lock, but the background auto-update job held the matching **write** lock for the entire update interval (default one hour) while sleeping between ticks — so the endpoint stayed pending for almost the whole interval and the Control page's `Promise.all` kept the whole panel on "Loading…". The job now drops the write lock immediately after recording `last_check_at` / `next_check_at`, and the status endpoint — the only reader of that state — answers promptly again (reported in ANT-347; no API or schema change).
+
 ## Unreleased — Multi-user host file-permission discipline (ANT-345)
 
 File-permission tightening for multi-user hosts, from finding B of the
