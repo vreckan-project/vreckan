@@ -25,20 +25,15 @@ RUN bundle install --quiet && jekyll build --quiet
 # alpine 3.24 image rebuild (vreckan-workflow `.trivy/site-trivyignore`
 # is emptied in the companion change).
 #
-# Build-time gpgv fix (ANT-317): the base ships gpgv
-# 2.4.4-2ubuntu23.1 with CVE-2025-68973 (HIGH). The fixed
-# 2.4.4-2ubuntu23.2 already sits in the Ubuntu 25.04 repos, so the apt
-# step below pins it in the build — a single surgical, deterministic
-# change that yields a zero-finding site image. When the ubuntu/nginx
-# image is rebuilt with the fix baked in (the ANT-317 daily digest
-# monitor wakes on the tag digest moving past the pin in
-# `.base-image-digest`), delete the apt RUN and re-pin the digest.
+# gpgv (ANT-317 -> ANT-358): the base ships gpgv
+# 2.4.4-2ubuntu23.1 with CVE-2025-68973 (HIGH). ANT-317 patched that at
+# build time with a pinned `apt-get install gpgv=2.4.4-2ubuntu23.2`;
+# ANT-358 deletes that RUN ahead of the ubuntu/nginx re-publish that
+# bakes in the fixed gpgv, and re-pins `.base-image-digest` when the
+# `:latest` tag digest moves past the current pin. While the pin still
+# predates the re-publish, that window is covered by the temporary
+# CVE-2025-68973 entry in vreckan-workflow `.trivy/site-trivyignore`.
 FROM ubuntu/nginx@sha256:b50aa594cd940fa459144efa129dc21466f7d56d015993914f41f3eb983c893b
-# CVE-2025-68973 (gpgv): fixed in 2.4.4-2ubuntu23.2, not yet baked into
-# the base image. Pinned version keeps the build deterministic while the
-# base digest is pinned; delete this RUN when the image ships the fix
-# (ANT-317 monitor).
-RUN apt-get update && DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends gpgv=2.4.4-2ubuntu23.2 && rm -rf /var/lib/apt/lists/*
 # Ubuntu's nginx package ships a default site under sites-enabled/
 # (alpine's uses conf.d only); without the rm the package default server
 # can conflict with ours on :80.
