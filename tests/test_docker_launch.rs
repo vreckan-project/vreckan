@@ -267,3 +267,124 @@ async fn test_no_gpu_app_gets_no_device_passthrough() {
     }
     force_cleanup(&client, &ids).await;
 }
+
+/// Ephemeral (cleanroom) session containers must carry the `no` restart
+/// policy (not the legacy `unless-stopped`, which made a leaked container
+/// immortal across daemon restarts) and must be removed when the session is
+/// stopped (ANT-378, criterion 1).
+#[tokio::test]
+async fn test_ephemeral_session_container_policy_and_stop_removal() {
+    if !docker_available().await {
+        eprintln!("skipping: Docker daemon not reachable");
+        return;
+    }
+    let _root = TempDir::new();
+    let mut sc = SecureClient::new(build_state(_root.path()).await);
+    let resp = sc.login("admin", "admin1234").await;
+    assert_eq!(resp.status, StatusCode::OK, "login failed: {:?}", resp.body);
+    sc.handshake().await;
+    let app_id = seed_probe_app(&sc).await;
+    real_docker(&sc).await;
+
+    let client = bollard::Docker::connect_with_local_defaults().unwrap();
+    let launched: Arc<Mutex<Vec<String>>> = Arc::new(Mutex::new(Vec::new()));
+    let launched2 = launched.clone();
+    let result: Result<(), String> = async {
+        let (status, body) = sc
+            .call("POST", "/api/launch/simple", Some(&json!({ "application_id": app_id })))
+            .await;
+        assert_eq!(status, StatusCode::OK, "{:?}", body);
+        let session_id = body.unwrap()["session_id"].as_str().unwrap().to_string();
+        let session = sc.state.sessions.read().await.get(&session_id).cloned().unwrap();
+        // The probe app is cleanroom (home_directories=false) -> ephemeral.
+        assert_eq!(session["ephemeral"], true, "cleanroom launch must be marked ephemeral");
+        let instance_id = session["instance_id"].as_str().unwrap().to_string();
+        launched2.lock().unwrap().push(instance_id.clone());
+
+        // docker inspect -> RestartPolicy.Name must be "no".
+        let container = client.inspect_container(&instance_id, None).await.unwrap();
+        let policy = container
+            .host_config
+            .as_ref()
+            .and_then(|h| h.restart_policy.as_ref())
+            .and_then(|r| r.name.as_ref().map(|n| n.to_string()))
+            .unwrap_or_else(|| "<missing>".to_string());
+        assert_eq!(policy, "no", "ephemeral session container must use restart policy 'no'");
+
+        // Session stop must remove the container (docker ps -a shows no
+        // leftover).
+        let (status2, _) = sc.call("DELETE", &format!("/api/sessions/{session_id}"), None).await;
+        assert_eq!(status2, StatusCode::NO_CONTENT);
+        assert!(
+            client.inspect_container(&instance_id, None).await.is_err(),
+            "ephemeral container must be removed on session stop"
+        );
+        Ok(())
+    }.await;
+    let ids = launched.lock().unwrap().clone();
+    if let Err(e) = result {
+        force_cleanup(&client, &ids).await;
+        panic!("{e}");
+    }
+    force_cleanup(&client, &ids).await;
+}
+
+/// `reap_ephemeral_sessions` (the graceful-shutdown hook and the startup
+/// sweep) stops + removes ephemeral session containers but keeps the session
+/// rows, so a user can recreate the session from its persisted launch kwargs
+/// (ANT-378, criterion 2).
+#[tokio::test]
+async fn test_reap_ephemeral_sessions_stops_containers_and_keeps_rows() {
+    if !docker_available().await {
+        eprintln!("skipping: Docker daemon not reachable");
+        return;
+    }
+    let _root = TempDir::new();
+    let mut sc = SecureClient::new(build_state(_root.path()).await);
+    let resp = sc.login("admin", "admin1234").await;
+    assert_eq!(resp.status, StatusCode::OK, "login failed: {:?}", resp.body);
+    sc.handshake().await;
+    let app_id = seed_probe_app(&sc).await;
+    real_docker(&sc).await;
+
+    let client = bollard::Docker::connect_with_local_defaults().unwrap();
+    let launched: Arc<Mutex<Vec<String>>> = Arc::new(Mutex::new(Vec::new()));
+    let launched2 = launched.clone();
+    let result: Result<(), String> = async {
+        let (status, body) = sc
+            .call("POST", "/api/launch/simple", Some(&json!({ "application_id": app_id })))
+            .await;
+        assert_eq!(status, StatusCode::OK, "{:?}", body);
+        let session_id = body.unwrap()["session_id"].as_str().unwrap().to_string();
+        let instance_id = sc
+            .state
+            .sessions
+            .read()
+            .await
+            .get(&session_id)
+            .cloned()
+            .unwrap()["instance_id"]
+            .as_str()
+            .unwrap()
+            .to_string();
+        launched2.lock().unwrap().push(instance_id.clone());
+
+        // Simulate the graceful-shutdown hook.
+        vreckan::catalog::reap_ephemeral_sessions(&sc.state).await;
+        assert!(
+            client.inspect_container(&instance_id, None).await.is_err(),
+            "reap must remove the ephemeral container"
+        );
+        assert!(
+            sc.state.sessions.read().await.contains_key(&session_id),
+            "reap keeps the session row so it can be recreated"
+        );
+        Ok(())
+    }.await;
+    let ids = launched.lock().unwrap().clone();
+    if let Err(e) = result {
+        force_cleanup(&client, &ids).await;
+        panic!("{e}");
+    }
+    force_cleanup(&client, &ids).await;
+}

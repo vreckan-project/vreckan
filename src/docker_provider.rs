@@ -185,6 +185,11 @@ impl DockerProvider {
 
     /// Launch a container for the application and wait until it is ready.
     /// Mirrors `launch()`.
+    ///
+    /// `ephemeral` marks short-lived (cleanroom) session containers: they get
+    /// the `no` restart policy instead of `unless-stopped`, so a Docker daemon
+    /// restart cannot resurrect them after the server that owns the session is
+    /// gone (ANT-378).
     #[allow(clippy::too_many_arguments)]
     pub async fn launch(
         &self,
@@ -197,6 +202,7 @@ impl DockerProvider {
         is_collaboration: bool,
         master_token: Option<String>,
         initial_tokens: Option<Value>,
+        ephemeral: bool,
     ) -> Result<LaunchResult, LaunchError> {
         let config = self.provider_config();
         let image = config
@@ -359,7 +365,17 @@ impl DockerProvider {
             },
             mounts: Some(mounts),
             restart_policy: Some(RestartPolicy {
-                name: Some(RestartPolicyNameEnum::UNLESS_STOPPED),
+                // Ephemeral (cleanroom) session containers must not carry
+                // `unless-stopped`: they outlive the session and a daemon
+                // restart resurrects them, making them effectively immortal
+                // (ANT-378). Persistent app containers keep `unless-stopped`
+                // so they survive daemon restarts and are re-attached when
+                // the server comes back.
+                name: Some(if ephemeral {
+                    RestartPolicyNameEnum::NO
+                } else {
+                    RestartPolicyNameEnum::UNLESS_STOPPED
+                }),
                 maximum_retry_count: None,
             }),
             auto_remove: Some(false),

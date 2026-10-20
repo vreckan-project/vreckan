@@ -1949,6 +1949,14 @@ pub async fn launch_common(
         }
     }
 
+    // Ephemeral (cleanroom) launch: the home directory lives under the
+    // ephemeral base, so the container is short-lived by design. It gets the
+    // `no` restart policy (never resurrected by a daemon restart) and is
+    // reaped on session stop and on server shutdown (ANT-378).
+    let is_ephemeral_launch = host_mount_path
+        .as_deref()
+        .is_some_and(|p| p.starts_with(&ephemeral_base));
+
     // --- Build the volume mounts -------------------------------------------
     let prefix_map = state.path_prefix_map.read().await.clone();
     if let Some(hmp) = &host_mount_path {
@@ -2026,6 +2034,7 @@ pub async fn launch_common(
     launch_kwargs.insert("volumes".into(), serde_json::to_value(&volumes).unwrap_or_default());
     launch_kwargs.insert("gpu_config".into(), serde_json::to_value(&gpu_config).unwrap_or_default());
     launch_kwargs.insert("network".into(), serde_json::to_value(&network).unwrap_or_default());
+    launch_kwargs.insert("ephemeral".into(), Value::Bool(is_ephemeral_launch));
     if launch_in_room_mode {
         launch_kwargs.insert("is_collaboration".into(), Value::Bool(true));
         launch_kwargs.insert("master_token".into(), serde_json::to_value(&master_token).unwrap_or_default());
@@ -2068,6 +2077,7 @@ pub async fn launch_common(
                 launch_in_room_mode,
                 master_token.clone(),
                 initial_tokens,
+                is_ephemeral_launch,
             )
             .await;
         let details = match result {
@@ -2114,6 +2124,7 @@ pub async fn launch_common(
         "password": password.clone(),
         "gpu_config": gpu_config.clone(),
         "wayland_mode": wayland_mode,
+        "ephemeral": is_ephemeral_launch,
         "launch_image_digest": launch_digest,
         "container_registry": {
             application_id: {
@@ -2837,11 +2848,15 @@ pub async fn stop_session(state: &AppState, session_id: &str) {
         let Some(instance_id) = container_info.get("instance_id").and_then(|v| v.as_str()) else {
             continue;
         };
-        let app = state.installed_apps.read().await.get(app_id).cloned();
-        if let Some(app) = app {
-            if let Ok(provider) = DockerProvider::new(serde_json::to_value(&app).unwrap_or_default()) {
-                provider.stop(instance_id).await;
-            }
+        // The stop path only needs the daemon connection, so fall back to an
+        // empty provider when the app was uninstalled since launch — without
+        // this the container would be orphaned (ANT-378).
+        let provider = match state.installed_apps.read().await.get(app_id).cloned() {
+            Some(app) => DockerProvider::new(serde_json::to_value(&app).unwrap_or_default()),
+            None => DockerProvider::new(serde_json::json!({})),
+        };
+        if let Ok(provider) = provider {
+            provider.stop(instance_id).await;
         }
     }
     save_sessions(state).await;
@@ -2858,6 +2873,77 @@ pub async fn stop_session(state: &AppState, session_id: &str) {
         }
     }
     info!("[{session_id}] Session stopped and cleaned up successfully.");
+}
+
+/// Whether a session was launched with ephemeral (cleanroom) storage.
+/// Prefers the explicit flag recorded at launch and falls back to the host
+/// mount path for sessions saved before the flag existed (ANT-378).
+fn session_is_ephemeral(session_data: &Value, ephemeral_base: &str) -> bool {
+    if let Some(v) = session_data.get("ephemeral").and_then(|v| v.as_bool()) {
+        return v;
+    }
+    session_data
+        .get("host_mount_path")
+        .and_then(|v| v.as_str())
+        .is_some_and(|p| p.starts_with(ephemeral_base))
+}
+
+/// Stop + remove the containers of every ephemeral session and delete their
+/// ephemeral directories (ANT-378). Ephemeral containers use the `no`
+/// restart policy, but the daemon still resurrects a container that was
+/// *running* when it restarted — so the server reaps them itself: on
+/// graceful shutdown (SIGTERM/SIGINT) and on startup, where the same sweep
+/// also collects containers orphaned by a previous run that was hard-killed
+/// (kill -9). Best effort: a down Docker daemon is logged, never fatal. The
+/// session rows are kept so users can recreate them (the launch kwargs are
+/// persisted in the container registry).
+pub async fn reap_ephemeral_sessions(state: &AppState) {
+    let ephemeral_base = format!("{}/vreckan_ephemeral", state.settings.storage_path);
+    let sessions = state.sessions.read().await.clone();
+    for (session_id, session_data) in sessions.iter() {
+        if !session_is_ephemeral(session_data, &ephemeral_base) {
+            continue;
+        }
+        let registry = session_data
+            .get("container_registry")
+            .cloned()
+            .unwrap_or_else(|| serde_json::json!({}));
+        for (app_id, container_info) in registry.as_object().cloned().unwrap_or_default() {
+            let Some(instance_id) = container_info.get("instance_id").and_then(|v| v.as_str()) else {
+                continue;
+            };
+            let provider = match container_info.get("app_config") {
+                Some(cfg) => DockerProvider::new(cfg.clone()),
+                None => DockerProvider::new(serde_json::json!({})),
+            };
+            match provider {
+                Ok(p) => {
+                    info!(
+                        "[{session_id}] Reaping ephemeral container {} (app '{app_id}').",
+                        &instance_id[..instance_id.len().min(12)]
+                    );
+                    p.stop(instance_id).await;
+                }
+                Err(e) => {
+                    warn!(
+                        "[{session_id}] Docker daemon unreachable at reap time; \
+                         ephemeral container {} left for the daily sweep: {}",
+                        &instance_id[..instance_id.len().min(12)],
+                        e.detail
+                    );
+                }
+            }
+        }
+        for key in ["host_mount_path", "shared_files_path"] {
+            let Some(p) = session_data.get(key).and_then(|v| v.as_str()) else {
+                continue;
+            };
+            if p.starts_with(&ephemeral_base) && std::path::Path::new(p).exists() {
+                let _ = std::fs::remove_dir_all(p);
+            }
+        }
+        info!("[{session_id}] Reaped ephemeral session storage.");
+    }
 }
 
 /// Recreate a session's container(s) from the current image. Mirrors
@@ -2948,11 +3034,26 @@ pub async fn recreate_session(
             .get("is_collaboration")
             .and_then(|v| v.as_bool())
             .unwrap_or(false);
+        let ephemeral = launch_kwargs
+            .get("ephemeral")
+            .and_then(|v| v.as_bool())
+            .unwrap_or(false);
         let master_token: Option<String> = launch_kwargs
             .get("master_token")
             .cloned()
             .and_then(|v| serde_json::from_value(v).ok());
         let initial_tokens = launch_kwargs.get("initial_tokens").cloned();
+        if ephemeral {
+            // The ephemeral home directory may have been cleaned up while the
+            // container was gone (stop/recreate gap); Docker rejects a bind
+            // whose source path is missing, so recreate it first (ANT-378).
+            let ephemeral_base = format!("{}/vreckan_ephemeral", state.settings.storage_path);
+            for host in volumes.keys() {
+                if host.starts_with(&ephemeral_base) {
+                    std::fs::create_dir_all(host).ok();
+                }
+            }
+        }
         match provider
             .launch(
                 session_id,
@@ -2964,6 +3065,7 @@ pub async fn recreate_session(
                 is_collaboration,
                 master_token,
                 initial_tokens,
+                ephemeral,
             )
             .await
         {
