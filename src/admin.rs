@@ -1680,6 +1680,22 @@ fn process_store_content(
                 pc["extensions"] = Value::Array(flattened);
             }
         }
+        // Seed the Selkies version for webtop-based images the catalog does not
+        // already declare. As of ANT-437 Phase 0 (2026-10-20) every bare-tag
+        // webtop image on both registries runs Selkies 2.0.0 — the lscr.io
+        // mirror digest equals ghcr's for `ubuntu-kde` — so the seed is safe for
+        // the current catalog. A catalog entry that names `selkiesVersion`
+        // explicitly always wins; non-webtop images stay unset (unknown — the
+        // deploy-time probe decides, not this heuristic).
+        let has_version = pc.get("selkiesVersion").and_then(|v| v.as_str()).is_some();
+        if !has_version
+            && pc
+                .get("image")
+                .and_then(|v| v.as_str())
+                .is_some_and(|image| image.contains("webtop"))
+        {
+            pc["selkiesVersion"] = Value::String("2.0.0".to_string());
+        }
         app["provider_config"] = pc;
         out.push(app);
     }

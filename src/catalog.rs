@@ -72,6 +72,18 @@ pub struct AvailableAppProviderConfig {
     pub custom_autostart_wayland_script_b64: Option<String>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub docker_overrides: Option<Value>,
+    /// The Selkies server version the image runs (e.g. `"2.0.0"`), or `None`
+    /// for images that predate the embedded Selkies stack (the classic
+    /// xrdp/guacd stack has no `selkies` binary and no token API). Read from
+    /// the store catalog's `selkiesVersion` when present; absent from older
+    /// catalogs, so callers must treat `None` as "unknown — probe at deploy
+    /// time" rather than "pre-2.0".
+    #[serde(
+        default,
+        rename = "selkiesVersion",
+        skip_serializing_if = "Option::is_none"
+    )]
+    pub selkies_version: Option<String>,
 }
 
 /// The provider configuration for an *installed* app: the available-app config
@@ -148,6 +160,12 @@ pub struct Application {
     pub url_support: bool,
     pub extensions: Vec<String>,
     pub is_meta_app: bool,
+    #[serde(
+        default,
+        rename = "selkiesVersion",
+        skip_serializing_if = "Option::is_none"
+    )]
+    pub selkies_version: Option<String>,
 }
 
 /// The response to a launch request. Mirrors `models.LaunchResponse`.
@@ -2333,6 +2351,7 @@ async fn get_applications(
                 url_support: app.provider_config.base.url_support,
                 extensions: app.provider_config.base.extensions.clone(),
                 is_meta_app: app.is_meta_app,
+                selkies_version: app.provider_config.base.selkies_version.clone(),
             });
         }
     }
