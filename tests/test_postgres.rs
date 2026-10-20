@@ -43,6 +43,8 @@ struct PgServer {
     client: bollard::Docker,
     /// Empty when the server came from an env var (nothing to clean up).
     container_id: String,
+    /// Where this process's container marker file lives (ANT-378).
+    marker_dir: std::path::PathBuf,
 }
 
 static PG: OnceLock<PgServer> = OnceLock::new();
@@ -92,9 +94,170 @@ fn container_ip(ci: &bollard::models::ContainerInspectResponse) -> Option<String
     None
 }
 
+/// Marker directory for throwaway Postgres containers (ANT-378). Lives in
+/// the working tree — not in the container's /tmp — so a marker written by
+/// a run that gets SIGKILLed (run teardown, timeout, OOM) survives and the
+/// next run's sweep finds the orphan. Falls back to the system temp dir when
+/// the CWD is not writable.
+fn pg_marker_dir() -> std::path::PathBuf {
+    let dir = std::env::current_dir().unwrap_or_default().join(".vreckan-test-pg");
+    if std::fs::create_dir_all(&dir).is_ok() {
+        return dir;
+    }
+    let dir = std::env::temp_dir().join("vreckan-test-pg");
+    let _ = std::fs::create_dir_all(&dir);
+    dir
+}
+
+/// Record the spun-up container (and its anonymous volume) in a per-PID
+/// marker file so a killed test process can be swept on the next run
+/// (ANT-378). The hostname identifies the container that created the marker;
+/// a different hostname means the PID namespace is unrelated and the marker
+/// is unconditionally stale.
+fn write_pg_marker(dir: &std::path::Path, container_id: &str, volumes: &[String]) {
+    let marker = dir.join(format!("pg-{}.json", std::process::id()));
+    let hostname = std::fs::read_to_string("/proc/sys/kernel/hostname")
+        .unwrap_or_default()
+        .trim()
+        .to_string();
+    let body = serde_json::json!({
+        "container_id": container_id,
+        "volumes": volumes,
+        "pid": std::process::id(),
+        "hostname": hostname,
+        "created_at": std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .map(|d| d.as_secs())
+            .unwrap_or(0),
+    });
+    if let Err(e) = std::fs::write(&marker, serde_json::to_string(&body).unwrap_or_default()) {
+        eprintln!("warning: could not write postgres test marker {marker:?}: {e}");
+    }
+}
+
+/// Remove this process's marker (graceful teardown; the sweep then finds
+/// nothing to do).
+fn remove_pg_marker(dir: &std::path::Path) {
+    let _ = std::fs::remove_file(dir.join(format!("pg-{}.json", std::process::id())));
+}
+
+/// Is `pid` still alive? Uses the Linux /proc tree; conservatively reports
+/// "alive" when undetermined so the sweep never reaps a container another
+/// live process owns.
+fn pid_alive(pid: u32) -> bool {
+    std::fs::metadata(format!("/proc/{pid}")).is_ok()
+}
+
+/// Sweep stale markers: for each marker whose owner is dead (different
+/// hostname, or same hostname with a dead PID), stop + remove the orphaned
+/// container and its anonymous volumes, and log the container's exit state
+/// so a killed run stops being a mystery in the infra health check (ANT-378).
+async fn sweep_stale_pg_markers(client: &bollard::Docker, dir: &std::path::Path) {
+    let Ok(entries) = std::fs::read_dir(dir) else {
+        return;
+    };
+    let current_hostname = std::fs::read_to_string("/proc/sys/kernel/hostname")
+        .unwrap_or_default()
+        .trim()
+        .to_string();
+    for entry in entries.flatten() {
+        let path = entry.path();
+        let Some(name) = path.file_name().and_then(|n| n.to_str()) else {
+            continue;
+        };
+        if !name.starts_with("pg-") || !name.ends_with(".json") {
+            continue;
+        }
+        let Some(marker) = std::fs::read_to_string(&path)
+            .ok()
+            .and_then(|raw| serde_json::from_str::<serde_json::Value>(&raw).ok())
+        else {
+            let _ = std::fs::remove_file(&path); // unparseable: drop it
+            continue;
+        };
+        let Some(pid) = marker.get("pid").and_then(|v| v.as_u64()) else {
+            let _ = std::fs::remove_file(&path);
+            continue;
+        };
+        let container_id = marker
+            .get("container_id")
+            .and_then(|v| v.as_str())
+            .unwrap_or_default();
+        // A marker from a different container (hostname mismatch) is
+        // unconditionally stale: PIDs are per-container and meaningless
+        // across namespaces.
+        let marker_hostname = marker
+            .get("hostname")
+            .and_then(|v| v.as_str())
+            .unwrap_or_default();
+        let is_stale = if !marker_hostname.is_empty() && marker_hostname != current_hostname {
+            true
+        } else {
+            !pid_alive(pid as u32)
+        };
+        if !is_stale {
+            continue; // owner still running in this container
+        }
+        let volumes = marker
+            .get("volumes")
+            .and_then(|v| v.as_array())
+            .map(|a| {
+                a.iter()
+                    .filter_map(|x| x.as_str())
+                    .map(|s| s.to_string())
+                    .collect::<Vec<_>>()
+            })
+            .unwrap_or_default();
+        if !container_id.is_empty() {
+            match client.inspect_container(container_id, None).await {
+                Ok(ci) => {
+                    let status = ci
+                        .state
+                        .as_ref()
+                        .and_then(|s| s.status.as_ref())
+                        .map(|st| st.to_string())
+                        .unwrap_or_else(|| "unknown".to_string());
+                    let exit_code: i64 = ci
+                        .state
+                        .as_ref()
+                        .and_then(|s| s.exit_code)
+                        .unwrap_or(-1);
+                    let running = ci.state.as_ref().and_then(|s| s.running).unwrap_or(false);
+                    eprintln!(
+                        "sweeping orphaned postgres test container {} (hostname={marker_hostname}, \
+                         pid {pid}; container {status}, exit {exit_code}; created {})",
+                        &container_id[..container_id.len().min(12)],
+                        marker.get("created_at").and_then(|v| v.as_u64()).unwrap_or(0)
+                    );
+                    if running {
+                        let _ = client
+                            .stop_container(
+                                container_id,
+                                Some(bollard::query_parameters::StopContainerOptions {
+                                    signal: None,
+                                    t: Some(2),
+                                }),
+                            )
+                            .await;
+                    }
+                    let _ = client.remove_container(container_id, None).await;
+                }
+                Err(_) => {
+                    // Container already gone; drop its volume + marker below.
+                }
+            }
+        }
+        for vol in &volumes {
+            let opts: Option<bollard::query_parameters::RemoveVolumeOptions> = None;
+            let _ = client.remove_volume(vol, opts).await;
+        }
+        let _ = std::fs::remove_file(&path);
+    }
+}
+
 /// Spin up a throwaway `postgres:16` container and wait until it accepts
 /// connections. Mirrors the container branch of the `postgres_url` fixture.
-async fn spin_up_postgres() -> (String, bollard::Docker, String) {
+async fn spin_up_postgres(marker_dir: &std::path::Path) -> (String, bollard::Docker, String) {
     let client = bollard::Docker::connect_with_local_defaults()
         .expect("connect docker for postgres");
     // Pull postgres:16 if the daemon doesn't have it yet (fresh runners);
@@ -138,6 +301,25 @@ async fn spin_up_postgres() -> (String, bollard::Docker, String) {
         .await
         .expect("start postgres container");
 
+    // Record the container + its anonymous volume in the marker file so a
+    // SIGKILLed run (run teardown / timeout / OOM) can be swept by the next
+    // one: the drop guard below only fires on a graceful process exit
+    // (ANT-378).
+    let volume_names: Vec<String> = client
+        .inspect_container(&cid, None)
+        .await
+        .ok()
+        .and_then(|ci| ci.mounts)
+        .map(|mounts| {
+            mounts
+                .into_iter()
+                .filter(|m| m.typ.as_deref() == Some("volume"))
+                .filter_map(|m| m.name)
+                .collect()
+        })
+        .unwrap_or_default();
+    write_pg_marker(marker_dir, &cid, &volume_names);
+
     // Wait for the container to be assigned an IP.
     let mut ip: Option<String> = None;
     for _ in 0..60 {
@@ -173,12 +355,25 @@ async fn pg_server() -> &'static PgServer {
     if let Some(s) = PG.get() {
         return s;
     }
+    // Sweep markers left behind by a killed previous run before we create
+    // our own container (ANT-378). Runs on every pg_server() call so the
+    // next postgres test run after a SIGKILL cleans up, whichever URL path
+    // this run takes. No Docker daemon (e.g. a hermetic CI runner) just
+    // skips the sweep.
+    let marker_dir = pg_marker_dir();
+    if let Ok(sweep_client) = bollard::Docker::connect_with_local_defaults() {
+        if sweep_client.ping().await.is_ok() {
+            sweep_stale_pg_markers(&sweep_client, &marker_dir).await;
+        }
+    }
+
     let server = match resolve_pg_url() {
         Some(url) => PgServer {
             url,
             client: bollard::Docker::connect_with_local_defaults()
                 .expect("connect docker"),
             container_id: String::new(),
+            marker_dir,
         },
         None => {
             if !docker_available().await {
@@ -190,15 +385,17 @@ async fn pg_server() -> &'static PgServer {
                     client: bollard::Docker::connect_with_local_defaults()
                         .expect("connect docker"),
                     container_id: String::new(),
+                    marker_dir,
                 };
                 PG.set(marker).ok();
                 return PG.get().unwrap();
             }
-            let (url, client, cid) = spin_up_postgres().await;
+            let (url, client, cid) = spin_up_postgres(&marker_dir).await;
             PgServer {
                 url,
                 client,
                 container_id: cid,
+                marker_dir,
             }
         }
     };
@@ -213,27 +410,56 @@ fn pg_ready(s: &PgServer) -> bool {
 }
 
 /// Best-effort teardown of a spun-up container.
+///
+/// The `PgServer` is a `'static` (a `OnceLock`), so on a normal test-run exit
+/// its `Drop` fires during process teardown — after every `#[tokio::test]`
+/// runtime is gone. `Handle::try_current()` then fails and the old guard
+/// silently did nothing, leaving the container behind (ANT-378). The guard
+/// now falls back to a short-lived runtime, and removes the marker file only
+/// when the container was actually removed — otherwise the next run's sweep
+/// collects the leftover.
 impl Drop for PgServer {
     fn drop(&mut self) {
         if self.container_id.is_empty() {
             return;
         }
-        if let Ok(handle) = tokio::runtime::Handle::try_current() {
-            let cid = self.container_id.clone();
-            let client = self.client.clone();
-            handle.block_on(async move {
-                let _ = client
-                    .stop_container(
-                        &cid,
-                        Some(bollard::query_parameters::StopContainerOptions {
-                            signal: None,
-                            t: Some(2),
-                        }),
-                    )
-                    .await;
-                let _ = client.remove_container(&cid, None).await;
-            });
+        let cid = self.container_id.clone();
+        let client = self.client.clone();
+        let cid_short = cid.clone();
+        let teardown = async move {
+            let _ = client
+                .stop_container(
+                    &cid,
+                    Some(bollard::query_parameters::StopContainerOptions {
+                        signal: None,
+                        t: Some(2),
+                    }),
+                )
+                .await;
+            client.remove_container(&cid, None).await
+        };
+        let outcome = match tokio::runtime::Handle::try_current() {
+            Ok(handle) => handle.block_on(teardown),
+            Err(_) => match tokio::runtime::Builder::new_current_thread()
+                .enable_all()
+                .build()
+            {
+                Ok(runtime) => runtime.block_on(teardown),
+                Err(e) => {
+                    eprintln!("warning: postgres test teardown: no runtime ({e}); \
+                              marker left for the next run's sweep");
+                    return;
+                }
+            },
+        };
+        if let Err(e) = outcome {
+            eprintln!(
+                "warning: postgres test container {cid_short} teardown failed: {e}; \
+                  marker left for the next run's sweep"
+            );
+            return;
         }
+        remove_pg_marker(&self.marker_dir);
     }
 }
 

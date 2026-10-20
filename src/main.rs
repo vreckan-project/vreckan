@@ -93,6 +93,11 @@ async fn main() -> anyhow::Result<()> {
     // app stores, the app templates, and GPU detection.
     catalog::load_template_schema(&state).await;
     catalog::load_sessions(&state).await;
+    // Sweep ephemeral (cleanroom) sessions: a previous run that was hard-
+    // killed (kill -9) left its containers running with the `no` restart
+    // policy — the daemon resurrects them on restart, so this run reaps
+    // them (ANT-378). Best effort; a down daemon is logged, never fatal.
+    catalog::reap_ephemeral_sessions(&state).await;
     catalog::inspect_self_container(&state).await;
     catalog::load_installed_apps(&state).await;
     // Warm the in-memory image-metadata cache so the installed-apps table
@@ -135,8 +140,9 @@ async fn main() -> anyhow::Result<()> {
     // runs immediately at startup; the interval is re-read fresh each tick.
     tokio::spawn(files::background_share_cleanup_job(state.clone()));
 
-    // Build the router.
-    let app = app::router(state);
+    // Build the router (the state is cloned; the original stays in scope for
+    // the shutdown reap below).
+    let app = app::router(state.clone());
 
     let port = std::env::var("VRECKAN_API_PORT")
         .ok()
@@ -146,13 +152,34 @@ async fn main() -> anyhow::Result<()> {
 
     info!("vreckan (rust) listening on https://{addr}");
 
-    axum_server::tls_rustls::bind_rustls(addr, tls_config)
+    let serve = axum_server::tls_rustls::bind_rustls(addr, tls_config)
         // ConnectInfo exposes the client address to handlers (the login
         // rate limiter keys on it); `X-Forwarded-For` still takes precedence
         // when a reverse proxy is in front.
-        .serve(app.into_make_service_with_connect_info::<std::net::SocketAddr>())
-        .await
-        .map_err(anyhow::Error::msg)?;
+        .serve(app.into_make_service_with_connect_info::<std::net::SocketAddr>());
+
+    // Graceful shutdown on SIGTERM/SIGINT: without a handler the default
+    // signal disposition kills the process in place and every running
+    // session container becomes an orphan (and, under the legacy
+    // `unless-stopped` policy, resurrects on the next daemon restart —
+    // ANT-378). On shutdown we reap the ephemeral sessions' containers
+    // best-effort; persistent app containers keep their `unless-stopped`
+    // policy and come back when the server does.
+    let mut sigterm =
+        tokio::signal::unix::signal(tokio::signal::unix::SignalKind::terminate())
+            .expect("register SIGTERM handler");
+    tokio::select! {
+        res = serve => {
+            res.map_err(anyhow::Error::msg)?;
+        }
+        _ = tokio::signal::ctrl_c() => {
+            info!("SIGINT received; shutting down.");
+        }
+        _ = sigterm.recv() => {
+            info!("SIGTERM received; shutting down.");
+        }
+    }
+    catalog::reap_ephemeral_sessions(&state).await;
 
     Ok(())
 }
