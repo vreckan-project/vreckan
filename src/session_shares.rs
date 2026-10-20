@@ -752,6 +752,128 @@ fn see_other(redirect: String) -> Response {
 // Granting access (per-visit tokens + lazy secure-mode promotion)
 // ---------------------------------------------------------------------------
 
+/// The details of one visit to be recorded: the visitor's identity (their
+/// real username for a join, a random `User-NNN` for a share), the
+/// permission the visit carries, the capability snapshot, and the share that
+/// granted the visit (a real share id, or a synthetic `join:{user}` id for a
+/// self-serve join).
+struct VisitGrant {
+    username: String,
+    permission: &'static str,
+    caps: SessionShareCaps,
+    share_id: String,
+}
+
+/// The mint core shared by the share-visit grant (ANT-305) and the
+/// self-serve join (ANT-440): record the per-visit token on the vreckan side
+/// (WP3 resolves a visitor's caps through this map — the caps snapshot is
+/// what gives a mid-visit cap edit its "next open" semantics, ANT-306), add
+/// the visitor to the session's viewers list (a plain session with input
+/// gets a controller entry in the token table; a room keeps the
+/// MK/slot-provided "viewer" role), lazily promote a plain session to
+/// selkies secure mode when the container supports it, and persist the
+/// session. Returns true when the session is in secure mode after the grant.
+///
+/// A join is exactly a share grant whose visitor is the caller themselves
+/// (their real username, full participant caps), so both flows funnel
+/// through here.
+async fn apply_visit_to_session(
+    state: &AppState,
+    session_id: &str,
+    session: &mut Value,
+    visit_token: &str,
+    grant: &VisitGrant,
+) -> bool {
+    let is_collab = session
+        .get("is_collaboration")
+        .and_then(|v| v.as_bool())
+        .unwrap_or(false);
+
+    // Record the per-visit token on the vreckan side. For a legacy
+    // (non-secure) plain session this map is the only place the proxy knows
+    // the token, so it is what admits the visit there.
+    {
+        let mut tokens = state.session_share_tokens.write().await;
+        tokens.insert(
+            visit_token.to_string(),
+            SessionShareTokenRecord {
+                share_id: grant.share_id.clone(),
+                session_id: session_id.to_string(),
+                caps: grant.caps.clone(),
+            },
+        );
+    }
+
+    // Add the visitor to the session's viewers list. In a room session the
+    // container role stays "viewer" (the room's MK/slot mechanism provides
+    // input for participants); a full share or join on a plain session gets
+    // a controller entry in the token table instead. A plain session that
+    // has not yet been promoted to secure mode carries no master_token and so
+    // no viewers array yet — ensure one exists before pushing.
+    if !session.get("viewers").map(|v| v.is_array()).unwrap_or(false) {
+        session["viewers"] = Value::Array(vec![]);
+    }
+    if let Some(viewers) = session.get_mut("viewers").and_then(|v| v.as_array_mut()) {
+        viewers.push(serde_json::json!({
+            "token": visit_token,
+            "slot": Value::Null,
+            "mk_control": false,
+            "username": grant.username,
+            "permission": grant.permission,
+        }));
+        if !is_collab && grant.caps.input {
+            if let Some(v) = viewers
+                .iter_mut()
+                .find(|v| v.get("token").and_then(|t| t.as_str()) == Some(visit_token))
+            {
+                v["role"] = Value::String("controller".to_string());
+            }
+        }
+    }
+
+    // Lazy secure-mode promotion: for a plain session, mint a master token
+    // and push the full token table to the container. The push happens on
+    // every visit (not only the first) so a token added after launch — a
+    // share or a join, including a re-join after a recreate — reaches the
+    // container's table. When the container has no token control plane
+    // (older selkies images answer 404 / are unreachable) the session stays
+    // legacy and the visitor's role rides the `?role=` query parameter
+    // instead.
+    let mut promoted = false;
+    if !is_collab {
+        let had_master = session
+            .get("master_token")
+            .and_then(|v| v.as_str())
+            .map(|m| !m.is_empty())
+            .unwrap_or(false);
+        if !had_master {
+            session["master_token"] = Value::String(catalog::random_token(16));
+        }
+        if collaboration::push_token_table(state, session_id, session).await {
+            promoted = true;
+        } else if !had_master {
+            // The push failed: this container isn't in secure mode. Undo the
+            // mint (and the controller role, which only means something to a
+            // secure-mode container).
+            session.as_object_mut().map(|o| o.remove("master_token"));
+            if let Some(viewers) = session.get_mut("viewers").and_then(|v| v.as_array_mut()) {
+                if let Some(v) = viewers
+                    .iter_mut()
+                    .find(|v| v.get("token").and_then(|t| t.as_str()) == Some(visit_token))
+                {
+                    v.as_object_mut().map(|o| o.remove("role"));
+                }
+            }
+        }
+    }
+
+    *state.sessions.write().await.entry(session_id.to_string()).or_insert(Value::Object(
+        serde_json::Map::new(),
+    )) = session.clone();
+    catalog::save_sessions(state).await;
+    promoted
+}
+
 /// Grant one visit to a share: mint a per-visit token, record the visitor in
 /// the session (viewers list + container token table), lazily promote a
 /// plain session to selkies secure mode when supported, and return the
@@ -774,82 +896,17 @@ pub async fn grant_session_share_access(
     } else {
         "readonly"
     };
+    // Share visitors are anonymous on purpose (the share link, not the
+    // person, is the credential): a random per-visit username.
+    let grant = VisitGrant {
+        username: format!("User-{}", rand::rng().random_range(100..999)),
+        permission,
+        caps: share.caps.clone(),
+        share_id: share_id.to_string(),
+    };
 
-    // Record the per-visit token on the vreckan side (WP3 resolves a
-    // visitor's caps through this map). The caps snapshot is what gives a
-    // mid-visit cap edit its "next open" semantics (ANT-306).
-    {
-        let mut tokens = state.session_share_tokens.write().await;
-        tokens.insert(
-            visit_token.clone(),
-            SessionShareTokenRecord {
-                share_id: share_id.to_string(),
-                session_id: session_id.clone(),
-                caps: share.caps.clone(),
-            },
-        );
-    }
-
-    // Add the visitor to the session's viewers list. In a room session the
-    // container role stays "viewer" (the room's MK/slot mechanism provides
-    // input for participants); a full share on a plain session gets a
-    // controller entry in the token table instead.
-    let username = format!("User-{}", rand::rng().random_range(100..999));
-    if let Some(viewers) = session.get_mut("viewers").and_then(|v| v.as_array_mut()) {
-        viewers.push(serde_json::json!({
-            "token": visit_token,
-            "slot": Value::Null,
-            "mk_control": false,
-            "username": username,
-            "permission": permission,
-        }));
-        if !is_collab && share.caps.input {
-            if let Some(v) = viewers
-                .iter_mut()
-                .find(|v| v.get("token").and_then(|t| t.as_str()) == Some(visit_token.as_str()))
-            {
-                v["role"] = Value::String("controller".to_string());
-            }
-        }
-    }
-
-    // Lazy secure-mode promotion: for a plain session, mint a master token
-    // and push the full token table to the container. When the container has
-    // no token control plane (older selkies images answer 404 / are
-    // unreachable) the session stays legacy and the visitor's role rides the
-    // `?role=` query parameter instead.
-    let mut promoted = false;
-    if !is_collab {
-        let had_master = session
-            .get("master_token")
-            .and_then(|v| v.as_str())
-            .map(|m| !m.is_empty())
-            .unwrap_or(false);
-        if !had_master {
-            session["master_token"] = Value::String(catalog::random_token(16));
-        }
-        if collaboration::push_token_table(state, session_id, &session).await {
-            promoted = true;
-        } else if !had_master {
-            // The push failed: this container isn't in secure mode. Undo the
-            // mint (and the controller role, which only means something to a
-            // secure-mode container).
-            session.as_object_mut().map(|o| o.remove("master_token"));
-            if let Some(viewers) = session.get_mut("viewers").and_then(|v| v.as_array_mut()) {
-                if let Some(v) = viewers
-                    .iter_mut()
-                    .find(|v| v.get("token").and_then(|t| t.as_str()) == Some(visit_token.as_str()))
-                {
-                    v.as_object_mut().map(|o| o.remove("role"));
-                }
-            }
-        }
-    }
-
-    *state.sessions.write().await.entry(session_id.clone()).or_insert(Value::Object(
-        serde_json::Map::new(),
-    )) = session.clone();
-    catalog::save_sessions(state).await;
+    let promoted = apply_visit_to_session(state, session_id, &mut session, &visit_token, &grant)
+        .await;
     if is_collab {
         info!(
             "[{session_id}] Session share {share_id}: granted visitor ({permission})"
@@ -868,6 +925,91 @@ pub async fn grant_session_share_access(
             "/api/apps/session/{session_id}/?token={visit_token}&role=viewer"
         ))
     }
+}
+
+/// The full participant capability set a self-serve join is granted: input
+/// plus the in-container file API (a join is an explicit "I'm here to use
+/// this", not a passive share view).
+pub fn join_participant_caps() -> SessionShareCaps {
+    SessionShareCaps {
+        input: true,
+        file_browse: true,
+        file_download: true,
+        file_upload: true,
+    }
+}
+
+/// Grant a self-serve join (ANT-440) to a running plain session: mint the
+/// caller their own participant token (their real username, full
+/// participant caps), record it in the session's viewers list and the
+/// container's token table, and return the session URL that admits them.
+///
+/// Idempotent per (session, user): a re-join returns the caller's existing
+/// participant token and re-establishes it in the container (closing the
+/// recreate gap) rather than minting a second one.
+///
+/// Returns `None` when the session is gone. Validation (plain vs room,
+/// caller's app access) happens in the route handler so it can answer with
+/// distinct statuses.
+pub async fn grant_session_join_access(
+    state: &AppState,
+    session_id: &str,
+    username: &str,
+) -> Option<String> {
+    let mut session = state.sessions.read().await.get(session_id).cloned()?;
+    let is_collab = session
+        .get("is_collaboration")
+        .and_then(|v| v.as_bool())
+        .unwrap_or(false);
+
+    // Idempotent reuse: the callers list is the durable source of truth (it
+    // is persisted with the session), so a re-join finds the existing
+    // participant entry even across a vreckan restart.
+    let existing_token = session
+        .get("viewers")
+        .and_then(|v| v.as_array())
+        .and_then(|viewers| {
+            viewers
+                .iter()
+                .find(|v| {
+                    v.get("username").and_then(|u| u.as_str()) == Some(username)
+                        && v.get("permission").and_then(|p| p.as_str()) == Some("participant")
+                })
+                .and_then(|v| v.get("token").and_then(|t| t.as_str()).map(|t| t.to_string()))
+        });
+    if let Some(visit_token) = existing_token {
+        // Re-admit on the vreckan side (legacy sessions) and re-establish in
+        // the container (a recreate rebuilt the table from the original
+        // launch tokens, dropping later joins).
+        {
+            let mut tokens = state.session_share_tokens.write().await;
+            tokens.insert(
+                visit_token.clone(),
+                SessionShareTokenRecord {
+                    share_id: format!("join:{username}"),
+                    session_id: session_id.to_string(),
+                    caps: join_participant_caps(),
+                },
+            );
+        }
+        if !is_collab {
+            let _ = collaboration::push_token_table(state, session_id, &session).await;
+        }
+        return Some(format!("/api/apps/session/{session_id}/?token={visit_token}"));
+    }
+
+    let visit_token = catalog::random_token(16);
+    // A synthetic share id (real share ids are UUIDs) so the vreckan-side
+    // token map admits the joiner for legacy (non-secure) sessions.
+    let grant = VisitGrant {
+        username: username.to_string(),
+        permission: "participant",
+        caps: join_participant_caps(),
+        share_id: format!("join:{username}"),
+    };
+    apply_visit_to_session(state, session_id, &mut session, &visit_token, &grant).await;
+    info!("[{session_id}] Self-serve join: granted participant ({username})");
+    Some(format!("/api/apps/session/{session_id}/?token={visit_token}"))
 }
 
 /// Strip every per-visit token minted by the share with the given id: from

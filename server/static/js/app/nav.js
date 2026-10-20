@@ -69,8 +69,10 @@ async function refreshMainLists() {
       secureFetch("/api/sessions", { method: "GET" }),
     ]);
     setInstalledApps(appsData);
-    renderAppApps(installedApps);
+    // Sessions before cards: the cards' Join affordance (ANT-440) reads the
+    // list's shared state.
     renderSessions(Array.isArray(sessionsData) ? sessionsData : []);
+    renderAppApps(installedApps);
     refreshShareBadges(sessionsData).catch(() => {});
     await loadPinned();
   } catch (e) {

@@ -1,20 +1,125 @@
-// Sessions list (main view): render, refresh, per-session file send, and the
-// per-session Share action (ANT-307).
+// Sessions list (main view): render, refresh, per-session file send, the
+// per-session Share action (ANT-307), and the per-session Join action
+// (ANT-440 — "Join a running session" for a second user).
 import { $, toast, formatLogoSrc, uploadFileChunks } from "../util.js";
 import { secureFetch } from "../api.js";
 import { t } from "../i18n.js";
+import { confirmModal } from "../modal.js";
 import { openSessionShareModal } from "./session-share.js";
+import { installedApps, renderAppApps } from "../app.js";
+
+// Last known session list (backend order: newest first). The extended
+// backend lists every running session, each flagged `is_mine`; the app
+// cards read this state to show their Join affordance (ANT-440).
+let currentSessions = [];
+export function getSessions() {
+  return currentSessions;
+}
+
+// The session a Join action would target for an app: the most recently
+// launched running session the caller can join (backend order is newest
+// first). Used by the app cards (ANT-440); null when the app has no
+// joinable running session.
+export function joinTargetForApp(appId) {
+  return currentSessions.find((s) => s.app_id === appId && isJoinable(s)) || null;
+}
+
+// The backend marks each entry `is_mine`; older backends return only the
+// caller's own sessions without the field, in which case every entry is
+// ours and behavior is unchanged.
+function isMine(s) {
+  return s.is_mine !== false;
+}
+
+// Can the caller join this session? The backend's `joinable` field is the
+// source of truth (app access + v1-joinable plain running session); when it
+// is absent (older backend) compute it: a plain session of an app in the
+// caller's catalog.
+function isJoinable(s) {
+  if (s.joinable !== undefined) return s.joinable === true;
+  if (s.is_collaboration) return false;
+  return (installedApps || []).some((a) => a.id === s.app_id);
+}
+
+function sessionDisplayName(s) {
+  return s.name ? `${s.app_name} - ${s.name}` : s.app_name;
+}
+
+// Pre-join confirmation (ANT-440): state the v1 participant role and the
+// WS single-controller trade-off (Phase 0 finding (c)) rather than hiding
+// it — WebSockets hands keyboard/mouse to the newest controller, WebRTC
+// is the coexistence mode.
+async function confirmJoin(s) {
+  return confirmModal(t("sessions.joinConfirmMsg", { name: sessionDisplayName(s) }), {
+    title: t("sessions.joinConfirmTitle"),
+    confirmLabel: t("sessions.join"),
+  });
+}
+
+// The Join action: POST /api/sessions/{id}/join mints the caller their own
+// participant token through the share-grant path (ANT-440 contract — no
+// share link, no owner URL), then the returned URL is opened in a new tab.
+export async function joinSession(s, button) {
+  if (!(await confirmJoin(s))) return;
+  button.disabled = true;
+  const original = button.textContent;
+  button.textContent = t("sessions.joining");
+  try {
+    const res = await secureFetch(`/api/sessions/${s.session_id}/join`, {
+      method: "POST",
+      body: {},
+    });
+    const url = res && (res.session_url || res.url);
+    if (url) {
+      window.open(url, "_blank", "noopener");
+      toast(t("sessions.joined"));
+      loadSessions();
+    } else {
+      toast(t("sessions.joinNoUrl"), "error");
+    }
+  } catch (e) {
+    toast(joinErrorMessage(e), "error");
+  } finally {
+    button.disabled = false;
+    button.textContent = original;
+  }
+}
+
+// One toast per failure mode (ANT-440).
+function joinErrorMessage(e) {
+  const msg = String((e && e.message) || e);
+  if (msg.includes("status: 404") || msg.includes("status: 410")) return t("sessions.joinEnded");
+  if (msg.includes("status: 403")) return t("sessions.joinNoAccess");
+  if (msg.includes("status: 409")) return t("sessions.joinRoom");
+  return t("sessions.joinFailed", { message: msg });
+}
+
+function makeJoinButton(s) {
+  const join = document.createElement("button");
+  join.type = "button";
+  join.className = "btn btn-primary btn-sm session-join-btn";
+  join.textContent = t("sessions.join");
+  join.title = t("sessions.joinTitle");
+  join.addEventListener("click", () => joinSession(s, join));
+  return join;
+}
 
 function renderSessions(sessions, sharesBySession = {}) {
+  currentSessions = Array.isArray(sessions) ? sessions : [];
   const list = $("sessions-list");
   list.innerHTML = "";
-  if (!sessions.length) {
+  if (!currentSessions.length) {
     list.innerHTML = `<p class="muted">${t("launch.noSessions")}</p>`;
     return;
   }
-  for (const s of sessions) {
+  for (const s of currentSessions) {
+    const mine = isMine(s);
+    // Other users' rows appear only when joinable (rooms and no-access apps
+    // have no v1 Join affordance, so there is nothing for the row to offer).
+    if (!mine && !isJoinable(s)) continue;
+
     const item = document.createElement("div");
-    item.className = "session-item";
+    item.className = "session-item" + (mine ? "" : " session-other");
 
     const img = document.createElement("img");
     img.alt = "app logo";
@@ -30,28 +135,31 @@ function renderSessions(sessions, sharesBySession = {}) {
     info.className = "session-info";
     const name = document.createElement("div");
     name.className = "app-name";
-    name.textContent = s.name ? `${s.app_name} - ${s.name}` : s.app_name;
+    name.textContent = sessionDisplayName(s);
     info.appendChild(name);
     const metaLine = document.createElement("div");
     metaLine.className = "session-meta";
     const when = new Date(s.created_at * 1000);
     metaLine.textContent = when.toLocaleString();
+    if (!mine && s.username) metaLine.textContent += ` · ${t("sessions.ownerBy", { owner: s.username })}`;
     if (s.is_collaboration) metaLine.textContent += ` · ${t("sessions.roomMode")}`;
     if (s.out_of_date) metaLine.textContent += ` · ${t("sessions.outOfDate")}`;
-    const activeShares = (sharesBySession[s.session_id] || []).filter(
-      (sh) => !sh.revoked && (!sh.expiry_timestamp || sh.expiry_timestamp * 1000 > Date.now())
-    );
-    if (activeShares.length) {
-      const badge = document.createElement("button");
-      badge.type = "button";
-      badge.className = "session-share-badge";
-      badge.textContent =
-        activeShares.length === 1
-          ? t("shareSession.linkCount", { count: activeShares.length })
-          : t("shareSession.linkCountPlural", { count: activeShares.length });
-      badge.title = t("shareSession.linksBadgeTitle");
-      badge.addEventListener("click", () => openSessionShareModal(s, { manage: true }));
-      metaLine.appendChild(badge);
+    if (mine) {
+      const activeShares = (sharesBySession[s.session_id] || []).filter(
+        (sh) => !sh.revoked && (!sh.expiry_timestamp || sh.expiry_timestamp * 1000 > Date.now())
+      );
+      if (activeShares.length) {
+        const badge = document.createElement("button");
+        badge.type = "button";
+        badge.className = "session-share-badge";
+        badge.textContent =
+          activeShares.length === 1
+            ? t("shareSession.linkCount", { count: activeShares.length })
+            : t("shareSession.linkCountPlural", { count: activeShares.length });
+        badge.title = t("shareSession.linksBadgeTitle");
+        badge.addEventListener("click", () => openSessionShareModal(s, { manage: true }));
+        metaLine.appendChild(badge);
+      }
     }
     info.appendChild(metaLine);
     item.appendChild(info);
@@ -65,67 +173,75 @@ function renderSessions(sessions, sharesBySession = {}) {
     open.target = "_blank";
     open.rel = "noopener";
     open.textContent = t("common.open");
-    actions.appendChild(open);
+    if (mine) actions.appendChild(open);
 
-    const share = document.createElement("button");
-    share.className = "btn btn-ghost btn-sm";
-    share.textContent = t("common.share");
-    share.title = t("shareSession.shareTitle");
-    share.addEventListener("click", () => openSessionShareModal(s));
-    actions.appendChild(share);
+    // Join (ANT-440): own rows get it next to Open; other users' rows show
+    // only Join. Absent on room sessions (v1) and when not joinable.
+    if (isJoinable(s)) actions.appendChild(makeJoinButton(s));
 
-    if (s.out_of_date) {
-      const recreate = document.createElement("button");
-      recreate.className = "btn btn-ghost btn-sm";
-      recreate.textContent = t("sessions.recreate");
-      recreate.title = t("sessions.recreateTitle");
-      recreate.addEventListener("click", async () => {
-        recreate.disabled = true;
-        recreate.textContent = t("sessions.recreating");
+    if (mine) {
+      const share = document.createElement("button");
+      share.className = "btn btn-ghost btn-sm";
+      share.textContent = t("common.share");
+      share.title = t("shareSession.shareTitle");
+      share.addEventListener("click", () => openSessionShareModal(s));
+      actions.appendChild(share);
+
+      if (s.out_of_date) {
+        const recreate = document.createElement("button");
+        recreate.className = "btn btn-ghost btn-sm";
+        recreate.textContent = t("sessions.recreate");
+        recreate.title = t("sessions.recreateTitle");
+        recreate.addEventListener("click", async () => {
+          recreate.disabled = true;
+          recreate.textContent = t("sessions.recreating");
+          try {
+            await secureFetch(`/api/sessions/${s.session_id}/recreate`, { method: "POST" });
+            toast(t("sessions.recreated"));
+            loadSessions();
+          } catch (e) {
+            recreate.disabled = false;
+            recreate.textContent = t("sessions.recreate");
+            toast(e.message, "error");
+          }
+        });
+        actions.appendChild(recreate);
+      }
+
+      const sendFile = document.createElement("button");
+      sendFile.className = "btn btn-ghost btn-sm";
+      sendFile.textContent = t("common.sendFile");
+      sendFile.title = t("sessions.sendFileTitle");
+      sendFile.addEventListener("click", () => pickFileForSession(s.session_id, sendFile));
+      actions.appendChild(sendFile);
+
+      const kill = document.createElement("button");
+      kill.className = "btn btn-danger btn-sm";
+      kill.textContent = t("sessions.kill");
+      kill.addEventListener("click", async () => {
         try {
-          await secureFetch(`/api/sessions/${s.session_id}/recreate`, { method: "POST" });
-          toast(t("sessions.recreated"));
+          await secureFetch(`/api/sessions/${s.session_id}`, { method: "DELETE" });
+          toast(t("sessions.terminated"));
           loadSessions();
         } catch (e) {
-          recreate.disabled = false;
-          recreate.textContent = t("sessions.recreate");
           toast(e.message, "error");
         }
       });
-      actions.appendChild(recreate);
+      actions.appendChild(kill);
     }
-
-    const sendFile = document.createElement("button");
-    sendFile.className = "btn btn-ghost btn-sm";
-    sendFile.textContent = t("common.sendFile");
-    sendFile.title = t("sessions.sendFileTitle");
-    sendFile.addEventListener("click", () => pickFileForSession(s.session_id, sendFile));
-    actions.appendChild(sendFile);
-
-    const kill = document.createElement("button");
-    kill.className = "btn btn-danger btn-sm";
-    kill.textContent = t("sessions.kill");
-    kill.addEventListener("click", async () => {
-      try {
-        await secureFetch(`/api/sessions/${s.session_id}`, { method: "DELETE" });
-        toast(t("sessions.terminated"));
-        loadSessions();
-      } catch (e) {
-        toast(e.message, "error");
-      }
-    });
-    actions.appendChild(kill);
     item.appendChild(actions);
 
     list.appendChild(item);
   }
 }
 
-// Fetch the share list for each session (in parallel, best-effort) so the
-// row badge can show how many active share links a session has.
+// Fetch the share list for the caller's own sessions (in parallel,
+// best-effort) so the row badge can show how many active share links a
+// session has. Other users' share metadata is not the joiner's concern.
 async function fetchSessionShares(sessions) {
+  const mine = sessions.filter(isMine);
   const results = await Promise.allSettled(
-    sessions.map(async (s) => {
+    mine.map(async (s) => {
       const shares = await secureFetch(`/api/sessions/${s.session_id}/shares`, { method: "GET" });
       return [s.session_id, Array.isArray(shares) ? shares : []];
     })
@@ -140,8 +256,9 @@ async function fetchSessionShares(sessions) {
 export async function refreshShareBadges(sessions) {
   const list = $("sessions-list");
   if (!list) return;
-  const sharesBySession = await fetchSessionShares(Array.isArray(sessions) ? sessions : []);
-  renderSessions(Array.isArray(sessions) ? sessions : [], sharesBySession);
+  const safe = Array.isArray(sessions) ? sessions : [];
+  const sharesBySession = await fetchSessionShares(safe);
+  renderSessions(safe, sharesBySession);
 }
 
 async function loadSessions() {
@@ -150,6 +267,9 @@ async function loadSessions() {
     const safe = Array.isArray(sessions) ? sessions : [];
     const sharesBySession = await fetchSessionShares(safe);
     renderSessions(safe, sharesBySession);
+    // Keep the app cards' Join affordance in step with the session list
+    // (ANT-440) — a session starting or dying changes what the tiles offer.
+    renderAppApps(installedApps);
   } catch (e) {
     if (!e.message.includes("401")) toast(`Sessions: ${e.message}`, "error");
   }

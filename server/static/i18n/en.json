@@ -578,7 +578,10 @@
     "checkingForUpdates": "Checking for updates…",
     "unitMinutes": "min",
     "unitHours": "h",
-    "unitDays": "d"
+    "unitDays": "d",
+    "join": "Join",
+    "joinTitle": "A session for this app is running — join it with your own participant token",
+    "joinTitleCount": "{count} sessions for this app are running — join the most recent"
   },
   "tpl": {
     "addSetting": "Add setting",
@@ -656,7 +659,18 @@
     "terminated": "Session terminated",
     "uploading": "Uploading {done}/{total}…",
     "sending": "Sending…",
-    "fileSent": "File '{name}' sent to session."
+    "fileSent": "File '{name}' sent to session.",
+    "join": "Join",
+    "joining": "Joining…",
+    "joinTitle": "Join this running session with your own participant token — no share link needed",
+    "joinConfirmTitle": "Join running session",
+    "joinConfirmMsg": "You’ll join “{name}” as a participant with input control. In WebSockets mode the newest controller holds the keyboard and mouse, so joining takes input from the current driver; WebRTC mode is the coexistence mode.",
+    "joinNoUrl": "Join succeeded but no session URL was returned.",
+    "joinEnded": "The session ended before you could join it.",
+    "joinNoAccess": "You don’t have access to this session’s app.",
+    "joinRoom": "Room sessions use their own invite flow — ask the owner for a room link.",
+    "joinFailed": "Join failed: {message}",
+    "ownerBy": "by {owner}"
   },
   "backup": {
     "heading": "Backup",

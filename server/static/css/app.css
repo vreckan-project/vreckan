@@ -750,6 +750,13 @@ label.checkbox input {
   justify-content: center;
 }
 
+/* Join affordance on an app tile (ANT-440): shown when a session for the
+   app is already running. The tile itself stays the Launch trigger. */
+.app-tile-actions {
+  display: flex;
+  gap: 8px;
+}
+
 .badge {
   display: inline-block;
   font-size: 12px;
@@ -832,6 +839,15 @@ label.checkbox input {
 
 .session-item:hover {
   border-color: rgba(0, 255, 255, 0.35);
+}
+
+/* Another user's running session (ANT-440): a dashed edge marks "not
+   yours — join it" versus the solid edge of your own sessions. */
+.session-item.session-other {
+  border-style: dashed;
+}
+.session-item.session-other:hover {
+  border-style: solid;
 }
 
 .session-item img {

@@ -28,6 +28,7 @@ use crate::auth;
 use crate::docker_provider::{DockerProvider, GpuInfo, LaunchResult, VolumeSpec};
 use crate::e2ee;
 use crate::entities;
+use crate::session_shares;
 use crate::settings::Settings;
 use crate::state::AppState;
 use crate::user_manager;
@@ -185,6 +186,12 @@ pub struct SessionStatusResponse {
 }
 
 /// A session as listed for the current user. Mirrors `models.ActiveSessionInfo`.
+///
+/// Since ANT-440 the list is no longer restricted to the caller's own
+/// sessions: every running session is returned so a user can Join one.
+/// `session_url` is populated only for the caller's own sessions (it carries
+/// their own token); `null` for others', who enter through a Join-minted
+/// participant token instead.
 #[derive(Clone, Debug, Serialize)]
 pub struct ActiveSessionInfo {
     pub session_id: String,
@@ -192,13 +199,21 @@ pub struct ActiveSessionInfo {
     pub app_name: String,
     pub app_logo: String,
     pub created_at: f64,
-    pub session_url: String,
+    pub session_url: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub launch_context: Option<Value>,
     pub is_collaboration: bool,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub name: Option<String>,
     pub out_of_date: bool,
+    /// The session's owner (ANT-440): surfaced on other users' sessions so
+    /// the list can show whose session it is.
+    pub username: String,
+    /// True when this session belongs to the caller.
+    pub is_mine: bool,
+    /// True when the caller can Join this session: a plain (non-room)
+    /// session whose app the caller has access to.
+    pub joinable: bool,
 }
 
 /// The response to a session recreate. Mirrors `models.SessionRecreateResponse`.
@@ -3389,7 +3404,13 @@ pub async fn recreate_session(
 // Session route handlers
 // ---------------------------------------------------------------------------
 
-/// `GET /api/sessions` — the caller's active sessions, newest first.
+/// `GET /api/sessions` — the caller's view of all active sessions, newest
+/// first.
+///
+/// Since ANT-440 the list includes other users' running sessions (not just
+/// the caller's own), each annotated with `username`, `is_mine`, and
+/// `joinable` so the UI can offer a Join action. `session_url` carries the
+/// caller's own token and is populated only for their own sessions.
 async fn get_my_sessions(
     State(state): State<AppState>,
     headers: HeaderMap,
@@ -3410,33 +3431,60 @@ async fn get_my_sessions(
         }
     };
     let username = user.record.username.clone();
+    let user_groups = user.record.groups.clone();
+    // Snapshot the installed-apps table once (the joinable check resolves
+    // each session's app access against it).
+    let installed_apps = state.installed_apps.read().await.clone();
     let sessions = state.sessions.read().await.clone();
     let mut user_sessions: Vec<ActiveSessionInfo> = Vec::new();
     for (sid, s_data) in sessions.iter() {
-        if s_data.get("username").and_then(|v| v.as_str()) != Some(username.as_str()) {
-            continue;
-        }
+        let owner = s_data
+            .get("username")
+            .and_then(|v| v.as_str())
+            .unwrap_or_default()
+            .to_string();
+        let is_mine = owner == username;
         let out_of_date = session_out_of_date(&state, s_data).await;
         let is_collaboration = s_data
             .get("is_collaboration")
             .and_then(|v| v.as_bool())
             .unwrap_or(false);
-        let session_url = if is_collaboration {
-            let token = s_data
-                .get("controller_token")
-                .and_then(|v| v.as_str())
-                .unwrap_or_default();
-            format!("/room/{sid}?token={token}")
+        // The caller's own sessions get a direct-open URL with their own
+        // token; other users' sessions are entered through a Join.
+        let session_url = if is_mine {
+            if is_collaboration {
+                let token = s_data
+                    .get("controller_token")
+                    .and_then(|v| v.as_str())
+                    .unwrap_or_default();
+                Some(format!("/room/{sid}?token={token}"))
+            } else {
+                let token = s_data
+                    .get("access_token")
+                    .and_then(|v| v.as_str())
+                    .unwrap_or_default();
+                Some(format!("/api/apps/session/{sid}/?access_token={token}"))
+            }
         } else {
-            let token = s_data
-                .get("access_token")
-                .and_then(|v| v.as_str())
-                .unwrap_or_default();
-            format!("/api/apps/session/{sid}/?access_token={token}")
+            None
+        };
+        // Joinable: a plain (non-room) session whose app the caller can
+        // access. Room sessions have their own invite flow.
+        let app_id = s_data
+            .get("provider_app_id")
+            .and_then(|v| v.as_str())
+            .unwrap_or_default();
+        let joinable = if is_collaboration {
+            false
+        } else {
+            installed_apps
+                .get(app_id)
+                .map(|app| user_can_access_app(app, &username, &user_groups))
+                .unwrap_or(false)
         };
         user_sessions.push(ActiveSessionInfo {
             session_id: sid.clone(),
-            app_id: s_data.get("provider_app_id").and_then(|v| v.as_str()).unwrap_or_default().to_string(),
+            app_id: app_id.to_string(),
             app_name: s_data.get("app_name").and_then(|v| v.as_str()).unwrap_or_default().to_string(),
             app_logo: s_data.get("app_logo").and_then(|v| v.as_str()).unwrap_or_default().to_string(),
             created_at: s_data.get("created_at").and_then(|v| v.as_f64()).unwrap_or(0.0),
@@ -3445,6 +3493,9 @@ async fn get_my_sessions(
             is_collaboration,
             name: s_data.get("name").and_then(|v| v.as_str()).map(|s| s.to_string()),
             out_of_date,
+            username: owner,
+            is_mine,
+            joinable,
         });
     }
     user_sessions.sort_by(|a, b| b.created_at.partial_cmp(&a.created_at).unwrap_or(std::cmp::Ordering::Equal));
@@ -3632,6 +3683,111 @@ async fn recreate_my_session(
     }
 }
 
+/// `POST /api/sessions/{session_id}/join` — self-serve join (ANT-440): mint
+/// the caller their own participant token into a running plain session and
+/// return the session URL that admits them. No share link or owner URL
+/// needed. Idempotent per (session, user): re-joining returns the caller's
+/// existing participant token.
+///
+/// Statuses: 404 the session is gone; 409 it is a room session (rooms use
+/// their own invite flow); 403 the caller lacks access to the session's
+/// app; 500 the mint failed.
+async fn join_my_session(
+    State(state): State<AppState>,
+    headers: HeaderMap,
+    Path(session_id): Path<String>,
+) -> Response {
+    let user = match auth::verify_token(&state, &headers).await {
+        Ok(u) => u,
+        Err(e) => {
+            // Auth failures are returned in plaintext (mirroring Python, where
+            // the HTTPException raised in the auth dependency bypasses the
+            // E2EE response wrapper). Routing them through encrypt_response
+            // would turn a 401 into a 400 "Secure session required" when no
+            // session exists yet.
+            return (
+                StatusCode::from_u16(e.status()).unwrap_or(StatusCode::INTERNAL_SERVER_ERROR),
+                Json(serde_json::json!({ "detail": e.to_string() })),
+            )
+                .into_response()
+        }
+    };
+    let session_data = state.sessions.read().await.get(&session_id).cloned();
+    let Some(session_data) = session_data else {
+        return e2ee::encrypt_response(
+            &state,
+            &headers,
+            StatusCode::NOT_FOUND,
+            serde_json::json!({ "detail": "Session not found or permission denied." }),
+        )
+        .await;
+    };
+    // Room sessions use their own invite flow: v1 defers joining a room
+    // (it would mint a participant into the room's MK/slot model).
+    if session_data
+        .get("is_collaboration")
+        .and_then(|v| v.as_bool())
+        .unwrap_or(false)
+    {
+        return e2ee::encrypt_response(
+            &state,
+            &headers,
+            StatusCode::CONFLICT,
+            serde_json::json!({ "detail": "Room sessions use their own invite flow." }),
+        )
+        .await;
+    }
+    // The caller must be able to use the session's app.
+    let app_id = session_data
+        .get("provider_app_id")
+        .and_then(|v| v.as_str())
+        .unwrap_or_default();
+    let has_app_access = state
+        .installed_apps
+        .read()
+        .await
+        .get(app_id)
+        .map(|app| user_can_access_app(app, &user.record.username, &user.record.groups))
+        .unwrap_or(false);
+    if !has_app_access {
+        return e2ee::encrypt_response(
+            &state,
+            &headers,
+            StatusCode::FORBIDDEN,
+            serde_json::json!({ "detail": "No access to this session's app." }),
+        )
+        .await;
+    }
+    match session_shares::grant_session_join_access(&state, &session_id, &user.record.username)
+        .await
+    {
+        Some(session_url) => {
+            // Report the mode the session is in after the grant so the UI
+            // can surface the WebSockets single-controller tradeoff.
+            let secure = state
+                .sessions
+                .read()
+                .await
+                .get(&session_id)
+                .and_then(|s| s.get("master_token").and_then(|v| v.as_str()))
+                .map(|m| !m.is_empty())
+                .unwrap_or(false);
+            let value = serde_json::json!({
+                "session_url": session_url,
+                "join_mode": if secure { "secure" } else { "legacy" },
+            });
+            e2ee::encrypt_response(&state, &headers, StatusCode::OK, value).await
+        }
+        None => e2ee::encrypt_response(
+            &state,
+            &headers,
+            StatusCode::INTERNAL_SERVER_ERROR,
+            serde_json::json!({ "detail": "Failed to join the session." }),
+        )
+        .await,
+    }
+}
+
 /// `POST /api/sessions/{session_id}/send_file` — send an uploaded file into a
 /// running session's storage.
 async fn send_file_to_session(
@@ -3767,6 +3923,7 @@ pub fn catalog_router() -> Router<AppState> {
         .route("/sessions/{session_id}/status", get(get_session_status))
         .route("/sessions/{session_id}", delete(stop_my_session))
         .route("/sessions/{session_id}/recreate", post(recreate_my_session))
+        .route("/sessions/{session_id}/join", post(join_my_session))
         .route("/sessions/{session_id}/send_file", post(send_file_to_session))
 }
 

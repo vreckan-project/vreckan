@@ -68,20 +68,29 @@ async fn test_my_sessions_empty() {
 }
 
 #[tokio::test]
-async fn test_my_sessions_only_own() {
+async fn test_my_sessions_lists_all_with_annotations() {
     let _root = TempDir::new();
     let mut sc = SecureClient::new(build_state(_root.path()).await);
     sc.http.login("admin", "admin1234").await;
     sc.handshake().await;
     let mine = seed_session(&sc, "admin", json!({})).await;
-    seed_session(&sc, "ghost", json!({})).await; // someone else's session
+    let other = seed_session(&sc, "ghost", json!({})).await; // someone else's session
     let (status, data) = sc.call("GET", "/api/sessions", None).await;
     assert_eq!(status, StatusCode::OK);
     let arr = data.as_ref().unwrap().as_array().unwrap();
-    assert_eq!(arr.len(), 1);
-    assert_eq!(arr[0]["session_id"], mine);
-    assert_eq!(arr[0]["app_name"], "Test App");
-    // Non-collaboration sessions expose the access-token URL.
+    // ANT-440: the list includes other users' running sessions (not just the
+    // caller's own), each annotated for the Join affordance.
+    assert_eq!(arr.len(), 2);
+    // The sessions map iterates in arbitrary order, so locate each entry by
+    // its id rather than relying on position.
+    let mine_info = arr.iter().find(|s| s["session_id"] == mine).unwrap();
+    let other_info = arr.iter().find(|s| s["session_id"] == other).unwrap();
+
+    // The caller's own session is flagged as theirs and exposes its
+    // access-token URL (non-collaboration sessions use the access token).
+    assert_eq!(mine_info["is_mine"], true);
+    assert_eq!(mine_info["username"], "admin");
+    assert_eq!(mine_info["app_name"], "Test App");
     let tok = sc
         .state
         .sessions
@@ -93,9 +102,169 @@ async fn test_my_sessions_only_own() {
         .unwrap()
         .to_string();
     assert_eq!(
-        arr[0]["session_url"],
+        mine_info["session_url"],
         format!("/api/apps/session/{mine}/?access_token={tok}")
     );
+
+    // Another user's session is flagged not-mine, names its owner, and has no
+    // direct-open URL (the caller enters it through a Join-minted token).
+    assert_eq!(other_info["is_mine"], false);
+    assert_eq!(other_info["username"], "ghost");
+    assert_eq!(other_info["session_url"], json!(null));
+
+    // The seeded sessions point at an uninstalled app, so neither is joinable.
+    assert_eq!(mine_info["joinable"], false);
+    assert_eq!(other_info["joinable"], false);
+}
+
+// ---------------------------------------------------------------------------
+// Self-serve join (ANT-440)
+// ---------------------------------------------------------------------------
+
+/// Insert an installed app (all users may access it by default) into the
+/// in-memory table. Returns the app id.
+async fn seed_app(sc: &SecureClient, id: &str, users: &[&str]) -> String {
+    let data = json!({
+        "id": id,
+        "name": "Join App",
+        "logo": "x",
+        "url": "x",
+        "source": "Test Store",
+        "source_app_id": id,
+        "provider": "docker",
+        "home_directories": true,
+        "users": users,
+        "groups": [],
+        "app_template": "Default",
+        "provider_config": { "image": "img:latest", "port": 3000 },
+    });
+    let app: vreckan::catalog::InstalledApp = serde_json::from_value(data).unwrap();
+    let app_id = app.id.clone();
+    sc.state
+        .installed_apps
+        .write()
+        .await
+        .insert(app_id.clone(), app);
+    app_id
+}
+
+#[tokio::test]
+async fn test_join_mints_participant_token_and_is_idempotent() {
+    let _root = TempDir::new();
+    let mut sc = SecureClient::new(build_state(_root.path()).await);
+    sc.http.login("admin", "admin1234").await;
+    sc.handshake().await;
+    // An installed app everyone can use, and a session for it owned by
+    // someone else (the joiner joins the owner's running session).
+    let app_id = seed_app(&sc, "join-app", &["all"]).await;
+    let other = seed_session(&sc, "ghost", json!({ "provider_app_id": app_id })).await;
+
+    // The session list now surfaces the other user's session as joinable.
+    let (status, data) = sc.call("GET", "/api/sessions", None).await;
+    assert_eq!(status, StatusCode::OK);
+    let arr = data.as_ref().unwrap().as_array().unwrap();
+    let info = arr.iter().find(|s| s["session_id"] == other).unwrap();
+    assert_eq!(info["is_mine"], false);
+    assert_eq!(info["username"], "ghost");
+    assert_eq!(info["joinable"], true);
+    assert_eq!(info["session_url"], json!(null));
+
+    // Join: admin mints their own participant token into ghost's session.
+    let (status, data) = sc
+        .call("POST", &format!("/api/sessions/{other}/join"), None)
+        .await;
+    assert_eq!(status, StatusCode::OK, "join should succeed: {data:?}");
+    let url = data.as_ref().unwrap()["session_url"].as_str().unwrap().to_string();
+    let join_mode = data.as_ref().unwrap()["join_mode"].as_str().unwrap();
+    // The test container is unreachable, so the session stays legacy.
+    assert_eq!(join_mode, "legacy");
+    assert!(url.starts_with(&format!("/api/apps/session/{other}/?token=")), "{url}");
+    let minted = url.rsplit_once("token=").unwrap().1.to_string();
+
+    // The token is recorded in the session's viewers list as a participant.
+    let viewers = sc
+        .state
+        .sessions
+        .read()
+        .await
+        .get(&other)
+        .unwrap()
+        .get("viewers")
+        .and_then(|v| v.as_array())
+        .cloned()
+        .unwrap_or_default();
+    let entry = viewers
+        .iter()
+        .find(|v| v.get("token").and_then(|t| t.as_str()) == Some(minted.as_str()))
+        .expect("minted token in viewers");
+    assert_eq!(entry["username"], "admin");
+    assert_eq!(entry["permission"], "participant");
+
+    // Idempotent: re-joining returns the same token, not a second one.
+    let (status, data2) = sc
+        .call("POST", &format!("/api/sessions/{other}/join"), None)
+        .await;
+    assert_eq!(status, StatusCode::OK);
+    let url2 = data2.as_ref().unwrap()["session_url"].as_str().unwrap().to_string();
+    assert_eq!(url2, url);
+    let viewers_after = sc
+        .state
+        .sessions
+        .read()
+        .await
+        .get(&other)
+        .unwrap()
+        .get("viewers")
+        .and_then(|v| v.as_array())
+        .map(|v| v.len())
+        .unwrap_or(0);
+    assert_eq!(viewers_after, 1, "re-join must not mint a second token");
+}
+
+#[tokio::test]
+async fn test_join_room_conflict() {
+    let _root = TempDir::new();
+    let mut sc = SecureClient::new(build_state(_root.path()).await);
+    sc.http.login("admin", "admin1234").await;
+    sc.handshake().await;
+    let app_id = seed_app(&sc, "join-app", &["all"]).await;
+    let room = seed_session(
+        &sc,
+        "ghost",
+        json!({ "provider_app_id": app_id, "is_collaboration": true }),
+    )
+    .await;
+    let (status, data) = sc
+        .call("POST", &format!("/api/sessions/{room}/join"), None)
+        .await;
+    assert_eq!(status, StatusCode::CONFLICT, "rooms use their own invite flow: {data:?}");
+}
+
+#[tokio::test]
+async fn test_join_no_app_access_forbidden() {
+    let _root = TempDir::new();
+    let mut sc = SecureClient::new(build_state(_root.path()).await);
+    sc.http.login("admin", "admin1234").await;
+    sc.handshake().await;
+    // An app only "ghost" can use; admin joins a session for it.
+    let app_id = seed_app(&sc, "ghost-only-app", &["ghost"]).await;
+    let other = seed_session(&sc, "ghost", json!({ "provider_app_id": app_id })).await;
+    let (status, data) = sc
+        .call("POST", &format!("/api/sessions/{other}/join"), None)
+        .await;
+    assert_eq!(status, StatusCode::FORBIDDEN, "{data:?}");
+}
+
+#[tokio::test]
+async fn test_join_unknown_session_not_found() {
+    let _root = TempDir::new();
+    let mut sc = SecureClient::new(build_state(_root.path()).await);
+    sc.http.login("admin", "admin1234").await;
+    sc.handshake().await;
+    let (status, _data) = sc
+        .call("POST", "/api/sessions/does-not-exist/join", None)
+        .await;
+    assert_eq!(status, StatusCode::NOT_FOUND);
 }
 
 // ---------------------------------------------------------------------------
