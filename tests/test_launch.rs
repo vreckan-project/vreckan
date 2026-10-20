@@ -611,11 +611,21 @@ async fn test_file_path_launch_room_mode() {
         let sessions = sc.state.sessions.read().await;
         let session = sessions.get(&session_id).unwrap();
         assert!(session.get("is_collaboration").is_none());
-        assert!(session.get("master_token").is_none());
+        // ANT-438: plain sessions enter secure mode at launch — the master
+        // token + owner controller entry are minted at launch (the fake
+        // probe defaults to the 2.0.0-class happy path).
+        assert!(session["master_token"].as_str().map(|s| !s.is_empty()).unwrap_or(false));
+        assert_eq!(session["viewers"], json!([]));
+        assert_eq!(session["selkies_capability"], "secure");
     }
     let record = sc.state.fake_provider_record.lock().unwrap().clone().unwrap();
     assert!(record["launch_kwargs"].get("is_collaboration").is_none());
-    assert!(record["launch_kwargs"]["env_vars"].get("SELKIES_MASTER_TOKEN").is_none());
+    assert!(record["launch_kwargs"]["env_vars"]["SELKIES_MASTER_TOKEN"]
+        .as_str()
+        .map(|s| !s.is_empty())
+        .unwrap_or(false));
+    assert_eq!(record["launch_kwargs"]["master_token"],
+        record["launch_kwargs"]["env_vars"]["SELKIES_MASTER_TOKEN"]);
 
     // Explicit `false` behaves the same as absent.
     sc.state.fake_provider_record.lock().unwrap().take();
@@ -634,6 +644,8 @@ async fn test_file_path_launch_room_mode() {
         let sessions = sc.state.sessions.read().await;
         let session = sessions.get(&session_id).unwrap();
         assert!(session.get("is_collaboration").is_none());
+        assert!(session["master_token"].as_str().map(|s| !s.is_empty()).unwrap_or(false));
+        assert_eq!(session["selkies_capability"], "secure");
     }
     let record = sc.state.fake_provider_record.lock().unwrap().clone().unwrap();
     assert!(record["launch_kwargs"].get("is_collaboration").is_none());

@@ -148,6 +148,10 @@ pub struct AppState {
     /// The recorded launch kwargs + app config from the most recent fake
     /// provider launch (see `fake_provider`).
     pub fake_provider_record: Arc<std::sync::Mutex<Option<serde_json::Value>>>,
+    /// Test hook: the launch-time selkies capability probe result for fake
+    /// provider launches (ANT-438). `None` (the default) means the probe
+    /// reports the 2.0.0-class happy path (secure).
+    pub fake_selkies_probe: Arc<RwLock<Option<crate::catalog::SelkiesProbe>>>,
     /// The TLS listener's `RustlsConfig` (an `Arc<ArcSwap<ServerConfig>>`). The
     /// ACME issuance/renewal paths reload this in place so a renewed certificate
     /// is served by the running process without a restart or a port rebind.
@@ -187,6 +191,7 @@ impl AppState {
             pull_noop: Arc::new(std::sync::atomic::AtomicBool::new(false)),
             fake_provider: Arc::new(std::sync::atomic::AtomicBool::new(false)),
             fake_provider_record: Arc::new(std::sync::Mutex::new(None)),
+            fake_selkies_probe: Arc::new(RwLock::new(None)),
             tls_config: None,
         }
     }

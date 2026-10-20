@@ -544,6 +544,52 @@ impl DockerProvider {
         }
     }
 
+    /// Run a command inside a running container and collect its output.
+    /// Returns `(exit_code, combined stdout+stderr)`. `None` when the exec
+    /// infrastructure itself fails (daemon error, no output stream), which
+    /// callers treat as "inconclusive" rather than "command failed"
+    /// (ANT-438 launch-time capability probe, step 2).
+    pub async fn container_exec(&self, container_id: &str, cmd: &[String]) -> Option<(i64, String)> {
+        use bollard::container::LogOutput;
+        use bollard::exec::{CreateExecOptions, StartExecOptions, StartExecResults};
+
+        let created = self
+            .client
+            .create_exec(
+                container_id,
+                CreateExecOptions {
+                    cmd: Some(cmd.to_vec()),
+                    attach_stdout: Some(true),
+                    attach_stderr: Some(true),
+                    ..Default::default()
+                },
+            )
+            .await
+            .ok()?;
+        let results = self
+            .client
+            .start_exec(
+                &created.id,
+                Some(StartExecOptions { detach: false, tty: false, output_capacity: None }),
+            )
+            .await
+            .ok()?;
+        let mut output = match results {
+            StartExecResults::Attached { output, .. } => output,
+            StartExecResults::Detached => return None,
+        };
+        let mut combined = String::new();
+        while let Some(Ok(entry)) = output.next().await {
+            let message = match entry {
+                LogOutput::StdErr { message } | LogOutput::StdOut { message } => message,
+                LogOutput::StdIn { message } | LogOutput::Console { message } => message,
+            };
+            combined.push_str(&String::from_utf8_lossy(&message));
+        }
+        let inspect = self.client.inspect_exec(&created.id).await.ok()?;
+        Some((inspect.exit_code.unwrap_or(-1), combined))
+    }
+
     /// Poll the container until the app inside answers a health check.
     /// Mirrors `_wait_for_container_ready`.
     #[allow(clippy::too_many_arguments)]

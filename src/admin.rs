@@ -3124,6 +3124,14 @@ async fn get_all_sessions(
                 "session_url": session_url,
                 "launch_context": s_data.get("launch_context").cloned().unwrap_or(Value::Null),
                 "is_collaboration": is_collaboration,
+                "selkies_capability": s_data
+                    .get("selkies_capability")
+                    .cloned()
+                    .unwrap_or(Value::Null),
+                "selkies_version": s_data
+                    .get("selkies_version")
+                    .cloned()
+                    .unwrap_or(Value::Null),
                 "name": s_data.get("name").and_then(|v| v.as_str()).map(|s| s.to_string()),
                 "out_of_date": out_of_date,
             }));

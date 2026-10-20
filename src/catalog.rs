@@ -1610,6 +1610,136 @@ pub async fn background_auto_update_job(state: AppState) {
 }
 
 // ---------------------------------------------------------------------------
+// Launch-time selkies capability probe (ANT-438)
+// ---------------------------------------------------------------------------
+
+/// The outcome of the launch-time selkies capability probe. Plain sessions
+/// enter selkies secure mode at launch (master token + owner controller
+/// entry in the token table); containers that lack the selkies 2.x token API
+/// (pre-2.0 xrdp/guacd stacks) degrade to the documented legacy path.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub enum SelkiesProbe {
+    /// The container runs a selkies 2.x with a working token API.
+    Secure { version: Option<String> },
+    /// The container predates the selkies token API (or rejected the
+    /// initial token table): the session stays on the legacy path.
+    Legacy { version: Option<String> },
+}
+
+impl SelkiesProbe {
+    pub fn is_secure(&self) -> bool {
+        matches!(self, SelkiesProbe::Secure { .. })
+    }
+}
+
+/// Parse `selkies --version` output (`selkies 2.0.0`) into
+/// `(major_version, version_string)`.
+pub fn parse_selkies_version(output: &str) -> Option<(u32, String)> {
+    for tok in output.split_whitespace() {
+        let tok = tok.trim_matches(|c: char| !c.is_ascii_alphanumeric() && c != '.');
+        let mut parts = tok.split('.');
+        let Some(major) = parts.next() else { continue };
+        let Some(major) = major.parse::<u32>().ok() else { continue };
+        let rest_ok = parts.all(|p| !p.is_empty() && p.bytes().all(|b| b.is_ascii_digit()));
+        if rest_ok {
+            return Some((major, tok.to_string()));
+        }
+    }
+    None
+}
+
+/// Classify the response of a `GET {subfolder}api/sessions` probe
+/// (ANT-438, probe step 1). Selkies 2.x answers with JSON (200 in open
+/// mode, 401 in secure mode); a pre-2.0 xrdp/guacd container answers with
+/// the nginx SPA fallback (HTML). Any other content type is ambiguous.
+pub fn classify_sessions_probe(status: u16, content_type: Option<&str>) -> Option<SelkiesProbe> {
+    let _ = status; // both 200 (open) and 401 (secure) JSON mean the API exists
+    let ct = content_type.unwrap_or("");
+    if ct.contains("application/json") {
+        Some(SelkiesProbe::Secure { version: None })
+    } else if ct.contains("text/html") {
+        Some(SelkiesProbe::Legacy { version: None })
+    } else {
+        None
+    }
+}
+
+/// Probe a freshly launched app container's selkies capability (ANT-438).
+///
+/// 1. Plain HTTP `GET {subfolder}api/sessions` to the container's port: a
+///    JSON response means the selkies 2.x token API is present; an HTML
+///    response means the pre-2.0 stack (Phase 0 finding (f)).
+/// 2. When that is ambiguous, confirm by exec: `selkies --version` —
+///    major < 2 or a missing binary means pre-2.0.
+/// 3. When exec is inconclusive too, the initial token-table push is the
+///    arbiter — the same fallback the lazy share promotion uses (ANT-305).
+///
+/// The session must already carry `master_token` (and the `ip`/`port` of the
+/// launched container) so step 3 can authenticate the push.
+pub async fn probe_selkies_capability(
+    state: &AppState,
+    provider: &DockerProvider,
+    session: &Value,
+    session_id: &str,
+) -> SelkiesProbe {
+    let ip = session.get("ip").and_then(|v| v.as_str()).unwrap_or("");
+    let port = session.get("port").and_then(|v| v.as_u64()).unwrap_or(0);
+    let url = format!("http://{ip}:{port}/api/apps/session/{session_id}/api/sessions");
+    let client = reqwest::Client::builder()
+        .timeout(std::time::Duration::from_secs(3))
+        .build()
+        .unwrap_or_default();
+    let mut req = client.get(&url);
+    if let (Some(user), Some(pass)) = (
+        session.get("custom_user").and_then(|v| v.as_str()),
+        session.get("password").and_then(|v| v.as_str()),
+    ) {
+        let b64 = base64::engine::general_purpose::STANDARD.encode(format!("{user}:{pass}"));
+        req = req.header(reqwest::header::AUTHORIZATION, format!("Basic {b64}"));
+    }
+    if let Some(verdict) = match req.send().await {
+        Ok(resp) => classify_sessions_probe(
+            resp.status().as_u16(),
+            resp.headers()
+                .get(reqwest::header::CONTENT_TYPE)
+                .and_then(|v| v.to_str().ok()),
+        ),
+        Err(e) => {
+            debug!("[{session_id}] Capability probe HTTP inconclusive: {e}");
+            None
+        }
+    } {
+        return verdict;
+    }
+
+    // Step 2: confirm by exec when the HTTP answer is ambiguous.
+    let instance_id = session.get("instance_id").and_then(|v| v.as_str()).unwrap_or("");
+    if let Some((code, out)) =
+        provider.container_exec(instance_id, &["selkies".to_string(), "--version".to_string()]).await
+    {
+        if let Some((major, version)) = parse_selkies_version(&out) {
+            return if major >= 2 {
+                SelkiesProbe::Secure { version: Some(version) }
+            } else {
+                SelkiesProbe::Legacy { version: Some(version) }
+            };
+        }
+        // The exec ran but the binary is missing: pre-2.0 stack.
+        if code == 127 || out.contains("not found") || out.contains("No such file") {
+            return SelkiesProbe::Legacy { version: None };
+        }
+        // Ran without a recognizable version: fall through to step 3.
+    }
+
+    // Step 3: the token-table push is the arbiter (ANT-305 fallback).
+    if crate::collaboration::push_token_table(state, session_id, session).await {
+        SelkiesProbe::Secure { version: None }
+    } else {
+        SelkiesProbe::Legacy { version: None }
+    }
+}
+
+// ---------------------------------------------------------------------------
 // The launch flow
 // ---------------------------------------------------------------------------
 
@@ -1676,6 +1806,12 @@ pub async fn launch_common(
     let subfolder = format!("/api/apps/session/{session_id}/");
     let mut launch_context: Option<Value> = None;
 
+    // Room-mode launches mint the master token + controller/viewer tokens.
+    // Plain launches mint the master token too, so the session can enter
+    // selkies secure mode at launch with the owner as a first-class
+    // controller (ANT-438). A pre-2.0 container ignores the env var and the
+    // launch-time capability probe rolls the session back to the legacy
+    // path (the documented pre-2.0 fallback).
     let (master_token, controller_token, viewer_token) = if launch_in_room_mode {
         (
             Some(random_token(32)),
@@ -1683,7 +1819,7 @@ pub async fn launch_common(
             Some(random_token(16)),
         )
     } else {
-        (None, None, None)
+        (Some(random_token(32)), None, None)
     };
     let custom_user = random_uuid();
     let password = random_uuid();
@@ -2041,7 +2177,18 @@ pub async fn launch_common(
         obj.insert(controller_token.clone().unwrap_or_default(), Value::Object(ct));
         Some(Value::Object(obj))
     } else {
-        None
+        // Plain session: the owner is addressed in the token table by the
+        // session access token (the same mapping `push_token_table` uses for
+        // a plain session), with first-class MK control. This is what keeps
+        // the owner on a distinct token identity from any share-minted
+        // visitor, so neither displaces the other on slot 1 (ANT-438).
+        let mut ct = serde_json::Map::new();
+        ct.insert("role".into(), Value::String("controller".into()));
+        ct.insert("slot".into(), Value::Null);
+        ct.insert("mk_control".into(), Value::Bool(true));
+        let mut obj = serde_json::Map::new();
+        obj.insert(access_token.clone(), Value::Object(ct));
+        Some(Value::Object(obj))
     };
 
     // The launch parameters, stored in the session's container registry so a
@@ -2055,7 +2202,12 @@ pub async fn launch_common(
     launch_kwargs.insert("ephemeral".into(), Value::Bool(is_ephemeral_launch));
     if launch_in_room_mode {
         launch_kwargs.insert("is_collaboration".into(), Value::Bool(true));
-        launch_kwargs.insert("master_token".into(), serde_json::to_value(&master_token).unwrap_or_default());
+    }
+    // Both room and plain launches carry the master token + initial token
+    // table so a recreate/relaunch (which replays `launch_kwargs`) restores
+    // the session's secure mode (ANT-438).
+    if let Some(mt) = &master_token {
+        launch_kwargs.insert("master_token".into(), serde_json::to_value(mt).unwrap_or_default());
         if let Some(it) = &initial_tokens {
             launch_kwargs.insert("initial_tokens".into(), it.clone());
         }
@@ -2063,55 +2215,59 @@ pub async fn launch_common(
 
     // Test hook: when `fake_provider` is set, skip the real Docker daemon and
     // record the launch kwargs + app config (mirrors the Python FakeProvider).
-    let (instance_details, launch_digest) = if state.fake_provider.load(std::sync::atomic::Ordering::Relaxed) {
-        let mut rec = serde_json::Map::new();
-        rec.insert("app_config".into(), app_config_dict.clone());
-        rec.insert("launch_kwargs".into(), Value::Object(launch_kwargs.clone()));
-        *state
-            .fake_provider_record
-            .lock()
-            .unwrap_or_else(std::sync::PoisonError::into_inner) = Some(Value::Object(rec));
-        (
-            LaunchResult {
-                instance_id: "ctr-1".into(),
-                ip: "10.0.0.5".into(),
-                port: 3000,
-            },
-            None,
-        )
-    } else {
-        let provider = match DockerProvider::new(app_config_dict.clone()) {
-            Ok(p) => p,
-            Err(e) => return Err((StatusCode::from_u16(e.status).unwrap_or(StatusCode::INTERNAL_SERVER_ERROR), e.detail)),
-        };
-        let result = provider
-            .launch(
-                &session_id,
-                final_env,
-                volumes,
-                &prefix_map,
-                gpu_config.clone(),
-                network,
-                launch_in_room_mode,
-                master_token.clone(),
-                initial_tokens,
-                is_ephemeral_launch,
+    // The real branch keeps the provider alive so the launch-time capability
+    // probe can exec into the container (ANT-438).
+    let (instance_details, launch_digest, probe_provider) =
+        if state.fake_provider.load(std::sync::atomic::Ordering::Relaxed) {
+            let mut rec = serde_json::Map::new();
+            rec.insert("app_config".into(), app_config_dict.clone());
+            rec.insert("launch_kwargs".into(), Value::Object(launch_kwargs.clone()));
+            *state
+                .fake_provider_record
+                .lock()
+                .unwrap_or_else(std::sync::PoisonError::into_inner) = Some(Value::Object(rec));
+            (
+                LaunchResult {
+                    instance_id: "ctr-1".into(),
+                    ip: "10.0.0.5".into(),
+                    port: 3000,
+                },
+                None,
+                None,
             )
-            .await;
-        let details = match result {
-            Ok(d) => d,
-            Err(e) => {
-                cleanup_ephemeral(&host_mount_path, &ephemeral_base);
-                return Err((
-                    StatusCode::from_u16(e.status).unwrap_or(StatusCode::INTERNAL_SERVER_ERROR),
-                    e.detail,
-                ));
-            }
+        } else {
+            let provider = match DockerProvider::new(app_config_dict.clone()) {
+                Ok(p) => p,
+                Err(e) => return Err((StatusCode::from_u16(e.status).unwrap_or(StatusCode::INTERNAL_SERVER_ERROR), e.detail)),
+            };
+            let result = provider
+                .launch(
+                    &session_id,
+                    final_env,
+                    volumes,
+                    &prefix_map,
+                    gpu_config.clone(),
+                    network,
+                    launch_in_room_mode,
+                    master_token.clone(),
+                    initial_tokens,
+                    is_ephemeral_launch,
+                )
+                .await;
+            let details = match result {
+                Ok(d) => d,
+                Err(e) => {
+                    cleanup_ephemeral(&host_mount_path, &ephemeral_base);
+                    return Err((
+                        StatusCode::from_u16(e.status).unwrap_or(StatusCode::INTERNAL_SERVER_ERROR),
+                        e.detail,
+                    ));
+                }
+            };
+            // Record the launch digest (best-effort) for out-of-date detection.
+            let digest = provider.get_remote_image_digest(&app.provider_config.base.image).await;
+            (details, digest, Some(provider))
         };
-        // Record the launch digest (best-effort) for out-of-date detection.
-        let digest = provider.get_remote_image_digest(&app.provider_config.base.image).await;
-        (details, digest)
-    };
 
     // A launch pulls a missing image on demand; cache the image's metadata so
     // the installed-apps table shows the real image identity without admin
@@ -2158,10 +2314,78 @@ pub async fn launch_common(
     });
     if launch_in_room_mode {
         session["is_collaboration"] = serde_json::json!(true);
-        session["master_token"] = serde_json::json!(master_token);
         session["controller_token"] = serde_json::json!(controller_token);
         session["viewer_token"] = serde_json::json!(viewer_token);
+    }
+    if let Some(mt) = &master_token {
+        session["master_token"] = serde_json::json!(mt);
         session["viewers"] = serde_json::json!([]);
+    }
+
+    // --- Launch-time capability probe (ANT-438) ------------------------------
+    // Plain sessions enter selkies secure mode at launch: the master token
+    // was in the container's boot env and the owner's controller entry is the
+    // initial token table. The probe decides promote-vs-legacy-fallback for
+    // containers whose catalog record is unknown, and records the detected
+    // capability on the session. Room launches are already secure by
+    // construction (the readiness gate requires the initial table push to be
+    // accepted), so only the capability record is added.
+    let probe = if launch_in_room_mode {
+        SelkiesProbe::Secure { version: None }
+    } else if let Some(p) = &probe_provider {
+        probe_selkies_capability(state, p, &session, &session_id).await
+    } else {
+        // Test hook: a recorded probe result stands in for the live probe;
+        // absent one, assume the 2.0.0-class happy path.
+        state
+            .fake_selkies_probe
+            .read()
+            .await
+            .clone()
+            .unwrap_or(SelkiesProbe::Secure { version: None })
+    };
+    let secure = probe.is_secure();
+    session["selkies_capability"] = Value::String(if secure { "secure".into() } else { "legacy".into() });
+    // Detected version wins; fall back to the catalog's declared
+    // `selkiesVersion` (Phase 0 seed) for visibility.
+    let detected = match &probe {
+        SelkiesProbe::Secure { version } | SelkiesProbe::Legacy { version } => version.clone(),
+    };
+    session["selkies_version"] =
+        serde_json::to_value(detected.or_else(|| app.provider_config.base.selkies_version.clone()))
+            .unwrap_or(Value::Null);
+    if secure {
+        if !launch_in_room_mode {
+            // The probe's table push may have raced selkies' own boot;
+            // confirm the owner's entry actually landed. Even a final failure
+            // keeps the session secure — the promotion is idempotent and is
+            // re-pushed on the next share visit (ANT-305).
+            let mut pushed = false;
+            for _ in 0..5 {
+                if crate::collaboration::push_token_table(state, &session_id, &session).await {
+                    pushed = true;
+                    break;
+                }
+                tokio::time::sleep(std::time::Duration::from_secs(2)).await;
+            }
+            if !pushed {
+                warn!("[{session_id}] Initial token table not accepted after retries; the session stays secure and the table will be re-pushed on the next share visit.");
+            }
+        }
+        info!(
+            "[{session_id}] Launch probe: selkies '{}' — secure mode at launch.",
+            session["selkies_version"]
+        );
+    } else {
+        // Pre-2.0 container (or its token API rejected the table): roll the
+        // session back to the documented legacy path. The boot env's master
+        // token is harmless — the pre-2.0 stack never reads it.
+        session.as_object_mut().map(|o| o.remove("master_token"));
+        session["viewers"] = Value::Array(vec![]);
+        info!(
+            "[{session_id}] Launch probe: selkies '{}' — legacy path.",
+            session["selkies_version"]
+        );
     }
     state.sessions.write().await.insert(session_id.clone(), session);
     save_sessions(state).await;
@@ -3521,4 +3745,62 @@ pub fn catalog_router() -> Router<AppState> {
         .route("/sessions/{session_id}", delete(stop_my_session))
         .route("/sessions/{session_id}/recreate", post(recreate_my_session))
         .route("/sessions/{session_id}/send_file", post(send_file_to_session))
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn parse_version_standard() {
+        assert_eq!(
+            parse_selkies_version("selkies 2.0.0"),
+            Some((2, "2.0.0".to_string()))
+        );
+        assert_eq!(
+            parse_selkies_version("selkies 1.4.3\n"),
+            Some((1, "1.4.3".to_string()))
+        );
+        assert_eq!(
+            parse_selkies_version("SELKIES_RELEASE=2.1.2 selkies 2.1.2"),
+            Some((2, "2.1.2".to_string()))
+        );
+    }
+
+    #[test]
+    fn parse_version_absent_or_garbage() {
+        assert_eq!(parse_selkies_version(""), None);
+        assert_eq!(parse_selkies_version("/usr/bin/selkies: not found"), None);
+        assert_eq!(parse_selkies_version("No such file or directory"), None);
+    }
+
+    #[test]
+    fn classify_probe_json_is_secure() {
+        assert_eq!(
+            classify_sessions_probe(200, Some("application/json")),
+            Some(SelkiesProbe::Secure { version: None })
+        );
+        assert_eq!(
+            classify_sessions_probe(401, Some("application/json; charset=utf-8")),
+            Some(SelkiesProbe::Secure { version: None })
+        );
+    }
+
+    #[test]
+    fn classify_probe_html_is_legacy() {
+        assert_eq!(
+            classify_sessions_probe(200, Some("text/html; charset=utf-8")),
+            Some(SelkiesProbe::Legacy { version: None })
+        );
+        assert_eq!(
+            classify_sessions_probe(404, Some("text/html")),
+            Some(SelkiesProbe::Legacy { version: None })
+        );
+    }
+
+    #[test]
+    fn classify_probe_other_is_ambiguous() {
+        assert_eq!(classify_sessions_probe(200, None), None);
+        assert_eq!(classify_sessions_probe(502, Some("text/plain")), None);
+    }
 }
