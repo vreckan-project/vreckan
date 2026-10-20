@@ -1649,16 +1649,25 @@ pub fn parse_selkies_version(output: &str) -> Option<(u32, String)> {
 }
 
 /// Classify the response of a `GET {subfolder}api/sessions` probe
-/// (ANT-438, probe step 1). Selkies 2.x answers with JSON (200 in open
-/// mode, 401 in secure mode); a pre-2.0 xrdp/guacd container answers with
-/// the nginx SPA fallback (HTML). Any other content type is ambiguous.
+/// (ANT-438, probe step 1).
+///
+/// - JSON (200 open / 401 secure): the selkies 2.x token API exists ⇒
+///   `Secure`.
+/// - 401 with a plain-text body (`"Unauthorized"`): selkies' own secure-mode
+///   401 (basic auth passed, session token missing) ⇒ `Secure`. An nginx
+///   basic-auth failure, by contrast, answers `text/html`.
+/// - HTML: nginx answered instead of selkies — either the pre-2.0
+///   xrdp/guacd SPA fallback (Phase 0 finding (f)) or a transient startup
+///   error page. Left ambiguous so step 2 (exec) arbitrates.
+/// - Anything else: ambiguous.
 pub fn classify_sessions_probe(status: u16, content_type: Option<&str>) -> Option<SelkiesProbe> {
-    let _ = status; // both 200 (open) and 401 (secure) JSON mean the API exists
     let ct = content_type.unwrap_or("");
     if ct.contains("application/json") {
         Some(SelkiesProbe::Secure { version: None })
+    } else if status == 401 && ct.contains("text/plain") {
+        Some(SelkiesProbe::Secure { version: None })
     } else if ct.contains("text/html") {
-        Some(SelkiesProbe::Legacy { version: None })
+        None
     } else {
         None
     }
@@ -1698,14 +1707,24 @@ pub async fn probe_selkies_capability(
         req = req.header(reqwest::header::AUTHORIZATION, format!("Basic {b64}"));
     }
     if let Some(verdict) = match req.send().await {
-        Ok(resp) => classify_sessions_probe(
-            resp.status().as_u16(),
-            resp.headers()
+        Ok(resp) => {
+            let status = resp.status().as_u16();
+            let ct = resp.headers()
                 .get(reqwest::header::CONTENT_TYPE)
-                .and_then(|v| v.to_str().ok()),
-        ),
+                .and_then(|v| v.to_str().ok())
+                .unwrap_or("")
+                .to_string();
+            let body = resp.text().await.unwrap_or_default();
+            let preview: String = body.chars().take(80).collect();
+            let verdict = classify_sessions_probe(status, Some(&ct));
+            info!(
+                "[{session_id}] Capability probe step 1 (GET /api/sessions): status={status} content-type={ct} body={preview:?} => {:?}",
+                verdict
+            );
+            verdict
+        }
         Err(e) => {
-            debug!("[{session_id}] Capability probe HTTP inconclusive: {e}");
+            info!("[{session_id}] Capability probe step 1 inconclusive (transport): {e}");
             None
         }
     } {
@@ -1717,6 +1736,10 @@ pub async fn probe_selkies_capability(
     if let Some((code, out)) =
         provider.container_exec(instance_id, &["selkies".to_string(), "--version".to_string()]).await
     {
+        let preview: String = out.chars().take(80).collect();
+        info!(
+            "[{session_id}] Capability probe step 2 (exec selkies --version): code={code} output={preview:?}"
+        );
         if let Some((major, version)) = parse_selkies_version(&out) {
             return if major >= 2 {
                 SelkiesProbe::Secure { version: Some(version) }
@@ -3787,20 +3810,39 @@ mod tests {
     }
 
     #[test]
-    fn classify_probe_html_is_legacy() {
+    fn classify_probe_401_plain_is_secure() {
+        // selkies' own secure-mode 401 (basic auth passed, session token
+        // missing) answers "Unauthorized" as plain text — that is the
+        // definitive secure-mode signal.
+        assert_eq!(
+            classify_sessions_probe(401, Some("text/plain; charset=utf-8")),
+            Some(SelkiesProbe::Secure { version: None })
+        );
+        assert_eq!(
+            classify_sessions_probe(401, Some("text/plain")),
+            Some(SelkiesProbe::Secure { version: None })
+        );
+    }
+
+    #[test]
+    fn classify_probe_html_is_ambiguous() {
+        // nginx answered instead of selkies: either the pre-2.0 SPA
+        // fallback or a transient startup error page — let the exec
+        // arbitrate (a 5xx HTML page must not permanently mark a 2.x
+        // container legacy).
         assert_eq!(
             classify_sessions_probe(200, Some("text/html; charset=utf-8")),
-            Some(SelkiesProbe::Legacy { version: None })
+            None
         );
-        assert_eq!(
-            classify_sessions_probe(404, Some("text/html")),
-            Some(SelkiesProbe::Legacy { version: None })
-        );
+        assert_eq!(classify_sessions_probe(404, Some("text/html")), None);
+        assert_eq!(classify_sessions_probe(502, Some("text/html")), None);
     }
 
     #[test]
     fn classify_probe_other_is_ambiguous() {
         assert_eq!(classify_sessions_probe(200, None), None);
+        // A non-401 plain body is not selkies' secure-mode 401.
         assert_eq!(classify_sessions_probe(502, Some("text/plain")), None);
+        assert_eq!(classify_sessions_probe(200, Some("text/plain")), None);
     }
 }
