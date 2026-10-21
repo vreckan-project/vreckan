@@ -358,7 +358,7 @@ async fn test_admin_sessions_grouped_and_sorted() {
         .to_string();
     assert_eq!(
         bob["sessions"][0]["session_url"],
-        format!("/api/apps/session/{sid_new}/?access_token={tok}")
+        format!("/api/apps/session/{sid_new}/?access_token={tok}&token={tok}")
     );
 }
 

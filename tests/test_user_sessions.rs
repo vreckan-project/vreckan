@@ -87,7 +87,9 @@ async fn test_my_sessions_lists_all_with_annotations() {
     let other_info = arr.iter().find(|s| s["session_id"] == other).unwrap();
 
     // The caller's own session is flagged as theirs and exposes its
-    // access-token URL (non-collaboration sessions use the access token).
+    // access-token URL (non-collaboration sessions use the access token),
+    // with the same value mirrored under `token` for the WebRTC client
+    // (ANT-449).
     assert_eq!(mine_info["is_mine"], true);
     assert_eq!(mine_info["username"], "admin");
     assert_eq!(mine_info["app_name"], "Test App");
@@ -103,7 +105,7 @@ async fn test_my_sessions_lists_all_with_annotations() {
         .to_string();
     assert_eq!(
         mine_info["session_url"],
-        format!("/api/apps/session/{mine}/?access_token={tok}")
+        format!("/api/apps/session/{mine}/?access_token={tok}&token={tok}")
     );
 
     // Another user's session is flagged not-mine, names its owner, and has no

@@ -1139,6 +1139,19 @@ pub fn random_uuid() -> String {
     uuid::Uuid::from_bytes(bytes).to_string()
 }
 
+/// The owner's session URL. Carries the session's `access_token` (the
+/// first-hit `initial_session_auth` validates it and sets the session cookie;
+/// the WebSocket path and existing consumers rely on it) **and** the same
+/// value under `token` — the selkies 2.0.0 WebRTC client sources its
+/// `client_token` only from the page URL's `?token=` param, so on a
+/// TURN-configured dual-mode image the owner needs it there or signaling
+/// rejects the owner's HELLO (`missing or invalid token in secure mode`) and
+/// input is dropped (ANT-449). A plain session's owner is addressed by the
+/// access token in the token table, so the two params carry the same value.
+pub fn owner_session_url(session_id: &str, access_token: &str) -> String {
+    format!("/api/apps/session/{session_id}/?access_token={access_token}&token={access_token}")
+}
+
 /// Persist the in-memory session map to the database (full replace). Mirrors
 /// `save_sessions_to_disk`.
 pub async fn save_sessions(state: &AppState) {
@@ -2436,7 +2449,7 @@ pub async fn launch_common(
     let session_url = if launch_in_room_mode {
         format!("/room/{session_id}?access_token={access_token}&token={}", controller_token.clone().unwrap_or_default())
     } else {
-        format!("/api/apps/session/{session_id}/?access_token={access_token}")
+        owner_session_url(&session_id, &access_token)
     };
 
     Ok(LaunchResponse { session_url, session_id })
@@ -3463,7 +3476,7 @@ async fn get_my_sessions(
                     .get("access_token")
                     .and_then(|v| v.as_str())
                     .unwrap_or_default();
-                Some(format!("/api/apps/session/{sid}/?access_token={token}"))
+                Some(owner_session_url(&sid, &token))
             }
         } else {
             None
@@ -3674,7 +3687,7 @@ async fn recreate_my_session(
                     .get("access_token")
                     .and_then(|v| v.as_str())
                     .unwrap_or_default();
-                format!("/api/apps/session/{session_id}/?access_token={token}")
+                owner_session_url(&session_id, &token)
             };
             let value = serde_json::json!({ "session_id": session_id, "session_url": session_url });
             e2ee::encrypt_response(&state, &headers, StatusCode::OK, value).await

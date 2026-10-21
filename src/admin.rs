@@ -3110,7 +3110,7 @@ async fn get_all_sessions(
                 .get("access_token")
                 .and_then(|v| v.as_str())
                 .unwrap_or_default();
-            format!("/api/apps/session/{sid}/?access_token={token}")
+            catalog::owner_session_url(&sid, &token)
         };
         by_user
             .entry(username)
@@ -3255,7 +3255,7 @@ async fn recreate_any_session(
                     .get("access_token")
                     .and_then(|v| v.as_str())
                     .unwrap_or_default();
-                format!("/api/apps/session/{session_id}/?access_token={token}")
+                catalog::owner_session_url(&session_id, &token)
             };
             let value = serde_json::json!({ "session_id": session_id, "session_url": session_url });
             e2ee::encrypt_response(&state, &headers, StatusCode::OK, value).await
