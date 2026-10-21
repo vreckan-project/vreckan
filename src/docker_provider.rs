@@ -81,6 +81,28 @@ pub struct DockerProvider {
     app_config: Value,
 }
 
+/// Consecutive (subfolder 404, root 200 HTML) polls required before the
+/// readiness gate accepts a legacy (guacamole-lite) container (ANT-450,
+/// F-P5). The repeat requirement keeps a transient early-boot answer (e.g. a
+/// mid-config nginx on a selkies image) from passing the gate.
+const LEGACY_READY_STRIKES: usize = 3;
+
+/// The legacy-tier root-page readiness check (ANT-450, F-P5): the
+/// guacamole-lite gclient serves its page at `/` and 404s on the session
+/// subfolder, so a ready legacy container answers 200 `text/html` at the
+/// root while the subfolder stays 404.
+async fn legacy_root_ok(client: &reqwest::Client, ip: &str, port: i64) -> bool {
+    match client.get(format!("http://{ip}:{port}/")).send().await {
+        Ok(resp) => {
+            resp.status() == reqwest::StatusCode::OK
+                && resp.headers().get(reqwest::header::CONTENT_TYPE).is_some_and(|ct| {
+                    ct.to_str().is_ok_and(|ct| ct.contains("text/html"))
+                })
+        }
+        Err(_) => false,
+    }
+}
+
 impl DockerProvider {
     /// Connect to the Docker daemon and bind the provider to an app config.
     /// Mirrors `DockerProvider.__init__` (`docker.from_env()` + ping).
@@ -625,6 +647,10 @@ impl DockerProvider {
             .unwrap_or_default();
 
         let mut health_check_passed = false;
+        // Consecutive (subfolder 404, root 200 HTML) polls that pass the
+        // readiness gate for a legacy (guacamole-lite) container — see the
+        // health-check loop below (ANT-450, F-P5).
+        let mut legacy_root_strikes = 0usize;
         let start = std::time::Instant::now();
         let timeout = Duration::from_secs(60);
 
@@ -656,10 +682,38 @@ impl DockerProvider {
                             "[{session_id}] Health check pending (HTTP {})",
                             resp.status()
                         );
+                        // Legacy (pre-2.0 guacamole-lite) tier: the gclient
+                        // serves its page at the exact `/` route and 404s on
+                        // the session subfolder, so the subfolder check never
+                        // passes on the raw image (ANT-450, F-P5) — the
+                        // readiness gate used to fail with a 504 and the only
+                        // workaround was a one-line image shim. Three
+                        // consecutive (subfolder 404, root 200 HTML) polls
+                        // pass the gate; the launch-time capability probe
+                        // that follows classifies the session, and its
+                        // `selkies --version` exec confirms a secure image if
+                        // the subfolder is merely mid-boot.
+                        legacy_root_strikes = if resp.status() == reqwest::StatusCode::NOT_FOUND
+                            && legacy_root_ok(&client, &ip, port).await
+                        {
+                            legacy_root_strikes + 1
+                        } else {
+                            0
+                        };
+                        if legacy_root_strikes >= LEGACY_READY_STRIKES {
+                            info!(
+                                "[{session_id}] Legacy-tier health check passed (subfolder 404, root 200 HTML)."
+                            );
+                            health_check_passed = true;
+                            if !is_collaboration {
+                                return Ok(ip);
+                            }
+                        }
                         tokio::time::sleep(Duration::from_secs(2)).await;
                         continue;
                     }
                     Err(_) => {
+                        legacy_root_strikes = 0;
                         tokio::time::sleep(Duration::from_secs(2)).await;
                         continue;
                     }

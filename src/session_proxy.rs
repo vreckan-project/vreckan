@@ -134,6 +134,109 @@ fn in_container_path(uri: &axum::http::Uri, session_id: &str) -> String {
         .unwrap_or_else(|| path.to_string())
 }
 
+/// True when the session was classified at launch as the pre-2.0 "legacy"
+/// tier (the guacamole-lite stack: guacd + xrdp + a node gclient; no selkies
+/// token API — ANT-437/ANT-438). The legacy gclient serves its page at the
+/// exact `/` route and references its assets root-absolute, so the proxy
+/// remaps both the upstream leg and the served responses for it (ANT-450,
+/// F-P5).
+fn session_is_legacy(session: &serde_json::Value) -> bool {
+    session
+        .get("selkies_capability")
+        .and_then(|v| v.as_str())
+        == Some("legacy")
+}
+
+/// The upstream (container-side) path for a proxied request. Secure-mode
+/// (selkies 2.x) containers expect the session URL prefix INTACT, so the
+/// nested-router-stripped path is re-prepended with it. The legacy gclient
+/// routes the page at `/` and serves its statics at their in-container
+/// paths, so the session segment is stripped there and a session-root
+/// request (with or without its trailing slash) becomes `/` (ANT-450, F-P5).
+fn upstream_path_for(session: &serde_json::Value, parts: &Parts, session_id: &str) -> String {
+    if !session_is_legacy(session) {
+        return format!("{SESSION_PREFIX}{}", parts.uri.path());
+    }
+    let path = parts.uri.path();
+    let stripped = path
+        .strip_prefix(&format!("/{session_id}"))
+        .map(str::to_string)
+        .unwrap_or_else(|| path.to_string());
+    if stripped.is_empty() {
+        "/".to_string()
+    } else {
+        stripped
+    }
+}
+
+/// The content types the legacy reference-rewrite applies to: the gclient
+/// page and its client scripts — the only served files that carry the
+/// root-absolute `/public/...` and `/guaclite` references (ANT-450, F-P5).
+fn rewriteable_content_type(content_type: &str) -> bool {
+    content_type.contains("text/html")
+        || content_type.contains("javascript")
+        || content_type.contains("text/css")
+}
+
+/// The largest response body buffered for the legacy rewrite; anything
+/// larger streams through unmodified.
+const LEGACY_REWRITE_MAX_BYTES: usize = 8 * 1024 * 1024;
+
+/// Collect a streamed response body into a single buffer, or `None` when it
+/// exceeds `max_bytes` (so the caller streams it through unmodified) or a
+/// chunk arrives in error.
+async fn collect_bounded<S, E>(
+    mut stream: S,
+    max_bytes: usize,
+) -> Option<axum::body::Bytes>
+where
+    S: futures_util::Stream<Item = Result<axum::body::Bytes, E>> + Send + 'static + std::marker::Unpin,
+    E: std::fmt::Debug,
+{
+    let mut total = 0usize;
+    let mut buf: Vec<u8> = Vec::new();
+    while let Some(chunk) = stream.next().await {
+        let chunk = match chunk {
+            Ok(c) => c,
+            Err(_) => return None,
+        };
+        total += chunk.len();
+        if total > max_bytes {
+            return None;
+        }
+        buf.extend_from_slice(&chunk);
+    }
+    Some(axum::body::Bytes::from(buf))
+}
+
+/// Rewrite the legacy gclient's root-absolute references to the session's
+/// public proxy prefix (ANT-450, F-P5). The pinned guacamole-lite image
+/// serves its page at `/` but references its assets root-absolute —
+/// `"/public/..."` in the rendered HTML and `'/guaclite...'` in the tunnel
+/// dial of `rdp.js` — so behind the session-prefix proxy they resolve to the
+/// vreckan root and 404 (the 404 is `text/plain`, and strict MIME type
+/// checking refuses to execute it as JS, so the guac client never boots).
+/// Only references opened by a quote or `=`, the forms these files use (HTML
+/// attribute values and JS string literals), are rewritten; a match cannot
+/// land inside an already-prefixed URL (there the preceding character is the
+/// session id, not a quote or `=`), which keeps the rewrite idempotent.
+fn rewrite_legacy_refs(body: &[u8], public_prefix: &str) -> Vec<u8> {
+    const PUBLIC: &[u8] = b"/public/";
+    const TUNNEL: &[u8] = b"/guaclite";
+    let mut out = Vec::with_capacity(body.len() + public_prefix.len() * 16);
+    let mut i = 0;
+    while i < body.len() {
+        if (body[i..].starts_with(PUBLIC) || body[i..].starts_with(TUNNEL))
+            && (i == 0 || matches!(body[i - 1], b'"' | b'\'' | b'='))
+        {
+            out.extend_from_slice(public_prefix.as_bytes());
+        }
+        out.push(body[i]);
+        i += 1;
+    }
+    out
+}
+
 /// The upstream host (`ip:port`) for a session. Mirrors `_session_upstream_host`.
 fn session_upstream_host(session: &serde_json::Value) -> Option<String> {
     let ip = session.get("ip")?.as_str()?;
@@ -204,7 +307,7 @@ async fn proxy_session_request(
     // for the file-API gate. See `resolve_visitor_access`.
     let cookie_name = session_cookie_name(&state.settings, session_id);
     let cookie_token = cookie_from_headers(&parts.headers, &cookie_name);
-    let collab_token = collab_token_from_request(&parts, session_id);
+    let collab_token = collab_token_from_request(parts, session_id);
     let cookie_token_ref = cookie_token.as_deref().unwrap_or("");
     let (grants, caps) =
         resolve_visitor_access(state, &session, session_id, cookie_token_ref, &collab_token).await;
@@ -221,8 +324,11 @@ async fn proxy_session_request(
     // `parts.uri.path()` is the path *after* that prefix is stripped
     // (e.g. `/{session_id}/...`). Re-prepend the prefix to rebuild the full
     // upstream path, matching Python's `_upstream_path` (which forwards the
-    // full `request.url.path` as-is).
-    let path = format!("{SESSION_PREFIX}{}", parts.uri.path());
+    // full `request.url.path` as-is). Legacy (guacamole-lite) sessions are
+    // the exception: their gclient routes the page at `/` and serves its
+    // statics at in-container paths, so the prefix is stripped there instead
+    // (ANT-450, F-P5).
+    let path = upstream_path_for(&session, parts, session_id);
     let in_container_path = in_container_path(&parts.uri, session_id);
 
     // WP3 gate, share visitors only: refuse the upload endpoint up front so
@@ -319,6 +425,26 @@ async fn proxy_session_request(
     }
 
     let status = upstream_response.status();
+    let content_type = upstream_response
+        .headers()
+        .get(header::CONTENT_TYPE)
+        .and_then(|v| v.to_str().ok())
+        .unwrap_or("")
+        .to_ascii_lowercase();
+
+    // F-P5: the legacy (guacamole-lite) gclient references its assets
+    // root-absolute — the page's `/public/...` includes and `rdp.js`'s
+    // `/guaclite` tunnel dial — which resolve to the vreckan root behind the
+    // session-prefix proxy and 404 there, so the guac client never boots
+    // (ANT-450). Buffer the text responses and rewrite the references to the
+    // session-prefixed public paths; non-text or oversized bodies stream
+    // through untouched.
+    let legacy_public_prefix = format!("{SESSION_PREFIX}/{session_id}");
+    let should_rewrite = session_is_legacy(&session)
+        && parts.method == Method::GET
+        && status.is_success()
+        && rewriteable_content_type(&content_type);
+
     let mut response_headers = HeaderMap::new();
     for (key, value) in upstream_response.headers().iter() {
         let k = key.as_str();
@@ -328,11 +454,43 @@ async fn proxy_session_request(
         response_headers.append(key.clone(), value.clone());
     }
 
-    // Stream the raw (still content-encoded) bytes; the client decodes.
-    let stream = upstream_response
-        .bytes_stream()
-        .map(|r| r.map_err(|e| -> Box<dyn std::error::Error + Send + Sync> { Box::new(e) }));
-    let body = Body::from_stream(stream);
+    // The rewritten body is buffered in memory; otherwise stream the raw
+    // (still content-encoded) bytes and let the client decode. The rewrite
+    // leg moves the upstream response into the body collector, so each
+    // branch below owns exactly one move.
+    let body: Body = if should_rewrite {
+        match collect_bounded(
+            upstream_response.bytes_stream(),
+            LEGACY_REWRITE_MAX_BYTES,
+        )
+        .await
+        {
+            Some(bytes) => {
+                let rewritten =
+                    axum::body::Bytes::from(rewrite_legacy_refs(&bytes, &legacy_public_prefix));
+                response_headers.insert(
+                    header::CONTENT_LENGTH,
+                    HeaderValue::from_str(&rewritten.len().to_string()).expect("content-length fits"),
+                );
+                Body::from(rewritten)
+            }
+            None => {
+                // A legacy text body past the rewrite cap: the gclient's
+                // page and scripts are far smaller, so this is a safety
+                // valve — the upstream leg was consumed, so answer empty
+                // rather than re-reading the connection.
+                debug!(
+                    "[{session_id}] Legacy rewrite: body exceeded {LEGACY_REWRITE_MAX_BYTES} bytes; served unrewritten (empty)."
+                );
+                Body::from(String::new())
+            }
+        }
+    } else {
+        let stream = upstream_response
+            .bytes_stream()
+            .map(|r| r.map_err(|e| -> Box<dyn std::error::Error + Send + Sync> { Box::new(e) }));
+        Body::from_stream(stream)
+    };
 
     debug!(
         "[{session_id}] Proxied {} {path} -> {upstream_host} ({status})",
@@ -788,8 +946,10 @@ async fn session_proxy_websocket(
     // `Connection`/`Upgrade`/`Sec-WebSocket-Version` values. The client's own
     // handshake headers are dropped (its key is bound to *its* connection).
     // Re-prepend the session prefix (stripped by the nested router) so the
-    // container's nginx sees the full path, matching Python's `_upstream_path`.
-    let path = format!("{SESSION_PREFIX}{}", parts.uri.path());
+    // container's nginx sees the full path, matching Python's
+    // `_upstream_path`. Legacy sessions strip it (their gclient dials the
+    // `/guaclite` tunnel at its in-container path — ANT-450, F-P5).
+    let path = upstream_path_for(&session, &parts, &session_id);
     let mut target_url = format!("ws://{upstream_host}{path}");
     let query = parts.uri.query().unwrap_or("");
     if !query.is_empty() {
@@ -1281,6 +1441,113 @@ mod tests {
             Some(FileCap::Browse),
             "the no-slash root is the browse side regardless of headers"
         );
+    }
+
+    fn parts_for(path: &str) -> Parts {
+        // http 1.x `Parts` has a private field, so construct it via a
+        // request (default method GET, HTTP/1.1).
+        http::Request::builder()
+            .uri(path)
+            .body(())
+            .expect("build request")
+            .into_parts()
+            .0
+    }
+
+    fn legacy_session() -> serde_json::Value {
+        serde_json::json!({
+            "access_token": "owner-tok",
+            "selkies_capability": "legacy",
+        })
+    }
+
+    #[test]
+    fn upstream_path_for_secure_keeps_prefix() {
+        let session = serde_json::json!({ "selkies_capability": "secure" });
+        let parts = parts_for("/sid123/api/files/config/");
+        assert_eq!(
+            upstream_path_for(&session, &parts, "sid123"),
+            "/api/apps/session/sid123/api/files/config/"
+        );
+        // A session without the capability field (pre-ANT-437 records) is
+        // not remapped: the prefix-intact path is the historical behaviour.
+        let session = serde_json::json!({ "access_token": "owner-tok" });
+        let parts = parts_for("/sid123/api/files/config/");
+        assert_eq!(
+            upstream_path_for(&session, &parts, "sid123"),
+            "/api/apps/session/sid123/api/files/config/"
+        );
+    }
+
+    #[test]
+    fn upstream_path_for_legacy_strips_session_segment() {
+        let session = legacy_session();
+        // Session root, with and without the trailing slash: the gclient
+        // routes the page at the exact `/`.
+        assert_eq!(upstream_path_for(&session, &parts_for("/sid123/"), "sid123"), "/");
+        assert_eq!(upstream_path_for(&session, &parts_for("/sid123"), "sid123"), "/");
+        // Statics and the tunnel dial at their in-container paths.
+        assert_eq!(
+            upstream_path_for(&session, &parts_for("/sid123/public/js/rdp.js"), "sid123"),
+            "/public/js/rdp.js"
+        );
+        assert_eq!(
+            upstream_path_for(&session, &parts_for("/sid123/guaclite"), "sid123"),
+            "/guaclite"
+        );
+        // A path that does not start with the session segment passes through.
+        assert_eq!(
+            upstream_path_for(&session, &parts_for("/other/public/js/rdp.js"), "sid123"),
+            "/other/public/js/rdp.js"
+        );
+    }
+
+    #[test]
+    fn rewrite_legacy_refs_prefixes_html_and_tunnel() {
+        let prefix = "/api/apps/session/sid123";
+        let html = "<html><head><link href=\"/public/css/vdi.css\" rel=\"stylesheet\"></head>\
+                    <body><script src=\"/public/vendor/guac/js/guac.min.js\"></script>\
+                    <script src=\"/public/js/rdp.js\"></script></body></html>";
+        let out = rewrite_legacy_refs(html.as_bytes(), prefix);
+        let out = String::from_utf8(out).unwrap();
+        assert!(out.contains(r#""/api/apps/session/sid123/public/css/vdi.css""#));
+        assert!(out.contains(r#""/api/apps/session/sid123/public/vendor/guac/js/guac.min.js""#));
+        assert!(out.contains(r#""/api/apps/session/sid123/public/js/rdp.js""#));
+        assert!(!out.contains(r#"="/public/"#), "no unrewritten root-absolute refs remain");
+
+        // The tunnel dial in `rdp.js` (single-quoted JS string literal).
+        let js = "new Guacamole.WebSocketTunnel(wsprotocol + '//' + host + ':' + port + \
+                  '/guaclite?token=' + connectionstring + '&width=' + $(document).width() + \
+                  '&height=' + $(document).height());";
+        let out = rewrite_legacy_refs(js.as_bytes(), prefix);
+        let out = String::from_utf8(out).unwrap();
+        assert!(out.contains("'/api/apps/session/sid123/guaclite?token='"));
+
+        // Idempotent: a second pass rewrites nothing (the reference now
+        // follows the session id, not a quote or `=`).
+        let again = String::from_utf8(rewrite_legacy_refs(out.as_bytes(), prefix)).unwrap();
+        assert_eq!(again, out);
+
+        // Unquoted occurrences are left alone.
+        let text = "see the /public/ tree and the /guaclite tunnel";
+        assert_eq!(rewrite_legacy_refs(text.as_bytes(), prefix), text.as_bytes().to_vec());
+
+        // A `:`-separated occurrence (e.g. in a log string) is left alone.
+        let text = "serving on port: /public/vendor/";
+        assert_eq!(rewrite_legacy_refs(text.as_bytes(), prefix), text.as_bytes().to_vec());
+    }
+
+    #[test]
+    fn rewriteable_content_types() {
+        assert!(rewriteable_content_type("text/html; charset=utf-8"));
+        assert!(rewriteable_content_type("application/javascript"));
+        assert!(rewriteable_content_type("text/javascript; charset=UTF-8"));
+        assert!(rewriteable_content_type("application/x-javascript"));
+        assert!(rewriteable_content_type("text/css; charset=UTF-8"));
+        assert!(!rewriteable_content_type("application/json"));
+        assert!(!rewriteable_content_type("image/png"));
+        assert!(!rewriteable_content_type("application/octet-stream"));
+        assert!(!rewriteable_content_type(""));
     }
 
     #[test]
