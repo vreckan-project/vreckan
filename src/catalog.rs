@@ -214,6 +214,12 @@ pub struct ActiveSessionInfo {
     /// True when the caller can Join this session: a plain (non-room)
     /// session whose app the caller has access to.
     pub joinable: bool,
+    /// The usernames currently holding a self-serve join grant on this
+    /// session (ANT-467): set for the caller's own sessions so the list UI
+    /// can badge who is in without an extra round trip; empty otherwise
+    /// (other users' participants are not the caller's concern).
+    #[serde(skip_serializing_if = "Vec::is_empty")]
+    pub participants: Vec<String>,
 }
 
 /// The response to a session recreate. Mirrors `models.SessionRecreateResponse`.
@@ -3553,6 +3559,11 @@ async fn get_my_sessions(
             username: owner,
             is_mine,
             joinable,
+            participants: if is_mine {
+                session_shares::participant_usernames(&s_data)
+            } else {
+                Vec::new()
+            },
         });
     }
     user_sessions.sort_by(|a, b| b.created_at.partial_cmp(&a.created_at).unwrap_or(std::cmp::Ordering::Equal));

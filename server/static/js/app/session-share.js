@@ -94,7 +94,7 @@ function previewLine(role, fileCaps, password, expiryHours) {
 // Modal state
 // ---------------------------------------------------------------------------
 
-let ctx = null; // { sessionId, sessionName, manage, shares, editingShareId, newestShareId }
+let ctx = null; // { sessionId, sessionName, manage, shares, participants, editingShareId, newestShareId }
 let escListener = null;
 let langListener = null;
 
@@ -194,6 +194,7 @@ export function openSessionShareModal(session, { manage = false, editShare = nul
     sessionName: sessionDisplayName(session),
     manage: manage || !!editShare,
     shares: editShare ? [editShare] : [],
+    participants: [],
     editingShareId: editShare ? editShare.share_id : null,
     newestShareId: null,
   };
@@ -238,8 +239,10 @@ function attachLang() {
     // Re-render dynamic strings if the user switches language mid-modal.
     if (el("modal-session-share").hidden) return;
     el("ss-title").textContent = t("shareSession.title", { name: ctx.sessionName });
-    if (!el("ss-manage").hidden) renderShareList();
-    else {
+    if (!el("ss-manage").hidden) {
+      renderShareList();
+      renderParticipants();
+    } else {
       refreshRoleDependent();
       el("ss-submit").textContent = ctx.editingShareId
         ? t("shareSession.saveChanges")
@@ -347,13 +350,25 @@ function setExpiryFromShare(share) {
 // ---------------------------------------------------------------------------
 
 async function loadShares(onReady) {
-  try {
-    ctx.shares = (await secureFetch(`/api/sessions/${ctx.sessionId}/shares`, { method: "GET" })) || [];
-  } catch (err) {
-    toast(err.message, "error");
+  // The manage state shows the links and the participants side by side
+  // (ANT-467): fetch both, best-effort.
+  const [sharesRes, participantsRes] = await Promise.allSettled([
+    secureFetch(`/api/sessions/${ctx.sessionId}/shares`, { method: "GET" }),
+    secureFetch(`/api/sessions/${ctx.sessionId}/participants`, { method: "GET" }),
+  ]);
+  if (sharesRes.status === "fulfilled") {
+    ctx.shares = Array.isArray(sharesRes.value) ? sharesRes.value : [];
+  } else {
+    toast(sharesRes.reason.message, "error");
     ctx.shares = [];
   }
+  if (participantsRes.status === "fulfilled") {
+    ctx.participants = Array.isArray(participantsRes.value) ? participantsRes.value : [];
+  } else {
+    ctx.participants = [];
+  }
   renderShareList();
+  renderParticipants();
   if (onReady) onReady();
 }
 
@@ -442,6 +457,103 @@ function buildShareRow(s) {
   });
   actions.appendChild(revokeBtn);
 
+  row.appendChild(actions);
+  return row;
+}
+
+// ---------------------------------------------------------------------------
+// Participants (ANT-467): who is in the session + per-joiner revoke
+// ---------------------------------------------------------------------------
+
+// Human-readable line for one participant: how they got in, when, and the
+// grant's TTL when it has one.
+function participantSummary(p) {
+  const parts = [p.source === "join" ? t("shareSession.partViaJoin") : t("shareSession.partViaShare")];
+  if (p.joined_at) {
+    parts.push(t("shareSession.partJoinedAt", { when: new Date(p.joined_at * 1000).toLocaleString() }));
+  }
+  if (p.expiry) {
+    parts.push(
+      p.expiry < nowSecs()
+        ? t("shareSession.partExpired")
+        : t("shareSession.partExpiresIn", { hours: Math.max(1, Math.round((p.expiry - nowSecs()) / 3600)) })
+    );
+  }
+  return parts.join(" · ");
+}
+
+function renderParticipants() {
+  const list = el("ss-participants-list");
+  list.innerHTML = "";
+  if (!ctx || !ctx.participants.length) {
+    list.innerHTML = `<p class="muted">${t("shareSession.noParticipants")}</p>`;
+    return;
+  }
+  const ordered = [...ctx.participants].sort((a, b) => {
+    const aj = a.joined_at || 0;
+    const bj = b.joined_at || 0;
+    return bj - aj;
+  });
+  for (const p of ordered) {
+    list.appendChild(buildParticipantRow(p));
+  }
+}
+
+function buildParticipantRow(p) {
+  const isJoin = p.source === "join";
+  const row = document.createElement("div");
+  row.className = "share-row ss-participant-row";
+
+  const left = document.createElement("div");
+  left.className = "share-meta";
+  const name = document.createElement("span");
+  name.textContent = p.username || "?";
+  left.appendChild(name);
+  const summary = document.createElement("span");
+  summary.className = "muted";
+  summary.textContent = " — " + participantSummary(p);
+  left.appendChild(summary);
+  row.appendChild(left);
+
+  // Only joiners get a per-joiner revoke here (ANT-467): share-link visits
+  // are cut by revoking the link itself, above.
+  if (!isJoin) return row;
+
+  const actions = document.createElement("div");
+  actions.className = "share-ss-actions";
+  const revokeBtn = document.createElement("button");
+  revokeBtn.type = "button";
+  revokeBtn.className = "btn btn-danger btn-sm";
+  revokeBtn.textContent = t("shareSession.partRevoke");
+  let armed = false;
+  let armTimer = null;
+  revokeBtn.addEventListener("click", async () => {
+    if (!armed) {
+      armed = true;
+      revokeBtn.textContent = t("shareSession.partConfirmRevoke");
+      armTimer = setTimeout(() => {
+        armed = false;
+        revokeBtn.textContent = t("shareSession.partRevoke");
+      }, 4000);
+      return;
+    }
+    clearTimeout(armTimer);
+    armed = false;
+    revokeBtn.disabled = true;
+    try {
+      await secureFetch(`/api/sessions/${ctx.sessionId}/participants/${encodeURIComponent(p.username)}`, {
+        method: "DELETE",
+      });
+      toast(t("shareSession.partRevoked", { name: p.username }), "success");
+      loadShares();
+      notifySessionsChanged();
+    } catch (err) {
+      revokeBtn.disabled = false;
+      revokeBtn.textContent = t("shareSession.partRevoke");
+      toast(err.message, "error");
+    }
+  });
+  actions.appendChild(revokeBtn);
   row.appendChild(actions);
   return row;
 }

@@ -210,6 +210,8 @@ async fn seed_plain_session(state: &vreckan::state::AppState, upstream: &str) ->
                     file_download: true,
                     file_upload: true,
                 },
+                created_at: 0.0,
+                expiry: None,
             },
         );
     state.sessions.write().await.insert(sid.clone(), session);
@@ -322,6 +324,8 @@ async fn test_viewers_do_not_steal_mk() {
                         file_download: true,
                         file_upload: false,
                     },
+                    created_at: 0.0,
+                    expiry: None,
                 },
             );
     }
