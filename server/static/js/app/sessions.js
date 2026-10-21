@@ -46,9 +46,11 @@ function sessionDisplayName(s) {
 }
 
 // Pre-join confirmation (ANT-440): state the v1 participant role and the
-// WS single-controller trade-off (Phase 0 finding (c)) rather than hiding
-// it — WebSockets hands keyboard/mouse to the newest controller, WebRTC
-// is the coexistence mode.
+// observed WS behavior (review-gate evidence of 2026-10-20): with the
+// default WebSockets transport the current driver's live stream ends while
+// the joiner is connected (session and token survive, re-entry at any
+// time); the joiner may need a refresh to gain keyboard/mouse control
+// (selkies 2.0.0 MK_ACCESS quirk, ANT-443).
 async function confirmJoin(s) {
   return confirmModal(t("sessions.joinConfirmMsg", { name: sessionDisplayName(s) }), {
     title: t("sessions.joinConfirmTitle"),

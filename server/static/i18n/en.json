@@ -664,7 +664,7 @@
     "joining": "Joining…",
     "joinTitle": "Join this running session with your own participant token — no share link needed",
     "joinConfirmTitle": "Join running session",
-    "joinConfirmMsg": "You’ll join “{name}” as a participant with input control. In WebSockets mode the newest controller holds the keyboard and mouse, so joining takes input from the current driver; WebRTC mode is the coexistence mode.",
+    "joinConfirmMsg": "You’ll join “{name}” as a participant with input control.\nNote: with the default (WebSockets) transport, the person currently driving this desktop will see their live stream end while you are connected — their session is not lost and they can re-enter at any time.\nYou may need to refresh the joined page to gain keyboard/mouse control (known selkies 2.0.0 behavior — tracked in ANT-443).",
     "joinNoUrl": "Join succeeded but no session URL was returned.",
     "joinEnded": "The session ended before you could join it.",
     "joinNoAccess": "You don’t have access to this session’s app.",

@@ -1671,6 +1671,7 @@ label:has(.src-badge) {
 
 .modal-message {
   margin: 4px 0 0;
+  white-space: pre-line;
 }
 
 /* ===== Progress bars (shared: install modal + admin table rows) ===== */
