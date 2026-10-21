@@ -198,7 +198,16 @@
     "linkCount": "{count} 件のリンク",
     "linkCountPlural": "{count} 件のリンク",
     "linksBadgeTitle": "有効な共有リンク — クリックして管理",
-    "shareTitle": "リンクでこのセッションを共有"
+    "shareTitle": "リンクでこのセッションを共有",
+    "inviteLabel": "ユーザーを招待（任意）",
+    "invitePlaceholder": "Vreckan ユーザー名",
+    "inviteHint": "Vreckan のユーザー（自分以外）。保存時に検証されます。",
+    "inviteClear": "招待をクリア",
+    "invitePreview": "{user} はこのセッションをアプリ画面に表示でき、参加できます。",
+    "manageInvitee": "招待先：{user}",
+    "manageGeneric": "リンクを知っている人（アプリ画面に表示されない）",
+    "revokeInviteeArmed": "無効化を確認？{user} がアクセスを失います",
+    "revokeInviteeDone": "リンクが無効になりました — {user} はこのセッションを見られなくなり、参加もできなくなります。"
   },
   "overview": {
     "title": "概要",

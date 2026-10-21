@@ -198,7 +198,16 @@
     "linkCount": "{count} link",
     "linkCountPlural": "{count} links",
     "linksBadgeTitle": "Aktive delelinks — klik for at administrere",
-    "shareTitle": "Del denne session med et link"
+    "shareTitle": "Del denne session med et link",
+    "inviteLabel": "Invitér bruger (valgfrit)",
+    "invitePlaceholder": "Vreckan-brugernavn",
+    "inviteHint": "En Vreckan-bruger (ikke dig). Valideres ved gem.",
+    "inviteClear": "Ryd invitation",
+    "invitePreview": "{user} vil se denne session på deres apps-side og kan deltage.",
+    "manageInvitee": "Invitéret: {user}",
+    "manageGeneric": "Alle med linket (bliver væk fra apps-sider)",
+    "revokeInviteeArmed": "Bekræft ophæv? {user} mister adgangen",
+    "revokeInviteeDone": "Link ophævet — {user} ser ikke længere denne session og kan ikke længere deltage."
   },
   "overview": {
     "title": "Oversigt",
