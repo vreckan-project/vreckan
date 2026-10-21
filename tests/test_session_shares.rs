@@ -1294,7 +1294,7 @@ async fn test_revoke_named_invite_strips_participant() {
             .read()
             .await
             .values()
-            .any(|r| r.share_id == format!("join:invitee")),
+            .any(|r| r.share_id == "join:invitee"),
         "join token removed from the vreckan-side map"
     );
     let denied = sc
@@ -1463,7 +1463,7 @@ async fn test_cleanup_expired_named_invite_strips_participant() {
             .read()
             .await
             .values()
-            .any(|r| r.share_id == format!("join:invitee")),
+            .any(|r| r.share_id == "join:invitee"),
         "the join token is removed from the vreckan-side map"
     );
 }

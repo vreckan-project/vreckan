@@ -781,6 +781,7 @@ async fn revoke_session_share(
 /// E2EE-wrapped 401 would become a 400 "Secure session required" when no
 /// session exists yet), and an E2EE response for the 404 unknown / 403
 /// someone-else's-session cases. Returns the session record on success.
+#[allow(clippy::result_large_err)]
 async fn verify_session_owner(
     state: &AppState,
     headers: &HeaderMap,
