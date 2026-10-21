@@ -162,6 +162,23 @@ function renderSessions(sessions, sharesBySession = {}) {
         badge.addEventListener("click", () => openSessionShareModal(s, { manage: true }));
         metaLine.appendChild(badge);
       }
+      // Participants (ANT-467): who has joined this session. The list API
+      // carries the joiners' usernames for the caller's own sessions, so no
+      // extra fetch is needed for the badge; the manage modal shows the
+      // full list with per-joiner revoke.
+      const participants = Array.isArray(s.participants) ? s.participants : [];
+      if (participants.length) {
+        const badge = document.createElement("button");
+        badge.type = "button";
+        badge.className = "session-share-badge session-participants-badge";
+        badge.textContent =
+          participants.length === 1
+            ? t("sessions.participantCount", { count: participants.length })
+            : t("sessions.participantCountPlural", { count: participants.length });
+        badge.title = t("sessions.participantsBadgeTitle", { names: participants.join(", ") });
+        badge.addEventListener("click", () => openSessionShareModal(s, { manage: true }));
+        metaLine.appendChild(badge);
+      }
     }
     info.appendChild(metaLine);
     item.appendChild(info);

@@ -71,6 +71,14 @@ description: Share a running app session with anyone — zero-setup quick links,
   </ul>
   <p>A recipient needs no account: opening an invite link mints them a personal token, adds them to the room's viewer list, and redirects them into the room page — where the live display now works for them too, not just the owner's first browser.</p>
 
+  <h2>Who's in the session — the participant list</h2>
+  <p>Every session knows who is in it. Your own sessions in the Sessions view show a <strong>participant badge</strong> — how many people are currently in — and the session's share dialog has a <strong>Participants</strong> section that lists each of them: how they got in, when they joined, and (for joiners) when their join access expires.</p>
+  <ul>
+    <li><strong>Share-link visitors</strong> are listed by their account username and the link they used. They stay in for as long as the link is active — cutting their access means revoking that link (each link row in the same dialog does exactly that), not an individual removal.</li>
+    <li><strong>Joiners</strong> (the Join action on a running session) are listed individually and carry a <strong>24-hour join grant</strong>. The grant refreshes on each (re-)join: a joiner who keeps coming back stays in, while one who is away more than a day has to Join again. The per-row <strong>Revoke</strong> (two-step, like revoking a link) cuts a single joiner at a time — they're out on their next request, the session and everyone else are untouched, and a later Join starts them a fresh grant.</li>
+  </ul>
+  <p>The list is a view for you, the owner: it names people, not traffic — nothing about what they do in the session is revealed. The underlying endpoints are <code>GET /api/sessions/{id}/participants</code> and <code>DELETE /api/sessions/{id}/participants/{username}</code>, both owner-only and end-to-end encrypted like the rest of the management API.</p>
+
   <h2>The trust model</h2>
   <p>Vreckan runs two planes over one HTTPS endpoint, and they are <em>not</em> protected equally:</p>
   <table>

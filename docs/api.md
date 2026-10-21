@@ -146,6 +146,8 @@ Owner management (E2EE + the caller must own the session):
 | GET | `/api/sessions/{session_id}/shares` | `list_session_shares` | E2EE (owner) |
 | PATCH | `/api/sessions/{session_id}/shares/{share_id}` | `update_session_share` | E2EE (owner) |
 | DELETE | `/api/sessions/{session_id}/shares/{share_id}` | `revoke_session_share` | E2EE (owner) |
+| GET | `/api/sessions/{session_id}/participants` | `list_session_participants` | E2EE (owner) |
+| DELETE | `/api/sessions/{session_id}/participants/{username}` | `revoke_session_participant` | E2EE (owner) |
 
 Account-less public entry (plaintext):
 
@@ -206,7 +208,48 @@ Response 204, empty body. Revocation marks the link dead (the public
 entry answers 410) and strips **every per-visit token the link has ever
 minted** — from the session's `viewers` list, the container's selkies
 token table, and the vreckan-side token map — without stopping the
-session.
+session. Since v0.8.5 the strip proceeds when the durable share row is
+missing, which is how the synthetic join grant (`join:{username}`, never
+a row in `session_shares`) reaches the same cleanup path.
+
+**Participants (v0.8.5, ANT-467).** Every admitted visitor is recorded in
+the session's `viewers` list with how it got in; the two participant
+routes expose that to the owner.
+
+**`GET /api/sessions/{session_id}/participants`** — response 200: a JSON
+array, one entry per recorded visit (self-serve joins and share-link
+visits alike, in viewers order):
+
+| Field | Type | Notes |
+|---|---|---|
+| `username` | string \| null | the joiner's real username for joins; the random per-visit `User-NNN` for share visits |
+| `permission` | string \| null | `participant` \| `readonly` |
+| `source` | string | `join` (the Join action) \| `share` (a share-link visit) |
+| `share_id` | string \| null | the minting grant's id — `join:{username}` or the share's UUID; `null` for entries persisted before v0.8.5 (classification then falls back to the username shape) |
+| `joined_at` | number \| null | unix seconds; absent before v0.8.5 |
+| `expiry` | number \| null | unix seconds; joins carry the 24-hour join TTL, share visits inherit the link's expiry, `null` = no expiry |
+
+Errors: 401 unauthenticated (plaintext, as with the other owner routes);
+404 unknown session; 403 not the owner's session.
+
+**`DELETE /api/sessions/{session_id}/participants/{username}`** — revoke a
+single joiner: strips the joiner's token from the session's `viewers`
+list, the container's token table, and the vreckan-side token map, then
+persists the session. The joiner drops on the next proxy request; the
+session and everyone else's grants are untouched, and a later Join mints
+a fresh grant. Response 204 on success; 404 when that user holds no live
+join grant (never joined, already revoked, or the grant's TTL ran out).
+
+Join grants carry a 24-hour TTL (`JOIN_TTL_HOURS`, fixed in v0.8.5) from
+the mint and from each (re-)join after a lapse — an expired entry is
+refreshed in place (same token, new expiry) rather than re-minted, and
+entries persisted before v0.8.5 pick the TTL up on their first
+post-upgrade (re-)join. The background sweeper
+(`cleanup_expired_session_shares`) strips expired join entries and prunes
+the in-memory token map of every expired record. The session list
+(`GET /api/sessions`) carries `participants` — the joiners' usernames —
+for the caller's own sessions only, so the UI can badge the count
+without a round trip.
 
 **Public entry.** `GET /share/{share_id}`: 404 `Share not found.`; 410
 when revoked, expired, or the session has ended (plain-page message in

@@ -9,6 +9,15 @@ is committed normally in `vreckan`. The changelog is the authoritative
 record of what shipped in each release — see
 [`docs/release.md`](./docs/release.md) for the conventions.
 
+## 2026-10-21 — F2: owner-visible participant list with per-joiner revoke and a 24-hour join-token TTL, v0.8.5 (ANT-467)
+
+Finding F2 of the 0.8.5 review round closes the board-accepted v1 tradeoff recorded in v0.8.4 (ANT-444, F2): join grants were permanent and had no owner-side revoke path — the owner's only levers were killing or recreating the session.
+
+- **Owners can see who is in their sessions.** Each session records every admitted visitor with how they got in; the Sessions view shows a participant-count badge on your own sessions, and the session's share dialog gains a **Participants** section: each person, how they got in (Join or a share link — with which link), when they joined, and for joiners, when their join access expires. Share-link visitors are listed by username and the link they used; they stay in while the link is active, so cutting them means revoking that link, exactly as before.
+- **Per-joiner revoke.** Each joiner row in the Participants section has a two-step **Revoke** that removes that one person on their next request — the session, the other participants, and every share link are untouched, and a later Join starts them a fresh grant. This also fixes the underlying revoke path for share links: revoking a link now strips the visit grants that link minted even on plain (non-promoted) sessions, where the synthetic link id never reached the durable share store.
+- **Join tokens get a 24-hour TTL.** Join access is granted for 24 hours from the last (re-)join: a joiner who keeps coming back stays in (each re-join after a lapse refreshes the window), one who is away more than a day has to Join again, and the background cleanup schedule expires lapsed grants without a restart. Grants issued before this release pick up a TTL on the joiner's next (re-)join. The window is a fixed 24 hours for 0.8.5; a per-session, owner-configurable TTL is a candidate follow-up.
+- **Session lists carry the participant usernames** for the session's owner only (the admin cross-user view is unchanged), which is what the badge and the modal render from — no extra round trip.
+
 ## 2026-10-21: Selkies multi-user (launch-time secure mode, first-class Join, pre-2.0 detection, multi-user docs), v0.8.4 (ANT-436; ANT-437/ANT-438/ANT-440/ANT-443/ANT-449)
 
 v0.8.4 lands the Selkies multi-user phase (plan rev 20): plain webtop sessions enter Selkies secure mode at launch, a second user can join a running session with a single action, and the catalog knows which images support which Selkies features. The release ships with the multi-user usage docs (Phase 3, landing on release day).
