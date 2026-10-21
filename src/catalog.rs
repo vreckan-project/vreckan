@@ -211,12 +211,15 @@ pub struct ActiveSessionInfo {
     pub username: String,
     /// True when this session belongs to the caller.
     pub is_mine: bool,
-    /// True when the caller can Join this session: a plain (non-room)
-    /// session whose app the caller has access to.
+    /// True when the caller can Join this session: the owner's express
+    /// grant (ANT-472) — a non-revoked, non-expired named share link that
+    /// names the caller, or a persisted participant entry. The caller's
+    /// own sessions keep the app-access check; room sessions are never
+    /// joinable from this list (their own invite flow).
     pub joinable: bool,
-    /// The usernames currently holding a self-serve join grant on this
-    /// session (ANT-467): set for the caller's own sessions so the list UI
-    /// can badge who is in without an extra round trip; empty otherwise
+    /// The usernames currently holding a join grant on this session
+    /// (ANT-467): set for the caller's own sessions so the list UI can
+    /// badge who is in without an extra round trip; empty otherwise
     /// (other users' participants are not the caller's concern).
     #[serde(skip_serializing_if = "Vec::is_empty")]
     pub participants: Vec<String>,

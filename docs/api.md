@@ -94,7 +94,32 @@ Two orthogonal layers:
 | GET | `/api/sessions/{session_id}/status` | `get_session_status` | E2EE (own session) |
 | DELETE | `/api/sessions/{session_id}` | `stop_my_session` | E2EE (own session) |
 | POST | `/api/sessions/{session_id}/recreate` | `recreate_my_session` | E2EE (own session) |
+| POST | `/api/sessions/{session_id}/join` | `join_my_session` | E2EE (any authenticated user; the owner's express grant gates success) |
 | POST | `/api/sessions/{session_id}/send_file` | `send_file_to_session` | E2EE (own session) |
+
+**Session list and the owner-grant join gate (v0.8.5, ANT-472).** `GET /api/sessions`
+returns the caller's own sessions plus other users'; each row's `joinable` flag
+drives the UI's Join affordance, the row's visibility, and (with the F3 nulling)
+whether `launch_context` and the custom `name` are revealed:
+
+| Row | `joinable` |
+|---|---|
+| Own session | the app-access check, as before (the UI offers Open on own rows) |
+| Room (collaboration) session | never — rooms run their own invite flow |
+| Another user's plain session | the owner's **express grant**: a non-revoked, non-expired named share link that names the caller, or a persisted participant entry (v0.8.4 self-serve joiners grandfathered until the owner revokes) |
+
+The v0.8.4 per-app-access self-serve gate is gone: app access no longer makes
+another user's session visible or joinable — the owner may invite a user with no
+entry in the app's allowlist — and a not-invited user's rows are hidden from the
+Join affordance with `launch_context`/`name` nulled (F3).
+
+**`POST /api/sessions/{session_id}/join`** enforces the same gate: 400 when the
+E2EE request body is missing (the F4 CSRF gate — a cross-site form POST cannot
+carry one), 404 for an unknown session, 409 for a room session (its own invite
+flow), 403 `The session owner has not granted you access.` when the grant is
+absent; success 200 `{ session_url, join_mode }`, where `join_mode` reports
+`secure` (selkies token table — multiple controllers) or `legacy`
+(single-controller WebSockets handoff) so the UI can state the tradeoff.
 
 ### Session reverse proxy (data plane) — `session_proxy.rs`
 
@@ -130,7 +155,11 @@ consolidation is a representation difference, not a behavior change.)
 
 Owner-managed share links that let a session owner hand one of their
 running sessions — plain or room — to a recipient who has no Vreckan
-account, without sharing the owner's own credentials. Each share has a
+account, without sharing the owner's own credentials. Since v0.8.5 a link can
+also **name an invited user** with a Vreckan account: the invitee sees the
+session on the apps page and can Join it (the owner-grant gate above); a
+generic (unnamed) link only admits its holder through the link itself and does
+not light up the apps page. Each share has a
 **role** — `full` (input plus every file capability) or `view_only`
 (no input; browse and download on by default) — freely combinable file
 capabilities (`file_browse`, `file_download`, `file_upload`), an optional
@@ -155,7 +184,7 @@ Account-less public entry (plaintext):
 |---|---|---|---|
 | GET | `/share/{share_id}` | `access_session_share_get` | — (303 entry redirect, or the password page) |
 | POST | `/share/{share_id}` | `access_session_share_post` | — (password submission) |
-| GET | `/join/{session_id}/{username}` | `access_session_join_hop` | — (self-serve join hop, ANT-466 F1: 303 `private, no-store` to the session URL with the token stripped; the caller's participant token is handed over via the `collab_token_{session_id}` cookie, which admits the redirect target) |
+| GET | `/join/{session_id}/{username}` | `access_session_join_hop` | — (granted join hop, ANT-466 F1: 303 `private, no-store` to the session URL with the token stripped; the caller's participant token is handed over via the `collab_token_{session_id}` cookie, which admits the redirect target) |
 
 The share's wire shape (every owner route takes and returns it,
 E2EE-encrypted):
@@ -171,6 +200,7 @@ E2EE-encrypted):
 | `has_password` | bool | indicator only — the hash never leaves the server |
 | `revoked` | bool | revoked links stay listed; the public entry answers 410 |
 | `url` | string | `/share/{share_id}` |
+| `invited_username` | string \| null | the user the owner expressly invited on this link (v0.8.5, ANT-472); `null` = a generic link |
 
 **`POST /api/sessions/{session_id}/shares`** — create. Request body:
 
@@ -180,10 +210,13 @@ E2EE-encrypted):
 | `caps` | object | no | partial override `{input?, file_browse?, file_download?, file_upload?}`; absent fields take the role's defaults |
 | `password` | string | no | non-empty sets the password (argon2id); absent/blank = none |
 | `expiry_hours` | number | no | must be `> 0`; sets `expiry_timestamp = now + hours·3600` |
+| `username` | string | no | the named invite (v0.8.5): an existing user who is not the session owner; absent/blank = a generic link |
 
 Role invariants: `full` ⇒ every cap on; `view_only` ⇒ `input` off, file
 caps freely combinable. Response 200: the new share. Errors: 404 unknown
-session; 403 not the owner's session; 422 invalid body or role.
+session; 403 not the owner's session; 422 invalid body or role; 422
+`No user named '{username}'.` or `The session owner cannot be invited on the
+session's own share link.` for a bad invite.
 
 **`GET /api/sessions/{session_id}/shares`** — response 200: a JSON array
 of the session's shares (newest first), same shape as above.
@@ -200,25 +233,30 @@ password):
 | `caps` | object | partial override, as at create |
 | `password` | string \| null | non-empty sets it; `""` or `null` clears it |
 | `expiry_hours` | number \| null | positive sets a new expiry from now; `null` clears it |
+| `username` | string \| null | the named invite: a non-empty name sets it (must be an existing user who is not the owner — 422 otherwise); `""` or `null` clears it |
 
 Response 200: the updated share. Errors: 404 unknown share (or a share
-belonging to a different session); 422 invalid role.
+belonging to a different session); 422 invalid role or invite username.
 
 **`DELETE /api/sessions/{session_id}/shares/{share_id}`** — revoke.
-Response 204, empty body. Revocation marks the link dead (the public
-entry answers 410) and strips **every per-visit token the link has ever
-minted** — from the session's `viewers` list, the container's selkies
-token table, and the vreckan-side token map — without stopping the
+Response 200: the revoked link's info (including `invited_username`), so
+the client can name who just lost access. Revocation marks the link dead
+(the public entry answers 410) and strips **every per-visit token the link
+has ever minted** — from the session's `viewers` list, the container's
+selkies token table, and the vreckan-side token map — without stopping the
 session. Since v0.8.5 the strip proceeds when the durable share row is
 missing, which is how the synthetic join grant (`join:{username}`, never
-a row in `session_shares`) reaches the same cleanup path.
+a row in `session_shares`) reaches the same cleanup path. Revoking or
+expiring a **named** invite additionally strips the invitee's participant
+entry (the session-scoped strip of the synthetic `join:{invitee}` grant) —
+the invitee's apps-page row and join go dark at once.
 
 **Participants (v0.8.5, ANT-467).** Every admitted visitor is recorded in
 the session's `viewers` list with how it got in; the two participant
 routes expose that to the owner.
 
 **`GET /api/sessions/{session_id}/participants`** — response 200: a JSON
-array, one entry per recorded visit (self-serve joins and share-link
+array, one entry per recorded visit (granted joins and share-link
 visits alike, in viewers order):
 
 | Field | Type | Notes |
