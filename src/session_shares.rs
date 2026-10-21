@@ -6,7 +6,12 @@
 //! Mirrors the public file-share model in `files.rs` (`public_shares`): a
 //! durable `session_shares` table, an owner-only E2EE management API under
 //! `/api/sessions/{id}/shares`, and a plaintext, account-less entry point at
-//! `GET/POST /share/{share_id}`.
+//! `GET/POST /share/{share_id}`. The self-serve join (ANT-440) enters through
+//! the same surface via a token-free hop, `GET /join/{session_id}/{username}`
+//! (ANT-466, F1): the join response opens that hop, which hands the
+//! participant token over through the path-scoped `collab_token_{id}` cookie
+//! and 303-redirects — `Cache-Control: private, no-store` — to the session
+//! URL with the token stripped.
 //!
 //! Each visit to a share mints a fresh per-visit token. The visitor is
 //! recorded in the session's `viewers` list (so the proxy and, for rooms, the
@@ -22,7 +27,7 @@
 use std::collections::HashMap;
 
 use axum::extract::{Path as PathParam, State};
-use axum::http::{header, HeaderMap, StatusCode};
+use axum::http::{header, HeaderMap, HeaderValue, StatusCode};
 use axum::response::{Html, IntoResponse, Response};
 use axum::routing::{delete, get, post};
 use axum::Router;
@@ -737,15 +742,66 @@ async fn access_session_share_post(
 }
 
 fn see_other(redirect: String) -> Response {
-    // The redirect URL carries the visitor's per-visit token (ANT-322, F5):
-    // keep it out of any caching proxy's store so one visitor's token is not
-    // served to another.
+    // The redirect URL may carry a per-visit token (ANT-322, F5; the share
+    // flow): keep that response out of any caching proxy's store so one
+    // visitor's token is not served to another.
     Response::builder()
         .status(StatusCode::SEE_OTHER)
         .header(header::LOCATION, redirect)
         .header(header::CACHE_CONTROL, "private, no-store")
         .body(axum::body::Body::empty())
         .unwrap_or_else(|e| (StatusCode::INTERNAL_SERVER_ERROR, e.to_string()).into_response())
+}
+
+/// `GET /join/{session_id}/{username}` — the token-free hop for a self-serve
+/// join (ANT-466, F1). The join response hands the caller this URL instead of
+/// the token-bearing session URL; this hop looks the caller's participant
+/// entry up in the session's viewers list, hands the token over through the
+/// path-scoped `collab_token_{id}` cookie (the same format the proxy's
+/// first-hit handoff uses), and 303-redirects — `Cache-Control: private,
+/// no-store` — to the session URL with the token stripped. The redirect
+/// target then authenticates by cookie alone, so the token never appears in
+/// the address bar or history. Dead-link states mirror the share entry: 404
+/// when the session is gone, 410 when the participant entry is gone.
+async fn access_session_join_hop(
+    State(state): State<AppState>,
+    PathParam((session_id, username)): PathParam<(String, String)>,
+) -> Response {
+    let session = state.sessions.read().await.get(&session_id).cloned();
+    let Some(session) = session else {
+        return (
+            StatusCode::NOT_FOUND,
+            Html("<h1>The session this join points to has ended.</h1>"),
+        )
+            .into_response();
+    };
+    let token = session
+        .get("viewers")
+        .and_then(|v| v.as_array())
+        .and_then(|viewers| {
+            viewers
+                .iter()
+                .find(|v| {
+                    v.get("username").and_then(|u| u.as_str()) == Some(username.as_str())
+                        && v.get("permission").and_then(|p| p.as_str()) == Some("participant")
+                })
+                .and_then(|v| v.get("token").and_then(|t| t.as_str()).map(|t| t.to_string()))
+        });
+    let Some(token) = token else {
+        return (
+            StatusCode::GONE,
+            Html("<h1>This join has ended.</h1>"),
+        )
+            .into_response();
+    };
+    let set_cookie = format!(
+        "collab_token_{session_id}={token}; Path=/api/apps/session/{session_id}; HttpOnly; Secure; SameSite=none"
+    );
+    let mut response = see_other(format!("/api/apps/session/{session_id}/"));
+    if let Ok(hv) = HeaderValue::from_str(&set_cookie) {
+        response.headers_mut().append(header::SET_COOKIE, hv);
+    }
+    response
 }
 
 // ---------------------------------------------------------------------------
@@ -942,7 +998,11 @@ pub fn join_participant_caps() -> SessionShareCaps {
 /// Grant a self-serve join (ANT-440) to a running plain session: mint the
 /// caller their own participant token (their real username, full
 /// participant caps), record it in the session's viewers list and the
-/// container's token table, and return the session URL that admits them.
+/// container's token table, and return the token-free join hop URL that
+/// admits them (ANT-466, F1: the `GET /join/{session_id}/{username}` hop
+/// hands the token over via the `collab_token_{id}` cookie and redirects to
+/// the session URL with the token stripped, so the token never lands in the
+/// address bar).
 ///
 /// Idempotent per (session, user): a re-join returns the caller's existing
 /// participant token and re-establishes it in the container (closing the
@@ -995,7 +1055,7 @@ pub async fn grant_session_join_access(
         if !is_collab {
             let _ = collaboration::push_token_table(state, session_id, &session).await;
         }
-        return Some(format!("/api/apps/session/{session_id}/?token={visit_token}"));
+        return Some(join_hop_url(session_id, username));
     }
 
     let visit_token = catalog::random_token(16);
@@ -1009,7 +1069,17 @@ pub async fn grant_session_join_access(
     };
     apply_visit_to_session(state, session_id, &mut session, &visit_token, &grant).await;
     info!("[{session_id}] Self-serve join: granted participant ({username})");
-    Some(format!("/api/apps/session/{session_id}/?token={visit_token}"))
+    Some(join_hop_url(session_id, username))
+}
+
+/// The token-free URL a self-serve join opens (ANT-466, F1): the
+/// `GET /join/{session_id}/{username}` hop. Keyed on the caller's username —
+/// letters, numbers, underscores, or hyphens, so path-safe by construction
+/// (`user_manager::valid_name`) — and resolved from the session's viewers
+/// list, so no separate nonce store is needed and a replayed or bookmarked
+/// hop keeps working across vreckan restarts.
+fn join_hop_url(session_id: &str, username: &str) -> String {
+    format!("/join/{session_id}/{username}")
 }
 
 /// Strip every per-visit token minted by the share with the given id: from
@@ -1125,11 +1195,16 @@ pub fn owner_router() -> Router<AppState> {
         )
 }
 
-/// The plaintext, account-less public entry routes: `GET/POST /share/{id}`.
+/// The plaintext, account-less public entry routes: `GET/POST /share/{id}`
+/// and the self-serve join hop `GET /join/{session_id}/{username}`.
 pub fn public_router() -> Router<AppState> {
     Router::new()
         .route("/share/{share_id}", get(access_session_share_get))
         .route("/share/{share_id}", post(access_session_share_post))
+        .route(
+            "/join/{session_id}/{username}",
+            get(access_session_join_hop),
+        )
 }
 
 #[cfg(test)]

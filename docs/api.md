@@ -153,6 +153,7 @@ Account-less public entry (plaintext):
 |---|---|---|---|
 | GET | `/share/{share_id}` | `access_session_share_get` | — (303 entry redirect, or the password page) |
 | POST | `/share/{share_id}` | `access_session_share_post` | — (password submission) |
+| GET | `/join/{session_id}/{username}` | `access_session_join_hop` | — (self-serve join hop, ANT-466 F1: 303 `private, no-store` to the session URL with the token stripped; the caller's participant token is handed over via the `collab_token_{session_id}` cookie, which admits the redirect target) |
 
 The share's wire shape (every owner route takes and returns it,
 E2EE-encrypted):

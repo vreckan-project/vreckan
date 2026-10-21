@@ -180,11 +180,13 @@ async fn test_join_mints_participant_token_and_is_idempotent() {
     let join_mode = data.as_ref().unwrap()["join_mode"].as_str().unwrap();
     // The test container is unreachable, so the session stays legacy.
     assert_eq!(join_mode, "legacy");
-    assert!(url.starts_with(&format!("/api/apps/session/{other}/?token=")), "{url}");
-    let minted = url.rsplit_once("token=").unwrap().1.to_string();
+    // ANT-466 F1: the response is the token-free hop URL (the hop hands the
+    // token over via the `collab_token` cookie), not the token-bearing
+    // session URL.
+    assert_eq!(url, format!("/join/{other}/admin"), "{url}");
 
     // The token is recorded in the session's viewers list as a participant.
-    let viewers = sc
+    let minted = sc
         .state
         .sessions
         .read()
@@ -193,14 +195,16 @@ async fn test_join_mints_participant_token_and_is_idempotent() {
         .unwrap()
         .get("viewers")
         .and_then(|v| v.as_array())
-        .cloned()
-        .unwrap_or_default();
-    let entry = viewers
-        .iter()
-        .find(|v| v.get("token").and_then(|t| t.as_str()) == Some(minted.as_str()))
-        .expect("minted token in viewers");
-    assert_eq!(entry["username"], "admin");
-    assert_eq!(entry["permission"], "participant");
+        .and_then(|viewers| {
+            viewers
+                .iter()
+                .find(|v| {
+                    v.get("username").and_then(|u| u.as_str()) == Some("admin")
+                        && v.get("permission").and_then(|p| p.as_str()) == Some("participant")
+                })
+                .and_then(|v| v.get("token").and_then(|t| t.as_str()).map(|t| t.to_string()))
+        })
+        .expect("admin participant entry in viewers");
 
     // Idempotent: re-joining returns the same token, not a second one.
     let (status, data2) = sc
@@ -221,6 +225,141 @@ async fn test_join_mints_participant_token_and_is_idempotent() {
         .map(|v| v.len())
         .unwrap_or(0);
     assert_eq!(viewers_after, 1, "re-join must not mint a second token");
+
+    // ANT-466 F1: the hop the join URL points at is a 303 with
+    // `Cache-Control: private, no-store`, redirects to the session URL with
+    // the token stripped, and hands the (re-used) participant token over
+    // through the path-scoped `collab_token` cookie.
+    let hop = sc.http.get(&url).await;
+    assert_eq!(hop.status, StatusCode::SEE_OTHER, "body: {:?}", hop.body);
+    assert_eq!(
+        hop.header("cache-control"),
+        Some("private, no-store".to_string()),
+        "the hop must carry Cache-Control: private, no-store: {:?}",
+        hop.headers
+    );
+    assert_eq!(
+        hop.header("location"),
+        Some(format!("/api/apps/session/{other}/")),
+        "the redirect must be the token-free session URL: {:?}",
+        hop.headers
+    );
+    let cookie = hop.header("set-cookie").unwrap_or_default();
+    assert!(
+        cookie.starts_with(&format!("collab_token_{other}={minted};")),
+        "the hop must hand the participant token over by cookie: {cookie}"
+    );
+}
+
+/// A throwaway HTTP upstream that answers 200 to every request — stands in
+/// for an app container that is reachable (and, for a selkies image, accepts
+/// the pushed token table).
+async fn spawn_http_upstream() -> (String, tokio::task::JoinHandle<()>) {
+    use tokio::io::{AsyncReadExt, AsyncWriteExt};
+    let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+    let addr = listener.local_addr().unwrap();
+    let handle = tokio::spawn(async move {
+        loop {
+            let (mut socket, _) = match listener.accept().await {
+                Ok(v) => v,
+                Err(_) => break,
+            };
+            tokio::spawn(async move {
+                let mut buf = [0u8; 8192];
+                let _ = socket.read(&mut buf).await;
+                let body = b"<html>upstream</html>";
+                let resp = format!(
+                    "HTTP/1.1 200 OK\r\nContent-Type: text/html\r\nContent-Length: {}\r\n\r\n{}",
+                    body.len(),
+                    std::str::from_utf8(body).unwrap()
+                );
+                let _ = socket.write_all(resp.as_bytes()).await;
+                let _ = socket.shutdown().await;
+            });
+        }
+    });
+    (format!("127.0.0.1:{}", addr.port()), handle)
+}
+
+/// ANT-466 F1: the cookie the join hop sets is, by itself, enough to admit
+/// the joiner at the token-free session URL — and nothing is admitted
+/// without it.
+#[tokio::test]
+async fn test_join_hop_cookie_admits_joiner() {
+    let _root = TempDir::new();
+    let mut sc = SecureClient::new(build_state(_root.path()).await);
+    sc.http.login("admin", "admin1234").await;
+    sc.handshake().await;
+    let (upstream, _u) = spawn_http_upstream().await;
+    let (ip, port) = upstream.rsplit_once(':').unwrap();
+    let app_id = seed_app(&sc, "join-app", &["all"]).await;
+    let other = seed_session(
+        &sc,
+        "ghost",
+        json!({
+            "provider_app_id": app_id,
+            "ip": ip,
+            "port": port.parse::<i64>().unwrap(),
+        }),
+    )
+    .await;
+
+    // Join, then follow the hop exactly the way the browser does.
+    let (status, data) = sc
+        .call("POST", &format!("/api/sessions/{other}/join"), None)
+        .await;
+    assert_eq!(status, StatusCode::OK, "join should succeed: {data:?}");
+    let hop = sc
+        .http
+        .get(data.as_ref().unwrap()["session_url"].as_str().unwrap())
+        .await;
+    assert_eq!(hop.status, StatusCode::SEE_OTHER, "body: {:?}", hop.body);
+    let cookie = hop.header("set-cookie").unwrap_or_default();
+    let cookie_value = cookie.split(';').next().unwrap_or("").to_string();
+
+    // Cookie handoff: the redirect target, carrying the cookie, is admitted.
+    let admitted = sc
+        .http
+        .get_with(
+            &format!("/api/apps/session/{other}/"),
+            &std::collections::HashMap::from([("cookie".to_string(), cookie_value)]),
+        )
+        .await;
+    assert_eq!(
+        admitted.status,
+        StatusCode::OK,
+        "the cookie must admit the joiner: {:?}",
+        admitted.body
+    );
+
+    // No collab cookie: the same URL is refused.
+    let denied = sc.http.get(&format!("/api/apps/session/{other}/")).await;
+    assert_eq!(
+        denied.status,
+        StatusCode::FORBIDDEN,
+        "body: {:?}",
+        denied.body
+    );
+}
+
+/// ANT-466 F1: the hop's dead-link states mirror the share entry — 404 when
+/// the session is gone, 410 when the caller has no participant entry.
+#[tokio::test]
+async fn test_join_hop_dead_links() {
+    let _root = TempDir::new();
+    let mut sc = SecureClient::new(build_state(_root.path()).await);
+    sc.http.login("admin", "admin1234").await;
+    sc.handshake().await;
+    let app_id = seed_app(&sc, "join-app", &["all"]).await;
+    let other = seed_session(&sc, "ghost", json!({ "provider_app_id": app_id })).await;
+
+    // Unknown session: 404.
+    let unknown = sc.http.get("/join/does-not-exist/admin").await;
+    assert_eq!(unknown.status, StatusCode::NOT_FOUND);
+
+    // A session the caller has no participant entry in: 410.
+    let ended = sc.http.get(&format!("/join/{other}/admin")).await;
+    assert_eq!(ended.status, StatusCode::GONE);
 }
 
 #[tokio::test]
