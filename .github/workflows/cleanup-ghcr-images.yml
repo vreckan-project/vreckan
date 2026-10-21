@@ -40,7 +40,9 @@ jobs:
   clean-fast:
     runs-on: ubuntu-latest
     permissions:
-      packages: read-write
+      # 'write' (not 'read-write', which the workflow parser rejects for
+      # the packages key); the step lists and deletes package versions.
+      packages: write
     steps:
       - name: Delete old image tags
         env:
