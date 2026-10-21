@@ -172,8 +172,10 @@ async fn test_join_mints_participant_token_and_is_idempotent() {
     assert_eq!(info["session_url"], json!(null));
 
     // Join: admin mints their own participant token into ghost's session.
+    // The client sends an E2EE-encrypted empty body (`body: {}` in
+    // secureFetch); the F4 gate (ANT-469) requires it.
     let (status, data) = sc
-        .call("POST", &format!("/api/sessions/{other}/join"), None)
+        .call("POST", &format!("/api/sessions/{other}/join"), Some(&json!({})))
         .await;
     assert_eq!(status, StatusCode::OK, "join should succeed: {data:?}");
     let url = data.as_ref().unwrap()["session_url"].as_str().unwrap().to_string();
@@ -204,7 +206,7 @@ async fn test_join_mints_participant_token_and_is_idempotent() {
 
     // Idempotent: re-joining returns the same token, not a second one.
     let (status, data2) = sc
-        .call("POST", &format!("/api/sessions/{other}/join"), None)
+        .call("POST", &format!("/api/sessions/{other}/join"), Some(&json!({})))
         .await;
     assert_eq!(status, StatusCode::OK);
     let url2 = data2.as_ref().unwrap()["session_url"].as_str().unwrap().to_string();
@@ -237,7 +239,7 @@ async fn test_join_room_conflict() {
     )
     .await;
     let (status, data) = sc
-        .call("POST", &format!("/api/sessions/{room}/join"), None)
+        .call("POST", &format!("/api/sessions/{room}/join"), Some(&json!({})))
         .await;
     assert_eq!(status, StatusCode::CONFLICT, "rooms use their own invite flow: {data:?}");
 }
@@ -252,7 +254,7 @@ async fn test_join_no_app_access_forbidden() {
     let app_id = seed_app(&sc, "ghost-only-app", &["ghost"]).await;
     let other = seed_session(&sc, "ghost", json!({ "provider_app_id": app_id })).await;
     let (status, data) = sc
-        .call("POST", &format!("/api/sessions/{other}/join"), None)
+        .call("POST", &format!("/api/sessions/{other}/join"), Some(&json!({})))
         .await;
     assert_eq!(status, StatusCode::FORBIDDEN, "{data:?}");
 }
@@ -264,9 +266,120 @@ async fn test_join_unknown_session_not_found() {
     sc.http.login("admin", "admin1234").await;
     sc.handshake().await;
     let (status, _data) = sc
-        .call("POST", "/api/sessions/does-not-exist/join", None)
+        .call("POST", "/api/sessions/does-not-exist/join", Some(&json!({})))
         .await;
     assert_eq!(status, StatusCode::NOT_FOUND);
+}
+
+// ---------------------------------------------------------------------------
+// F4 (ANT-444 / ANT-469): the join POST enforces the E2EE body (CSRF gate)
+// ---------------------------------------------------------------------------
+//
+// The web client authenticates with the HttpOnly SameSite=Lax login cookie
+// and the app has no CORS layer, so a cross-site top-level form POST from a
+// logged-in victim reaches the join route fully authenticated. A form cannot
+// set the X-Session-ID header or carry an AES-256-GCM body, so the gate
+// rejects it (400) before any participant token is minted.
+
+/// Assert the joiner (the test's logged-in user, "admin") holds no
+/// participant token in the session — i.e. the rejected request minted
+/// nothing.
+async fn assert_no_joiner_viewers(sc: &SecureClient, sid: &str) {
+    let viewers = sc
+        .state
+        .sessions
+        .read()
+        .await
+        .get(sid)
+        .and_then(|s| s.get("viewers"))
+        .and_then(|v| v.as_array())
+        .cloned()
+        .unwrap_or_default();
+    assert!(
+        viewers
+            .iter()
+            .all(|v| v.get("username").and_then(|u| u.as_str()) != Some("admin")),
+        "no participant token may be minted: {viewers:?}"
+    );
+}
+
+#[tokio::test]
+async fn test_join_form_post_without_e2ee_body_rejected() {
+    let _root = TempDir::new();
+    let mut sc = SecureClient::new(build_state(_root.path()).await);
+    // The victim is logged in (the SameSite=Lax auth cookie rides along on a
+    // top-level form POST) but has no crypto session: a form cannot carry
+    // the X-Session-ID header.
+    sc.http.login("admin", "admin1234").await;
+    let app_id = seed_app(&sc, "join-app", &["all"]).await;
+    let other = seed_session(&sc, "ghost", json!({ "provider_app_id": app_id })).await;
+
+    let resp = sc
+        .http
+        .post_form(&format!("/api/sessions/{other}/join"), "x")
+        .await;
+    assert_eq!(
+        resp.status,
+        StatusCode::BAD_REQUEST,
+        "cross-site form POST must be rejected 4xx: {:?}",
+        resp.body
+    );
+    assert_no_joiner_viewers(&sc, &other).await;
+}
+
+#[tokio::test]
+async fn test_join_xhr_without_e2ee_body_rejected() {
+    let _root = TempDir::new();
+    let mut sc = SecureClient::new(build_state(_root.path()).await);
+    sc.http.login("admin", "admin1234").await;
+    let app_id = seed_app(&sc, "join-app", &["all"]).await;
+    let other = seed_session(&sc, "ghost", json!({ "provider_app_id": app_id })).await;
+
+    // Cross-site XHR: the auth cookie rides along (e.g. where Lax is relaxed
+    // by ITP-style heuristics), the body is plain JSON, and no X-Session-ID.
+    let resp = sc
+        .http
+        .post_json(&format!("/api/sessions/{other}/join"), &json!({}))
+        .await;
+    assert_eq!(
+        resp.status,
+        StatusCode::BAD_REQUEST,
+        "cross-site XHR must be rejected 4xx: {:?}",
+        resp.body
+    );
+    assert_no_joiner_viewers(&sc, &other).await;
+}
+
+#[tokio::test]
+async fn test_join_plaintext_body_with_crypto_session_rejected() {
+    let _root = TempDir::new();
+    let mut sc = SecureClient::new(build_state(_root.path()).await);
+    sc.http.login("admin", "admin1234").await;
+    sc.handshake().await;
+    let app_id = seed_app(&sc, "join-app", &["all"]).await;
+    let other = seed_session(&sc, "ghost", json!({ "provider_app_id": app_id })).await;
+
+    // A crypto session exists (X-Session-ID set), but the body is not the
+    // AES-256-GCM envelope: decryption must fail and the request be rejected.
+    let mut headers = std::collections::HashMap::new();
+    headers.insert("x-session-id".to_string(), sc.session_id.clone().unwrap());
+    let resp = sc
+        .http
+        .request(
+            "POST",
+            &format!("/api/sessions/{other}/join"),
+            Some("{}".as_bytes().to_vec()),
+            Some("application/json"),
+            &headers,
+        )
+        .await;
+    assert_eq!(
+        resp.status,
+        StatusCode::BAD_REQUEST,
+        "non-encrypted body must be rejected 4xx: {:?}",
+        resp.body
+    );
+    assert_no_joiner_viewers(&sc, &other).await;
 }
 
 // ---------------------------------------------------------------------------
