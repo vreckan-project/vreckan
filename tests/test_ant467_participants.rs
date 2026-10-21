@@ -220,39 +220,40 @@ async fn joiner_client(state: &AppState) -> SecureClient {
     sc
 }
 
-/// The owner's express grant the ANT-472 join gate requires: a named share
-/// link inviting the user. These tests exercise the join mechanics (F2), so
-/// the grant is seeded up front rather than asserted on.
-async fn owner_grants(sc: &SecureClient, sid: &str, username: &str) {
+/// The participant token out of a join response (ANT-466 F1): the response
+/// is now the token-free hop URL, so the token is taken from the hop's
+/// `Set-Cookie` (`collab_token_{session_id}=<token>`).
+/// The owner's express grant for the joiner (ANT-472): a named share link
+/// inviting the joiner — under the owner-grant join gate that is what
+/// unlocks the self-serve join.
+async fn grant_joiner_invite(sc: &SecureClient, sid: &str) -> String {
     let (status, resp) = sc
         .call(
             "POST",
             &format!("/api/sessions/{sid}/shares"),
-            Some(&json!({ "role": "full", "username": username })),
+            Some(&json!({ "role": "full", "username": "alice" })),
         )
         .await;
-    assert_eq!(status, StatusCode::OK, "owner grant (named invite): {resp:?}");
+    assert_eq!(status, StatusCode::OK, "create invite share: {resp:?}");
+    resp.unwrap()
+        .get("share_id")
+        .and_then(|v| v.as_str())
+        .unwrap()
+        .to_string()
 }
 
-/// The token out of a join response's session URL.
-/// The visit token from a join response under the F1 (ANT-466) hop design:
-/// the join hands back `/join/{sid}/{username}`; GETting that hop delivers
-/// the token through the path-scoped `Set-Cookie` header while the 303
-/// redirect target strips it from the URL.
 async fn join_token(sc: &SecureClient, data: &Value) -> String {
-    let hop = data["session_url"].as_str().expect("session_url");
-    let resp = sc.http.get(hop).await;
-    let cookie = resp
+    let url = data["session_url"].as_str().expect("session_url");
+    let hop = sc.http.get(url).await;
+    assert_eq!(hop.status, StatusCode::SEE_OTHER, "hop: {:?}", hop.body);
+    let cookie = hop
         .header("set-cookie")
-        .expect("hop sets the collab token cookie");
-    cookie
+        .expect("the hop sets the collab token cookie");
+    let pair = cookie.split(';').next().expect("cookie name=value");
+    pair
         .split_once('=')
-        .expect("cookie token")
-        .1
-        .split(';')
-        .next()
-        .expect("cookie value")
-        .to_string()
+        .map(|(_, value)| value.to_string())
+        .expect("cookie name=value")
 }
 
 /// The session's last pushed token table (as captured by the recording
@@ -277,12 +278,11 @@ async fn test_participants_list_shows_joiner() {
     let app_id = seed_app(&owner).await;
     let (sid, _) = seed_plain_session(&owner.state, &upstream, &app_id).await;
     let joiner = joiner_client(&owner.state).await;
+    // ANT-472: the join gate needs the owner’s express grant —
+    // a named invite link for the joiner.
+    let _invite = grant_joiner_invite(&owner, &sid).await;
 
-    // alice joins the owner's running session. The join now rides the
-    // ANT-472 owner-grant gate (named invite seeded below), and the F4
-    // CSRF gate requires the E2EE-encrypted body the client sends via
-    // secureFetch.
-    owner_grants(&owner, &sid, "alice").await;
+    // alice self-serves a join into the owner's running session.
     let (status, data) = joiner
         .call("POST", &format!("/api/sessions/{sid}/join"), Some(&json!({})))
         .await;
@@ -365,8 +365,9 @@ async fn test_revoke_joiner_drops_on_next_request() {
     let app_id = seed_app(&owner).await;
     let (sid, _) = seed_plain_session(&owner.state, &upstream, &app_id).await;
     let joiner = joiner_client(&owner.state).await;
-    // ANT-472 owner-grant gate: the named invite lets the join through.
-    owner_grants(&owner, &sid, "alice").await;
+    // ANT-472: the join gate needs the owner’s express grant —
+    // a named invite link for the joiner.
+    let _invite = grant_joiner_invite(&owner, &sid).await;
 
     let (status, data) = joiner
         .call("POST", &format!("/api/sessions/{sid}/join"), Some(&json!({})))
@@ -481,8 +482,9 @@ async fn test_revoke_unknown_and_double_joiner() {
     let app_id = seed_app(&owner).await;
     let (sid, _) = seed_plain_session(&owner.state, &upstream, &app_id).await;
     let joiner = joiner_client(&owner.state).await;
-    // ANT-472 owner-grant gate: the named invite lets the join through.
-    owner_grants(&owner, &sid, "alice").await;
+    // ANT-472: the join gate needs the owner’s express grant —
+    // a named invite link for the joiner.
+    let _invite = grant_joiner_invite(&owner, &sid).await;
     let (status, data) = joiner
         .call("POST", &format!("/api/sessions/{sid}/join"), Some(&json!({})))
         .await;
@@ -518,8 +520,9 @@ async fn test_revoke_joiner_on_legacy_session() {
     let app_id = seed_app(&owner).await;
     let (sid, _) = seed_plain_session(&owner.state, &upstream, &app_id).await;
     let joiner = joiner_client(&owner.state).await;
-    // ANT-472 owner-grant gate: the named invite lets the join through.
-    owner_grants(&owner, &sid, "alice").await;
+    // ANT-472: the join gate needs the owner’s express grant —
+    // a named invite link for the joiner.
+    let _invite = grant_joiner_invite(&owner, &sid).await;
 
     let (status, data) = joiner
         .call("POST", &format!("/api/sessions/{sid}/join"), Some(&json!({})))
@@ -594,8 +597,9 @@ async fn test_join_ttl_sweep_expires_grant() {
     let app_id = seed_app(&owner).await;
     let (sid, _) = seed_plain_session(&owner.state, &upstream, &app_id).await;
     let joiner = joiner_client(&owner.state).await;
-    // ANT-472 owner-grant gate: the named invite lets the join through.
-    owner_grants(&owner, &sid, "alice").await;
+    // ANT-472: the join gate needs the owner’s express grant —
+    // a named invite link for the joiner.
+    let _invite = grant_joiner_invite(&owner, &sid).await;
 
     let (status, data) = joiner
         .call("POST", &format!("/api/sessions/{sid}/join"), Some(&json!({})))
@@ -652,8 +656,9 @@ async fn test_rejoin_after_expiry_refreshes_ttl() {
     let app_id = seed_app(&owner).await;
     let (sid, _) = seed_plain_session(&owner.state, &upstream, &app_id).await;
     let joiner = joiner_client(&owner.state).await;
-    // ANT-472 owner-grant gate: the named invite lets the join through.
-    owner_grants(&owner, &sid, "alice").await;
+    // ANT-472: the join gate needs the owner’s express grant —
+    // a named invite link for the joiner.
+    let _invite = grant_joiner_invite(&owner, &sid).await;
 
     let (status, data) = joiner
         .call("POST", &format!("/api/sessions/{sid}/join"), Some(&json!({})))
@@ -705,8 +710,9 @@ async fn test_rejoin_backfills_ttl_for_pre_085_grants() {
     let app_id = seed_app(&owner).await;
     let (sid, _) = seed_plain_session(&owner.state, &upstream, &app_id).await;
     let joiner = joiner_client(&owner.state).await;
-    // ANT-472 owner-grant gate: the named invite lets the join through.
-    owner_grants(&owner, &sid, "alice").await;
+    // ANT-472: the join gate needs the owner’s express grant —
+    // a named invite link for the joiner.
+    let _invite = grant_joiner_invite(&owner, &sid).await;
 
     let (status, data) = joiner
         .call("POST", &format!("/api/sessions/{sid}/join"), Some(&json!({})))
@@ -780,8 +786,9 @@ async fn test_join_ttl_constant() {
     let app_id = seed_app(&owner).await;
     let (sid, _) = seed_plain_session(&owner.state, &upstream, &app_id).await;
     let joiner = joiner_client(&owner.state).await;
-    // ANT-472 owner-grant gate: the named invite lets the join through.
-    owner_grants(&owner, &sid, "alice").await;
+    // ANT-472: the join gate needs the owner’s express grant —
+    // a named invite link for the joiner.
+    let _invite = grant_joiner_invite(&owner, &sid).await;
 
     let (status, data) = joiner
         .call("POST", &format!("/api/sessions/{sid}/join"), Some(&json!({})))
