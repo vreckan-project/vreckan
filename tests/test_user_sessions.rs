@@ -119,6 +119,81 @@ async fn test_my_sessions_lists_all_with_annotations() {
     assert_eq!(other_info["joinable"], false);
 }
 
+#[tokio::test]
+async fn test_my_sessions_nulls_launch_context_on_non_joinable_others() {
+    let _root = TempDir::new();
+    let mut sc = SecureClient::new(build_state(_root.path()).await);
+    sc.http.login("admin", "admin1234").await;
+    sc.handshake().await;
+    // An app everyone can use (admin can join ghost's session for it) and an
+    // app only ghost can use (admin cannot join a session for it).
+    let shared = seed_app(&sc, "shared-app", &["all"]).await;
+    let ghost_only = seed_app(&sc, "ghost-only-app", &["ghost"]).await;
+    // A file launch reveals the launched file name in `launch_context`.
+    let launch = json!({ "type": "file", "value": "secret-notes.txt" });
+
+    // (1) admin's own session for the shared app.
+    let own = seed_session(
+        &sc,
+        "admin",
+        json!({
+            "provider_app_id": shared,
+            "launch_context": launch,
+            "name": "My notes",
+        }),
+    )
+    .await;
+    // (2) ghost's session for the shared app — admin can join it.
+    let joinable_other = seed_session(
+        &sc,
+        "ghost",
+        json!({
+            "provider_app_id": shared,
+            "launch_context": launch,
+            "name": "Ghost shared",
+        }),
+    )
+    .await;
+    // (3) ghost's session for the ghost-only app — admin cannot join it.
+    let non_joinable_other = seed_session(
+        &sc,
+        "ghost",
+        json!({
+            "provider_app_id": ghost_only,
+            "launch_context": launch,
+            "name": "Ghost secret",
+        }),
+    )
+    .await;
+
+    let (status, data) = sc.call("GET", "/api/sessions", None).await;
+    assert_eq!(status, StatusCode::OK);
+    let arr = data.as_ref().unwrap().as_array().unwrap();
+    let own_info = arr.iter().find(|s| s["session_id"] == own).unwrap();
+    let joinable_info = arr.iter().find(|s| s["session_id"] == joinable_other).unwrap();
+    let non_joinable_info = arr.iter().find(|s| s["session_id"] == non_joinable_other).unwrap();
+
+    // (1) Own session: launch_context and name stay intact.
+    assert_eq!(own_info["is_mine"], true);
+    assert_eq!(own_info["launch_context"], launch);
+    assert_eq!(own_info["name"], "My notes");
+
+    // (2) Joinable other session: the caller can open the app, so the context
+    // is not sensitive — keep it.
+    assert_eq!(joinable_info["is_mine"], false);
+    assert_eq!(joinable_info["joinable"], true);
+    assert_eq!(joinable_info["launch_context"], launch);
+    assert_eq!(joinable_info["name"], "Ghost shared");
+
+    // (3) Non-joinable other session: the row is hidden in the UI, so the
+    // launch_context (and custom name) that would reveal the owner's launch
+    // are nulled out.
+    assert_eq!(non_joinable_info["is_mine"], false);
+    assert_eq!(non_joinable_info["joinable"], false);
+    assert_eq!(non_joinable_info["launch_context"], json!(null));
+    assert_eq!(non_joinable_info["name"], json!(null));
+}
+
 // ---------------------------------------------------------------------------
 // Self-serve join (ANT-440)
 // ---------------------------------------------------------------------------

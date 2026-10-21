@@ -3495,6 +3495,14 @@ async fn get_my_sessions(
                 .map(|app| user_can_access_app(app, &username, &user_groups))
                 .unwrap_or(false)
         };
+        // F3 (ANT-468, ANT-444 security report): a file/URL `launch_context`
+        // (and the session's custom `name`) can reveal what the owner launched.
+        // The UI hides rows the caller can't join, but the API still returns
+        // them — so null out both for other users' non-joinable sessions. Own
+        // sessions stay fully populated; sessions the caller can join keep
+        // them (the caller can open the app anyway, so the context is not
+        // sensitive there).
+        let reveal_context = is_mine || joinable;
         user_sessions.push(ActiveSessionInfo {
             session_id: sid.clone(),
             app_id: app_id.to_string(),
@@ -3502,9 +3510,17 @@ async fn get_my_sessions(
             app_logo: s_data.get("app_logo").and_then(|v| v.as_str()).unwrap_or_default().to_string(),
             created_at: s_data.get("created_at").and_then(|v| v.as_f64()).unwrap_or(0.0),
             session_url,
-            launch_context: s_data.get("launch_context").cloned(),
+            launch_context: if reveal_context {
+                s_data.get("launch_context").cloned()
+            } else {
+                Some(Value::Null)
+            },
             is_collaboration,
-            name: s_data.get("name").and_then(|v| v.as_str()).map(|s| s.to_string()),
+            name: if reveal_context {
+                s_data.get("name").and_then(|v| v.as_str()).map(|s| s.to_string())
+            } else {
+                None
+            },
             out_of_date,
             username: owner,
             is_mine,
