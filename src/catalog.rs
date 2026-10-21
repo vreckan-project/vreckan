@@ -3718,13 +3718,15 @@ async fn recreate_my_session(
 /// needed. Idempotent per (session, user): re-joining returns the caller's
 /// existing participant token.
 ///
-/// Statuses: 404 the session is gone; 409 it is a room session (rooms use
-/// their own invite flow); 403 the caller lacks access to the session's
-/// app; 500 the mint failed.
+/// Statuses: 400 the E2EE body gate rejected the request (F4); 404 the
+/// session is gone; 409 it is a room session (rooms use their own invite
+/// flow); 403 the caller lacks access to the session's app; 500 the mint
+/// failed.
 async fn join_my_session(
     State(state): State<AppState>,
     headers: HeaderMap,
     Path(session_id): Path<String>,
+    body: Bytes,
 ) -> Response {
     let user = match auth::verify_token(&state, &headers).await {
         Ok(u) => u,
@@ -3739,6 +3741,22 @@ async fn join_my_session(
                 Json(serde_json::json!({ "detail": e.to_string() })),
             )
                 .into_response()
+        }
+    };
+    // F4 (ANT-444 / ANT-469): the web client authenticates with the HttpOnly
+    // SameSite=Lax login cookie and the app has no CORS layer, so a cross-site
+    // top-level form POST reaches this route fully authenticated and would
+    // otherwise mint the victim a participant token. A form cannot set the
+    // X-Session-ID header or carry an AES-256-GCM body, so requiring the E2EE
+    // request body is the CSRF gate: the normal client flow (secureFetch with
+    // an encrypted body) passes, a cross-site form POST / XHR is rejected 400
+    // before any token is minted. The decrypted body is unused (the client
+    // sends an empty object).
+    let _ = match e2ee::decrypt_request_body(&state, &headers, body).await {
+        Ok(v) => v,
+        Err((s, d)) => {
+            return e2ee::encrypt_response(&state, &headers, s, serde_json::json!({ "detail": d }))
+                .await
         }
     };
     let session_data = state.sessions.read().await.get(&session_id).cloned();
