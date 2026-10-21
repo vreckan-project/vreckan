@@ -1,0 +1,154 @@
+# GHCR cleanup — the GitHub-side registry housekeeping (ANT-478).
+# Companion to the Gitea-side cleanup job for repo.vreckanproject.com
+# (that one lives on the Gitea side; this job covers ghcr.io only).
+#
+# What lives in the package ghcr.io/vreckan-project/vreckan:
+#   - release images      tag v<version> (plus `latest` on the newest release)
+#   - per-build images    tag <YYYYMMDDHHMM>  (build-test-rust push job)
+#   - nightly images      tags nightly-<ts> / nightly-latest  (scan-rust)
+# Every push also lands its per-arch children as separate untagged package
+# versions next to the tagged one (an OCI index + 2 arch images); a cohort
+# (the tagged version + its same-second untagged children) must be kept or
+# deleted as a unit, or the index stops resolving for its arch pulls.
+#
+# Every midnight (GitHub cron is UTC) this job:
+#   - keeps every version tagged v*, nightly-* (incl. nightly-latest), latest
+#   - keeps only the newest 5 per-build (<YYYYMMDDHHMM>) cohorts
+#   - deletes everything else
+#
+# Why not actions/delete-package-versions@v5 alone: its ignore-versions
+# regex tests the package VERSION name, which for container packages is the
+# image digest (sha256:...), never the tags — so a tag-based keep list would
+# never match, and the "keep 5" floor would eat old release and nightly
+# images too. The step below applies the same keep list against each
+# version's tag list through the Packages API.
+#
+# First run: dispatch with dry-run=true to log what would be deleted.
+name: Cleanup GHCR Images
+
+on:
+  schedule:
+    - cron: '0 0 * * *'
+  workflow_dispatch:
+    inputs:
+      dry-run:
+        description: "Log the deletions instead of performing them"
+        type: boolean
+        default: false
+
+jobs:
+  clean-fast:
+    runs-on: ubuntu-latest
+    permissions:
+      packages: read-write
+    steps:
+      - name: Delete old image tags
+        env:
+          OWNER: vreckan-project
+          PACKAGE: vreckan
+          KEEP_BUILDS: "5"
+          GITHUB_TOKEN: ${{ github.token }}
+          DRY_RUN: ${{ inputs.dry-run || false }}
+        run: |
+          set -euo pipefail
+
+          # Keep-list tiers (ANT-478):
+          #   forever — v* releases, nightly-* (incl. nightly-latest), latest
+          #   capped  — per-build <YYYYMMDDHHMM> cohorts, newest $KEEP_BUILDS
+          FOREVER='^(v[0-9].*|nightly-latest|nightly-.*|latest)$'
+          BUILD='^[0-9]{12}$'
+          API="https://api.github.com/orgs/$OWNER/packages/container/$PACKAGE/versions"
+          AUTH=(-H "Authorization: Bearer $GITHUB_TOKEN" -H "Accept: application/vnd.github+json")
+
+          # Page through every version: id<TAB>created_at<TAB>tag1,tag2,...
+          # (the API reflects the tags currently attached to each version).
+          versions=$(mktemp)
+          page=1
+          while :; do
+            resp=$(curl -sS -f "${AUTH[@]}" "$API?per_page=100&page=$page")
+            printf '%s' "$resp" \
+              | jq -r '.[] | [.id, .created_at, ((.metadata.container.tags // []) | join(","))] | @tsv' \
+              >> "$versions"
+            if [ "$(printf '%s' "$resp" | jq 'length')" -lt 100 ]; then
+              break
+            fi
+            page=$((page + 1))
+          done
+          echo "Listed $(wc -l < "$versions") package version(s)"
+
+          # Group into cohorts: a tagged version + its untagged per-arch
+          # children belong to one push. The registry stamps a push's
+          # versions within a few seconds of each other (children can
+          # precede the index by a few), while distinct pushes are at least
+          # a minute apart — so group versions at most COHORT_WINDOW
+          # seconds older than the cohort's newest version. The list is
+          # newest-first; cohort key = newest timestamp.
+          COHORT_WINDOW=30
+          declare -A cohort_tags=() cohort_ids=()
+          cohort_order=()
+          anchor=""
+          anchor_ts=0
+          while IFS=$'\t' read -r id created tags; do
+            ts=$(date -d "$created" +%s)
+            if [ -n "$anchor" ] && [ $((anchor_ts - ts)) -le "$COHORT_WINDOW" ]; then
+              cohort_ids["$anchor"]+="$id "
+              cohort_tags["$anchor"]+=","$tags
+            else
+              cohort_order+=("$created")
+              cohort_ids["$created"]="$id "
+              cohort_tags["$created"]=","$tags
+              anchor="$created"
+              anchor_ts=$ts
+            fi
+          done < "$versions"
+          cohort_order=$(printf '%s\n' "${cohort_order[@]}" | sort -r)
+
+          keep_builds=0
+          delete_ids=$(mktemp)
+          while IFS= read -r created; do
+            tags=${cohort_tags[$created]#,}
+            if tr ',' '\n' <<< "$tags" | grep -qE "$FOREVER"; then
+              echo "keep (release/nightly/latest): $created [$tags]"
+            elif tr ',' '\n' <<< "$tags" | grep -qE "$BUILD"; then
+              if [ "$keep_builds" -lt "$KEEP_BUILDS" ]; then
+                keep_builds=$((keep_builds + 1))
+                echo "keep (build ${keep_builds}/${KEEP_BUILDS}): $created [$tags]"
+              else
+                printf '%s\n' ${cohort_ids[$created]} >> "$delete_ids"
+                echo "delete (old build): $created [$tags]"
+              fi
+            else
+              # No matching tag (e.g. an untagged orphan) — keep it rather
+              # than delete something unrecognised.
+              echo "keep (no matching tag): $created [$tags]"
+            fi
+          done <<< "$cohort_order"
+
+          total=$(wc -l < "$delete_ids")
+          echo "Plan: $total version(s) to delete"
+          if [ "$DRY_RUN" = "true" ]; then
+            echo "DRY RUN — would delete:"
+            cat "$delete_ids"
+          else
+            chunk=""
+            n=0
+            while IFS= read -r id; do
+              if [ -n "$chunk" ]; then
+                chunk="$chunk,$id"
+              else
+                chunk="$id"
+              fi
+              n=$((n + 1))
+              if [ "$n" -eq 100 ]; then
+                curl -sS -f -X POST "${AUTH[@]}" "$API?version_ids=$chunk" > /dev/null
+                echo "Deleted batch of $n"
+                chunk=""
+                n=0
+              fi
+            done < "$delete_ids"
+            if [ -n "$chunk" ]; then
+              curl -sS -f -X POST "${AUTH[@]}" "$API?version_ids=$chunk" > /dev/null
+              echo "Deleted final batch of $n"
+            fi
+            echo "Deleted $total version(s)"
+          fi
