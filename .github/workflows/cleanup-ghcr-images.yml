@@ -21,7 +21,9 @@
 # image digest (sha256:...), never the tags — so a tag-based keep list would
 # never match, and the "keep 5" floor would eat old release and nightly
 # images too. The step below applies the same keep list against each
-# version's tag list through the Packages API.
+# version's tag list through the Packages API. Deletions use the
+# per-version DELETE route (some GitHub API front-ends only implement
+# that one, not the batched POST ?version_ids= variant).
 #
 # First run: dispatch with dry-run=true to log what would be deleted.
 name: Cleanup GHCR Images
@@ -132,25 +134,11 @@ jobs:
             echo "DRY RUN — would delete:"
             cat "$delete_ids"
           else
-            chunk=""
             n=0
             while IFS= read -r id; do
-              if [ -n "$chunk" ]; then
-                chunk="$chunk,$id"
-              else
-                chunk="$id"
-              fi
+              curl -sS -f -X DELETE "${AUTH[@]}" "$API/$id" > /dev/null
               n=$((n + 1))
-              if [ "$n" -eq 100 ]; then
-                curl -sS -f -X POST "${AUTH[@]}" "$API?version_ids=$chunk" > /dev/null
-                echo "Deleted batch of $n"
-                chunk=""
-                n=0
-              fi
+              echo "Deleted version $id ($n/$total)"
             done < "$delete_ids"
-            if [ -n "$chunk" ]; then
-              curl -sS -f -X POST "${AUTH[@]}" "$API?version_ids=$chunk" > /dev/null
-              echo "Deleted final batch of $n"
-            fi
             echo "Deleted $total version(s)"
           fi
