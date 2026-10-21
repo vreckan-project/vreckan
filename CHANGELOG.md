@@ -9,6 +9,18 @@ is committed normally in `vreckan`. The changelog is the authoritative
 record of what shipped in each release — see
 [`docs/release.md`](./docs/release.md) for the conventions.
 
+## 2026-10-21: Selkies multi-user (launch-time secure mode, first-class Join, pre-2.0 detection, multi-user docs), v0.8.4 (ANT-436; ANT-437/ANT-438/ANT-440/ANT-443/ANT-449)
+
+v0.8.4 lands the Selkies multi-user phase (plan rev 20): plain webtop sessions enter Selkies secure mode at launch, a second user can join a running session with a single action, and the catalog knows which images support which Selkies features. The release ships with the multi-user usage docs (Phase 3, landing on release day).
+
+- **Plain sessions enter Selkies secure mode at launch (ANT-438).** At launch, vreckan probes the container's Selkies build and promotes plain sessions to secure mode whenever the image supports it: the session's 256-bit master token gates the data plane, so two users on one session URL no longer kick each other. A Selkies 401 plain-text probe answer is treated as secure; an HTML answer stays ambiguous (`463793a3`/`558f3805`).
+- **Owner WebRTC input works on the stock session URL (Phase 4 fix, ANT-449).** Selkies 2.0.0's WebRTC client sources its client token only from the page URL's `?token=` param, but the stock owner URL exposed only `?access_token=`, so on TURN-configured dual-mode images the signaling side rejected the owner's WebRTC HELLO and the owner's input was dropped. The owner session URL now carries the session's access token under both params (the same value), centralized in a single construction helper used by all owner-URL sites; no protocol, client, or image change (`32bbd297`).
+- **First-class Join for a second user (ANT-440).** Running sessions get a self-serve Join action: a verified user with access to the session's app mints a 128-bit participant token (full input + file capability), recorded under the joiner's real username and idempotent across vreckan restarts and session recreates. The join-confirm modal states the observed websocket hand-off (`b6b93fdc`/`d79bb568`).
+- **Owner control (MK) is never lost to a joiner or to the owner's own tabs (ANT-443).** Plain sessions re-derive control on data-plane connect/disconnect, granting it only to the most recently connected controller; a disconnected owner does not hold it and viewers never claim it, so the owner is never displaced by their own activity while a second user is joined (`699eae30`).
+- **Pre-2.0 image detection + catalog capability labels (ANT-437).** The webtop catalog now carries per-image `selkiesVersion` records, and the launch-time capability probe classifies pre-2.0 images, so the catalog can label which images support multi-user secure mode (`968540ec`).
+- **Multi-user docs (Phase 3).** The release is accompanied by the multi-user usage documentation (owner and second-user flows, join and kick semantics), landing on the planned release day.
+- **Join-token v1 tradeoff (board-accepted; ANT-444 finding F2).** In v1, join tokens have no expiry and no owner-side revoke path: the owner's only levers are killing or recreating the session. Accepted as a design tradeoff for the first multi-user release; a participant list with per-joiner revoke and/or a join-token TTL is tracked for 0.8.5.
+
 ## 2026-10-19 — Control-page auto-update fix + admin-UI hardening, multi-user file-permission discipline, v0.8.2 (ANT-345; ANT-347/ANT-348/ANT-349)
 
 The "Control page stuck on Loading…" bug (ANT-347) is fixed on both ends:
