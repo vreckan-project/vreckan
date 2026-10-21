@@ -198,7 +198,16 @@
     "linkCount": "링크 {count}개",
     "linkCountPlural": "링크 {count}개",
     "linksBadgeTitle": "활성 공유 링크 — 클릭하여 관리",
-    "shareTitle": "링크로 이 세션을 공유"
+    "shareTitle": "링크로 이 세션을 공유",
+    "inviteLabel": "사용자 초대 (선택)",
+    "invitePlaceholder": "Vreckan 사용자 이름",
+    "inviteHint": "Vreckan 사용자 (나 포함 안 함). 저장 시 검증됩니다.",
+    "inviteClear": "초대 지우기",
+    "invitePreview": "{user} 님이 앱 페이지에서 이 세션을 보고 참여할 수 있습니다.",
+    "manageInvitee": "초대 대상: {user}",
+    "manageGeneric": "링크를 가진 누구나 (앱 페이지에 표시 안 됨)",
+    "revokeInviteeArmed": "해제 확인? {user} 님의 접근이 사라집니다",
+    "revokeInviteeDone": "링크가 해제되었습니다 — {user} 님은 이 세션을 더 이상 보지 못하고 참여할 수도 없습니다."
   },
   "overview": {
     "title": "개요",

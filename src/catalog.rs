@@ -211,9 +211,18 @@ pub struct ActiveSessionInfo {
     pub username: String,
     /// True when this session belongs to the caller.
     pub is_mine: bool,
-    /// True when the caller can Join this session: a plain (non-room)
-    /// session whose app the caller has access to.
+    /// True when the caller can Join this session: the owner's express
+    /// grant (ANT-472) — a non-revoked, non-expired named share link that
+    /// names the caller, or a persisted participant entry. The caller's
+    /// own sessions keep the app-access check; room sessions are never
+    /// joinable from this list (their own invite flow).
     pub joinable: bool,
+    /// The usernames currently holding a join grant on this session
+    /// (ANT-467): set for the caller's own sessions so the list UI can
+    /// badge who is in without an extra round trip; empty otherwise
+    /// (other users' participants are not the caller's concern).
+    #[serde(skip_serializing_if = "Vec::is_empty")]
+    pub participants: Vec<String>,
 }
 
 /// The response to a session recreate. Mirrors `models.SessionRecreateResponse`.
@@ -3124,6 +3133,21 @@ pub async fn session_out_of_date(state: &AppState, session_data: &Value) -> bool
 /// `_stop_session`.
 pub async fn stop_session(state: &AppState, session_id: &str) {
     info!("[{session_id}] Stopping session...");
+    // Prune the per-session in-memory maps the plain-session token-table
+    // refresh keeps, or they grow one entry per session for the process
+    // lifetime (ANT-470 F5). Done before the found-check so a double-stop or
+    // a stale entry still gets cleaned up.
+    state.selkies_client_conns.write().await.remove(session_id);
+    state
+        .last_pushed_token_tables
+        .write()
+        .await
+        .remove(session_id);
+    state
+        .token_table_generations
+        .write()
+        .await
+        .remove(session_id);
     let session_data = state.sessions.write().await.remove(session_id);
     let Some(session_data) = session_data else {
         warn!("Attempted to stop session {session_id}, but it was not found.");
@@ -3160,7 +3184,10 @@ pub async fn stop_session(state: &AppState, session_id: &str) {
             let _ = std::fs::remove_dir_all(hmp);
         }
     }
-    if let Some(sfp) = session_data.get("shared_files_path").and_then(|v| v.as_str()) {
+    if let Some(sfp) = session_data
+        .get("shared_files_path")
+        .and_then(|v| v.as_str())
+    {
         if sfp.starts_with(&ephemeral_base) && std::path::Path::new(sfp).exists() {
             let _ = std::fs::remove_dir_all(sfp);
             info!("[{session_id}] Removed ephemeral shared files directory.");
@@ -3422,7 +3449,11 @@ pub async fn recreate_session(
 ///
 /// Since ANT-440 the list includes other users' running sessions (not just
 /// the caller's own), each annotated with `username`, `is_mine`, and
-/// `joinable` so the UI can offer a Join action. `session_url` carries the
+/// `joinable` so the UI can offer a Join action. Since ANT-472 an other
+/// user's plain session is `joinable` only when its owner has expressly
+/// granted the caller access (a non-revoked, non-expired named share link,
+/// or a persisted participant entry); the UI hides the other rows and the
+/// app-card Join affordance follows this flag. `session_url` carries the
 /// caller's own token and is populated only for their own sessions.
 async fn get_my_sessions(
     State(state): State<AppState>,
@@ -3481,20 +3512,34 @@ async fn get_my_sessions(
         } else {
             None
         };
-        // Joinable: a plain (non-room) session whose app the caller can
-        // access. Room sessions have their own invite flow.
         let app_id = s_data
             .get("provider_app_id")
             .and_then(|v| v.as_str())
             .unwrap_or_default();
-        let joinable = if is_collaboration {
-            false
-        } else {
+        // Joinable: the caller's own sessions keep the app-access check (the
+        // UI offers Open on them). For another user's plain session the
+        // owner's express grant is the sole gate (ANT-472): a non-revoked,
+        // non-expired named share link for the caller, or a persisted
+        // participant entry (grandfathered v0.8.4 self-serve joiners
+        // included). Room sessions have their own invite flow.
+        let joinable = if is_mine {
             installed_apps
                 .get(app_id)
                 .map(|app| user_can_access_app(app, &username, &user_groups))
                 .unwrap_or(false)
+        } else if is_collaboration {
+            false
+        } else {
+            session_shares::caller_has_session_grant(&state, sid, s_data, &username).await
         };
+        // F3 (ANT-468, ANT-444 security report): a file/URL `launch_context`
+        // (and the session's custom `name`) can reveal what the owner launched.
+        // The UI hides rows the caller can't join, but the API still returns
+        // them — so null out both for other users' non-joinable sessions. Own
+        // sessions stay fully populated; sessions the caller can join keep
+        // them (the caller can open the app anyway, so the context is not
+        // sensitive there).
+        let reveal_context = is_mine || joinable;
         user_sessions.push(ActiveSessionInfo {
             session_id: sid.clone(),
             app_id: app_id.to_string(),
@@ -3502,13 +3547,26 @@ async fn get_my_sessions(
             app_logo: s_data.get("app_logo").and_then(|v| v.as_str()).unwrap_or_default().to_string(),
             created_at: s_data.get("created_at").and_then(|v| v.as_f64()).unwrap_or(0.0),
             session_url,
-            launch_context: s_data.get("launch_context").cloned(),
+            launch_context: if reveal_context {
+                s_data.get("launch_context").cloned()
+            } else {
+                Some(Value::Null)
+            },
             is_collaboration,
-            name: s_data.get("name").and_then(|v| v.as_str()).map(|s| s.to_string()),
+            name: if reveal_context {
+                s_data.get("name").and_then(|v| v.as_str()).map(|s| s.to_string())
+            } else {
+                None
+            },
             out_of_date,
             username: owner,
             is_mine,
             joinable,
+            participants: if is_mine {
+                session_shares::participant_usernames(&s_data)
+            } else {
+                Vec::new()
+            },
         });
     }
     user_sessions.sort_by(|a, b| b.created_at.partial_cmp(&a.created_at).unwrap_or(std::cmp::Ordering::Equal));
@@ -3590,6 +3648,7 @@ async fn stop_my_session(
     State(state): State<AppState>,
     headers: HeaderMap,
     Path(session_id): Path<String>,
+    body: Bytes,
 ) -> Response {
     let user = match auth::verify_token(&state, &headers).await {
         Ok(u) => u,
@@ -3604,6 +3663,21 @@ async fn stop_my_session(
                 Json(serde_json::json!({ "detail": e.to_string() })),
             )
                 .into_response()
+        }
+    };
+    // F4-followup (ANT-444 / ANT-471): the stop route authenticated with the
+    // SameSite=Lax login cookie but never read its E2EE body, so a cross-site
+    // top-level form POST / DELETE from a logged-in victim could stop their own
+    // sessions (the response body is E2EE-encrypted, so an attacker learns only
+    // the status). Requiring the AES-256-GCM request body is the CSRF gate: the
+    // normal client flow (secureFetch with an encrypted empty body) passes, a
+    // cross-site form POST / XHR is rejected 400 before anything changes. The
+    // decrypted body is unused (the client sends an empty object).
+    let _ = match e2ee::decrypt_request_body(&state, &headers, body).await {
+        Ok(v) => v,
+        Err((s, d)) => {
+            return e2ee::encrypt_response(&state, &headers, s, serde_json::json!({ "detail": d }))
+                .await
         }
     };
     let session_data = state.sessions.read().await.get(&session_id).cloned();
@@ -3635,6 +3709,7 @@ async fn recreate_my_session(
     State(state): State<AppState>,
     headers: HeaderMap,
     Path(session_id): Path<String>,
+    body: Bytes,
 ) -> Response {
     let user = match auth::verify_token(&state, &headers).await {
         Ok(u) => u,
@@ -3649,6 +3724,21 @@ async fn recreate_my_session(
                 Json(serde_json::json!({ "detail": e.to_string() })),
             )
                 .into_response()
+        }
+    };
+    // F4-followup (ANT-444 / ANT-471): the recreate route authenticated with the
+    // SameSite=Lax login cookie but never read its E2EE body, so a cross-site
+    // top-level form POST from a logged-in victim could recreate their sessions
+    // (the response body is E2EE-encrypted, so an attacker learns only the
+    // status). Requiring the AES-256-GCM request body is the CSRF gate: the
+    // normal client flow (secureFetch with an encrypted empty body) passes, a
+    // cross-site form POST / XHR is rejected 400 before anything changes. The
+    // decrypted body is unused (the client sends an empty object).
+    let _ = match e2ee::decrypt_request_body(&state, &headers, body).await {
+        Ok(v) => v,
+        Err((s, d)) => {
+            return e2ee::encrypt_response(&state, &headers, s, serde_json::json!({ "detail": d }))
+                .await
         }
     };
     let session_data = state.sessions.read().await.get(&session_id).cloned();
@@ -3702,13 +3792,16 @@ async fn recreate_my_session(
 /// needed. Idempotent per (session, user): re-joining returns the caller's
 /// existing participant token.
 ///
-/// Statuses: 404 the session is gone; 409 it is a room session (rooms use
-/// their own invite flow); 403 the caller lacks access to the session's
-/// app; 500 the mint failed.
+/// Statuses: 400 the E2EE body gate rejected the request (F4); 404 the
+/// session is gone; 409 it is a room session (rooms use their own invite
+/// flow); 403 the session's owner has not granted the caller access
+/// (a named share link, or a persisted participant entry — ANT-472); 500
+/// the mint failed.
 async fn join_my_session(
     State(state): State<AppState>,
     headers: HeaderMap,
     Path(session_id): Path<String>,
+    body: Bytes,
 ) -> Response {
     let user = match auth::verify_token(&state, &headers).await {
         Ok(u) => u,
@@ -3723,6 +3816,22 @@ async fn join_my_session(
                 Json(serde_json::json!({ "detail": e.to_string() })),
             )
                 .into_response()
+        }
+    };
+    // F4 (ANT-444 / ANT-469): the web client authenticates with the HttpOnly
+    // SameSite=Lax login cookie and the app has no CORS layer, so a cross-site
+    // top-level form POST reaches this route fully authenticated and would
+    // otherwise mint the victim a participant token. A form cannot set the
+    // X-Session-ID header or carry an AES-256-GCM body, so requiring the E2EE
+    // request body is the CSRF gate: the normal client flow (secureFetch with
+    // an encrypted body) passes, a cross-site form POST / XHR is rejected 400
+    // before any token is minted. The decrypted body is unused (the client
+    // sends an empty object).
+    let _ = match e2ee::decrypt_request_body(&state, &headers, body).await {
+        Ok(v) => v,
+        Err((s, d)) => {
+            return e2ee::encrypt_response(&state, &headers, s, serde_json::json!({ "detail": d }))
+                .await
         }
     };
     let session_data = state.sessions.read().await.get(&session_id).cloned();
@@ -3750,24 +3859,24 @@ async fn join_my_session(
         )
         .await;
     }
-    // The caller must be able to use the session's app.
-    let app_id = session_data
-        .get("provider_app_id")
-        .and_then(|v| v.as_str())
-        .unwrap_or_default();
-    let has_app_access = state
-        .installed_apps
-        .read()
-        .await
-        .get(app_id)
-        .map(|app| user_can_access_app(app, &user.record.username, &user.record.groups))
-        .unwrap_or(false);
-    if !has_app_access {
+    // The owner's express grant is the sole join gate (ANT-472): a
+    // non-revoked, non-expired named share link for the caller, or a
+    // persisted participant entry (grandfathered v0.8.4 self-serve joiners
+    // included). The per-app access check no longer blocks a join — the
+    // owner may invite a user with no entry in the app's allowlist.
+    let granted = session_shares::caller_has_session_grant(
+        &state,
+        &session_id,
+        &session_data,
+        &user.record.username,
+    )
+    .await;
+    if !granted {
         return e2ee::encrypt_response(
             &state,
             &headers,
             StatusCode::FORBIDDEN,
-            serde_json::json!({ "detail": "No access to this session's app." }),
+            serde_json::json!({ "detail": "The session owner has not granted you access." }),
         )
         .await;
     }

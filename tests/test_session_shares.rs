@@ -20,6 +20,7 @@ use common::{build_state, SecureClient, TempDir};
 use http::StatusCode;
 use serde_json::json;
 use vreckan::state::AppState;
+use vreckan::user_manager;
 
 // ---------------------------------------------------------------------------
 // Fakes + shared helpers
@@ -359,6 +360,120 @@ async fn test_create_and_list_shares() {
     );
 }
 
+/// ANT-472: the named invite (`username`) on a share link — validation
+/// (existing user, not the owner), the create/list/update/revocation
+/// responses, and null-to-clear on update.
+#[tokio::test]
+async fn test_named_invite_share_lifecycle() {
+    let _root = TempDir::new();
+    let sc = admin_client(_root.path()).await;
+    let (upstream, _u) = spawn_http_upstream().await;
+    let (sid, _access) = seed_plain_session(&sc.state, &upstream).await;
+    // The session is owned by the bootstrap admin; the invitee must be a
+    // different, existing user.
+    user_manager::create_user(&sc.state.db, "invitee", None).await.unwrap();
+    user_manager::set_password(&sc.state.db, "invitee", "inviteepass123").await.unwrap();
+
+    // An unknown user is rejected.
+    let (status, body) = sc
+        .call(
+            "POST",
+            &format!("/api/sessions/{sid}/shares"),
+            Some(&json!({ "role": "full", "username": "nobody" })),
+        )
+        .await;
+    assert_eq!(status, StatusCode::UNPROCESSABLE_ENTITY, "unknown user: {body:?}");
+    // A self-invite is rejected.
+    let (status, body) = sc
+        .call(
+            "POST",
+            &format!("/api/sessions/{sid}/shares"),
+            Some(&json!({ "role": "full", "username": "admin" })),
+        )
+        .await;
+    assert_eq!(status, StatusCode::UNPROCESSABLE_ENTITY, "self-invite: {body:?}");
+
+    // A valid invite is reflected in the create and list responses.
+    let (status, body) = sc
+        .call(
+            "POST",
+            &format!("/api/sessions/{sid}/shares"),
+            Some(&json!({ "role": "full", "username": "invitee" })),
+        )
+        .await;
+    assert_eq!(status, StatusCode::OK, "create: {body:?}");
+    let created = body.expect("created share body");
+    let share_id = created.get("share_id").and_then(|v| v.as_str()).unwrap().to_string();
+    assert_eq!(
+        created.get("invited_username").and_then(|v| v.as_str()),
+        Some("invitee")
+    );
+    let (status, body) = sc
+        .call("GET", &format!("/api/sessions/{sid}/shares"), None)
+        .await;
+    assert_eq!(status, StatusCode::OK, "list: {body:?}");
+    let list_body = body.expect("list body");
+    let list = list_body.as_array().unwrap();
+    let row = list.iter().find(|s| s["share_id"] == share_id).unwrap();
+    assert_eq!(row.get("invited_username").and_then(|v| v.as_str()), Some("invitee"));
+
+    // A generic (unnamed) link carries no invited user.
+    let (status, body) = sc
+        .call(
+            "POST",
+            &format!("/api/sessions/{sid}/shares"),
+            Some(&json!({ "role": "view_only" })),
+        )
+        .await;
+    assert_eq!(status, StatusCode::OK, "create generic: {body:?}");
+    let generic_body = body.expect("body");
+    let generic_id = generic_body
+        .get("share_id")
+        .and_then(|v| v.as_str())
+        .unwrap()
+        .to_string();
+    assert_eq!(
+        generic_body.get("invited_username"),
+        Some(&json!(null))
+    );
+
+    // Update: set an invite, then clear it with null.
+    let (status, body) = sc
+        .call(
+            "PATCH",
+            &format!("/api/sessions/{sid}/shares/{generic_id}"),
+            Some(&json!({ "username": "invitee" })),
+        )
+        .await;
+    assert_eq!(status, StatusCode::OK, "patch set: {body:?}");
+    assert_eq!(
+        body.expect("body").get("invited_username").and_then(|v| v.as_str()),
+        Some("invitee")
+    );
+    let (status, body) = sc
+        .call(
+            "PATCH",
+            &format!("/api/sessions/{sid}/shares/{generic_id}"),
+            Some(&json!({ "username": null })),
+        )
+        .await;
+    assert_eq!(status, StatusCode::OK, "patch clear: {body:?}");
+    assert_eq!(body.expect("body").get("invited_username"), Some(&json!(null)));
+
+    // Revoking an invited link answers with the link's info, naming the
+    // invitee who just lost access.
+    let (status, body) = sc
+        .call("DELETE", &format!("/api/sessions/{sid}/shares/{share_id}"), None)
+        .await;
+    assert_eq!(status, StatusCode::OK, "revoke: {body:?}");
+    let revoked = body.expect("revoked share body");
+    assert_eq!(
+        revoked.get("invited_username").and_then(|v| v.as_str()),
+        Some("invitee")
+    );
+    assert_eq!(revoked.get("revoked"), Some(&json!(true)));
+}
+
 #[tokio::test]
 async fn test_role_invariants_on_create_and_update() {
     let _root = TempDir::new();
@@ -556,11 +671,12 @@ async fn test_revoke_share_and_unknown_ids() {
         .unwrap()
         .to_string();
 
-    // Revoke.
+    // Revoke (200 with the revoked link's info since ANT-472, so the UI can
+    // name the invitee who lost access).
     let (status, _) = sc
         .call("DELETE", &format!("/api/sessions/{sid}/shares/{share_id}"), None)
         .await;
-    assert_eq!(status, StatusCode::NO_CONTENT, "revoke");
+    assert_eq!(status, StatusCode::OK, "revoke");
     let (status, body) = sc
         .call("GET", &format!("/api/sessions/{sid}/shares"), None)
         .await;
@@ -648,7 +764,7 @@ async fn test_public_entry_status_codes() {
     let (status, _) = sc
         .call("DELETE", &format!("/api/sessions/{sid}/shares/{share_id}"), None)
         .await;
-    assert_eq!(status, StatusCode::NO_CONTENT);
+    assert_eq!(status, StatusCode::OK);
     let resp = sc.http.get(&format!("/share/{share_id}")).await;
     assert_eq!(resp.status, StatusCode::GONE, "revoked share is 410");
 
@@ -1069,7 +1185,7 @@ async fn test_revoke_strips_visitor_tokens() {
     let (status, _) = sc
         .call("DELETE", &format!("/api/sessions/{sid}/shares/{share_id}"), None)
         .await;
-    assert_eq!(status, StatusCode::NO_CONTENT);
+    assert_eq!(status, StatusCode::OK);
     assert!(
         sc.state
             .session_share_tokens
@@ -1092,6 +1208,104 @@ async fn test_revoke_strips_visitor_tokens() {
         .get(&format!("/api/apps/session/{sid}/?token={token}"))
         .await;
     assert_eq!(denied.status, StatusCode::FORBIDDEN, "revoked visitor is 403");
+}
+
+/// ANT-472: revoking a NAMED invite also strips the invited user's
+/// participation — the participant entry in the session's viewers list and
+/// the join token in the vreckan-side token map — through the same
+/// `strip_share_tokens` path as a share's per-visit tokens.
+#[tokio::test]
+async fn test_revoke_named_invite_strips_participant() {
+    let _root = TempDir::new();
+    let sc = admin_client(_root.path()).await;
+    let (upstream, _u) = spawn_http_upstream().await;
+    let (sid, _access) = seed_plain_session(&sc.state, &upstream).await;
+    user_manager::create_user(&sc.state.db, "invitee", None).await.unwrap();
+    user_manager::set_password(&sc.state.db, "invitee", "inviteepass123").await.unwrap();
+
+    // The owner invites the user; the user joins (the grant gate passes).
+    let (status, body) = sc
+        .call(
+            "POST",
+            &format!("/api/sessions/{sid}/shares"),
+            Some(&json!({ "role": "full", "username": "invitee" })),
+        )
+        .await;
+    assert_eq!(status, StatusCode::OK, "create: {body:?}");
+    let share_id = body
+        .expect("body")
+        .get("share_id")
+        .and_then(|v| v.as_str())
+        .unwrap()
+        .to_string();
+    let mut invitee = SecureClient::new(sc.state.clone());
+    invitee.http.login("invitee", "inviteepass123").await;
+    invitee.handshake().await;
+    let (status, body) = invitee
+        .call("POST", &format!("/api/sessions/{sid}/join"), Some(&json!({})))
+        .await;
+    assert_eq!(status, StatusCode::OK, "join: {body:?}");
+    let join_token = sc
+        .state
+        .sessions
+        .read()
+        .await
+        .get(&sid)
+        .unwrap()
+        .get("viewers")
+        .and_then(|v| v.as_array())
+        .and_then(|viewers| {
+            viewers
+                .iter()
+                .find(|v| v.get("username").and_then(|u| u.as_str()) == Some("invitee"))
+                .and_then(|v| v.get("token").and_then(|t| t.as_str()).map(|t| t.to_string()))
+        })
+        .expect("invitee participant entry");
+    assert!(
+        sc.state
+            .session_share_tokens
+            .read()
+            .await
+            .get(&join_token)
+            .is_some(),
+            "the join token is admitted on the vreckan side"
+    );
+
+    // The owner revokes the named link.
+    let (status, body) = sc
+        .call("DELETE", &format!("/api/sessions/{sid}/shares/{share_id}"), None)
+        .await;
+    assert_eq!(status, StatusCode::OK, "revoke: {body:?}");
+
+    // The invitee's participation is stripped everywhere: the viewers entry
+    // is gone, and the join token no longer admits.
+    let session = sc.state.sessions.read().await.get(&sid).cloned().unwrap();
+    let viewers = session.get("viewers").and_then(|v| v.as_array()).unwrap();
+    assert!(
+        !viewers
+            .iter()
+            .any(|v| v.get("username").and_then(|u| u.as_str()) == Some("invitee")),
+        "invitee removed from the session viewers list: {viewers:?}"
+    );
+    assert!(
+        !sc
+            .state
+            .session_share_tokens
+            .read()
+            .await
+            .values()
+            .any(|r| r.share_id == "join:invitee"),
+        "join token removed from the vreckan-side map"
+    );
+    let denied = sc
+        .http
+        .get(&format!("/api/apps/session/{sid}/?token={join_token}"))
+        .await;
+    assert_eq!(
+        denied.status,
+        StatusCode::FORBIDDEN,
+        "the stripped join token no longer admits"
+    );
 }
 
 // ---------------------------------------------------------------------------
@@ -1163,6 +1377,97 @@ async fn test_cleanup_expired_session_shares() {
     );
 }
 
+/// ANT-472: an expired NAMED invite strips the invited user's participation
+/// (viewers entry + join token) along with the link, mirroring revocation.
+#[tokio::test]
+async fn test_cleanup_expired_named_invite_strips_participant() {
+    let _root = TempDir::new();
+    let sc = admin_client(_root.path()).await;
+    let (upstream, _u) = spawn_http_upstream().await;
+    let (sid, _access) = seed_plain_session(&sc.state, &upstream).await;
+    user_manager::create_user(&sc.state.db, "invitee", None).await.unwrap();
+    user_manager::set_password(&sc.state.db, "invitee", "inviteepass123").await.unwrap();
+
+    let (status, body) = sc
+        .call(
+            "POST",
+            &format!("/api/sessions/{sid}/shares"),
+            Some(&json!({ "role": "full", "username": "invitee", "expiry_hours": 1 })),
+        )
+        .await;
+    assert_eq!(status, StatusCode::OK, "create: {body:?}");
+    let expired_id = body
+        .expect("body")
+        .get("share_id")
+        .and_then(|v| v.as_str())
+        .unwrap()
+        .to_string();
+    // The invitee joins while the invite is live.
+    let mut invitee = SecureClient::new(sc.state.clone());
+    invitee.http.login("invitee", "inviteepass123").await;
+    invitee.handshake().await;
+    let (status, body) = invitee
+        .call("POST", &format!("/api/sessions/{sid}/join"), Some(&json!({})))
+        .await;
+    assert_eq!(status, StatusCode::OK, "join: {body:?}");
+    let join_token = sc
+        .state
+        .sessions
+        .read()
+        .await
+        .get(&sid)
+        .unwrap()
+        .get("viewers")
+        .and_then(|v| v.as_array())
+        .and_then(|viewers| {
+            viewers
+                .iter()
+                .find(|v| v.get("username").and_then(|u| u.as_str()) == Some("invitee"))
+                .and_then(|v| v.get("token").and_then(|t| t.as_str()).map(|t| t.to_string()))
+        })
+        .expect("invitee participant entry");
+    assert!(
+        sc.state
+            .session_share_tokens
+            .read()
+            .await
+            .get(&join_token)
+            .is_some(),
+            "the join token is admitted on the vreckan side before cleanup"
+    );
+    {
+        let mut shares = sc.state.session_shares.write().await;
+        if let Some(meta) = shares.get_mut(&expired_id) {
+            meta.expiry_timestamp = Some(1.0);
+        }
+    }
+
+    vreckan::session_shares::cleanup_expired_session_shares(&sc.state).await;
+
+    assert!(
+        sc.state.session_shares.read().await.get(&expired_id).is_none(),
+        "the expired invite link is removed"
+    );
+    let session = sc.state.sessions.read().await.get(&sid).cloned().unwrap();
+    let viewers = session.get("viewers").and_then(|v| v.as_array()).unwrap();
+    assert!(
+        !viewers
+            .iter()
+            .any(|v| v.get("username").and_then(|u| u.as_str()) == Some("invitee")),
+        "the invitee's participant entry is stripped on expiry: {viewers:?}"
+    );
+    assert!(
+        !sc
+            .state
+            .session_share_tokens
+            .read()
+            .await
+            .values()
+            .any(|r| r.share_id == "join:invitee"),
+        "the join token is removed from the vreckan-side map"
+    );
+}
+
 #[tokio::test]
 async fn test_session_share_load_save_roundtrip() {
     let _root = TempDir::new();
@@ -1202,6 +1507,62 @@ async fn test_session_share_load_save_roundtrip() {
     assert!(reloaded.password_hash.is_some());
     assert!(reloaded.expiry_timestamp.is_some());
     assert!(!reloaded.revoked);
+    // The invite (ANT-472) round-trips as well.
+    assert_eq!(reloaded.invited_username, None);
+}
+
+/// ANT-472: the DB JSON blob keeps its pre-invite shape — a legacy row
+/// without the `invited_username` key deserializes to `None` (a generic
+/// link), and a current row with the field set round-trips it.
+#[tokio::test]
+async fn test_session_share_legacy_row_deserializes_as_generic() {
+    let _root = TempDir::new();
+    let sc = admin_client(_root.path()).await;
+    let (upstream, _u) = spawn_http_upstream().await;
+    let (sid, _access) = seed_plain_session(&sc.state, &upstream).await;
+
+    use sea_orm::EntityTrait;
+    use vreckan::entities::session_share;
+    // A legacy row (pre-invite shape: no `invited_username` key) and a
+    // current row with the field set.
+    let legacy_id = uuid::Uuid::new_v4().to_string();
+    let legacy_data = json!({
+        "session_id": sid,
+        "owner_username": "admin",
+        "role": "view_only",
+        "caps": { "input": false, "file_browse": true, "file_download": true, "file_upload": false },
+        "created_at": 1.0,
+        "revoked": false,
+    });
+    let invited_id = uuid::Uuid::new_v4().to_string();
+    let invited_data = json!({
+        "session_id": sid,
+        "owner_username": "admin",
+        "role": "full",
+        "caps": { "input": true, "file_browse": true, "file_download": true, "file_upload": true },
+        "created_at": 1.0,
+        "revoked": false,
+        "invited_username": "invitee",
+    });
+    for (id, data) in [(&legacy_id, legacy_data), (&invited_id, invited_data)] {
+        session_share::Entity::insert(session_share::ActiveModel {
+            share_id: sea_orm::ActiveValue::Set(id.clone()),
+            data: sea_orm::ActiveValue::Set(data),
+        })
+        .exec(&sc.state.db.conn)
+        .await
+        .unwrap();
+    }
+    sc.state.session_shares.write().await.clear();
+    vreckan::session_shares::load_session_shares(&sc.state).await;
+    let shares = sc.state.session_shares.read().await;
+    let legacy = shares.get(&legacy_id).expect("legacy row loads");
+    assert_eq!(
+        legacy.invited_username, None,
+        "a legacy row without the key is a generic link"
+    );
+    let invited = shares.get(&invited_id).expect("invited row loads");
+    assert_eq!(invited.invited_username.as_deref(), Some("invitee"));
 }
 
 // ---------------------------------------------------------------------------

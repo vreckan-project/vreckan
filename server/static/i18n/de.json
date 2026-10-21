@@ -198,7 +198,16 @@
     "linkCount": "{count} Link",
     "linkCountPlural": "{count} Links",
     "linksBadgeTitle": "Aktive Teilungs-Links — klicken zum Verwalten",
-    "shareTitle": "Diese Sitzung per Link teilen"
+    "shareTitle": "Diese Sitzung per Link teilen",
+    "inviteLabel": "Benutzer einladen (optional)",
+    "invitePlaceholder": "Vreckan-Benutzername",
+    "inviteHint": "Ein Vreckan-Benutzer (nicht du). Wird beim Speichern geprüft.",
+    "inviteClear": "Einladung aufheben",
+    "invitePreview": "{user} sieht diese Sitzung auf ihrer Apps-Seite und kann beitreten.",
+    "manageInvitee": "Eingeladen: {user}",
+    "manageGeneric": "Jeder mit dem Link (erscheint nicht auf Apps-Seiten)",
+    "revokeInviteeArmed": "Widerruf bestätigen? {user} verliert den Zugriff",
+    "revokeInviteeDone": "Link widerrufen — {user} sieht diese Sitzung nicht mehr und kann nicht mehr beitreten."
   },
   "overview": {
     "title": "Übersicht",

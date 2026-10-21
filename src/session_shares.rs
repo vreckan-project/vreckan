@@ -6,7 +6,12 @@
 //! Mirrors the public file-share model in `files.rs` (`public_shares`): a
 //! durable `session_shares` table, an owner-only E2EE management API under
 //! `/api/sessions/{id}/shares`, and a plaintext, account-less entry point at
-//! `GET/POST /share/{share_id}`.
+//! `GET/POST /share/{share_id}`. The self-serve join (ANT-440) enters through
+//! the same surface via a token-free hop, `GET /join/{session_id}/{username}`
+//! (ANT-466, F1): the join response opens that hop, which hands the
+//! participant token over through the path-scoped `collab_token_{id}` cookie
+//! and 303-redirects — `Cache-Control: private, no-store` — to the session
+//! URL with the token stripped.
 //!
 //! Each visit to a share mints a fresh per-visit token. The visitor is
 //! recorded in the session's `viewers` list (so the proxy and, for rooms, the
@@ -22,7 +27,7 @@
 use std::collections::HashMap;
 
 use axum::extract::{Path as PathParam, State};
-use axum::http::{header, HeaderMap, StatusCode};
+use axum::http::{header, HeaderMap, HeaderValue, StatusCode};
 use axum::response::{Html, IntoResponse, Response};
 use axum::routing::{delete, get, post};
 use axum::Router;
@@ -74,6 +79,12 @@ pub struct SessionShareMetadata {
     /// the public entry can answer 410 and the owner's list can show it).
     #[serde(default)]
     pub revoked: bool,
+    /// The user the owner expressly invited on this link (ANT-472): a named
+    /// invite lets that user see the session on the apps page and join it,
+    /// where a generic (unnamed) link only admits its holder through the link
+    /// itself. Existing rows deserialize to `None`.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub invited_username: Option<String>,
 }
 
 /// A per-visit token for a session share (in-memory only, mirroring the
@@ -91,6 +102,12 @@ pub struct SessionShareTokenRecord {
     pub share_id: String,
     pub session_id: String,
     pub caps: SessionShareCaps,
+    /// When the visit was minted (unix seconds).
+    pub created_at: f64,
+    /// When the grant expires (unix seconds), if it has a TTL: share visits
+    /// inherit the share link's expiry, joins carry the join TTL (ANT-467).
+    /// `None` means "no expiry".
+    pub expiry: Option<f64>,
 }
 
 /// The wire representation of a share for the owner management API.
@@ -105,6 +122,7 @@ pub struct SessionShareInfo {
     pub has_password: bool,
     pub revoked: bool,
     pub url: String,
+    pub invited_username: Option<String>,
 }
 
 #[derive(Deserialize)]
@@ -116,6 +134,10 @@ pub struct CreateSessionShareRequest {
     pub password: Option<String>,
     #[serde(default)]
     pub expiry_hours: Option<i64>,
+    /// The user the owner expressly invites to join the session (ANT-472):
+    /// must be an existing user, not the owner. Absent = a generic link.
+    #[serde(default)]
+    pub username: Option<String>,
 }
 
 /// A present `null` must be told apart from an absent key (the outer
@@ -141,6 +163,9 @@ pub struct UpdateSessionShareRequest {
     /// `null` clears the expiry; a positive number sets a new one.
     #[serde(default, deserialize_with = "de_present_i64")]
     pub expiry_hours: Option<Option<i64>>,
+    /// `null` (or `""`) clears the invited user; a non-empty name sets it.
+    #[serde(default, deserialize_with = "de_present_string")]
+    pub username: Option<Option<String>>,
 }
 
 /// A partial capability override for create/update. Absent fields fall back
@@ -293,6 +318,62 @@ fn resolve_caps(role: &str, base: &SessionShareCaps, patch: Option<&PartialCaps>
 }
 
 // ---------------------------------------------------------------------------
+// Named invite (ANT-472): validation + the owner-grant check
+// ---------------------------------------------------------------------------
+
+/// Validate the `username` of a named invite: it must be an existing user and
+/// must not be the session's owner. Returns the error detail when invalid.
+async fn validate_invite_username(state: &AppState, username: &str, owner_username: &str) -> Option<String> {
+    if username == owner_username {
+        return Some("The session owner cannot be invited on the session's own share link.".to_string());
+    }
+    match user_manager::get_user(&state.db, username).await {
+        Ok(Some(_)) => None,
+        Ok(None) => Some(format!("No user named '{username}'.")),
+        Err(e) => Some(format!("Could not look up user '{username}': {e}")),
+    }
+}
+
+/// The owner's express grant for a session (ANT-472): the caller holds it
+/// when they have a **non-revoked, non-expired named share link** for the
+/// session that names them, **or** a **persisted participant entry** in the
+/// session's `viewers` record (a join made after such an invite, or a
+/// grandfathered pre-0.8.5 self-serve joiner, until the owner revokes). A
+/// generic (unnamed) link is not a grant — its holder enters through the link
+/// itself and does not light up the apps page.
+pub async fn caller_has_session_grant(
+    state: &AppState,
+    session_id: &str,
+    session: &Value,
+    username: &str,
+) -> bool {
+    let now = now_unix_secs();
+    {
+        let shares = state.session_shares.read().await;
+        if shares.values().any(|m| {
+            m.session_id == session_id
+                && m.invited_username.as_deref() == Some(username)
+                && !m.revoked
+                && m.expiry_timestamp
+                    .map(|exp| exp >= now)
+                    .unwrap_or(true)
+        }) {
+            return true;
+        }
+    }
+    session
+        .get("viewers")
+        .and_then(|v| v.as_array())
+        .map(|viewers| {
+            viewers.iter().any(|v| {
+                v.get("username").and_then(|u| u.as_str()) == Some(username)
+                    && v.get("permission").and_then(|p| p.as_str()) == Some("participant")
+            })
+        })
+        .unwrap_or(false)
+}
+
+// ---------------------------------------------------------------------------
 // Owner management API (E2EE, own session only)
 // ---------------------------------------------------------------------------
 
@@ -361,6 +442,23 @@ async fn create_session_share(
         .await;
     }
     let caps = resolve_caps(&req.role, &default_caps_for_role(&req.role), req.caps.as_ref());
+    // The optional named invite (ANT-472): an existing user who is not the
+    // owner; absent (or empty) keeps the link generic.
+    let invited_username = match req.username.as_deref().filter(|u| !u.is_empty()) {
+        Some(u) => match validate_invite_username(&state, u, &user.record.username).await {
+            None => Some(u.to_string()),
+            Some(detail) => {
+                return e2ee::encrypt_response(
+                    &state,
+                    &headers,
+                    StatusCode::UNPROCESSABLE_ENTITY,
+                    serde_json::json!({ "detail": detail }),
+                )
+                .await
+            }
+        },
+        None => None,
+    };
     let password_hash = req
         .password
         .as_deref()
@@ -381,6 +479,7 @@ async fn create_session_share(
         password_hash,
         expiry_timestamp,
         revoked: false,
+        invited_username,
     };
     {
         let mut shares = state.session_shares.write().await;
@@ -547,6 +646,26 @@ async fn update_session_share(
             .filter(|h| *h > 0)
             .map(|h| now_unix_secs() + (h as f64) * 3600.0);
     }
+    // Set or clear the named invite (ANT-472): a non-empty name sets it,
+    // `null`/`""` clears it.
+    if let Some(u) = req.username {
+        match u.filter(|u| !u.is_empty()) {
+            Some(u) => {
+                if let Some(detail) = validate_invite_username(&state, &u, &meta.owner_username).await
+                {
+                    return e2ee::encrypt_response(
+                        &state,
+                        &headers,
+                        StatusCode::UNPROCESSABLE_ENTITY,
+                        serde_json::json!({ "detail": detail }),
+                    )
+                    .await
+                }
+                meta.invited_username = Some(u);
+            }
+            None => meta.invited_username = None,
+        }
+    }
     let updated = meta.clone();
     // Drop the write guard before the save: the save re-reads the map and
     // tokio locks are not reentrant.
@@ -615,11 +734,18 @@ async fn revoke_session_share(
         )
         .await;
     }
+    let invited_username = meta.invited_username.clone();
     drop(shares);
     // Revoking strips every per-visit token this share has ever minted (from
     // the session record, the container's token table, and the vreckan-side
     // token map) and marks the row revoked so the public entry answers 410.
     strip_share_tokens(&state, &share_id).await;
+    // Revoking a named invite (ANT-472) also strips the invited user's
+    // participation: their participant entry in the session's viewers list,
+    // the container's token table, and the vreckan-side token map.
+    if let Some(invited) = &invited_username {
+        strip_share_tokens_for_session(&state, &session_id, &format!("join:{invited}")).await;
+    }
     {
         let mut shares = state.session_shares.write().await;
         if let Some(meta) = shares.get_mut(&share_id) {
@@ -627,7 +753,124 @@ async fn revoke_session_share(
         }
     }
     save_session_shares(&state).await;
-    e2ee::encrypt_response(&state, &headers, StatusCode::NO_CONTENT, Value::Null).await
+    // The revocation response returns the revoked link's info (including
+    // `invited_username`) so the UI can say who just lost access.
+    let revoked = state
+        .session_shares
+        .read()
+        .await
+        .get(&share_id)
+        .cloned();
+    e2ee::encrypt_response(
+        &state,
+        &headers,
+        StatusCode::OK,
+        revoked.map(|m| share_info_json(&share_id, &m)).unwrap_or_else(|| {
+            serde_json::json!({ "detail": "Share not found." })
+        }),
+    )
+    .await
+}
+
+// ---------------------------------------------------------------------------
+// Participants (ANT-467, F2)
+// ---------------------------------------------------------------------------
+
+/// Verify the caller is the owner of `session_id`, mirroring the share
+/// routes: a plaintext 401-style response when authentication fails (an
+/// E2EE-wrapped 401 would become a 400 "Secure session required" when no
+/// session exists yet), and an E2EE response for the 404 unknown / 403
+/// someone-else's-session cases. Returns the session record on success.
+#[allow(clippy::result_large_err)]
+async fn verify_session_owner(
+    state: &AppState,
+    headers: &HeaderMap,
+    session_id: &str,
+) -> Result<Value, Response> {
+    let user = match auth::verify_token(state, headers).await {
+        Ok(u) => u,
+        Err(e) => {
+            return Err(
+                (
+                    StatusCode::from_u16(e.status()).unwrap_or(StatusCode::INTERNAL_SERVER_ERROR),
+                    axum::Json(serde_json::json!({ "detail": e.to_string() })),
+                )
+                    .into_response(),
+            )
+        }
+    };
+    let session = state.sessions.read().await.get(session_id).cloned();
+    let Some(session) = session else {
+        return Err(
+            e2ee::encrypt_response(
+                state,
+                headers,
+                StatusCode::NOT_FOUND,
+                serde_json::json!({ "detail": "Session not found." }),
+            )
+            .await,
+        )
+    };
+    if session.get("username").and_then(|v| v.as_str()) != Some(user.record.username.as_str()) {
+        return Err(
+            e2ee::encrypt_response(
+                state,
+                headers,
+                StatusCode::FORBIDDEN,
+                serde_json::json!({ "detail": "Not your session." }),
+            )
+            .await,
+        );
+    }
+    Ok(session)
+}
+
+/// `GET /api/sessions/{session_id}/participants` — the owner's list of who
+/// is currently in the session: self-serve joins and share-link visits,
+/// each with its grant source, the grant's share id, and its TTL
+/// timestamps (ANT-467).
+async fn list_session_participants(
+    State(state): State<AppState>,
+    headers: HeaderMap,
+    PathParam(session_id): PathParam<String>,
+) -> Response {
+    let session = match verify_session_owner(&state, &headers, &session_id).await {
+        Ok(s) => s,
+        Err(resp) => return resp,
+    };
+    e2ee::encrypt_response(
+        &state,
+        &headers,
+        StatusCode::OK,
+        Value::Array(participants_for_session(&session)),
+    )
+    .await
+}
+
+/// `DELETE /api/sessions/{session_id}/participants/{username}` — revoke one
+/// joiner without touching the session or anyone else's grant (ANT-467).
+/// 204 on success, 404 when that user holds no live join grant (unknown
+/// session, never joined, or already revoked/expired).
+async fn revoke_session_participant(
+    State(state): State<AppState>,
+    headers: HeaderMap,
+    PathParam((session_id, username)): PathParam<(String, String)>,
+) -> Response {
+    if let Err(resp) = verify_session_owner(&state, &headers, &session_id).await {
+        return resp;
+    }
+    let revoked = revoke_session_join(&state, &session_id, &username).await;
+    if revoked {
+        e2ee::encrypt_response(&state, &headers, StatusCode::NO_CONTENT, Value::Null).await
+    } else {
+        e2ee::encrypt_response(
+            &state,
+            &headers,
+            StatusCode::NOT_FOUND,
+            serde_json::json!({ "detail": "Joiner not found." }),
+        )
+        .await
+    }
 }
 
 fn share_info_json(share_id: &str, meta: &SessionShareMetadata) -> Value {
@@ -641,6 +884,7 @@ fn share_info_json(share_id: &str, meta: &SessionShareMetadata) -> Value {
         "has_password": meta.password_hash.is_some(),
         "revoked": meta.revoked,
         "url": format!("/share/{share_id}"),
+        "invited_username": meta.invited_username,
     })
 }
 
@@ -737,15 +981,66 @@ async fn access_session_share_post(
 }
 
 fn see_other(redirect: String) -> Response {
-    // The redirect URL carries the visitor's per-visit token (ANT-322, F5):
-    // keep it out of any caching proxy's store so one visitor's token is not
-    // served to another.
+    // The redirect URL may carry a per-visit token (ANT-322, F5; the share
+    // flow): keep that response out of any caching proxy's store so one
+    // visitor's token is not served to another.
     Response::builder()
         .status(StatusCode::SEE_OTHER)
         .header(header::LOCATION, redirect)
         .header(header::CACHE_CONTROL, "private, no-store")
         .body(axum::body::Body::empty())
         .unwrap_or_else(|e| (StatusCode::INTERNAL_SERVER_ERROR, e.to_string()).into_response())
+}
+
+/// `GET /join/{session_id}/{username}` — the token-free hop for a self-serve
+/// join (ANT-466, F1). The join response hands the caller this URL instead of
+/// the token-bearing session URL; this hop looks the caller's participant
+/// entry up in the session's viewers list, hands the token over through the
+/// path-scoped `collab_token_{id}` cookie (the same format the proxy's
+/// first-hit handoff uses), and 303-redirects — `Cache-Control: private,
+/// no-store` — to the session URL with the token stripped. The redirect
+/// target then authenticates by cookie alone, so the token never appears in
+/// the address bar or history. Dead-link states mirror the share entry: 404
+/// when the session is gone, 410 when the participant entry is gone.
+async fn access_session_join_hop(
+    State(state): State<AppState>,
+    PathParam((session_id, username)): PathParam<(String, String)>,
+) -> Response {
+    let session = state.sessions.read().await.get(&session_id).cloned();
+    let Some(session) = session else {
+        return (
+            StatusCode::NOT_FOUND,
+            Html("<h1>The session this join points to has ended.</h1>"),
+        )
+            .into_response();
+    };
+    let token = session
+        .get("viewers")
+        .and_then(|v| v.as_array())
+        .and_then(|viewers| {
+            viewers
+                .iter()
+                .find(|v| {
+                    v.get("username").and_then(|u| u.as_str()) == Some(username.as_str())
+                        && v.get("permission").and_then(|p| p.as_str()) == Some("participant")
+                })
+                .and_then(|v| v.get("token").and_then(|t| t.as_str()).map(|t| t.to_string()))
+        });
+    let Some(token) = token else {
+        return (
+            StatusCode::GONE,
+            Html("<h1>This join has ended.</h1>"),
+        )
+            .into_response();
+    };
+    let set_cookie = format!(
+        "collab_token_{session_id}={token}; Path=/api/apps/session/{session_id}; HttpOnly; Secure; SameSite=none"
+    );
+    let mut response = see_other(format!("/api/apps/session/{session_id}/"));
+    if let Ok(hv) = HeaderValue::from_str(&set_cookie) {
+        response.headers_mut().append(header::SET_COOKIE, hv);
+    }
+    response
 }
 
 // ---------------------------------------------------------------------------
@@ -762,6 +1057,9 @@ struct VisitGrant {
     permission: &'static str,
     caps: SessionShareCaps,
     share_id: String,
+    /// When the grant expires (unix seconds), if it has a TTL: share visits
+    /// inherit the share link's expiry, joins carry the join TTL (ANT-467).
+    expiry: Option<f64>,
 }
 
 /// The mint core shared by the share-visit grant (ANT-305) and the
@@ -792,6 +1090,7 @@ async fn apply_visit_to_session(
     // Record the per-visit token on the vreckan side. For a legacy
     // (non-secure) plain session this map is the only place the proxy knows
     // the token, so it is what admits the visit there.
+    let granted_at = now_unix_secs();
     {
         let mut tokens = state.session_share_tokens.write().await;
         tokens.insert(
@@ -800,6 +1099,8 @@ async fn apply_visit_to_session(
                 share_id: grant.share_id.clone(),
                 session_id: session_id.to_string(),
                 caps: grant.caps.clone(),
+                created_at: granted_at,
+                expiry: grant.expiry,
             },
         );
     }
@@ -814,12 +1115,21 @@ async fn apply_visit_to_session(
         session["viewers"] = Value::Array(vec![]);
     }
     if let Some(viewers) = session.get_mut("viewers").and_then(|v| v.as_array_mut()) {
+        // `share_id` records which grant minted this entry (a real share id,
+        // or the synthetic `join:{user}` id) so the owner's participant list
+        // can classify the entry across vreckan restarts, when the in-memory
+        // token map is empty (ANT-467). `build_token_table` reads only
+        // role/slot/mk_control, so the extra fields are invisible to the
+        // container.
         viewers.push(serde_json::json!({
             "token": visit_token,
             "slot": Value::Null,
             "mk_control": false,
             "username": grant.username,
             "permission": grant.permission,
+            "share_id": grant.share_id,
+            "joined_at": granted_at,
+            "expiry": grant.expiry,
         }));
         if !is_collab && grant.caps.input {
             if let Some(v) = viewers
@@ -897,12 +1207,15 @@ pub async fn grant_session_share_access(
         "readonly"
     };
     // Share visitors are anonymous on purpose (the share link, not the
-    // person, is the credential): a random per-visit username.
+    // person, is the credential): a random per-visit username. The visit's
+    // TTL mirrors the link's own expiry, so a dead link also ages out of the
+    // in-memory token map (ANT-467).
     let grant = VisitGrant {
         username: format!("User-{}", rand::rng().random_range(100..999)),
         permission,
         caps: share.caps.clone(),
         share_id: share_id.to_string(),
+        expiry: share.expiry_timestamp,
     };
 
     let promoted = apply_visit_to_session(state, session_id, &mut session, &visit_token, &grant)
@@ -939,14 +1252,29 @@ pub fn join_participant_caps() -> SessionShareCaps {
     }
 }
 
+/// The default lifetime of a self-serve join grant (ANT-467): a join is
+/// valid this many hours from the mint (and from each re-join refresh). The
+/// background sweep expires it the same way as an owner revocation, so the
+/// owner's other lever (kill/recreate) is no longer the only one.
+pub const JOIN_TTL_HOURS: i64 = 24;
+
+fn join_ttl_expiry(now: f64) -> f64 {
+    now + JOIN_TTL_HOURS as f64 * 3600.0
+}
+
 /// Grant a self-serve join (ANT-440) to a running plain session: mint the
 /// caller their own participant token (their real username, full
 /// participant caps), record it in the session's viewers list and the
-/// container's token table, and return the session URL that admits them.
+/// container's token table, and return the token-free join hop URL that
+/// admits them (ANT-466, F1: the `GET /join/{session_id}/{username}` hop
+/// hands the token over via the `collab_token_{id}` cookie and redirects to
+/// the session URL with the token stripped, so the token never lands in the
+/// address bar).
 ///
 /// Idempotent per (session, user): a re-join returns the caller's existing
 /// participant token and re-establishes it in the container (closing the
-/// recreate gap) rather than minting a second one.
+/// recreate gap) rather than minting a second one. A join whose TTL has
+/// expired is refreshed in place — same token, new expiry (ANT-467).
 ///
 /// Returns `None` when the session is gone. Validation (plain vs room,
 /// caller's app access) happens in the route handler so it can answer with
@@ -965,7 +1293,8 @@ pub async fn grant_session_join_access(
     // Idempotent reuse: the callers list is the durable source of truth (it
     // is persisted with the session), so a re-join finds the existing
     // participant entry even across a vreckan restart.
-    let existing_token = session
+    let now = now_unix_secs();
+    let existing = session
         .get("viewers")
         .and_then(|v| v.as_array())
         .and_then(|viewers| {
@@ -975,56 +1304,120 @@ pub async fn grant_session_join_access(
                     v.get("username").and_then(|u| u.as_str()) == Some(username)
                         && v.get("permission").and_then(|p| p.as_str()) == Some("participant")
                 })
-                .and_then(|v| v.get("token").and_then(|t| t.as_str()).map(|t| t.to_string()))
+                .cloned()
         });
-    if let Some(visit_token) = existing_token {
+    if let Some(mut entry) = existing {
+        let visit_token = entry
+            .get("token")
+            .and_then(|t| t.as_str())
+            .unwrap_or_default()
+            .to_string();
+        // Expired joins are refreshed in place (ANT-467): the same token
+        // keeps working, but with a fresh TTL instead of the dead one.
+        // Grants minted before 0.8.5 carry no expiry yet and get the TTL
+        // backfilled on their first re-join after the upgrade.
+        let current_expiry = entry.get("expiry").and_then(|e| e.as_f64());
+        let expired = current_expiry.is_some_and(|exp| exp <= now);
+        let expiry = match current_expiry {
+            Some(exp) if exp > now => exp,
+            _ => join_ttl_expiry(now),
+        };
+        if expired || current_expiry.is_none() {
+            entry["expiry"] = serde_json::to_value(expiry).unwrap();
+            if let Some(viewers) = session.get_mut("viewers").and_then(|v| v.as_array_mut()) {
+                if let Some(slot) = viewers
+                    .iter()
+                    .position(|v| v.get("token").and_then(|t| t.as_str()) == Some(visit_token.as_str()))
+                {
+                    viewers[slot] = entry.clone();
+                }
+            }
+        }
         // Re-admit on the vreckan side (legacy sessions) and re-establish in
         // the container (a recreate rebuilt the table from the original
         // launch tokens, dropping later joins).
-        {
-            let mut tokens = state.session_share_tokens.write().await;
-            tokens.insert(
-                visit_token.clone(),
-                SessionShareTokenRecord {
-                    share_id: format!("join:{username}"),
-                    session_id: session_id.to_string(),
-                    caps: join_participant_caps(),
-                },
-            );
+        let mut tokens = state.session_share_tokens.write().await;
+        tokens.insert(
+            visit_token.clone(),
+            SessionShareTokenRecord {
+                share_id: format!("join:{username}"),
+                session_id: session_id.to_string(),
+                caps: join_participant_caps(),
+                created_at: now,
+                expiry: Some(expiry),
+            },
+        );
+        drop(tokens);
+        if expired || current_expiry.is_none() {
+            *state
+                .sessions
+                .write()
+                .await
+                .entry(session_id.to_string())
+                .or_insert(Value::Object(serde_json::Map::new())) = session.clone();
+            catalog::save_sessions(state).await;
         }
         if !is_collab {
             let _ = collaboration::push_token_table(state, session_id, &session).await;
         }
-        return Some(format!("/api/apps/session/{session_id}/?token={visit_token}"));
+        return Some(join_hop_url(session_id, username));
     }
 
     let visit_token = catalog::random_token(16);
     // A synthetic share id (real share ids are UUIDs) so the vreckan-side
-    // token map admits the joiner for legacy (non-secure) sessions.
+    // token map admits the joiner for legacy (non-secure) sessions. The
+    // grant carries the join TTL (ANT-467).
     let grant = VisitGrant {
         username: username.to_string(),
         permission: "participant",
         caps: join_participant_caps(),
         share_id: format!("join:{username}"),
+        expiry: Some(join_ttl_expiry(now)),
     };
     apply_visit_to_session(state, session_id, &mut session, &visit_token, &grant).await;
     info!("[{session_id}] Self-serve join: granted participant ({username})");
-    Some(format!("/api/apps/session/{session_id}/?token={visit_token}"))
+    Some(join_hop_url(session_id, username))
+}
+
+/// The token-free URL a self-serve join opens (ANT-466, F1): the
+/// `GET /join/{session_id}/{username}` hop. Keyed on the caller's username —
+/// letters, numbers, underscores, or hyphens, so path-safe by construction
+/// (`user_manager::valid_name`) — and resolved from the session's viewers
+/// list, so no separate nonce store is needed and a replayed or bookmarked
+/// hop keeps working across vreckan restarts.
+fn join_hop_url(session_id: &str, username: &str) -> String {
+    format!("/join/{session_id}/{username}")
 }
 
 /// Strip every per-visit token minted by the share with the given id: from
 /// the session's viewers list, the container's token table (when one exists),
 /// and the vreckan-side token map. Used by revocation and expiry cleanup.
+/// The session is resolved from the share row.
 pub async fn strip_share_tokens(state: &AppState, share_id: &str) {
+    let session_id = state
+        .session_shares
+        .read()
+        .await
+        .get(share_id)
+        .map(|m| m.session_id.clone());
+    let Some(session_id) = session_id else {
+        return;
+    };
+    strip_share_tokens_for_session(state, &session_id, share_id).await;
+}
+
+/// The session-scoped core of [`strip_share_tokens`]: given the session the
+/// share belongs to, strip the share's tokens from the session's viewers
+/// list, the container's token table (when one exists), and the vreckan-side
+/// token map. A missing durable share row is not a short-circuit (ANT-467,
+/// F2): the synthetic join grant (`join:{user}`) never lands in
+/// `session_shares`, yet its tokens must still be stripped for the owner's
+/// per-joiner revoke and the join-TTL sweep to work.
+pub async fn strip_share_tokens_for_session(state: &AppState, session_id: &str, share_id: &str) {
     // Note: clone out of each lock in a plain statement. A lock guard
     // temporary held across an `if let` scrutinee survives until the end of
     // the block and would deadlock against the re-lock below (tokio locks
     // are not reentrant).
-    let share_opt = state.session_shares.read().await.get(share_id).cloned();
-    let Some(share) = share_opt else {
-        return;
-    };
-    let session_id = &share.session_id;
     let tokens: Vec<String> = {
         let map = state.session_share_tokens.read().await;
         map.iter()
@@ -1053,7 +1446,7 @@ pub async fn strip_share_tokens(state: &AppState, share_id: &str) {
         if has_master || is_collab {
             collaboration::push_token_table(state, session_id, &session).await;
         }
-        *state.sessions.write().await.entry(session_id.clone()).or_insert(Value::Object(
+        *state.sessions.write().await.entry(session_id.to_string()).or_insert(Value::Object(
             serde_json::Map::new(),
         )) = session;
         catalog::save_sessions(state).await;
@@ -1066,11 +1459,179 @@ pub async fn strip_share_tokens(state: &AppState, share_id: &str) {
     }
 }
 
+// ---------------------------------------------------------------------------
+// Participants (ANT-467, F2): owner-visible list + per-joiner revoke + TTL
+// ---------------------------------------------------------------------------
+
+/// Classify a session viewer entry by the grant that minted it (ANT-467):
+/// `"join"` for a self-serve join, `"share"` for a share-link visit.
+///
+/// Entries minted by 0.8.5 carry the grant's share id, so classification is
+/// exact. Entries persisted before that (sessions that outlive an upgrade)
+/// have no recorded id and fall back to the username shape: a join is
+/// recorded under the joiner's real username, a share visit under a random
+/// `User-NNN`.
+pub fn classify_viewer_source(viewer: &Value) -> &'static str {
+    let share_id = viewer
+        .get("share_id")
+        .and_then(|v| v.as_str())
+        .unwrap_or_default();
+    if share_id.starts_with("join:") {
+        return "join";
+    }
+    if !share_id.is_empty() {
+        return "share";
+    }
+    let username = viewer
+        .get("username")
+        .and_then(|v| v.as_str())
+        .unwrap_or_default();
+    if username.starts_with("User-") {
+        "share"
+    } else if viewer
+        .get("permission")
+        .and_then(|p| p.as_str())
+        .is_some_and(|p| p == "participant")
+    {
+        "join"
+    } else {
+        "share"
+    }
+}
+
+/// The owner-visible participant list of a session (ANT-467): one entry per
+/// recorded visit — self-serve joins and share-link visits alike — with the
+/// grant source, the grant's share id, and the TTL timestamps when present.
+pub fn participants_for_session(session: &Value) -> Vec<Value> {
+    let Some(viewers) = session.get("viewers").and_then(|v| v.as_array()) else {
+        return Vec::new();
+    };
+    let mut out = Vec::new();
+    for v in viewers {
+        let token = v.get("token").and_then(|t| t.as_str()).unwrap_or_default();
+        if token.is_empty() {
+            continue;
+        }
+        out.push(serde_json::json!({
+            "username": v.get("username").cloned().unwrap_or(Value::Null),
+            "permission": v.get("permission").cloned().unwrap_or(Value::Null),
+            "source": classify_viewer_source(v),
+            "share_id": v.get("share_id").cloned().unwrap_or(Value::Null),
+            "joined_at": v.get("joined_at").cloned().unwrap_or(Value::Null),
+            "expiry": v.get("expiry").cloned().unwrap_or(Value::Null),
+        }));
+    }
+    out
+}
+
+/// The usernames of the session's self-serve joiners (ANT-467), in viewers
+/// order with duplicates removed. The session list embeds this for the
+/// caller's own sessions so the UI can badge the count without an extra
+/// round trip; share-link visitors are tracked via the share links instead.
+pub fn participant_usernames(session: &Value) -> Vec<String> {
+    let mut out: Vec<String> = Vec::new();
+    if let Some(viewers) = session.get("viewers").and_then(|v| v.as_array()) {
+        for v in viewers {
+            if classify_viewer_source(v) != "join" {
+                continue;
+            }
+            let username = v.get("username").and_then(|u| u.as_str()).unwrap_or_default();
+            if !username.is_empty() && !out.iter().any(|u| u == username) {
+                out.push(username.to_string());
+            }
+        }
+    }
+    out
+}
+
+/// Revoke a single joiner's grant (ANT-467): strip the joiner's token from
+/// the vreckan-side token map, their entry from the session's persisted
+/// viewers list, and the container's token table (when one exists), then
+/// persist the session. The joiner drops on the next proxy request.
+///
+/// Returns `false` when the session has no live join grant for that
+/// username (unknown session, never joined, or already revoked).
+pub async fn revoke_session_join(state: &AppState, session_id: &str, username: &str) -> bool {
+    let session_opt = state.sessions.read().await.get(session_id).cloned();
+    let Some(session) = session_opt else {
+        return false;
+    };
+    let is_joiner = session
+        .get("viewers")
+        .and_then(|v| v.as_array())
+        .map(|viewers| {
+            viewers
+                .iter()
+                .any(|v| {
+                    v.get("username").and_then(|u| u.as_str()) == Some(username)
+                        && classify_viewer_source(v) == "join"
+                })
+        })
+        .unwrap_or(false);
+    if !is_joiner {
+        return false;
+    }
+    strip_share_tokens_for_session(state, session_id, &format!("join:{username}")).await;
+    info!("[{session_id}] Join revoked by owner ({username})");
+    true
+}
+
+/// Sweep the join grants whose TTL has run out (ANT-467). For every session
+/// with an expired join entry, the entry is stripped through the same path
+/// as an owner revocation (viewers list, container token table, vreckan-side
+/// token map, persisted session). Finally the in-memory token map is pruned
+/// of every expired record of either kind, so a dead grant never admits a
+/// request past its TTL even before the share-row sweep runs.
+pub async fn sweep_expired_session_joins(state: &AppState) {
+    let now = now_unix_secs();
+    let session_ids: Vec<String> = state.sessions.read().await.keys().cloned().collect();
+    let mut swept = 0usize;
+    for session_id in &session_ids {
+        let Some(session) = state.sessions.read().await.get(session_id).cloned() else {
+            continue;
+        };
+        let expired: Vec<String> = session
+            .get("viewers")
+            .and_then(|v| v.as_array())
+            .map(|viewers| {
+                viewers
+                    .iter()
+                    .filter(|v| {
+                        classify_viewer_source(v) == "join"
+                            && v.get("expiry")
+                                .and_then(|e| e.as_f64())
+                                .is_some_and(|exp| exp <= now)
+                    })
+                    .filter_map(|v| {
+                        v.get("username")
+                            .and_then(|u| u.as_str())
+                            .map(|s| s.to_string())
+                    })
+                    .collect::<Vec<String>>()
+            })
+            .unwrap_or_default();
+        for username in &expired {
+            strip_share_tokens_for_session(state, session_id, &format!("join:{username}")).await;
+            swept += 1;
+        }
+    }
+    // Prune the in-memory map of every expired record (join and share
+    // alike). Done after the per-session strips so their token lookup still
+    // sees the records it needs to match viewers entries against.
+    {
+        let mut map = state.session_share_tokens.write().await;
+        map.retain(|_, r| r.expiry.map(|exp| exp > now).unwrap_or(true));
+    }
+    if swept > 0 {
+        info!("Expired join sweep: stripped {swept} expired join grant(s).");
+    }
+}
+
 /// Remove expired session shares (and all of their visitor tokens). Mirrors
 /// `cleanup_expired_shares` for file shares.
 pub async fn cleanup_expired_session_shares(state: &AppState) {
     let now = now_unix_secs();
-    let to_remove: Vec<String> = {
+    let to_remove: Vec<(String, Option<String>, String)> = {
         let shares = state.session_shares.read().await;
         shares
             .iter()
@@ -1079,27 +1640,42 @@ pub async fn cleanup_expired_session_shares(state: &AppState) {
                     .map(|exp| exp < now)
                     .unwrap_or(false)
             })
-            .map(|(id, _)| id.clone())
+            .map(|(id, meta)| {
+                (
+                    id.clone(),
+                    meta.invited_username.clone(),
+                    meta.session_id.clone(),
+                )
+            })
             .collect()
     };
-    if to_remove.is_empty() {
-        return;
-    }
-    info!(
-        "Found {} expired session share(s) to clean up.",
-        to_remove.len()
-    );
-    for id in &to_remove {
-        strip_share_tokens(state, id).await;
-    }
-    {
-        let mut shares = state.session_shares.write().await;
-        for id in &to_remove {
-            shares.remove(id);
+    if !to_remove.is_empty() {
+        info!(
+            "Found {} expired session share(s) to clean up.",
+            to_remove.len()
+        );
+        for (id, invited, session_id) in &to_remove {
+            strip_share_tokens_for_session(state, session_id, id).await;
+            // An expired named invite (ANT-472) also strips the invited user's
+            // participation entry (viewers list, container token table, and the
+            // vreckan-side token map).
+            if let Some(invited) = invited {
+                strip_share_tokens_for_session(state, session_id, &format!("join:{invited}")).await;
+            }
         }
+        {
+            let mut shares = state.session_shares.write().await;
+            for (id, _, _) in &to_remove {
+                shares.remove(id);
+            }
+        }
+        save_session_shares(state).await;
+        info!("Expired session share cleanup complete.");
     }
-    save_session_shares(state).await;
-    info!("Expired session share cleanup complete.");
+    // Expired join grants (ANT-467) are swept independently of the share
+    // rows above: a join never lands in `session_shares`, so the share list
+    // may be empty while a join TTL still needs to run out.
+    sweep_expired_session_joins(state).await;
 }
 
 // ---------------------------------------------------------------------------
@@ -1123,13 +1699,26 @@ pub fn owner_router() -> Router<AppState> {
             "/sessions/{session_id}/shares/{share_id}",
             delete(revoke_session_share),
         )
+        .route(
+            "/sessions/{session_id}/participants",
+            get(list_session_participants),
+        )
+        .route(
+            "/sessions/{session_id}/participants/{username}",
+            delete(revoke_session_participant),
+        )
 }
 
-/// The plaintext, account-less public entry routes: `GET/POST /share/{id}`.
+/// The plaintext, account-less public entry routes: `GET/POST /share/{id}`
+/// and the self-serve join hop `GET /join/{session_id}/{username}`.
 pub fn public_router() -> Router<AppState> {
     Router::new()
         .route("/share/{share_id}", get(access_session_share_get))
         .route("/share/{share_id}", post(access_session_share_post))
+        .route(
+            "/join/{session_id}/{username}",
+            get(access_session_join_hop),
+        )
 }
 
 #[cfg(test)]
@@ -1149,5 +1738,82 @@ mod de_tests {
         let pw: UpdateSessionShareRequest =
             serde_json::from_value(serde_json::json!({ "password": null })).unwrap();
         assert_eq!(pw.password, Some(None), "null password must be Some(None)");
+    }
+}
+
+#[cfg(test)]
+mod participant_tests {
+    use super::*;
+
+    #[test]
+    fn classify_by_recorded_share_id() {
+        let joiner = serde_json::json!({
+            "token": "t1",
+            "username": "alice",
+            "permission": "participant",
+            "share_id": "join:alice"
+        });
+        assert_eq!(classify_viewer_source(&joiner), "join");
+        let visitor = serde_json::json!({
+            "token": "t2",
+            "username": "User-123",
+            "permission": "participant",
+            "share_id": "share-uuid-1"
+        });
+        assert_eq!(classify_viewer_source(&visitor), "share");
+    }
+
+    #[test]
+    fn classify_pre_085_entries_by_username_shape() {
+        // Entries persisted before 0.8.5 carry no share_id: a join is
+        // recorded under the joiner's real username, a share visit under a
+        // random User-NNN.
+        let joiner = serde_json::json!({
+            "token": "t1",
+            "username": "alice",
+            "permission": "participant"
+        });
+        assert_eq!(classify_viewer_source(&joiner), "join");
+        let visitor = serde_json::json!({
+            "token": "t2",
+            "username": "User-123",
+            "permission": "participant"
+        });
+        assert_eq!(classify_viewer_source(&visitor), "share");
+        let readonly_visitor = serde_json::json!({
+            "token": "t3",
+            "username": "User-456",
+            "permission": "readonly"
+        });
+        assert_eq!(classify_viewer_source(&readonly_visitor), "share");
+    }
+
+    #[test]
+    fn participant_lists() {
+        let session = serde_json::json!({
+            "viewers": [
+                { "token": "t1", "username": "alice", "permission": "participant",
+                  "share_id": "join:alice", "joined_at": 10.0, "expiry": 99.0 },
+                { "token": "t2", "username": "User-456", "permission": "participant",
+                  "share_id": "sh-1" },
+                { "token": "t3", "username": "bob", "permission": "participant" },
+                { "token": "t4", "username": "User-789", "permission": "readonly" }
+            ]
+        });
+        // The session-list field lists joiners only, in order, deduplicated.
+        assert_eq!(
+            participant_usernames(&session),
+            vec!["alice".to_string(), "bob".to_string()]
+        );
+        // The management endpoint lists every recorded visit, classified.
+        let list = participants_for_session(&session);
+        assert_eq!(list.len(), 4);
+        let alice = list.iter().find(|p| p["username"] == "alice").unwrap();
+        assert_eq!(alice["source"], "join");
+        assert_eq!(alice["expiry"], 99.0);
+        let visitor = list.iter().find(|p| p["username"] == "User-456").unwrap();
+        assert_eq!(visitor["source"], "share");
+        assert_eq!(visitor["share_id"], "sh-1");
+        assert_eq!(visitor["expiry"], Value::Null);
     }
 }

@@ -7,10 +7,16 @@
 // changes" and issues a PATCH (no delete-and-recreate).
 //
 // The API is the owner session-share contract from ANT-305:
-//   POST   /api/sessions/{id}/shares            { role, caps?, password?, expiry_hours? }
+//   POST   /api/sessions/{id}/shares            { role, caps?, password?, expiry_hours?, username? }
 //   GET    /api/sessions/{id}/shares            -> [SessionShareInfo]
-//   PATCH  /api/sessions/{id}/shares/{share_id} { role?, caps?, password?, expiry_hours? }
+//   PATCH  /api/sessions/{id}/shares/{share_id} { role?, caps?, password?, expiry_hours?, username? }
 //   DELETE /api/sessions/{id}/shares/{share_id}
+//
+// Named invites (ANT-474, backend in ANT-473): create/update take an optional
+// `username` (validated server-side: existing user, not the owner); the list
+// and revoke responses carry `invited_username`. On PATCH, an absent key keeps
+// the current invite, `null`/`""` clears it, and a non-empty name sets it —
+// the same tri-state as `password`.
 // Every call goes through secureFetch (E2EE). The `input` cap is implied by
 // the role (full = input on; view_only = input off), so it is not a checkbox;
 // the file caps (browse / download / upload) are.
@@ -94,7 +100,7 @@ function previewLine(role, fileCaps, password, expiryHours) {
 // Modal state
 // ---------------------------------------------------------------------------
 
-let ctx = null; // { sessionId, sessionName, manage, shares, editingShareId, newestShareId }
+let ctx = null; // { sessionId, sessionName, manage, shares, participants, editingShareId, newestShareId }
 let escListener = null;
 let langListener = null;
 
@@ -138,9 +144,32 @@ function expiryHoursFromForm() {
   return h > 0 ? h : null;
 }
 
+// The invite that the current form state will produce: a typed name wins; an
+// empty field in edit mode keeps the link's existing invite unless "Clear
+// invite" is ticked (mirrors the password field's semantics).
+function effectiveInvite() {
+  const v = el("ss-invite").value.trim();
+  if (v) return v;
+  if (ctx && ctx.editingShareId) {
+    const share = ctx.shares.find((s) => s.share_id === ctx.editingShareId);
+    if (share && share.invited_username && !el("ss-invite-clear").checked) {
+      return share.invited_username;
+    }
+  }
+  return null;
+}
+
 function syncPreview() {
   const password = el("ss-password").value.trim() || null;
   el("ss-preview").textContent = previewLine(roleValue(), fileCapsFromForm(), password, expiryHoursFromForm());
+  const invite = effectiveInvite();
+  const invitePreview = el("ss-invite-preview");
+  if (invite) {
+    invitePreview.textContent = t("shareSession.invitePreview", { user: invite });
+    invitePreview.hidden = false;
+  } else {
+    invitePreview.hidden = true;
+  }
 }
 
 function markPresetActive(name) {
@@ -194,6 +223,7 @@ export function openSessionShareModal(session, { manage = false, editShare = nul
     sessionName: sessionDisplayName(session),
     manage: manage || !!editShare,
     shares: editShare ? [editShare] : [],
+    participants: [],
     editingShareId: editShare ? editShare.share_id : null,
     newestShareId: null,
   };
@@ -238,8 +268,10 @@ function attachLang() {
     // Re-render dynamic strings if the user switches language mid-modal.
     if (el("modal-session-share").hidden) return;
     el("ss-title").textContent = t("shareSession.title", { name: ctx.sessionName });
-    if (!el("ss-manage").hidden) renderShareList();
-    else {
+    if (!el("ss-manage").hidden) {
+      renderShareList();
+      renderParticipants();
+    } else {
       refreshRoleDependent();
       el("ss-submit").textContent = ctx.editingShareId
         ? t("shareSession.saveChanges")
@@ -280,6 +312,9 @@ function resetFormToDefaults() {
   el("ss-customize").classList.remove("is-active");
   el("ss-options-body").hidden = true;
   el("ss-options-toggle").classList.remove("open");
+  el("ss-invite").value = "";
+  el("ss-invite-clear").checked = false;
+  el("ss-invite-clear-wrap").hidden = true;
   el("ss-password").value = "";
   el("ss-clear-pw").checked = false;
   el("ss-pw-hint").hidden = true;
@@ -300,6 +335,13 @@ function prefillFromShare(share) {
   setFileCaps(share.caps || {});
   el("ss-cap-row").hidden = false;
   el("ss-customize").classList.add("is-active");
+
+  // Named invite (ANT-474): the value is known, so pre-fill it; "Clear
+  // invite" only appears for links that actually carry one.
+  const invitee = share.invited_username || "";
+  el("ss-invite").value = invitee;
+  el("ss-invite-clear").checked = false;
+  el("ss-invite-clear-wrap").hidden = !invitee;
 
   // Password: we only know whether one is set, not the value.
   const hasPw = !!share.has_password;
@@ -347,24 +389,40 @@ function setExpiryFromShare(share) {
 // ---------------------------------------------------------------------------
 
 async function loadShares(onReady) {
-  try {
-    ctx.shares = (await secureFetch(`/api/sessions/${ctx.sessionId}/shares`, { method: "GET" })) || [];
-  } catch (err) {
-    toast(err.message, "error");
+  // The manage state shows the links and the participants side by side
+  // (ANT-467): fetch both, best-effort.
+  const [sharesRes, participantsRes] = await Promise.allSettled([
+    secureFetch(`/api/sessions/${ctx.sessionId}/shares`, { method: "GET" }),
+    secureFetch(`/api/sessions/${ctx.sessionId}/participants`, { method: "GET" }),
+  ]);
+  if (sharesRes.status === "fulfilled") {
+    ctx.shares = Array.isArray(sharesRes.value) ? sharesRes.value : [];
+  } else {
+    toast(sharesRes.reason.message, "error");
     ctx.shares = [];
   }
+  if (participantsRes.status === "fulfilled") {
+    ctx.participants = Array.isArray(participantsRes.value) ? participantsRes.value : [];
+  } else {
+    ctx.participants = [];
+  }
   renderShareList();
+  renderParticipants();
   if (onReady) onReady();
 }
 
 function renderShareList() {
   const list = el("ss-links-list");
   list.innerHTML = "";
-  if (!ctx.shares.length) {
+  // Active links only (ANT-474): revoked and expired rows stay on the server
+  // (so the public URL can answer 410 and revocation strips the participant
+  // entry) but leave the visible list.
+  const visible = ctx.shares.filter(shareIsActive);
+  if (!visible.length) {
     list.innerHTML = `<p class="muted">${t("shareSession.noLinks")}</p>`;
     return;
   }
-  const ordered = [...ctx.shares].sort((a, b) => b.created_at - a.created_at);
+  const ordered = [...visible].sort((a, b) => b.created_at - a.created_at);
   for (const s of ordered) {
     list.appendChild(buildShareRow(s));
   }
@@ -377,6 +435,12 @@ function buildShareRow(s) {
 
   const left = document.createElement("div");
   left.className = "share-meta";
+  const identity = document.createElement("span");
+  identity.className = "share-identity";
+  identity.textContent = s.invited_username
+    ? t("shareSession.manageInvitee", { user: s.invited_username })
+    : t("shareSession.manageGeneric");
+  left.appendChild(identity);
   const summary = document.createElement("span");
   summary.textContent = capSummary(s);
   left.appendChild(summary);
@@ -418,7 +482,9 @@ function buildShareRow(s) {
   revokeBtn.addEventListener("click", async () => {
     if (!armed) {
       armed = true;
-      revokeBtn.textContent = t("shareSession.confirmRevoke");
+      revokeBtn.textContent = s.invited_username
+        ? t("shareSession.revokeInviteeArmed", { user: s.invited_username })
+        : t("shareSession.confirmRevoke");
       armTimer = setTimeout(() => {
         armed = false;
         revokeBtn.textContent = t("shareSession.revoke");
@@ -429,8 +495,11 @@ function buildShareRow(s) {
     armed = false;
     revokeBtn.disabled = true;
     try {
-      await secureFetch(`/api/sessions/${ctx.sessionId}/shares/${s.share_id}`, { method: "DELETE" });
-      toast(t("shareSession.linkDead"), "success");
+      // The DELETE response carries the revoked link's info, so the toast can
+      // name the invitee that just lost access (ANT-474).
+      const res = await secureFetch(`/api/sessions/${ctx.sessionId}/shares/${s.share_id}`, { method: "DELETE" });
+      const invitee = res && res.invited_username;
+      toast(invitee ? t("shareSession.revokeInviteeDone", { user: invitee }) : t("shareSession.linkDead"), "success");
       if (ctx.editingShareId === s.share_id) closeSessionShareModal();
       loadShares();
       notifySessionsChanged();
@@ -442,6 +511,103 @@ function buildShareRow(s) {
   });
   actions.appendChild(revokeBtn);
 
+  row.appendChild(actions);
+  return row;
+}
+
+// ---------------------------------------------------------------------------
+// Participants (ANT-467): who is in the session + per-joiner revoke
+// ---------------------------------------------------------------------------
+
+// Human-readable line for one participant: how they got in, when, and the
+// grant's TTL when it has one.
+function participantSummary(p) {
+  const parts = [p.source === "join" ? t("shareSession.partViaJoin") : t("shareSession.partViaShare")];
+  if (p.joined_at) {
+    parts.push(t("shareSession.partJoinedAt", { when: new Date(p.joined_at * 1000).toLocaleString() }));
+  }
+  if (p.expiry) {
+    parts.push(
+      p.expiry < nowSecs()
+        ? t("shareSession.partExpired")
+        : t("shareSession.partExpiresIn", { hours: Math.max(1, Math.round((p.expiry - nowSecs()) / 3600)) })
+    );
+  }
+  return parts.join(" · ");
+}
+
+function renderParticipants() {
+  const list = el("ss-participants-list");
+  list.innerHTML = "";
+  if (!ctx || !ctx.participants.length) {
+    list.innerHTML = `<p class="muted">${t("shareSession.noParticipants")}</p>`;
+    return;
+  }
+  const ordered = [...ctx.participants].sort((a, b) => {
+    const aj = a.joined_at || 0;
+    const bj = b.joined_at || 0;
+    return bj - aj;
+  });
+  for (const p of ordered) {
+    list.appendChild(buildParticipantRow(p));
+  }
+}
+
+function buildParticipantRow(p) {
+  const isJoin = p.source === "join";
+  const row = document.createElement("div");
+  row.className = "share-row ss-participant-row";
+
+  const left = document.createElement("div");
+  left.className = "share-meta";
+  const name = document.createElement("span");
+  name.textContent = p.username || "?";
+  left.appendChild(name);
+  const summary = document.createElement("span");
+  summary.className = "muted";
+  summary.textContent = " — " + participantSummary(p);
+  left.appendChild(summary);
+  row.appendChild(left);
+
+  // Only joiners get a per-joiner revoke here (ANT-467): share-link visits
+  // are cut by revoking the link itself, above.
+  if (!isJoin) return row;
+
+  const actions = document.createElement("div");
+  actions.className = "share-ss-actions";
+  const revokeBtn = document.createElement("button");
+  revokeBtn.type = "button";
+  revokeBtn.className = "btn btn-danger btn-sm";
+  revokeBtn.textContent = t("shareSession.partRevoke");
+  let armed = false;
+  let armTimer = null;
+  revokeBtn.addEventListener("click", async () => {
+    if (!armed) {
+      armed = true;
+      revokeBtn.textContent = t("shareSession.partConfirmRevoke");
+      armTimer = setTimeout(() => {
+        armed = false;
+        revokeBtn.textContent = t("shareSession.partRevoke");
+      }, 4000);
+      return;
+    }
+    clearTimeout(armTimer);
+    armed = false;
+    revokeBtn.disabled = true;
+    try {
+      await secureFetch(`/api/sessions/${ctx.sessionId}/participants/${encodeURIComponent(p.username)}`, {
+        method: "DELETE",
+      });
+      toast(t("shareSession.partRevoked", { name: p.username }), "success");
+      loadShares();
+      notifySessionsChanged();
+    } catch (err) {
+      revokeBtn.disabled = false;
+      revokeBtn.textContent = t("shareSession.partRevoke");
+      toast(err.message, "error");
+    }
+  });
+  actions.appendChild(revokeBtn);
   row.appendChild(actions);
   return row;
 }
@@ -483,6 +649,21 @@ async function handleSubmit() {
 
   const body = { role, caps };
   if (password !== undefined) body.password = password;
+  // Named invite (ANT-474), same tri-state as password: absent keeps the
+  // current invite, null clears it, a non-empty name sets it.
+  if (ctx.editingShareId) {
+    const editingShare = ctx.shares.find((s) => s.share_id === ctx.editingShareId);
+    const hadInvite = !!(editingShare && editingShare.invited_username);
+    const inviteInput = el("ss-invite").value.trim();
+    let username;
+    if (inviteInput) username = inviteInput;
+    else if (hadInvite && el("ss-invite-clear").checked) username = null;
+    else username = undefined; // absent -> server keeps the current invite
+    if (username !== undefined) body.username = username;
+  } else {
+    const invite = el("ss-invite").value.trim();
+    if (invite) body.username = invite;
+  }
   if (ctx.editingShareId) {
     // On edit the form is the source of truth for expiry too.
     body.expiry_hours = expiryHours;
@@ -588,6 +769,8 @@ function wireModalOnce() {
   }
   el("ss-expiry-hours").addEventListener("input", syncPreview);
   el("ss-password").addEventListener("input", syncPreview);
+  el("ss-invite").addEventListener("input", syncPreview);
+  el("ss-invite-clear").addEventListener("change", syncPreview);
 
   // Actions.
   el("session-share-form").addEventListener("submit", (e) => {

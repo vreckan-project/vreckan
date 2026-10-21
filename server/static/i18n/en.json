@@ -200,7 +200,26 @@
     "linkCount": "{count} link",
     "linkCountPlural": "{count} links",
     "linksBadgeTitle": "Active share links — click to manage",
-    "shareTitle": "Share this session with a link"
+    "shareTitle": "Share this session with a link",
+    "participants": "Participants",
+    "noParticipants": "No one has joined this session yet.",
+    "partViaJoin": "via Join",
+    "partViaShare": "via a share link",
+    "partJoinedAt": "joined {when}",
+    "partExpired": "expired",
+    "partExpiresIn": "expires in {hours} h",
+    "partRevoke": "Revoke",
+    "partConfirmRevoke": "Confirm revoke?",
+    "partRevoked": "{name} is out of the session — their access ends on the next request",
+    "inviteLabel": "Invite user (optional)",
+    "invitePlaceholder": "vreckan username",
+    "inviteHint": "A Vreckan user (not you). Validated when you save.",
+    "inviteClear": "Clear invite",
+    "invitePreview": "{user} will see this session on their apps page and can Join.",
+    "manageInvitee": "Invitee: {user}",
+    "manageGeneric": "Anyone with the link (stays off apps pages)",
+    "revokeInviteeArmed": "Confirm revoke? {user} loses access",
+    "revokeInviteeDone": "Link revoked — {user} no longer sees this session and can no longer Join."
   },
   "overview": {
     "title": "Overview",
@@ -670,7 +689,10 @@
     "joinNoAccess": "You don’t have access to this session’s app.",
     "joinRoom": "Room sessions use their own invite flow — ask the owner for a room link.",
     "joinFailed": "Join failed: {message}",
-    "ownerBy": "by {owner}"
+    "ownerBy": "by {owner}",
+    "participantCount": "{count} participant",
+    "participantCountPlural": "{count} participants",
+    "participantsBadgeTitle": "{names} — click to manage"
   },
   "backup": {
     "heading": "Backup",

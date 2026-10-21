@@ -140,9 +140,23 @@ layout: default
         <tr><td>GET</td><td><code>/api/sessions/{session_id}/status</code></td><td><code>get_session_status</code></td><td>E2EE (own session)</td></tr>
         <tr><td>DELETE</td><td><code>/api/sessions/{session_id}</code></td><td><code>stop_my_session</code></td><td>E2EE (own session)</td></tr>
         <tr><td>POST</td><td><code>/api/sessions/{session_id}/recreate</code></td><td><code>recreate_my_session</code></td><td>E2EE (own session)</td></tr>
+        <tr><td>POST</td><td><code>/api/sessions/{session_id}/join</code></td><td><code>join_my_session</code></td><td>E2EE (any authenticated user; the owner's express grant gates success)</td></tr>
         <tr><td>POST</td><td><code>/api/sessions/{session_id}/send_file</code></td><td><code>send_file_to_session</code></td><td>E2EE (own session)</td></tr>
       </tbody>
     </table>
+    <p><strong>Session list and the owner-grant join gate (v0.8.5, ANT-472).</strong> <code>GET /api/sessions</code> returns the caller's own sessions plus other users'; each row's <code>joinable</code> flag drives the UI's Join affordance, the row's visibility, and (with the F3 nulling) whether <code>launch_context</code> and the custom <code>name</code> are revealed:</p>
+    <table>
+      <thead>
+        <tr><th scope="col">Row</th><th scope="col"><code>joinable</code></th></tr>
+      </thead>
+      <tbody>
+        <tr><td>Own session</td><td>the app-access check, as before (the UI offers Open on own rows)</td></tr>
+        <tr><td>Room (collaboration) session</td><td>never — rooms run their own invite flow</td></tr>
+        <tr><td>Another user's plain session</td><td>the owner's <strong>express grant</strong>: a non-revoked, non-expired named share link that names the caller, or a persisted participant entry (v0.8.4 self-serve joiners grandfathered until the owner revokes)</td></tr>
+      </tbody>
+    </table>
+    <p>The v0.8.4 per-app-access self-serve gate is gone: app access no longer makes another user's session visible or joinable — the owner may invite a user with no entry in the app's allowlist — and a not-invited user's rows are hidden from the Join affordance with <code>launch_context</code>/<code>name</code> nulled (F3).</p>
+    <p><strong><code>POST /api/sessions/{session_id}/join</code></strong> enforces the same gate: 400 when the E2EE request body is missing (the F4 CSRF gate — a cross-site form POST cannot carry one), 404 for an unknown session, 409 for a room session (its own invite flow), 403 <code>The session owner has not granted you access.</code> when the grant is absent; success 200 <code>{ session_url, join_mode }</code>, where <code>join_mode</code> reports <code>secure</code> (selkies token table — multiple controllers) or <code>legacy</code> (single-controller WebSockets handoff) so the UI can state the tradeoff.</p>
 
     <h3>Session reverse proxy (data plane) — <code>session_proxy.rs</code></h3>
     <table>
@@ -158,7 +172,7 @@ layout: default
     <p>One <code>any()</code> registration per route handles both HTTP and WebSocket: an <code>Upgrade</code> header dispatches to the WebSocket bridge (client leg <code>axum::ws</code>, upstream leg <code>tokio-tungstenite</code>), everything else to the streaming HTTP proxy. Raw content-encoded bodies pass through undecoded; hop-by-hop headers are dropped; <code>SameSite=None</code> is set when the session page is opened embedded; the session CSP is applied to proxied responses. (Python registered the same surface as three routes — all-methods HTTP root, all-methods HTTP sub-path, and a separate WebSocket route — the consolidation is a representation difference, not a behavior change.)</p>
 
     <h3>Session shares — <code>session_shares.rs</code></h3>
-    <p>Owner-managed share links that let a session owner hand one of their running sessions — plain or room — to a recipient who has no Vreckan account, without sharing the owner's own credentials. Each share has a <strong>role</strong> — <code>full</code> (input plus every file capability) or <code>view_only</code> (no input; browse and download on by default) — freely combinable file capabilities (<code>file_browse</code>, <code>file_download</code>, <code>file_upload</code>), an optional password, an optional expiry, and per-link revocation. The owner routes are E2EE-encrypted and owner-only; the public entry is plaintext and account-less.</p>
+    <p>Owner-managed share links that let a session owner hand one of their running sessions — plain or room — to a recipient who has no Vreckan account, without sharing the owner's own credentials. Since v0.8.5 a link can also <strong>name an invited user</strong> with a Vreckan account: the invitee sees the session on the apps page and can Join it (the owner-grant gate above); a generic (unnamed) link only admits its holder through the link itself and does not light up the apps page. Each share has a <strong>role</strong> — <code>full</code> (input plus every file capability) or <code>view_only</code> (no input; browse and download on by default) — freely combinable file capabilities (<code>file_browse</code>, <code>file_download</code>, <code>file_upload</code>), an optional password, an optional expiry, and per-link revocation. The owner routes are E2EE-encrypted and owner-only; the public entry is plaintext and account-less.</p>
     <table>
       <thead>
         <tr><th scope="col">Method</th><th scope="col">Path</th><th scope="col">Handler</th><th scope="col">Auth</th></tr>
@@ -168,6 +182,8 @@ layout: default
         <tr><td>GET</td><td><code>/api/sessions/{session_id}/shares</code></td><td><code>list_session_shares</code></td><td>E2EE (owner)</td></tr>
         <tr><td>PATCH</td><td><code>/api/sessions/{session_id}/shares/{share_id}</code></td><td><code>update_session_share</code></td><td>E2EE (owner)</td></tr>
         <tr><td>DELETE</td><td><code>/api/sessions/{session_id}/shares/{share_id}</code></td><td><code>revoke_session_share</code></td><td>E2EE (owner)</td></tr>
+        <tr><td>GET</td><td><code>/api/sessions/{session_id}/participants</code></td><td><code>list_session_participants</code></td><td>E2EE (owner)</td></tr>
+        <tr><td>DELETE</td><td><code>/api/sessions/{session_id}/participants/{username}</code></td><td><code>revoke_session_participant</code></td><td>E2EE (owner)</td></tr>
       </tbody>
     </table>
     <table>
@@ -177,6 +193,7 @@ layout: default
       <tbody>
         <tr><td>GET</td><td><code>/share/{share_id}</code></td><td><code>access_session_share_get</code></td><td>— (303 entry redirect, or the password page)</td></tr>
         <tr><td>POST</td><td><code>/share/{share_id}</code></td><td><code>access_session_share_post</code></td><td>— (password submission)</td></tr>
+        <tr><td>GET</td><td><code>/join/{session_id}/{username}</code></td><td><code>access_session_join_hop</code></td><td>— (granted join hop, ANT-466 F1: 303 <code>private, no-store</code> to the session URL with the token stripped; the caller's participant token is handed over via the <code>collab_token_{session_id}</code> cookie, which admits the redirect target)</td></tr>
       </tbody>
     </table>
     <p>The share's wire shape (every owner route takes and returns it, E2EE-encrypted):</p>
@@ -194,6 +211,7 @@ layout: default
         <tr><td><code>has_password</code></td><td>bool</td><td>indicator only — the hash never leaves the server</td></tr>
         <tr><td><code>revoked</code></td><td>bool</td><td>revoked links stay listed; the public entry answers 410</td></tr>
         <tr><td><code>url</code></td><td>string</td><td><code>/share/{share_id}</code></td></tr>
+        <tr><td><code>invited_username</code></td><td>string | null</td><td>the user the owner expressly invited on this link (v0.8.5, ANT-472); <code>null</code> = a generic link</td></tr>
       </tbody>
     </table>
     <p><strong><code>POST /api/sessions/{session_id}/shares</code></strong> — create. Request body:</p>
@@ -206,9 +224,10 @@ layout: default
         <tr><td><code>caps</code></td><td>object</td><td>no</td><td>partial override <code>{input?, file_browse?, file_download?, file_upload?}</code>; absent fields take the role's defaults</td></tr>
         <tr><td><code>password</code></td><td>string</td><td>no</td><td>non-empty sets the password; absent/blank = none</td></tr>
         <tr><td><code>expiry_hours</code></td><td>number</td><td>no</td><td>must be &gt; 0; sets <code>expiry_timestamp = now + hours·3600</code></td></tr>
+        <tr><td><code>username</code></td><td>string</td><td>no</td><td>the named invite (v0.8.5): an existing user who is not the session owner; absent/blank = a generic link</td></tr>
       </tbody>
     </table>
-    <p>Role invariants: <code>full</code> ⇒ every cap on; <code>view_only</code> ⇒ <code>input</code> off, file caps freely combinable. Response 200: the new share. Errors: 404 unknown session; 403 not the owner's session; 422 invalid body or role.</p>
+    <p>Role invariants: <code>full</code> ⇒ every cap on; <code>view_only</code> ⇒ <code>input</code> off, file caps freely combinable. Response 200: the new share. Errors: 404 unknown session; 403 not the owner's session; 422 invalid body or role; 422 <code>No user named '{username}'.</code> or <code>The session owner cannot be invited on the session's own share link.</code> for a bad invite.</p>
     <p><strong><code>GET /api/sessions/{session_id}/shares</code></strong> — response 200: a JSON array of the session's shares (newest first), same shape as above.</p>
     <p><strong><code>PATCH /api/sessions/{session_id}/shares/{share_id}</code></strong> — edit. Every body field is optional, and <strong>an absent field leaves the share unchanged while an explicit <code>null</code> clears</strong> (deserialized as a nested <code>Option&lt;Option&lt;…&gt;&gt;</code> so the two are told apart; <code>""</code> also clears the password):</p>
     <table>
@@ -220,10 +239,29 @@ layout: default
         <tr><td><code>caps</code></td><td>object</td><td>partial override, as at create</td></tr>
         <tr><td><code>password</code></td><td>string | null</td><td>non-empty sets it; <code>""</code> or <code>null</code> clears it</td></tr>
         <tr><td><code>expiry_hours</code></td><td>number | null</td><td>positive sets a new expiry from now; <code>null</code> clears it</td></tr>
+        <tr><td><code>username</code></td><td>string | null</td><td>the named invite: a non-empty name sets it (must be an existing user who is not the owner — 422 otherwise); <code>""</code> or <code>null</code> clears it</td></tr>
       </tbody>
     </table>
-    <p>Response 200: the updated share. Errors: 404 unknown share (or a share belonging to a different session); 422 invalid role.</p>
-    <p><strong><code>DELETE /api/sessions/{session_id}/shares/{share_id}</code></strong> — revoke. Response 204, empty body. Revocation marks the link dead (the public entry answers 410) and strips <strong>every per-visit token the link has ever minted</strong> — from the session's viewers list, the container's selkies token table, and the vreckan-side token map — without stopping the session.</p>
+    <p>Response 200: the updated share. Errors: 404 unknown share (or a share belonging to a different session); 422 invalid role or invite username.</p>
+    <p><strong><code>DELETE /api/sessions/{session_id}/shares/{share_id}</code></strong> — revoke. Response 200: the revoked link's info (including <code>invited_username</code>), so the client can name who just lost access. Revocation marks the link dead (the public entry answers 410) and strips <strong>every per-visit token the link has ever minted</strong> — from the session's viewers list, the container's selkies token table, and the vreckan-side token map — without stopping the session. Since v0.8.5 the strip proceeds when the durable share row is missing, which is how the synthetic join grant (<code>join:{username}</code>, never a row in <code>session_shares</code>) reaches the same cleanup path. Revoking or expiring a <strong>named</strong> invite additionally strips the invitee's participant entry (the session-scoped strip of the synthetic <code>join:{invitee}</code> grant) — the invitee's apps-page row and join go dark at once.</p>
+    <p><strong>Participants (v0.8.5, ANT-467).</strong> Every admitted visitor is recorded in the session's viewers list with how it got in; the two participant routes expose that to the owner.</p>
+    <p><strong><code>GET /api/sessions/{session_id}/participants</code></strong> — response 200: a JSON array, one entry per recorded visit (granted joins and share-link visits alike, in viewers order):</p>
+    <table>
+      <thead>
+        <tr><th scope="col">Field</th><th scope="col">Type</th><th scope="col">Notes</th></tr>
+      </thead>
+      <tbody>
+        <tr><td><code>username</code></td><td>string | null</td><td>the joiner's real username for joins; the random per-visit <code>User-NNN</code> for share visits</td></tr>
+        <tr><td><code>permission</code></td><td>string | null</td><td><code>participant</code> | <code>readonly</code></td></tr>
+        <tr><td><code>source</code></td><td>string</td><td><code>join</code> (the Join action) | <code>share</code> (a share-link visit)</td></tr>
+        <tr><td><code>share_id</code></td><td>string | null</td><td>the minting grant's id — <code>join:{username}</code> or the share's UUID; <code>null</code> for entries persisted before v0.8.5 (classification then falls back to the username shape)</td></tr>
+        <tr><td><code>joined_at</code></td><td>number | null</td><td>unix seconds; absent before v0.8.5</td></tr>
+        <tr><td><code>expiry</code></td><td>number | null</td><td>unix seconds; joins carry the 24-hour join TTL, share visits inherit the link's expiry, <code>null</code> = no expiry</td></tr>
+      </tbody>
+    </table>
+    <p>Errors: 401 unauthenticated (plaintext, as with the other owner routes); 404 unknown session; 403 not the owner's session.</p>
+    <p><strong><code>DELETE /api/sessions/{session_id}/participants/{username}</code></strong> — revoke a single joiner: strips the joiner's token from the session's viewers list, the container's token table, and the vreckan-side token map, then persists the session. The joiner drops on the next proxy request; the session and everyone else's grants are untouched, and a later Join mints a fresh grant. Response 204 on success; 404 when that user holds no live join grant (never joined, already revoked, or the grant's TTL ran out).</p>
+    <p>Join grants carry a 24-hour TTL (<code>JOIN_TTL_HOURS</code>, fixed in v0.8.5) from the mint and from each (re-)join after a lapse — an expired entry is refreshed in place (same token, new expiry) rather than re-minted, and entries persisted before v0.8.5 pick the TTL up on their first post-upgrade (re-)join. The background sweeper (<code>cleanup_expired_session_shares</code>) strips expired join entries and prunes the in-memory token map of every expired record. The session list (<code>GET /api/sessions</code>) carries <code>participants</code> — the joiners' usernames — for the caller's own sessions only, so the UI can badge the count without a round trip.</p>
     <p><strong>Public entry.</strong> <code>GET /share/{share_id}</code>: 404 <code>Share not found.</code>; 410 when revoked, expired, or the session has ended; the public password page (200) when a password is set; otherwise a 303 redirect. <code>POST /share/{share_id}</code> (form field <code>password</code>): 303 on a correct password; the password page re-rendered with 401 on a wrong one; 400 when the share has no password. The 303 target:</p>
     <table>
       <thead>

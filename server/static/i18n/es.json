@@ -198,7 +198,16 @@
     "linkCount": "{count} enlace",
     "linkCountPlural": "{count} enlaces",
     "linksBadgeTitle": "Enlaces de compartir activos — clic para gestionar",
-    "shareTitle": "Comparte esta sesión con un enlace"
+    "shareTitle": "Comparte esta sesión con un enlace",
+    "inviteLabel": "Invitar usuario (opcional)",
+    "invitePlaceholder": "nombre de usuario de Vreckan",
+    "inviteHint": "Un usuario de Vreckan (no tú). Se valida al guardar.",
+    "inviteClear": "Borrar invitación",
+    "invitePreview": "{user} verá esta sesión en su página de apps y podrá unirse.",
+    "manageInvitee": "Invitado: {user}",
+    "manageGeneric": "Cualquier persona con el enlace (no aparece en páginas de apps)",
+    "revokeInviteeArmed": "¿Confirmar revocación? {user} pierde el acceso",
+    "revokeInviteeDone": "Enlace revocado — {user} ya no ve esta sesión y no puede unirse."
   },
   "overview": {
     "title": "Resumen",

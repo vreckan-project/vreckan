@@ -1054,6 +1054,13 @@ label.checkbox input {
   opacity: 0.55;
 }
 
+/* Manage-state identity line: who a link is for (named invite vs generic). */
+.share-row .share-identity {
+  font-size: 0.85rem;
+  font-weight: 600;
+  color: var(--accent);
+}
+
 .share-ss-actions {
   display: flex;
   gap: 8px;
