@@ -190,8 +190,10 @@ async fn test_launch_stop_lifecycle() {
         assert_eq!(status_body.unwrap()["ready"], true);
 
         // Stop: 204, session gone, container removed.
+        // F4-followup (ANT-471): the client sends an E2EE-encrypted empty body
+        // (`body: {}` in secureFetch); the stop route's gate requires it.
         let (status3, _) = sc
-            .call("DELETE", &format!("/api/sessions/{session_id}"), None)
+            .call("DELETE", &format!("/api/sessions/{session_id}"), Some(&json!({})))
             .await;
         assert_eq!(status3, StatusCode::NO_CONTENT);
         assert!(!sc.state.sessions.read().await.contains_key(&session_id));
@@ -312,8 +314,11 @@ async fn test_ephemeral_session_container_policy_and_stop_removal() {
         assert_eq!(policy, "no", "ephemeral session container must use restart policy 'no'");
 
         // Session stop must remove the container (docker ps -a shows no
-        // leftover).
-        let (status2, _) = sc.call("DELETE", &format!("/api/sessions/{session_id}"), None).await;
+        // leftover). F4-followup (ANT-471): the stop route's gate requires the
+        // client's E2EE-encrypted empty body.
+        let (status2, _) = sc
+            .call("DELETE", &format!("/api/sessions/{session_id}"), Some(&json!({})))
+            .await;
         assert_eq!(status2, StatusCode::NO_CONTENT);
         assert!(
             client.inspect_container(&instance_id, None).await.is_err(),

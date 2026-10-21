@@ -3590,6 +3590,7 @@ async fn stop_my_session(
     State(state): State<AppState>,
     headers: HeaderMap,
     Path(session_id): Path<String>,
+    body: Bytes,
 ) -> Response {
     let user = match auth::verify_token(&state, &headers).await {
         Ok(u) => u,
@@ -3604,6 +3605,21 @@ async fn stop_my_session(
                 Json(serde_json::json!({ "detail": e.to_string() })),
             )
                 .into_response()
+        }
+    };
+    // F4-followup (ANT-444 / ANT-471): the stop route authenticated with the
+    // SameSite=Lax login cookie but never read its E2EE body, so a cross-site
+    // top-level form POST / DELETE from a logged-in victim could stop their own
+    // sessions (the response body is E2EE-encrypted, so an attacker learns only
+    // the status). Requiring the AES-256-GCM request body is the CSRF gate: the
+    // normal client flow (secureFetch with an encrypted empty body) passes, a
+    // cross-site form POST / XHR is rejected 400 before anything changes. The
+    // decrypted body is unused (the client sends an empty object).
+    let _ = match e2ee::decrypt_request_body(&state, &headers, body).await {
+        Ok(v) => v,
+        Err((s, d)) => {
+            return e2ee::encrypt_response(&state, &headers, s, serde_json::json!({ "detail": d }))
+                .await
         }
     };
     let session_data = state.sessions.read().await.get(&session_id).cloned();
@@ -3635,6 +3651,7 @@ async fn recreate_my_session(
     State(state): State<AppState>,
     headers: HeaderMap,
     Path(session_id): Path<String>,
+    body: Bytes,
 ) -> Response {
     let user = match auth::verify_token(&state, &headers).await {
         Ok(u) => u,
@@ -3649,6 +3666,21 @@ async fn recreate_my_session(
                 Json(serde_json::json!({ "detail": e.to_string() })),
             )
                 .into_response()
+        }
+    };
+    // F4-followup (ANT-444 / ANT-471): the recreate route authenticated with the
+    // SameSite=Lax login cookie but never read its E2EE body, so a cross-site
+    // top-level form POST from a logged-in victim could recreate their sessions
+    // (the response body is E2EE-encrypted, so an attacker learns only the
+    // status). Requiring the AES-256-GCM request body is the CSRF gate: the
+    // normal client flow (secureFetch with an encrypted empty body) passes, a
+    // cross-site form POST / XHR is rejected 400 before anything changes. The
+    // decrypted body is unused (the client sends an empty object).
+    let _ = match e2ee::decrypt_request_body(&state, &headers, body).await {
+        Ok(v) => v,
+        Err((s, d)) => {
+            return e2ee::encrypt_response(&state, &headers, s, serde_json::json!({ "detail": d }))
+                .await
         }
     };
     let session_data = state.sessions.read().await.get(&session_id).cloned();

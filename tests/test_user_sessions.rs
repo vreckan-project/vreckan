@@ -383,6 +383,201 @@ async fn test_join_plaintext_body_with_crypto_session_rejected() {
 }
 
 // ---------------------------------------------------------------------------
+// F4-followup (ANT-444 / ANT-471): recreate + stop enforce the E2EE body
+// (CSRF gate), mirroring the join POST gate above. Both routes authenticated
+// with the SameSite=Lax login cookie but ignored their E2EE body, so a
+// cross-site top-level form POST from a logged-in victim could stop or
+// recreate their own sessions (the response body is E2EE-encrypted, so the
+// attacker learns only the status). Requiring the AES-256-GCM request body is
+// the gate: the normal client flow (secureFetch with an encrypted empty body)
+// passes, a cross-site request without a crypto session is rejected 400.
+// ---------------------------------------------------------------------------
+
+/// Assert a rejected stop request did not remove the session.
+async fn assert_session_still_present(sc: &SecureClient, sid: &str) {
+    assert!(
+        sc.state.sessions.read().await.contains_key(sid),
+        "session must not be stopped by a rejected request"
+    );
+}
+
+/// Assert a rejected recreate request did not populate the container registry
+/// (i.e. `recreate_session` never ran — it would seed the fallback registry).
+async fn assert_session_not_recreated(sc: &SecureClient, sid: &str) {
+    let sessions = sc.state.sessions.read().await;
+    let registry = sessions
+        .get(sid)
+        .and_then(|s| s.get("container_registry"));
+    let empty = registry
+        .and_then(|r| r.as_object())
+        .map(|o| o.is_empty())
+        .unwrap_or(true);
+    assert!(
+        empty,
+        "container_registry must stay empty (no recreate): {registry:?}"
+    );
+}
+
+#[tokio::test]
+async fn test_recreate_form_post_without_e2ee_body_rejected() {
+    let _root = TempDir::new();
+    let mut sc = SecureClient::new(build_state(_root.path()).await);
+    // The victim is logged in (the SameSite=Lax auth cookie rides along on a
+    // top-level form POST) but has no crypto session: a form cannot carry
+    // the X-Session-ID header.
+    sc.http.login("admin", "admin1234").await;
+    let sid = seed_session(&sc, "admin", json!({})).await;
+
+    let resp = sc
+        .http
+        .post_form(&format!("/api/sessions/{sid}/recreate"), "x")
+        .await;
+    assert_eq!(
+        resp.status,
+        StatusCode::BAD_REQUEST,
+        "cross-site form POST must be rejected 4xx: {:?}",
+        resp.body
+    );
+    assert_session_not_recreated(&sc, &sid).await;
+}
+
+#[tokio::test]
+async fn test_recreate_xhr_without_e2ee_body_rejected() {
+    let _root = TempDir::new();
+    let mut sc = SecureClient::new(build_state(_root.path()).await);
+    sc.http.login("admin", "admin1234").await;
+    let sid = seed_session(&sc, "admin", json!({})).await;
+
+    // Cross-site XHR: the auth cookie rides along (e.g. where Lax is relaxed
+    // by ITP-style heuristics), the body is plain JSON, and no X-Session-ID.
+    let resp = sc
+        .http
+        .post_json(&format!("/api/sessions/{sid}/recreate"), &json!({}))
+        .await;
+    assert_eq!(
+        resp.status,
+        StatusCode::BAD_REQUEST,
+        "cross-site XHR must be rejected 4xx: {:?}",
+        resp.body
+    );
+    assert_session_not_recreated(&sc, &sid).await;
+}
+
+#[tokio::test]
+async fn test_recreate_plaintext_body_with_crypto_session_rejected() {
+    let _root = TempDir::new();
+    let mut sc = SecureClient::new(build_state(_root.path()).await);
+    sc.http.login("admin", "admin1234").await;
+    sc.handshake().await;
+    let sid = seed_session(&sc, "admin", json!({})).await;
+
+    // A crypto session exists (X-Session-ID set), but the body is not the
+    // AES-256-GCM envelope: decryption must fail and the request be rejected.
+    let mut headers = std::collections::HashMap::new();
+    headers.insert("x-session-id".to_string(), sc.session_id.clone().unwrap());
+    let resp = sc
+        .http
+        .request(
+            "POST",
+            &format!("/api/sessions/{sid}/recreate"),
+            Some("{}".as_bytes().to_vec()),
+            Some("application/json"),
+            &headers,
+        )
+        .await;
+    assert_eq!(
+        resp.status,
+        StatusCode::BAD_REQUEST,
+        "non-encrypted body must be rejected 4xx: {:?}",
+        resp.body
+    );
+    assert_session_not_recreated(&sc, &sid).await;
+}
+
+#[tokio::test]
+async fn test_stop_form_post_without_e2ee_body_rejected() {
+    let _root = TempDir::new();
+    let mut sc = SecureClient::new(build_state(_root.path()).await);
+    sc.http.login("admin", "admin1234").await;
+    let sid = seed_session(&sc, "admin", json!({})).await;
+
+    // The stop route is DELETE; a cross-site form / XHR carries no
+    // X-Session-ID header, so the gate rejects it before anything changes.
+    let resp = sc
+        .http
+        .request(
+            "DELETE",
+            &format!("/api/sessions/{sid}"),
+            Some("x".as_bytes().to_vec()),
+            Some("application/x-www-form-urlencoded"),
+            &std::collections::HashMap::new(),
+        )
+        .await;
+    assert_eq!(
+        resp.status,
+        StatusCode::BAD_REQUEST,
+        "cross-site form POST must be rejected 4xx: {:?}",
+        resp.body
+    );
+    assert_session_still_present(&sc, &sid).await;
+}
+
+#[tokio::test]
+async fn test_stop_xhr_without_e2ee_body_rejected() {
+    let _root = TempDir::new();
+    let mut sc = SecureClient::new(build_state(_root.path()).await);
+    sc.http.login("admin", "admin1234").await;
+    let sid = seed_session(&sc, "admin", json!({})).await;
+
+    let resp = sc
+        .http
+        .request(
+            "DELETE",
+            &format!("/api/sessions/{sid}"),
+            Some("{}".as_bytes().to_vec()),
+            Some("application/json"),
+            &std::collections::HashMap::new(),
+        )
+        .await;
+    assert_eq!(
+        resp.status,
+        StatusCode::BAD_REQUEST,
+        "cross-site XHR must be rejected 4xx: {:?}",
+        resp.body
+    );
+    assert_session_still_present(&sc, &sid).await;
+}
+
+#[tokio::test]
+async fn test_stop_plaintext_body_with_crypto_session_rejected() {
+    let _root = TempDir::new();
+    let mut sc = SecureClient::new(build_state(_root.path()).await);
+    sc.http.login("admin", "admin1234").await;
+    sc.handshake().await;
+    let sid = seed_session(&sc, "admin", json!({})).await;
+
+    let mut headers = std::collections::HashMap::new();
+    headers.insert("x-session-id".to_string(), sc.session_id.clone().unwrap());
+    let resp = sc
+        .http
+        .request(
+            "DELETE",
+            &format!("/api/sessions/{sid}"),
+            Some("{}".as_bytes().to_vec()),
+            Some("application/json"),
+            &headers,
+        )
+        .await;
+    assert_eq!(
+        resp.status,
+        StatusCode::BAD_REQUEST,
+        "non-encrypted body must be rejected 4xx: {:?}",
+        resp.body
+    );
+    assert_session_still_present(&sc, &sid).await;
+}
+
+// ---------------------------------------------------------------------------
 // Session status
 // ---------------------------------------------------------------------------
 
@@ -457,7 +652,11 @@ async fn test_stop_session_unknown() {
     let mut sc = SecureClient::new(build_state(_root.path()).await);
     sc.http.login("admin", "admin1234").await;
     sc.handshake().await;
-    let (status, data) = sc.call("DELETE", "/api/sessions/nope", None).await;
+    // F4-followup (ANT-471): the client sends an E2EE-encrypted empty body
+    // (`body: {}` in secureFetch); the gate requires it.
+    let (status, data) = sc
+        .call("DELETE", "/api/sessions/nope", Some(&json!({})))
+        .await;
     assert_eq!(status, StatusCode::NOT_FOUND);
     assert_eq!(data.unwrap()["detail"], "Session not found or permission denied.");
 }
@@ -469,7 +668,9 @@ async fn test_stop_session_other_user_denied() {
     sc.http.login("admin", "admin1234").await;
     sc.handshake().await;
     let other = seed_session(&sc, "ghost", json!({})).await;
-    let (status, data) = sc.call("DELETE", &format!("/api/sessions/{other}"), None).await;
+    let (status, data) = sc
+        .call("DELETE", &format!("/api/sessions/{other}"), Some(&json!({})))
+        .await;
     assert_eq!(status, StatusCode::NOT_FOUND);
     assert_eq!(data.unwrap()["detail"], "Session not found or permission denied.");
     assert!(sc.state.sessions.read().await.contains_key(&other)); // untouched
@@ -482,7 +683,11 @@ async fn test_stop_my_session() {
     sc.http.login("admin", "admin1234").await;
     sc.handshake().await;
     let sid = seed_session(&sc, "admin", json!({})).await;
-    let (status, _) = sc.call("DELETE", &format!("/api/sessions/{sid}"), None).await;
+    // F4-followup (ANT-471): the client sends an E2EE-encrypted empty body
+    // (`body: {}` in secureFetch); the gate requires it.
+    let (status, _) = sc
+        .call("DELETE", &format!("/api/sessions/{sid}"), Some(&json!({})))
+        .await;
     assert_eq!(status, StatusCode::NO_CONTENT);
     assert!(!sc.state.sessions.read().await.contains_key(&sid));
 }
