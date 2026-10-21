@@ -198,7 +198,16 @@
     "linkCount": "{count} collegamento",
     "linkCountPlural": "{count} collegamenti",
     "linksBadgeTitle": "Collegamenti di condivisione attivi — clicca per gestire",
-    "shareTitle": "Condividi questa sessione con un collegamento"
+    "shareTitle": "Condividi questa sessione con un collegamento",
+    "inviteLabel": "Invita utente (facoltativo)",
+    "invitePlaceholder": "nome utente Vreckan",
+    "inviteHint": "Un utente Vreckan (non tu). Validato al salvataggio.",
+    "inviteClear": "Elimina invito",
+    "invitePreview": "{user} vedrà questa sessione nella sua pagina app e potrà unirsi.",
+    "manageInvitee": "Invitato: {user}",
+    "manageGeneric": "Chiunque ha il link (resta fuori dalle pagine app)",
+    "revokeInviteeArmed": "Confermi la revoca? {user} perde l'accesso",
+    "revokeInviteeDone": "Link revocato — {user} non vede più questa sessione e non può più unirsi."
   },
   "overview": {
     "title": "Panoramica",

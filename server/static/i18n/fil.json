@@ -198,7 +198,16 @@
     "linkCount": "{count} link",
     "linkCountPlural": "{count} link",
     "linksBadgeTitle": "Mga aktibong share link — i-click upang pamahalaan",
-    "shareTitle": "Ibahagi ang session na ito gamit ang link"
+    "shareTitle": "Ibahagi ang session na ito gamit ang link",
+    "inviteLabel": "Mag-imbita ng user (opsyonal)",
+    "invitePlaceholder": "pangalanan ng Vreckan user",
+    "inviteHint": "Isang Vreckan user (hindi ikaw). Na-verify kapag i-save.",
+    "inviteClear": "Burahin ang imbitahan",
+    "invitePreview": "Makikita ni {user} ang session na ito sa kanilang apps page at makakapag-Join.",
+    "manageInvitee": "Inimbit: {user}",
+    "manageGeneric": "Ang sinumang may link (nasa labas ng apps page)",
+    "revokeInviteeArmed": "Kumpirmahin ang pag-revoke? Mawawala ang akses ni {user}",
+    "revokeInviteeDone": "Na-revoke na ang link — hindi na nakikita ni {user} ang session na ito at hindi na makakapag-Join."
   },
   "overview": {
     "title": "Pansamantalang Tingin",

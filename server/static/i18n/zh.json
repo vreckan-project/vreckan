@@ -198,7 +198,16 @@
     "linkCount": "{count} 个链接",
     "linkCountPlural": "{count} 个链接",
     "linksBadgeTitle": "活动的共享链接 — 点击管理",
-    "shareTitle": "通过链接共享此会话"
+    "shareTitle": "通过链接共享此会话",
+    "inviteLabel": "邀请用户（可选）",
+    "invitePlaceholder": "Vreckan 用户名",
+    "inviteHint": "一位 Vreckan 用户（不能是你自己）。保存时校验。",
+    "inviteClear": "清除邀请",
+    "invitePreview": "{user} 将在其应用页看到此会话并可加入。",
+    "manageInvitee": "受邀人：{user}",
+    "manageGeneric": "任何持有链接的人（不出现在应用页）",
+    "revokeInviteeArmed": "确认撤销？{user} 将失去访问",
+    "revokeInviteeDone": "链接已撤销 — {user} 不再看到此会话，也无法加入。"
   },
   "overview": {
     "title": "概览",

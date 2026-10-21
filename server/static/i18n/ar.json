@@ -198,7 +198,16 @@
     "linkCount": "{count} رابط",
     "linkCountPlural": "{count} روابط",
     "linksBadgeTitle": "روابط مشاركة نشطة — انقر للإدارة",
-    "shareTitle": "شارك هذه الجلسة برابط"
+    "shareTitle": "شارك هذه الجلسة برابط",
+    "inviteLabel": "دعوة مستخدم (اختياري)",
+    "invitePlaceholder": "اسم مستخدم Vreckan",
+    "inviteHint": "مستخدم Vreckan (لست أنت). يتم التحقق عند الحفظ.",
+    "inviteClear": "مسح الدعوة",
+    "invitePreview": "سيرى {user} هذه الجلسة في صفحة تطبيقاته ويمكنه الانضمام.",
+    "manageInvitee": "المدعو: {user}",
+    "manageGeneric": "أي شخص لديه الرابط (يبقى خارج صفحات التطبيقات)",
+    "revokeInviteeArmed": "تأكيد الإلغاء؟ سيفقد {user} الوصول",
+    "revokeInviteeDone": "أُلغي الرابط — لم يعد {user} يرى هذه الجلسة ولا يمكنه الانضمام."
   },
   "overview": {
     "title": "نظرة عامة",

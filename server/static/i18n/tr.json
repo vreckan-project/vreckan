@@ -198,7 +198,16 @@
     "linkCount": "{count} bağlantı",
     "linkCountPlural": "{count} bağlantı",
     "linksBadgeTitle": "Aktif paylaşım bağlantıları — yönetmek için tıkla",
-    "shareTitle": "Bu oturumu bir bağlantıyla paylaş"
+    "shareTitle": "Bu oturumu bir bağlantıyla paylaş",
+    "inviteLabel": "Kullanıcı davet et (isteğe bağlı)",
+    "invitePlaceholder": "Vreckan kullanıcı adı",
+    "inviteHint": "Bir Vreckan kullanıcısı (sen değil). Kaydederken doğrulanır.",
+    "inviteClear": "Daveti temizle",
+    "invitePreview": "{user}, bu oturumu uygulamalar sayfasında görecek ve katılabilecek.",
+    "manageInvitee": "Davetli: {user}",
+    "manageGeneric": "Bağlantısı olan herkes (uygulama sayfalarında görünmez)",
+    "revokeInviteeArmed": "İptali onayla? {user} erişimi kaybeder",
+    "revokeInviteeDone": "Bağlantı iptal edildi — {user} bu oturumu artık görmüyor ve katılamıyor."
   },
   "overview": {
     "title": "Genel Bakış",
