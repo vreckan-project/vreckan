@@ -198,7 +198,16 @@
     "linkCount": "{count} liên kết",
     "linkCountPlural": "{count} liên kết",
     "linksBadgeTitle": "Liên kết chia sẻ đang hoạt động — nhấp để quản lý",
-    "shareTitle": "Chia sẻ phiên này bằng liên kết"
+    "shareTitle": "Chia sẻ phiên này bằng liên kết",
+    "inviteLabel": "Mời người dùng (tuỳ chọn)",
+    "invitePlaceholder": "tên người dùng Vreckan",
+    "inviteHint": "Một người dùng Vreckan (không phải bạn). Được xác thực khi lưu.",
+    "inviteClear": "Xoá lời mời",
+    "invitePreview": "{user} sẽ thấy phiên này trên trang apps của họ và có thể tham gia.",
+    "manageInvitee": "Người được mời: {user}",
+    "manageGeneric": "Bất kỳ ai có liên kết (không hiện trên trang apps)",
+    "revokeInviteeArmed": "Xác nhận thu hồi? {user} mất quyền truy cập",
+    "revokeInviteeDone": "Đã thu hồi liên kết — {user} không còn thấy phiên này và không thể tham gia nữa."
   },
   "overview": {
     "title": "Tổng Quan",

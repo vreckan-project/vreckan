@@ -198,7 +198,16 @@
     "linkCount": "{count} लिंक",
     "linkCountPlural": "{count} लिंक",
     "linksBadgeTitle": "सक्रिय साझा-लिंक — प्रबंधन के लिए क्लिक करें",
-    "shareTitle": "इस सेशन को एक लिंक से साझा करें"
+    "shareTitle": "इस सेशन को एक लिंक से साझा करें",
+    "inviteLabel": "उपयोगकर्ता को आमंत्रित करें (वैकल्पिक)",
+    "invitePlaceholder": "Vreckan उपयोगकर्ता नाम",
+    "inviteHint": "एक Vreckan उपयोगकर्ता (आप नहोईं)। सहेजन पर सत्यापित।",
+    "inviteClear": "आमंत्रण हटाएँ",
+    "invitePreview": "{user} को यह सत्र उनकै ऐप्स पृष्ठ पर दिखेगा और वें जुड सकेंगे।",
+    "manageInvitee": "आमंत्रित: {user}",
+    "manageGeneric": "जिसके पास लिंक है (ऐप्स पृष्ठों पर नहोईं)",
+    "revokeInviteeArmed": "रद्दीकरण पुष्टि करें? {user} को पहुँच नहोईं मिलेगी",
+    "revokeInviteeDone": "लिंक रद्द — {user} को यह सत्र अब नहोईं दिखेगा और वें नहोईं जुड सकेंगे।"
   },
   "overview": {
     "title": "अवलोकन",

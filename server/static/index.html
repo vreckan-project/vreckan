@@ -277,6 +277,17 @@
       <div class="modal-section ss-collapsible" id="ss-options-toggle" data-i18n="shareSession.options">Options</div>
       <div id="ss-options-body" hidden>
         <div class="field">
+          <label for="ss-invite" data-i18n="shareSession.inviteLabel">Invite user (optional)</label>
+          <input type="text" id="ss-invite" autocomplete="off" spellcheck="false" data-i18n-placeholder="shareSession.invitePlaceholder" placeholder="vreckan username">
+          <p class="muted" data-i18n="shareSession.inviteHint">A Vreckan user (not you). Validated when you save.</p>
+          <div class="field-row" id="ss-invite-clear-wrap" hidden>
+            <label class="check">
+              <input type="checkbox" id="ss-invite-clear">
+              <span data-i18n="shareSession.inviteClear">Clear invite</span>
+            </label>
+          </div>
+        </div>
+        <div class="field">
           <label for="ss-password" data-i18n="shareSession.passwordLabel">Password (optional)</label>
           <input type="password" id="ss-password" autocomplete="new-password">
           <p id="ss-pw-hint" class="muted" hidden data-i18n="shareSession.passwordKeptHint">A password is set. Leave this empty to keep it.</p>
@@ -316,6 +327,7 @@
       </div>
 
       <p id="ss-preview" class="ss-preview" role="status"></p>
+      <p id="ss-invite-preview" class="ss-preview" role="status" hidden></p>
       <p id="ss-error" class="error" role="alert" hidden></p>
       <div class="modal-actions">
         <button type="button" class="btn btn-ghost" id="ss-cancel" data-i18n="common.cancel">Cancel</button>

@@ -198,7 +198,16 @@
     "linkCount": "{count} link",
     "linkCountPlural": "{count} links",
     "linksBadgeTitle": "Actieve deellinks — klik om te beheren",
-    "shareTitle": "Deel deze sessie met een link"
+    "shareTitle": "Deel deze sessie met een link",
+    "inviteLabel": "Gebruiker uitnodigen (optioneel)",
+    "invitePlaceholder": "Vreckan-gebruikersnaam",
+    "inviteHint": "Een Vreckan-gebruiker (niet jij). Geverifieerd bij opslaan.",
+    "inviteClear": "Uitnodiging wissen",
+    "invitePreview": "{user} ziet deze sessie op hun apps-pagina en kan joinen.",
+    "manageInvitee": "Uitgenodigde: {user}",
+    "manageGeneric": "Iedereen met de link (blijft afwezig van apps-pagina's)",
+    "revokeInviteeArmed": "Intrekking bevestigen? {user} verliest toegang",
+    "revokeInviteeDone": "Link ingetrokken — {user} ziet deze sessie niet meer en kan niet meer joinen."
   },
   "overview": {
     "title": "Overzicht",

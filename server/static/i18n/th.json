@@ -198,7 +198,16 @@
     "linkCount": "{count} ลิงก์",
     "linkCountPlural": "{count} ลิงก์",
     "linksBadgeTitle": "ลิงก์แชร์ที่ใช้งานอยู่ — คลิกเพื่อจัดการ",
-    "shareTitle": "แชร์เซสชันนี้ด้วยลิงก์"
+    "shareTitle": "แชร์เซสชันนี้ด้วยลิงก์",
+    "inviteLabel": "เชิญผู้ใช้ (ไม่บังคับ)",
+    "invitePlaceholder": "ชื่อผู้ใช้ Vreckan",
+    "inviteHint": "ผู้ใช้ Vreckan (不是你) ตรวจสอบเมื่อบันทึก",
+    "inviteClear": "ล้างการเชิญ",
+    "invitePreview": "{user} จะเห็นเซสชันนี้ในหน้าแอปของพวกเขาและเข้าร่วมได้",
+    "manageInvitee": "ผู้ที่ถูกเชิญ: {user}",
+    "manageGeneric": "ทุกคนที่มีลิงก์ (ไม่แสดงในหน้าแอป)",
+    "revokeInviteeArmed": "ยืนยันการเพิกถอน? {user} จะเสียการเข้าถึง",
+    "revokeInviteeDone": "เพิกถอนลิงก์แล้ว — {user} ไม่เห็นเซสชันนี้อีกต่อไปและเข้าร่วมไม่ได้"
   },
   "overview": {
     "title": "ภาพรวม",
