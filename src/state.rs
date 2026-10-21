@@ -129,7 +129,8 @@ pub struct AppState {
     /// proxy uses this map to admit a visitor whose session was never
     /// promoted to selkies secure mode; WP3 resolves a visitor's
     /// capabilities through it.
-    pub session_share_tokens: Arc<RwLock<HashMap<String, crate::session_shares::SessionShareTokenRecord>>>,
+    pub session_share_tokens:
+        Arc<RwLock<HashMap<String, crate::session_shares::SessionShareTokenRecord>>>,
     /// Live collaboration-room WebSocket connections, keyed by session id.
     /// Mirrors `collaboration.ROOM_CONNECTIONS`.
     pub room_connections: Arc<RwLock<HashMap<String, crate::collaboration::RoomConnections>>>,
@@ -145,8 +146,15 @@ pub struct AppState {
     pub selkies_conn_seq: Arc<std::sync::atomic::AtomicU64>,
     /// The last token table each container accepted, keyed by session id
     /// (ANT-443): lets the connect/disconnect refresh skip a re-push when the
-    /// derived table is unchanged.
-    pub last_pushed_token_tables: Arc<RwLock<HashMap<String, serde_json::Value>>>,
+    /// derived table is unchanged. Each entry is stamped with the generation
+    /// of the derivation that produced the push (ANT-470).
+    pub last_pushed_token_tables:
+        Arc<RwLock<HashMap<String, crate::collaboration::PushedTokenTable>>>,
+    /// Per-session token-table refresh generation (ANT-470): a refresh stamps
+    /// itself before reading the connection snapshot, so a refresh that sees
+    /// a newer snapshot always carries the larger generation; a push from an
+    /// older generation is dropped when a newer one has already been pushed.
+    pub token_table_generations: Arc<RwLock<HashMap<String, u64>>>,
     /// When true, the background image-pull task is a no-op (it just marks
     /// the image "queued" and returns without talking to Docker). Tests set
     /// this so the `tokio::spawn`-ed pull doesn't do a real (slow/hanging)
@@ -205,6 +213,7 @@ impl AppState {
             selkies_client_conns: Arc::new(RwLock::new(HashMap::new())),
             selkies_conn_seq: Arc::new(std::sync::atomic::AtomicU64::new(0)),
             last_pushed_token_tables: Arc::new(RwLock::new(HashMap::new())),
+            token_table_generations: Arc::new(RwLock::new(HashMap::new())),
             pull_noop: Arc::new(std::sync::atomic::AtomicBool::new(false)),
             fake_provider: Arc::new(std::sync::atomic::AtomicBool::new(false)),
             fake_provider_record: Arc::new(std::sync::Mutex::new(None)),

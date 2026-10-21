@@ -3124,6 +3124,21 @@ pub async fn session_out_of_date(state: &AppState, session_data: &Value) -> bool
 /// `_stop_session`.
 pub async fn stop_session(state: &AppState, session_id: &str) {
     info!("[{session_id}] Stopping session...");
+    // Prune the per-session in-memory maps the plain-session token-table
+    // refresh keeps, or they grow one entry per session for the process
+    // lifetime (ANT-470 F5). Done before the found-check so a double-stop or
+    // a stale entry still gets cleaned up.
+    state.selkies_client_conns.write().await.remove(session_id);
+    state
+        .last_pushed_token_tables
+        .write()
+        .await
+        .remove(session_id);
+    state
+        .token_table_generations
+        .write()
+        .await
+        .remove(session_id);
     let session_data = state.sessions.write().await.remove(session_id);
     let Some(session_data) = session_data else {
         warn!("Attempted to stop session {session_id}, but it was not found.");
@@ -3160,7 +3175,10 @@ pub async fn stop_session(state: &AppState, session_id: &str) {
             let _ = std::fs::remove_dir_all(hmp);
         }
     }
-    if let Some(sfp) = session_data.get("shared_files_path").and_then(|v| v.as_str()) {
+    if let Some(sfp) = session_data
+        .get("shared_files_path")
+        .and_then(|v| v.as_str())
+    {
         if sfp.starts_with(&ephemeral_base) && std::path::Path::new(sfp).exists() {
             let _ = std::fs::remove_dir_all(sfp);
             info!("[{session_id}] Removed ephemeral shared files directory.");
