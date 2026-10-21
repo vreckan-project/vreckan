@@ -235,9 +235,24 @@ async fn owner_grants(sc: &SecureClient, sid: &str, username: &str) {
 }
 
 /// The token out of a join response's session URL.
-fn join_token(data: &Value) -> String {
-    let url = data["session_url"].as_str().expect("session_url");
-    url.rsplit_once("token=").expect("token param").1.to_string()
+/// The visit token from a join response under the F1 (ANT-466) hop design:
+/// the join hands back `/join/{sid}/{username}`; GETting that hop delivers
+/// the token through the path-scoped `Set-Cookie` header while the 303
+/// redirect target strips it from the URL.
+async fn join_token(sc: &SecureClient, data: &Value) -> String {
+    let hop = data["session_url"].as_str().expect("session_url");
+    let resp = sc.http.get(hop).await;
+    let cookie = resp
+        .header("set-cookie")
+        .expect("hop sets the collab token cookie");
+    cookie
+        .split_once('=')
+        .expect("cookie token")
+        .1
+        .split(';')
+        .next()
+        .expect("cookie value")
+        .to_string()
 }
 
 /// The session's last pushed token table (as captured by the recording
@@ -357,7 +372,7 @@ async fn test_revoke_joiner_drops_on_next_request() {
         .call("POST", &format!("/api/sessions/{sid}/join"), Some(&json!({})))
         .await;
     assert_eq!(status, StatusCode::OK, "{data:?}");
-    let token = join_token(data.as_ref().unwrap());
+    let token = join_token(&joiner, data.as_ref().unwrap()).await;
 
     // The join promoted the session and pushed the joiner into the
     // container's token table.
@@ -438,7 +453,7 @@ async fn test_revoke_joiner_drops_on_next_request() {
         .call("POST", &format!("/api/sessions/{sid}/join"), Some(&json!({})))
         .await;
     assert_eq!(status, StatusCode::OK, "{data2:?}");
-    let token2 = join_token(data2.as_ref().unwrap());
+    let token2 = join_token(&joiner, data2.as_ref().unwrap()).await;
     assert_ne!(token2, token, "re-join after revoke mints a new token");
     let admitted = owner
         .http
@@ -510,7 +525,7 @@ async fn test_revoke_joiner_on_legacy_session() {
         .call("POST", &format!("/api/sessions/{sid}/join"), Some(&json!({})))
         .await;
     assert_eq!(status, StatusCode::OK, "{data:?}");
-    let token = join_token(data.as_ref().unwrap());
+    let token = join_token(&joiner, data.as_ref().unwrap()).await;
     let session = owner.state.sessions.read().await.get(&sid).cloned().unwrap();
     assert!(
         session
@@ -586,7 +601,7 @@ async fn test_join_ttl_sweep_expires_grant() {
         .call("POST", &format!("/api/sessions/{sid}/join"), Some(&json!({})))
         .await;
     assert_eq!(status, StatusCode::OK, "{data:?}");
-    let token = join_token(data.as_ref().unwrap());
+    let token = join_token(&joiner, data.as_ref().unwrap()).await;
     let ok = owner
         .http
         .get(&format!("/api/apps/session/{sid}/?token={token}"))
@@ -644,7 +659,7 @@ async fn test_rejoin_after_expiry_refreshes_ttl() {
         .call("POST", &format!("/api/sessions/{sid}/join"), Some(&json!({})))
         .await;
     assert_eq!(status, StatusCode::OK, "{data:?}");
-    let token = join_token(data.as_ref().unwrap());
+    let token = join_token(&joiner, data.as_ref().unwrap()).await;
 
     // An expired join is refreshed in place on re-join: same token, fresh
     // TTL — no second grant, no second viewers entry.
@@ -653,7 +668,7 @@ async fn test_rejoin_after_expiry_refreshes_ttl() {
         .call("POST", &format!("/api/sessions/{sid}/join"), Some(&json!({})))
         .await;
     assert_eq!(status, StatusCode::OK, "{data2:?}");
-    let token2 = join_token(data2.as_ref().unwrap());
+    let token2 = join_token(&joiner, data2.as_ref().unwrap()).await;
     assert_eq!(token2, token, "re-join reuses the existing token");
     let session = owner.state.sessions.read().await.get(&sid).cloned().unwrap();
     let viewers = session
@@ -697,7 +712,7 @@ async fn test_rejoin_backfills_ttl_for_pre_085_grants() {
         .call("POST", &format!("/api/sessions/{sid}/join"), Some(&json!({})))
         .await;
     assert_eq!(status, StatusCode::OK, "{data:?}");
-    let token = join_token(data.as_ref().unwrap());
+    let token = join_token(&joiner, data.as_ref().unwrap()).await;
 
     // Simulate the pre-0.8.5 shape: drop the expiry key from the entry and
     // the TTL from the token record.
@@ -772,7 +787,7 @@ async fn test_join_ttl_constant() {
         .call("POST", &format!("/api/sessions/{sid}/join"), Some(&json!({})))
         .await;
     assert_eq!(status, StatusCode::OK, "{data:?}");
-    let token = join_token(data.as_ref().unwrap());
+    let token = join_token(&joiner, data.as_ref().unwrap()).await;
     let session = owner.state.sessions.read().await.get(&sid).cloned().unwrap();
     let entry = session
         .get("viewers")
