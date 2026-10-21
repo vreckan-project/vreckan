@@ -133,6 +133,20 @@ pub struct AppState {
     /// Live collaboration-room WebSocket connections, keyed by session id.
     /// Mirrors `collaboration.ROOM_CONNECTIONS`.
     pub room_connections: Arc<RwLock<HashMap<String, crate::collaboration::RoomConnections>>>,
+    /// Live data-plane WebSocket connections to selkies per session (ANT-443):
+    /// session id -> [(token presented to selkies, connect sequence)] in
+    /// connect order. The session proxy updates it as bridges come up and go
+    /// down; the plain-session token-table refresh grants `mk_control` to the
+    /// most recently connected controller (the "newest-controller-wins"
+    /// hand-off selkies' primary kill enforces).
+    pub selkies_client_conns: Arc<RwLock<HashMap<String, Vec<(String, u64)>>>>,
+    /// Monotonic connect sequence for `selkies_client_conns` (in-memory only;
+    /// ordering within one vreckan process is all the derivation needs).
+    pub selkies_conn_seq: Arc<std::sync::atomic::AtomicU64>,
+    /// The last token table each container accepted, keyed by session id
+    /// (ANT-443): lets the connect/disconnect refresh skip a re-push when the
+    /// derived table is unchanged.
+    pub last_pushed_token_tables: Arc<RwLock<HashMap<String, serde_json::Value>>>,
     /// When true, the background image-pull task is a no-op (it just marks
     /// the image "queued" and returns without talking to Docker). Tests set
     /// this so the `tokio::spawn`-ed pull doesn't do a real (slow/hanging)
@@ -188,6 +202,9 @@ impl AppState {
             session_shares: Arc::new(RwLock::new(HashMap::new())),
             session_share_tokens: Arc::new(RwLock::new(HashMap::new())),
             room_connections: Arc::new(RwLock::new(HashMap::new())),
+            selkies_client_conns: Arc::new(RwLock::new(HashMap::new())),
+            selkies_conn_seq: Arc::new(std::sync::atomic::AtomicU64::new(0)),
+            last_pushed_token_tables: Arc::new(RwLock::new(HashMap::new())),
             pull_noop: Arc::new(std::sync::atomic::AtomicBool::new(false)),
             fake_provider: Arc::new(std::sync::atomic::AtomicBool::new(false)),
             fake_provider_record: Arc::new(std::sync::Mutex::new(None)),

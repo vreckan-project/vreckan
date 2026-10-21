@@ -506,43 +506,46 @@ async fn broadcast_state(state: &AppState, session_id: &str) {
     broadcast_to_room(state, session_id, &state_payload).await;
 }
 
-/// Push the per-token state (slots + MK control) to the app container's token
-/// endpoint. Mirrors `broadcast_token_state`.
-///
-/// Returns true when the table was actually accepted by the container (a 2xx
-/// from its token endpoint). A viewer entry may carry an explicit `role`
-/// (used by session shares: a full share on a promoted plain session lists
-/// its visitor as `controller`); entries without one default to `viewer`.
-pub async fn push_token_table(_state: &AppState, session_id: &str, session_data: &Value) -> bool {
-    let mk_owner = session_data.get("mk_owner_token").and_then(|v| v.as_str());
+/// The token that addresses the session owner in the token table. A room
+/// session carries a dedicated controller token; a plain (non-room) session
+/// has none, so its owner is addressed by the session's access token
+/// (relevant once a share session is promoted to secure mode, ANT-305).
+fn session_owner_token(session_data: &Value) -> String {
     let controller_token = session_data
         .get("controller_token")
         .and_then(|v| v.as_str())
         .unwrap_or("");
-    // A plain (non-room) session has no controller token; its owner is
-    // addressed in the token table by the session's access token (relevant
-    // once a share session is promoted to secure mode, ANT-305).
-    let owner_token = if controller_token.is_empty() {
+    if controller_token.is_empty() {
         session_data
             .get("access_token")
             .and_then(|v| v.as_str())
             .unwrap_or("")
+            .to_string()
     } else {
-        controller_token
-    };
+        controller_token.to_string()
+    }
+}
 
+/// Build the full token table (owner entry + viewer entries) that gets
+/// provisioned to the app container. The role/slot fields mirror the session
+/// data; `owner_mk` and `viewer_mk` decide each entry's `mk_control`. A
+/// viewer entry may carry an explicit `role` (used by session shares: a full
+/// share or a self-serve join on a promoted plain session lists its visitor
+/// as `controller`); entries without one default to `viewer`.
+fn build_token_table(
+    session_data: &Value,
+    owner_mk: bool,
+    viewer_mk: &impl Fn(&str) -> bool,
+) -> Value {
+    let owner_token = session_owner_token(session_data);
     let mut all_tokens = serde_json::Map::new();
     if !owner_token.is_empty() {
         all_tokens.insert(
-            owner_token.to_string(),
+            owner_token,
             serde_json::json!({
                 "role": "controller",
                 "slot": session_data.get("controller_slot").cloned().unwrap_or(Value::Null),
-                "mk_control": if mk_owner.is_some() {
-                    mk_owner.is_some_and(|o| tokens_equal(o, owner_token))
-                } else {
-                    true
-                },
+                "mk_control": owner_mk,
             }),
         );
     }
@@ -557,13 +560,142 @@ pub async fn push_token_table(_state: &AppState, session_id: &str, session_data:
                 serde_json::json!({
                     "role": v.get("role").and_then(|r| r.as_str()).unwrap_or("viewer"),
                     "slot": v.get("slot").cloned().unwrap_or(Value::Null),
-                    "mk_control": mk_owner.is_some_and(|o| tokens_equal(o, vtoken)),
+                    "mk_control": viewer_mk(vtoken),
                 }),
             );
         }
     }
-    let all_tokens = Value::Object(all_tokens);
+    Value::Object(all_tokens)
+}
 
+/// Push the per-token state (slots + MK control) to the app container's token
+/// endpoint. Mirrors `broadcast_token_state`.
+///
+/// Returns true when the table was actually accepted by the container (a 2xx
+/// from its token endpoint).
+pub async fn push_token_table(state: &AppState, session_id: &str, session_data: &Value) -> bool {
+    let mk_owner = session_data.get("mk_owner_token").and_then(|v| v.as_str());
+    let owner_token = session_owner_token(session_data);
+    let table = build_token_table(
+        session_data,
+        if mk_owner.is_some() {
+            mk_owner.is_some_and(|o| tokens_equal(o, &owner_token))
+        } else {
+            true
+        },
+        &|t: &str| mk_owner.is_some_and(|o| tokens_equal(o, t)),
+    );
+    post_token_table(state, session_id, session_data, &table).await
+}
+
+/// Re-derive and re-push the token table of a plain session after a
+/// data-plane connection change (ANT-443).
+///
+/// Selkies 2.0.0 keeps `active_mk_token` as the first `mk_control:true` entry
+/// of the last-pushed table and never clears it when that token's client
+/// disconnects. On the WebSockets "newest-controller-wins" hand-off the
+/// surviving joiner therefore sits at `MK_ACCESS=false` — its own table entry
+/// is irrelevant to the verdict; the killed owner's token still holds the
+/// global mk grant. This refresh grants `mk_control` only to the most
+/// recently connected controller, so the hand-off re-grants MK to the
+/// survivor without a client reconnect; when no client is connected it keeps
+/// the static default (owner holds mk). Room sessions keep their own
+/// mk-transfer mechanism, and legacy (non-secure) sessions have no table.
+pub async fn refresh_plain_session_token_table(state: &AppState, session_id: &str) {
+    let session = state.sessions.read().await.get(session_id).cloned();
+    let Some(session) = session else {
+        return;
+    };
+    let is_collab = session
+        .get("is_collaboration")
+        .and_then(|v| v.as_bool())
+        .unwrap_or(false);
+    let has_master = session
+        .get("master_token")
+        .and_then(|v| v.as_str())
+        .map(|m| !m.is_empty())
+        .unwrap_or(false);
+    if is_collab || !has_master {
+        return;
+    }
+
+    let owner_token = session_owner_token(&session);
+    let conns = state
+        .selkies_client_conns
+        .read()
+        .await
+        .get(session_id)
+        .cloned()
+        .unwrap_or_default();
+    // The newest connected controller token. Viewers never claim the primary
+    // display (the server takes their SETTINGS down the viewer path), so only
+    // controller entries can be the active driver.
+    let newest = conns
+        .iter()
+        .rev()
+        .find(|(tok, _)| {
+            if tokens_equal(tok, &owner_token) {
+                return true;
+            }
+            session
+                .get("viewers")
+                .and_then(|v| v.as_array())
+                .is_some_and(|viewers| {
+                    viewers.iter().any(|v| {
+                        v.get("token")
+                            .and_then(|t| t.as_str())
+                            .is_some_and(|t| tokens_equal(t, tok))
+                            && v.get("role").and_then(|r| r.as_str()) == Some("controller")
+                    })
+                })
+        })
+        .map(|(tok, _)| tok.clone());
+
+    let owner_mk: bool;
+    let viewer_mk: Box<dyn Fn(&str) -> bool + Send>;
+    match newest {
+        Some(holder) => {
+            owner_mk = tokens_equal(&holder, &owner_token);
+            viewer_mk = Box::new(move |t: &str| tokens_equal(&holder, t));
+        }
+        None => {
+            // No data-plane client connected: keep the static default (the
+            // owner holds mk; an explicit mk owner, if any, wins).
+            let mk_owner = session
+                .get("mk_owner_token")
+                .and_then(|v| v.as_str())
+                .map(|s| s.to_string());
+            owner_mk = match mk_owner.as_deref() {
+                Some(o) => tokens_equal(o, &owner_token),
+                None => true,
+            };
+            viewer_mk = Box::new(move |t: &str| {
+                mk_owner.as_deref().is_some_and(|o| tokens_equal(o, t))
+            });
+        }
+    }
+
+    let table = build_token_table(&session, owner_mk, &viewer_mk);
+    let changed = state
+        .last_pushed_token_tables
+        .read()
+        .await
+        .get(session_id)
+        .map(|last| last != &table)
+        .unwrap_or(true);
+    if changed {
+        post_token_table(state, session_id, &session, &table).await;
+    }
+}
+
+/// POST a built token table to the container's token endpoint. Returns true
+/// when the container accepted it (a 2xx).
+async fn post_token_table(
+    state: &AppState,
+    session_id: &str,
+    session_data: &Value,
+    table: &Value,
+) -> bool {
     // Build the target host:port set (session ip + container registry).
     let mut targets: Vec<(String, Option<u16>)> = Vec::new();
     if let Some(ip) = session_data.get("ip").and_then(|v| v.as_str()) {
@@ -617,7 +749,7 @@ pub async fn push_token_table(_state: &AppState, session_id: &str, session_data:
         urls.push(format!("http://{ip}:8083/tokens"));
         for url in urls {
             let is_api = url.ends_with("/api/tokens");
-            let mut req = client.post(&url).json(&all_tokens);
+            let mut req = client.post(&url).json(table);
             if is_api {
                 for (k, v) in &stacked {
                     req = req.header(k.as_str(), v.as_str());
@@ -632,6 +764,13 @@ pub async fn push_token_table(_state: &AppState, session_id: &str, session_data:
                 // try the next candidate URL.
                 Ok(resp) => {
                     if resp.status().is_success() {
+                        // Record for the connect/disconnect refresh's dedupe
+                        // (ANT-443): an unchanged re-derivation skips the POST.
+                        state
+                            .last_pushed_token_tables
+                            .write()
+                            .await
+                            .insert(session_id.to_string(), table.clone());
                         return true;
                     }
                 }

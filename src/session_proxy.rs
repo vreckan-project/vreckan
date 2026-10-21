@@ -799,9 +799,9 @@ async fn session_proxy_websocket(
     // Secure-mode containers validate the data WebSocket against the token
     // table too (`?token=`); present the appropriate one (same rules as the
     // HTTP path).
-    if let Some(upstream_token) =
-        upstream_token_for(&session, cookie_token.as_deref().unwrap_or(""), &collab_token)
-    {
+    let upstream_token =
+        upstream_token_for(&session, cookie_token.as_deref().unwrap_or(""), &collab_token);
+    if let Some(upstream_token) = &upstream_token {
         if urlencoded_get(query, "token").is_none() {
             target_url.push_str(if query.is_empty() { "?" } else { "&" });
             target_url.push_str(&format!("token={upstream_token}"));
@@ -880,7 +880,38 @@ async fn session_proxy_websocket(
         }
     }
 
+    // Data-plane connect tracking (ANT-443): only plain secure sessions
+    // need it — rooms run their own mk-transfer flow, and legacy sessions
+    // have no token table to re-derive. The upstream leg already succeeded
+    // here, so selkies accepted this token.
+    let track_conns = !session
+        .get("is_collaboration")
+        .and_then(|v| v.as_bool())
+        .unwrap_or(false)
+        && session
+            .get("master_token")
+            .and_then(|v| v.as_str())
+            .map(|m| !m.is_empty())
+            .unwrap_or(false);
+
+    let state = state.clone();
     upgrade.on_upgrade(move |client_ws| async move {
+        // Record this client's connect (reconnects keep one entry per token,
+        // re-stamped with a newer sequence) and re-derive the mk grant: the
+        // connection may just have changed who the most recent controller is.
+        let track_token = if track_conns { upstream_token.clone() } else { None };
+        if let Some(token) = &track_token {
+            let seq = state
+                .selkies_conn_seq
+                .fetch_add(1, std::sync::atomic::Ordering::SeqCst);
+            let mut conns = state.selkies_client_conns.write().await;
+            let list = conns.entry(session_id.clone()).or_default();
+            list.retain(|(t, _)| t != token);
+            list.push((token.clone(), seq));
+        }
+        if track_conns {
+            crate::collaboration::refresh_plain_session_token_table(&state, &session_id).await;
+        }
         // split() returns (SplitSink [write half], SplitStream [read half]).
         let (mut client_tx, mut client_rx) = client_ws.split();
         let (mut upstream_tx, mut upstream_rx) = upstream_ws.split();
@@ -928,6 +959,24 @@ async fn session_proxy_websocket(
                     }
                 }
             }
+        }
+        // Bridge over (either side closed — including the selkies server
+        // killing a superseded primary): drop this client's record and
+        // re-derive the mk grant. A disconnect can leave the remaining
+        // connected controller as the most recent one (ANT-443).
+        if track_conns {
+            if let Some(token) = &track_token {
+                let mut conns = state.selkies_client_conns.write().await;
+                if let Some(list) = conns.get_mut(&session_id) {
+                    if let Some(pos) = list.iter().rposition(|(t, _)| t == token) {
+                        list.remove(pos);
+                    }
+                    if list.is_empty() {
+                        conns.remove(&session_id);
+                    }
+                }
+            }
+            crate::collaboration::refresh_plain_session_token_table(&state, &session_id).await;
         }
     })
 }
