@@ -14,6 +14,7 @@ mod common;
 use common::{build_state, SecureClient, TempDir};
 use http::StatusCode;
 use serde_json::json;
+use vreckan::user_manager;
 
 /// Insert a session record shaped like the one `_launch_common` stores.
 async fn seed_session(sc: &SecureClient, username: &str, overrides: serde_json::Value) -> String {
@@ -43,6 +44,30 @@ async fn seed_session(sc: &SecureClient, username: &str, overrides: serde_json::
     let sid = uuid::Uuid::new_v4().to_string();
     sc.state.sessions.write().await.insert(sid.clone(), record);
     sid
+}
+
+/// Create a real (non-bootstrap) user and return a logged-in, E2EE-handshaked
+/// client for them — the owner of a session needs a client to drive the
+/// owner-only share API.
+async fn second_user(sc: &SecureClient, username: &str, password: &str) -> SecureClient {
+    user_manager::create_user(&sc.state.db, username, None).await.unwrap();
+    user_manager::set_password(&sc.state.db, username, password).await.unwrap();
+    let mut other = SecureClient::new(sc.state.clone());
+    other.http.login(username, password).await;
+    other.handshake().await;
+    other
+}
+
+/// The owner creates a share on their session with the given body (including
+/// the optional named `username` invite); returns the share id.
+async fn create_share(sc: &SecureClient, sid: &str, body: &serde_json::Value) -> String {
+    let (status, resp) = sc.call("POST", &format!("/api/sessions/{sid}/shares"), Some(body)).await;
+    assert_eq!(status, StatusCode::OK, "create share: {resp:?}");
+    resp.unwrap()
+        .get("share_id")
+        .and_then(|v| v.as_str())
+        .unwrap()
+        .to_string()
 }
 
 // ---------------------------------------------------------------------------
@@ -119,14 +144,20 @@ async fn test_my_sessions_lists_all_with_annotations() {
     assert_eq!(other_info["joinable"], false);
 }
 
+/// ANT-472 (with F3 / ANT-468): apps-page visibility of another user's
+/// session — and the `launch_context`/`name` that would reveal the owner's
+/// launch — follows the owner's express grant, not the caller's app access.
 #[tokio::test]
-async fn test_my_sessions_nulls_launch_context_on_non_joinable_others() {
+async fn test_my_sessions_visibility_matrix_under_owner_grant() {
     let _root = TempDir::new();
     let mut sc = SecureClient::new(build_state(_root.path()).await);
     sc.http.login("admin", "admin1234").await;
     sc.handshake().await;
-    // An app everyone can use (admin can join ghost's session for it) and an
-    // app only ghost can use (admin cannot join a session for it).
+    // A real "ghost" user who owns the other-user sessions and drives their
+    // share API.
+    let ghost = second_user(&sc, "ghost", "ghostpass123").await;
+    // An app everyone can use (admin has app access to it) and an app only
+    // ghost can use (admin has none) — the grant must override the latter.
     let shared = seed_app(&sc, "shared-app", &["all"]).await;
     let ghost_only = seed_app(&sc, "ghost-only-app", &["ghost"]).await;
     // A file launch reveals the launched file name in `launch_context`.
@@ -143,25 +174,93 @@ async fn test_my_sessions_nulls_launch_context_on_non_joinable_others() {
         }),
     )
     .await;
-    // (2) ghost's session for the shared app — admin can join it.
-    let joinable_other = seed_session(
+    // (2) ghost's session for the shared app, no grant: admin HAS app access
+    // but the owner granted none — this is the v0.8.4 self-serve behavior the
+    // gate closes.
+    let no_grant = seed_session(
         &sc,
         "ghost",
         json!({
             "provider_app_id": shared,
             "launch_context": launch,
-            "name": "Ghost shared",
+            "name": "No grant",
         }),
     )
     .await;
-    // (3) ghost's session for the ghost-only app — admin cannot join it.
-    let non_joinable_other = seed_session(
+    // (3) ghost's session for the ghost-only app with a live named invite for
+    // admin: the grant lights it up even though admin has no app access.
+    let invited = seed_session(
         &sc,
         "ghost",
         json!({
             "provider_app_id": ghost_only,
             "launch_context": launch,
-            "name": "Ghost secret",
+            "name": "Ghost invited",
+        }),
+    )
+    .await;
+    let _invite_id = create_share(
+        &ghost,
+        &invited,
+        &json!({ "role": "full", "username": "admin" }),
+    )
+    .await;
+    // (4) Same but the invite has expired: no grant anymore.
+    let expired = seed_session(
+        &sc,
+        "ghost",
+        json!({
+            "provider_app_id": ghost_only,
+            "launch_context": launch,
+            "name": "Ghost expired",
+        }),
+    )
+    .await;
+    let expired_id = create_share(
+        &ghost,
+        &expired,
+        &json!({ "role": "full", "username": "admin", "expiry_hours": 1 }),
+    )
+    .await;
+    {
+        let mut shares = sc.state.session_shares.write().await;
+        if let Some(meta) = shares.get_mut(&expired_id) {
+            meta.expiry_timestamp = Some(1.0);
+        }
+    }
+    // (5) Same but the invite has been revoked: no grant anymore.
+    let revoked = seed_session(
+        &sc,
+        "ghost",
+        json!({
+            "provider_app_id": ghost_only,
+            "launch_context": launch,
+            "name": "Ghost revoked",
+        }),
+    )
+    .await;
+    let revoked_id = create_share(&ghost, &revoked, &json!({ "role": "full", "username": "admin" }))
+        .await;
+    let (status, _) = ghost
+        .call("DELETE", &format!("/api/sessions/{revoked}/shares/{revoked_id}"), None)
+        .await;
+    assert_eq!(status, StatusCode::OK, "revoke");
+    // (6) ghost's session for the shared app with a persisted participant
+    // entry for admin and no live link (the grandfathered v0.8.4 joiner).
+    let legacy = seed_session(
+        &sc,
+        "ghost",
+        json!({
+            "provider_app_id": shared,
+            "launch_context": launch,
+            "name": "Ghost legacy",
+            "viewers": [{
+                "token": "legacy-tok-1",
+                "slot": null,
+                "mk_control": false,
+                "username": "admin",
+                "permission": "participant",
+            }],
         }),
     )
     .await;
@@ -169,29 +268,51 @@ async fn test_my_sessions_nulls_launch_context_on_non_joinable_others() {
     let (status, data) = sc.call("GET", "/api/sessions", None).await;
     assert_eq!(status, StatusCode::OK);
     let arr = data.as_ref().unwrap().as_array().unwrap();
-    let own_info = arr.iter().find(|s| s["session_id"] == own).unwrap();
-    let joinable_info = arr.iter().find(|s| s["session_id"] == joinable_other).unwrap();
-    let non_joinable_info = arr.iter().find(|s| s["session_id"] == non_joinable_other).unwrap();
+    let info = |id: &str| arr.iter().find(|s| s["session_id"] == id).unwrap();
+    let own_info = info(&own);
+    let no_grant_info = info(&no_grant);
+    let invited_info = info(&invited);
+    let expired_info = info(&expired);
+    let revoked_info = info(&revoked);
+    let legacy_info = info(&legacy);
 
-    // (1) Own session: launch_context and name stay intact.
+    // (1) Own session: joinable by app access, launch_context and name intact.
     assert_eq!(own_info["is_mine"], true);
+    assert_eq!(own_info["joinable"], true);
     assert_eq!(own_info["launch_context"], launch);
     assert_eq!(own_info["name"], "My notes");
 
-    // (2) Joinable other session: the caller can open the app, so the context
-    // is not sensitive — keep it.
-    assert_eq!(joinable_info["is_mine"], false);
-    assert_eq!(joinable_info["joinable"], true);
-    assert_eq!(joinable_info["launch_context"], launch);
-    assert_eq!(joinable_info["name"], "Ghost shared");
+    // (2) No grant: hidden in the UI, context nulled — even with app access.
+    assert_eq!(no_grant_info["is_mine"], false);
+    assert_eq!(no_grant_info["joinable"], false);
+    assert_eq!(no_grant_info["launch_context"], json!(null));
+    assert_eq!(no_grant_info["name"], json!(null));
 
-    // (3) Non-joinable other session: the row is hidden in the UI, so the
-    // launch_context (and custom name) that would reveal the owner's launch
-    // are nulled out.
-    assert_eq!(non_joinable_info["is_mine"], false);
-    assert_eq!(non_joinable_info["joinable"], false);
-    assert_eq!(non_joinable_info["launch_context"], json!(null));
-    assert_eq!(non_joinable_info["name"], json!(null));
+    // (3) Named invite: joinable without app access, context revealed (the
+    // caller can open the app anyway, so it is not sensitive).
+    assert_eq!(invited_info["is_mine"], false);
+    assert_eq!(invited_info["joinable"], true);
+    assert_eq!(invited_info["launch_context"], launch);
+    assert_eq!(invited_info["name"], "Ghost invited");
+
+    // (4) Expired invite: grant gone, context nulled.
+    assert_eq!(expired_info["is_mine"], false);
+    assert_eq!(expired_info["joinable"], false);
+    assert_eq!(expired_info["launch_context"], json!(null));
+    assert_eq!(expired_info["name"], json!(null));
+
+    // (5) Revoked invite: grant gone, context nulled.
+    assert_eq!(revoked_info["is_mine"], false);
+    assert_eq!(revoked_info["joinable"], false);
+    assert_eq!(revoked_info["launch_context"], json!(null));
+    assert_eq!(revoked_info["name"], json!(null));
+
+    // (6) Grandfathered participant entry (no live link): still joinable,
+    // context revealed — until the owner revokes the entry.
+    assert_eq!(legacy_info["is_mine"], false);
+    assert_eq!(legacy_info["joinable"], true);
+    assert_eq!(legacy_info["launch_context"], launch);
+    assert_eq!(legacy_info["name"], "Ghost legacy");
 }
 
 // ---------------------------------------------------------------------------
@@ -235,6 +356,9 @@ async fn test_join_mints_participant_token_and_is_idempotent() {
     // someone else (the joiner joins the owner's running session).
     let app_id = seed_app(&sc, "join-app", &["all"]).await;
     let other = seed_session(&sc, "ghost", json!({ "provider_app_id": app_id })).await;
+    // ANT-472: the owner expressly invites the joiner via a named share link.
+    let ghost = second_user(&sc, "ghost", "ghostpass123").await;
+    create_share(&ghost, &other, &json!({ "role": "full", "username": "admin" })).await;
 
     // The session list now surfaces the other user's session as joinable.
     let (status, data) = sc.call("GET", "/api/sessions", None).await;
@@ -380,6 +504,9 @@ async fn test_join_hop_cookie_admits_joiner() {
         }),
     )
     .await;
+    // ANT-472: the owner expressly invites the joiner via a named share link.
+    let ghost = second_user(&sc, "ghost", "ghostpass123").await;
+    create_share(&ghost, &other, &json!({ "role": "full", "username": "admin" })).await;
 
     // Join, then follow the hop exactly the way the browser does. The client
     // sends an E2EE-encrypted empty body via secureFetch; the F4 join gate
@@ -460,19 +587,210 @@ async fn test_join_room_conflict() {
     assert_eq!(status, StatusCode::CONFLICT, "rooms use their own invite flow: {data:?}");
 }
 
+/// ANT-472: the owner's express grant — not the caller's app access — is the
+/// sole join gate. This case has app access but no grant: 403, and the
+/// rejected request minted no participant token.
 #[tokio::test]
-async fn test_join_no_app_access_forbidden() {
+async fn test_join_with_app_access_but_no_grant_forbidden() {
     let _root = TempDir::new();
     let mut sc = SecureClient::new(build_state(_root.path()).await);
     sc.http.login("admin", "admin1234").await;
     sc.handshake().await;
-    // An app only "ghost" can use; admin joins a session for it.
-    let app_id = seed_app(&sc, "ghost-only-app", &["ghost"]).await;
+    // An app admin can use; the owner granted admin nothing.
+    let app_id = seed_app(&sc, "shared-app", &["all"]).await;
     let other = seed_session(&sc, "ghost", json!({ "provider_app_id": app_id })).await;
     let (status, data) = sc
         .call("POST", &format!("/api/sessions/{other}/join"), Some(&json!({})))
         .await;
     assert_eq!(status, StatusCode::FORBIDDEN, "{data:?}");
+    assert_eq!(
+        data.unwrap()["detail"],
+        "The session owner has not granted you access."
+    );
+    assert_no_joiner_viewers(&sc, &other).await;
+}
+
+/// ANT-472: a live named invite is enough even when the invitee has no
+/// entry in the app's allowlist (the grant is the sole gate).
+#[tokio::test]
+async fn test_join_invited_without_app_access() {
+    let _root = TempDir::new();
+    let mut sc = SecureClient::new(build_state(_root.path()).await);
+    sc.http.login("admin", "admin1234").await;
+    sc.handshake().await;
+    // An app only ghost can use — admin has no app access.
+    let app_id = seed_app(&sc, "ghost-only-app", &["ghost"]).await;
+    let other = seed_session(&sc, "ghost", json!({ "provider_app_id": app_id })).await;
+    let ghost = second_user(&sc, "ghost", "ghostpass123").await;
+    create_share(&ghost, &other, &json!({ "role": "full", "username": "admin" })).await;
+
+    // The invite lights the row up on the apps page...
+    let (status, data) = sc.call("GET", "/api/sessions", None).await;
+    assert_eq!(status, StatusCode::OK);
+    let info = data
+        .as_ref()
+        .unwrap()
+        .as_array()
+        .unwrap()
+        .iter()
+        .find(|s| s["session_id"] == other)
+        .unwrap();
+    assert_eq!(info["joinable"], true);
+
+    // ...and the join succeeds (the grant is the sole gate).
+    let (status, data) = sc
+        .call("POST", &format!("/api/sessions/{other}/join"), Some(&json!({})))
+        .await;
+    assert_eq!(status, StatusCode::OK, "join should succeed: {data:?}");
+    let url = data.as_ref().unwrap()["session_url"].as_str().unwrap().to_string();
+    assert_eq!(url, format!("/join/{other}/admin"), "{url}");
+    // And the joiner is recorded as a participant.
+    let viewers = sc
+        .state
+        .sessions
+        .read()
+        .await
+        .get(&other)
+        .unwrap()
+        .get("viewers")
+        .and_then(|v| v.as_array())
+        .cloned()
+        .unwrap_or_default();
+    assert!(
+        viewers.iter().any(|v| {
+            v.get("username").and_then(|u| u.as_str()) == Some("admin")
+                && v.get("permission").and_then(|p| p.as_str()) == Some("participant")
+        }),
+        "joiner must have a participant entry: {viewers:?}"
+    );
+}
+
+/// ANT-472: revoking the named invite removes the grant (the invitee has no
+/// participant entry yet, so nothing else grants access).
+#[tokio::test]
+async fn test_join_revoked_invite_forbidden() {
+    let _root = TempDir::new();
+    let mut sc = SecureClient::new(build_state(_root.path()).await);
+    sc.http.login("admin", "admin1234").await;
+    sc.handshake().await;
+    let app_id = seed_app(&sc, "shared-app", &["all"]).await;
+    let other = seed_session(&sc, "ghost", json!({ "provider_app_id": app_id })).await;
+    let ghost = second_user(&sc, "ghost", "ghostpass123").await;
+    let share_id = create_share(&ghost, &other, &json!({ "role": "full", "username": "admin" }))
+        .await;
+    let (status, data) = ghost
+        .call("DELETE", &format!("/api/sessions/{other}/shares/{share_id}"), None)
+        .await;
+    assert_eq!(status, StatusCode::OK, "revoke: {data:?}");
+    // The revocation response names the invitee who just lost access.
+    let revoked_info = data.expect("revoked share body");
+    assert_eq!(revoked_info["invited_username"], "admin");
+    assert_eq!(revoked_info["revoked"], true);
+
+    let (status, data) = sc
+        .call("POST", &format!("/api/sessions/{other}/join"), Some(&json!({})))
+        .await;
+    assert_eq!(status, StatusCode::FORBIDDEN, "{data:?}");
+    assert_eq!(
+        data.unwrap()["detail"],
+        "The session owner has not granted you access."
+    );
+}
+
+/// ANT-472: an expired named invite no longer grants access.
+#[tokio::test]
+async fn test_join_expired_invite_forbidden() {
+    let _root = TempDir::new();
+    let mut sc = SecureClient::new(build_state(_root.path()).await);
+    sc.http.login("admin", "admin1234").await;
+    sc.handshake().await;
+    let app_id = seed_app(&sc, "shared-app", &["all"]).await;
+    let other = seed_session(&sc, "ghost", json!({ "provider_app_id": app_id })).await;
+    let ghost = second_user(&sc, "ghost", "ghostpass123").await;
+    let share_id = create_share(
+        &ghost,
+        &other,
+        &json!({ "role": "full", "username": "admin", "expiry_hours": 1 }),
+    )
+    .await;
+    {
+        let mut shares = sc.state.session_shares.write().await;
+        if let Some(meta) = shares.get_mut(&share_id) {
+            meta.expiry_timestamp = Some(1.0);
+        }
+    }
+    let (status, data) = sc
+        .call("POST", &format!("/api/sessions/{other}/join"), Some(&json!({})))
+        .await;
+    assert_eq!(status, StatusCode::FORBIDDEN, "{data:?}");
+    assert_eq!(
+        data.unwrap()["detail"],
+        "The session owner has not granted you access."
+    );
+}
+
+/// ANT-472: a persisted participant entry (a grandfathered v0.8.4
+/// self-serve joiner, with no live invite link) is still a grant: the row is
+/// visible and the re-join is idempotent.
+#[tokio::test]
+async fn test_join_grandfathered_participant_entry() {
+    let _root = TempDir::new();
+    let mut sc = SecureClient::new(build_state(_root.path()).await);
+    sc.http.login("admin", "admin1234").await;
+    sc.handshake().await;
+    let app_id = seed_app(&sc, "shared-app", &["all"]).await;
+    let other = seed_session(
+        &sc,
+        "ghost",
+        json!({
+            "provider_app_id": app_id,
+            "viewers": [{
+                "token": "legacy-tok-1",
+                "slot": null,
+                "mk_control": false,
+                "username": "admin",
+                "permission": "participant",
+            }],
+        }),
+    )
+    .await;
+
+    let (status, data) = sc.call("GET", "/api/sessions", None).await;
+    assert_eq!(status, StatusCode::OK);
+    let info = data
+        .as_ref()
+        .unwrap()
+        .as_array()
+        .unwrap()
+        .iter()
+        .find(|s| s["session_id"] == other)
+        .unwrap();
+    assert_eq!(info["joinable"], true, "the entry is a standing grant");
+
+    let (status, data) = sc
+        .call("POST", &format!("/api/sessions/{other}/join"), Some(&json!({})))
+        .await;
+    assert_eq!(status, StatusCode::OK, "join should succeed: {data:?}");
+    let url = data.as_ref().unwrap()["session_url"].as_str().unwrap().to_string();
+    assert_eq!(url, format!("/join/{other}/admin"), "{url}");
+    // The existing entry is reused: the re-join reuses the legacy token and
+    // mints no second one.
+    let viewers = sc
+        .state
+        .sessions
+        .read()
+        .await
+        .get(&other)
+        .unwrap()
+        .get("viewers")
+        .and_then(|v| v.as_array())
+        .cloned()
+        .unwrap_or_default();
+    assert_eq!(viewers.len(), 1, "re-join must not mint a second token");
+    assert_eq!(
+        viewers[0].get("token").and_then(|t| t.as_str()),
+        Some("legacy-tok-1")
+    );
 }
 
 #[tokio::test]

@@ -79,6 +79,12 @@ pub struct SessionShareMetadata {
     /// the public entry can answer 410 and the owner's list can show it).
     #[serde(default)]
     pub revoked: bool,
+    /// The user the owner expressly invited on this link (ANT-472): a named
+    /// invite lets that user see the session on the apps page and join it,
+    /// where a generic (unnamed) link only admits its holder through the link
+    /// itself. Existing rows deserialize to `None`.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub invited_username: Option<String>,
 }
 
 /// A per-visit token for a session share (in-memory only, mirroring the
@@ -110,6 +116,7 @@ pub struct SessionShareInfo {
     pub has_password: bool,
     pub revoked: bool,
     pub url: String,
+    pub invited_username: Option<String>,
 }
 
 #[derive(Deserialize)]
@@ -121,6 +128,10 @@ pub struct CreateSessionShareRequest {
     pub password: Option<String>,
     #[serde(default)]
     pub expiry_hours: Option<i64>,
+    /// The user the owner expressly invites to join the session (ANT-472):
+    /// must be an existing user, not the owner. Absent = a generic link.
+    #[serde(default)]
+    pub username: Option<String>,
 }
 
 /// A present `null` must be told apart from an absent key (the outer
@@ -146,6 +157,9 @@ pub struct UpdateSessionShareRequest {
     /// `null` clears the expiry; a positive number sets a new one.
     #[serde(default, deserialize_with = "de_present_i64")]
     pub expiry_hours: Option<Option<i64>>,
+    /// `null` (or `""`) clears the invited user; a non-empty name sets it.
+    #[serde(default, deserialize_with = "de_present_string")]
+    pub username: Option<Option<String>>,
 }
 
 /// A partial capability override for create/update. Absent fields fall back
@@ -298,6 +312,62 @@ fn resolve_caps(role: &str, base: &SessionShareCaps, patch: Option<&PartialCaps>
 }
 
 // ---------------------------------------------------------------------------
+// Named invite (ANT-472): validation + the owner-grant check
+// ---------------------------------------------------------------------------
+
+/// Validate the `username` of a named invite: it must be an existing user and
+/// must not be the session's owner. Returns the error detail when invalid.
+async fn validate_invite_username(state: &AppState, username: &str, owner_username: &str) -> Option<String> {
+    if username == owner_username {
+        return Some("The session owner cannot be invited on the session's own share link.".to_string());
+    }
+    match user_manager::get_user(&state.db, username).await {
+        Ok(Some(_)) => None,
+        Ok(None) => Some(format!("No user named '{username}'.")),
+        Err(e) => Some(format!("Could not look up user '{username}': {e}")),
+    }
+}
+
+/// The owner's express grant for a session (ANT-472): the caller holds it
+/// when they have a **non-revoked, non-expired named share link** for the
+/// session that names them, **or** a **persisted participant entry** in the
+/// session's `viewers` record (a join made after such an invite, or a
+/// grandfathered pre-0.8.5 self-serve joiner, until the owner revokes). A
+/// generic (unnamed) link is not a grant — its holder enters through the link
+/// itself and does not light up the apps page.
+pub async fn caller_has_session_grant(
+    state: &AppState,
+    session_id: &str,
+    session: &Value,
+    username: &str,
+) -> bool {
+    let now = now_unix_secs();
+    {
+        let shares = state.session_shares.read().await;
+        if shares.values().any(|m| {
+            m.session_id == session_id
+                && m.invited_username.as_deref() == Some(username)
+                && !m.revoked
+                && m.expiry_timestamp
+                    .map(|exp| exp >= now)
+                    .unwrap_or(true)
+        }) {
+            return true;
+        }
+    }
+    session
+        .get("viewers")
+        .and_then(|v| v.as_array())
+        .map(|viewers| {
+            viewers.iter().any(|v| {
+                v.get("username").and_then(|u| u.as_str()) == Some(username)
+                    && v.get("permission").and_then(|p| p.as_str()) == Some("participant")
+            })
+        })
+        .unwrap_or(false)
+}
+
+// ---------------------------------------------------------------------------
 // Owner management API (E2EE, own session only)
 // ---------------------------------------------------------------------------
 
@@ -366,6 +436,23 @@ async fn create_session_share(
         .await;
     }
     let caps = resolve_caps(&req.role, &default_caps_for_role(&req.role), req.caps.as_ref());
+    // The optional named invite (ANT-472): an existing user who is not the
+    // owner; absent (or empty) keeps the link generic.
+    let invited_username = match req.username.as_deref().filter(|u| !u.is_empty()) {
+        Some(u) => match validate_invite_username(&state, u, &user.record.username).await {
+            None => Some(u.to_string()),
+            Some(detail) => {
+                return e2ee::encrypt_response(
+                    &state,
+                    &headers,
+                    StatusCode::UNPROCESSABLE_ENTITY,
+                    serde_json::json!({ "detail": detail }),
+                )
+                .await
+            }
+        },
+        None => None,
+    };
     let password_hash = req
         .password
         .as_deref()
@@ -386,6 +473,7 @@ async fn create_session_share(
         password_hash,
         expiry_timestamp,
         revoked: false,
+        invited_username,
     };
     {
         let mut shares = state.session_shares.write().await;
@@ -552,6 +640,26 @@ async fn update_session_share(
             .filter(|h| *h > 0)
             .map(|h| now_unix_secs() + (h as f64) * 3600.0);
     }
+    // Set or clear the named invite (ANT-472): a non-empty name sets it,
+    // `null`/`""` clears it.
+    if let Some(u) = req.username {
+        match u.filter(|u| !u.is_empty()) {
+            Some(u) => {
+                if let Some(detail) = validate_invite_username(&state, &u, &meta.owner_username).await
+                {
+                    return e2ee::encrypt_response(
+                        &state,
+                        &headers,
+                        StatusCode::UNPROCESSABLE_ENTITY,
+                        serde_json::json!({ "detail": detail }),
+                    )
+                    .await
+                }
+                meta.invited_username = Some(u);
+            }
+            None => meta.invited_username = None,
+        }
+    }
     let updated = meta.clone();
     // Drop the write guard before the save: the save re-reads the map and
     // tokio locks are not reentrant.
@@ -620,11 +728,18 @@ async fn revoke_session_share(
         )
         .await;
     }
+    let invited_username = meta.invited_username.clone();
     drop(shares);
     // Revoking strips every per-visit token this share has ever minted (from
     // the session record, the container's token table, and the vreckan-side
     // token map) and marks the row revoked so the public entry answers 410.
     strip_share_tokens(&state, &share_id).await;
+    // Revoking a named invite (ANT-472) also strips the invited user's
+    // participation: their participant entry in the session's viewers list,
+    // the container's token table, and the vreckan-side token map.
+    if let Some(invited) = &invited_username {
+        strip_share_tokens_for_session(&state, &session_id, &format!("join:{invited}")).await;
+    }
     {
         let mut shares = state.session_shares.write().await;
         if let Some(meta) = shares.get_mut(&share_id) {
@@ -632,7 +747,23 @@ async fn revoke_session_share(
         }
     }
     save_session_shares(&state).await;
-    e2ee::encrypt_response(&state, &headers, StatusCode::NO_CONTENT, Value::Null).await
+    // The revocation response returns the revoked link's info (including
+    // `invited_username`) so the UI can say who just lost access.
+    let revoked = state
+        .session_shares
+        .read()
+        .await
+        .get(&share_id)
+        .cloned();
+    e2ee::encrypt_response(
+        &state,
+        &headers,
+        StatusCode::OK,
+        revoked.map(|m| share_info_json(&share_id, &m)).unwrap_or_else(|| {
+            serde_json::json!({ "detail": "Share not found." })
+        }),
+    )
+    .await
 }
 
 fn share_info_json(share_id: &str, meta: &SessionShareMetadata) -> Value {
@@ -646,6 +777,7 @@ fn share_info_json(share_id: &str, meta: &SessionShareMetadata) -> Value {
         "has_password": meta.password_hash.is_some(),
         "revoked": meta.revoked,
         "url": format!("/share/{share_id}"),
+        "invited_username": meta.invited_username,
     })
 }
 
@@ -1085,16 +1217,30 @@ fn join_hop_url(session_id: &str, username: &str) -> String {
 /// Strip every per-visit token minted by the share with the given id: from
 /// the session's viewers list, the container's token table (when one exists),
 /// and the vreckan-side token map. Used by revocation and expiry cleanup.
+/// The session is resolved from the share row.
 pub async fn strip_share_tokens(state: &AppState, share_id: &str) {
+    let session_id = state
+        .session_shares
+        .read()
+        .await
+        .get(share_id)
+        .map(|m| m.session_id.clone());
+    let Some(session_id) = session_id else {
+        return;
+    };
+    strip_share_tokens_for_session(state, &session_id, share_id).await;
+}
+
+/// The session-scoped core of [`strip_share_tokens`]: given the session the
+/// share belongs to, strip the share's tokens from the session's viewers
+/// list, the container's token table (when one exists), and the vreckan-side
+/// token map. Works for synthetic share ids too (the `join:{username}` id a
+/// self-serve join mints under, ANT-472's strip-on-revoke).
+pub async fn strip_share_tokens_for_session(state: &AppState, session_id: &str, share_id: &str) {
     // Note: clone out of each lock in a plain statement. A lock guard
     // temporary held across an `if let` scrutinee survives until the end of
     // the block and would deadlock against the re-lock below (tokio locks
     // are not reentrant).
-    let share_opt = state.session_shares.read().await.get(share_id).cloned();
-    let Some(share) = share_opt else {
-        return;
-    };
-    let session_id = &share.session_id;
     let tokens: Vec<String> = {
         let map = state.session_share_tokens.read().await;
         map.iter()
@@ -1123,7 +1269,7 @@ pub async fn strip_share_tokens(state: &AppState, share_id: &str) {
         if has_master || is_collab {
             collaboration::push_token_table(state, session_id, &session).await;
         }
-        *state.sessions.write().await.entry(session_id.clone()).or_insert(Value::Object(
+        *state.sessions.write().await.entry(session_id.to_string()).or_insert(Value::Object(
             serde_json::Map::new(),
         )) = session;
         catalog::save_sessions(state).await;
@@ -1140,7 +1286,7 @@ pub async fn strip_share_tokens(state: &AppState, share_id: &str) {
 /// `cleanup_expired_shares` for file shares.
 pub async fn cleanup_expired_session_shares(state: &AppState) {
     let now = now_unix_secs();
-    let to_remove: Vec<String> = {
+    let to_remove: Vec<(String, Option<String>, String)> = {
         let shares = state.session_shares.read().await;
         shares
             .iter()
@@ -1149,7 +1295,13 @@ pub async fn cleanup_expired_session_shares(state: &AppState) {
                     .map(|exp| exp < now)
                     .unwrap_or(false)
             })
-            .map(|(id, _)| id.clone())
+            .map(|(id, meta)| {
+                (
+                    id.clone(),
+                    meta.invited_username.clone(),
+                    meta.session_id.clone(),
+                )
+            })
             .collect()
     };
     if to_remove.is_empty() {
@@ -1159,12 +1311,18 @@ pub async fn cleanup_expired_session_shares(state: &AppState) {
         "Found {} expired session share(s) to clean up.",
         to_remove.len()
     );
-    for id in &to_remove {
+    for (id, invited, session_id) in &to_remove {
         strip_share_tokens(state, id).await;
+        // An expired named invite (ANT-472) also strips the invited user's
+        // participation entry (viewers list, container token table, and the
+        // vreckan-side token map).
+        if let Some(invited) = invited {
+            strip_share_tokens_for_session(state, session_id, &format!("join:{invited}")).await;
+        }
     }
     {
         let mut shares = state.session_shares.write().await;
-        for id in &to_remove {
+        for (id, _, _) in &to_remove {
             shares.remove(id);
         }
     }

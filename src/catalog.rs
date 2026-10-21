@@ -3440,7 +3440,11 @@ pub async fn recreate_session(
 ///
 /// Since ANT-440 the list includes other users' running sessions (not just
 /// the caller's own), each annotated with `username`, `is_mine`, and
-/// `joinable` so the UI can offer a Join action. `session_url` carries the
+/// `joinable` so the UI can offer a Join action. Since ANT-472 an other
+/// user's plain session is `joinable` only when its owner has expressly
+/// granted the caller access (a non-revoked, non-expired named share link,
+/// or a persisted participant entry); the UI hides the other rows and the
+/// app-card Join affordance follows this flag. `session_url` carries the
 /// caller's own token and is populated only for their own sessions.
 async fn get_my_sessions(
     State(state): State<AppState>,
@@ -3499,19 +3503,25 @@ async fn get_my_sessions(
         } else {
             None
         };
-        // Joinable: a plain (non-room) session whose app the caller can
-        // access. Room sessions have their own invite flow.
         let app_id = s_data
             .get("provider_app_id")
             .and_then(|v| v.as_str())
             .unwrap_or_default();
-        let joinable = if is_collaboration {
-            false
-        } else {
+        // Joinable: the caller's own sessions keep the app-access check (the
+        // UI offers Open on them). For another user's plain session the
+        // owner's express grant is the sole gate (ANT-472): a non-revoked,
+        // non-expired named share link for the caller, or a persisted
+        // participant entry (grandfathered v0.8.4 self-serve joiners
+        // included). Room sessions have their own invite flow.
+        let joinable = if is_mine {
             installed_apps
                 .get(app_id)
                 .map(|app| user_can_access_app(app, &username, &user_groups))
                 .unwrap_or(false)
+        } else if is_collaboration {
+            false
+        } else {
+            session_shares::caller_has_session_grant(&state, sid, s_data, &username).await
         };
         // F3 (ANT-468, ANT-444 security report): a file/URL `launch_context`
         // (and the session's custom `name`) can reveal what the owner launched.
@@ -3770,8 +3780,9 @@ async fn recreate_my_session(
 ///
 /// Statuses: 400 the E2EE body gate rejected the request (F4); 404 the
 /// session is gone; 409 it is a room session (rooms use their own invite
-/// flow); 403 the caller lacks access to the session's app; 500 the mint
-/// failed.
+/// flow); 403 the session's owner has not granted the caller access
+/// (a named share link, or a persisted participant entry — ANT-472); 500
+/// the mint failed.
 async fn join_my_session(
     State(state): State<AppState>,
     headers: HeaderMap,
@@ -3834,24 +3845,24 @@ async fn join_my_session(
         )
         .await;
     }
-    // The caller must be able to use the session's app.
-    let app_id = session_data
-        .get("provider_app_id")
-        .and_then(|v| v.as_str())
-        .unwrap_or_default();
-    let has_app_access = state
-        .installed_apps
-        .read()
-        .await
-        .get(app_id)
-        .map(|app| user_can_access_app(app, &user.record.username, &user.record.groups))
-        .unwrap_or(false);
-    if !has_app_access {
+    // The owner's express grant is the sole join gate (ANT-472): a
+    // non-revoked, non-expired named share link for the caller, or a
+    // persisted participant entry (grandfathered v0.8.4 self-serve joiners
+    // included). The per-app access check no longer blocks a join — the
+    // owner may invite a user with no entry in the app's allowlist.
+    let granted = session_shares::caller_has_session_grant(
+        &state,
+        &session_id,
+        &session_data,
+        &user.record.username,
+    )
+    .await;
+    if !granted {
         return e2ee::encrypt_response(
             &state,
             &headers,
             StatusCode::FORBIDDEN,
-            serde_json::json!({ "detail": "No access to this session's app." }),
+            serde_json::json!({ "detail": "The session owner has not granted you access." }),
         )
         .await;
     }
