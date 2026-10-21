@@ -585,27 +585,49 @@ pub async fn push_token_table(state: &AppState, session_id: &str, session_data: 
         },
         &|t: &str| mk_owner.is_some_and(|o| tokens_equal(o, t)),
     );
-    post_token_table(state, session_id, session_data, &table).await
+    // The manual mk-transfer push records the currently known generation
+    // (no new derivation happens here, so no stamp is taken).
+    let generation = state
+        .token_table_generations
+        .read()
+        .await
+        .get(session_id)
+        .copied()
+        .unwrap_or(0);
+    post_token_table(state, session_id, session_data, &table, generation).await
 }
 
-/// Re-derive and re-push the token table of a plain session after a
-/// data-plane connection change (ANT-443).
+/// The last token table a container accepted for a session (ANT-443),
+/// stamped with the generation of the derivation that produced the push
+/// (ANT-470).
+#[derive(Debug, Clone)]
+pub struct PushedTokenTable {
+    pub generation: u64,
+    pub table: Value,
+}
+
+/// A derived plain-session token table plus the generation stamped when the
+/// derivation started (ANT-470).
+#[derive(Debug, Clone)]
+pub struct PlainTokenTableDerivation {
+    pub generation: u64,
+    pub table: Value,
+}
+
+/// Derive the token table of a plain session from the current data-plane
+/// connection snapshot, stamping the derivation with the session's next
+/// refresh generation (ANT-470).
 ///
-/// Selkies 2.0.0 keeps `active_mk_token` as the first `mk_control:true` entry
-/// of the last-pushed table and never clears it when that token's client
-/// disconnects. On the WebSockets "newest-controller-wins" hand-off the
-/// surviving joiner therefore sits at `MK_ACCESS=false` — its own table entry
-/// is irrelevant to the verdict; the killed owner's token still holds the
-/// global mk grant. This refresh grants `mk_control` only to the most
-/// recently connected controller, so the hand-off re-grants MK to the
-/// survivor without a client reconnect; when no client is connected it keeps
-/// the static default (owner holds mk). Room sessions keep their own
-/// mk-transfer mechanism, and legacy (non-secure) sessions have no table.
-pub async fn refresh_plain_session_token_table(state: &AppState, session_id: &str) {
-    let session = state.sessions.read().await.get(session_id).cloned();
-    let Some(session) = session else {
-        return;
-    };
+/// The stamp is taken BEFORE the snapshot is read: a refresh that starts
+/// later reads a snapshot at least as new and therefore carries the larger
+/// generation, so a push built from an older snapshot can be recognized as
+/// stale at commit time. Returns `None` for sessions the refresh does not
+/// manage (collab rooms, legacy sessions, sessions already gone).
+pub async fn derive_plain_session_token_table(
+    state: &AppState,
+    session_id: &str,
+) -> Option<PlainTokenTableDerivation> {
+    let session = state.sessions.read().await.get(session_id).cloned()?;
     let is_collab = session
         .get("is_collaboration")
         .and_then(|v| v.as_bool())
@@ -616,8 +638,15 @@ pub async fn refresh_plain_session_token_table(state: &AppState, session_id: &st
         .map(|m| !m.is_empty())
         .unwrap_or(false);
     if is_collab || !has_master {
-        return;
+        return None;
     }
+
+    let generation = {
+        let mut gens = state.token_table_generations.write().await;
+        let entry = gens.entry(session_id.to_string()).or_insert(0);
+        *entry += 1;
+        *entry
+    };
 
     let owner_token = session_owner_token(&session);
     let conns = state
@@ -669,40 +698,108 @@ pub async fn refresh_plain_session_token_table(state: &AppState, session_id: &st
                 Some(o) => tokens_equal(o, &owner_token),
                 None => true,
             };
-            viewer_mk = Box::new(move |t: &str| {
-                mk_owner.as_deref().is_some_and(|o| tokens_equal(o, t))
-            });
+            viewer_mk =
+                Box::new(move |t: &str| mk_owner.as_deref().is_some_and(|o| tokens_equal(o, t)));
         }
     }
 
     let table = build_token_table(&session, owner_mk, &viewer_mk);
+    Some(PlainTokenTableDerivation { generation, table })
+}
+
+/// Commit a derived plain-session token table: skip the POST when the
+/// container already holds the table (the ANT-443 dedupe), drop the push
+/// when a newer generation's derivation has already been pushed (ANT-470),
+/// and record the accepted table on success. Returns true when a push went
+/// out and was accepted (a 2xx).
+pub async fn push_plain_session_token_table(
+    state: &AppState,
+    session_id: &str,
+    derivation: &PlainTokenTableDerivation,
+) -> bool {
+    let session = state.sessions.read().await.get(session_id).cloned();
+    let Some(session) = session else {
+        return false;
+    };
     let changed = state
         .last_pushed_token_tables
         .read()
         .await
         .get(session_id)
-        .map(|last| last != &table)
+        .map(|last| last.table != derivation.table)
         .unwrap_or(true);
-    if changed {
-        post_token_table(state, session_id, &session, &table).await;
+    if !changed {
+        return false;
     }
+    let latest = state
+        .token_table_generations
+        .read()
+        .await
+        .get(session_id)
+        .copied()
+        .unwrap_or(0);
+    // The stamp was taken before the snapshot read, so a strictly newer stamp
+    // belongs to a refresh that saw a newer (or equal) connection state; its
+    // push must not be overwritten by this older derivation.
+    if derivation.generation < latest {
+        return false;
+    }
+    post_token_table(
+        state,
+        session_id,
+        &session,
+        &derivation.table,
+        derivation.generation,
+    )
+    .await
+}
+
+/// Re-derive and re-push the token table of a plain session after a
+/// data-plane connection change (ANT-443).
+///
+/// Selkies 2.0.0 keeps `active_mk_token` as the first `mk_control:true` entry
+/// of the last-pushed table and never clears it when that token's client
+/// disconnects. On the WebSockets "newest-controller-wins" hand-off the
+/// surviving joiner therefore sits at `MK_ACCESS=false` — its own table entry
+/// is irrelevant to the verdict; the killed owner's token still holds the
+/// global mk grant. This refresh grants `mk_control` only to the most
+/// recently connected controller, so the hand-off re-grants MK to the
+/// survivor without a client reconnect; when no client is connected it keeps
+/// the static default (owner holds mk). Room sessions keep their own
+/// mk-transfer mechanism, and legacy (non-secure) sessions have no table.
+/// Concurrent refreshes are ordered by the per-session generation counter
+/// (ANT-470) so an older derivation cannot land after a newer push.
+pub async fn refresh_plain_session_token_table(state: &AppState, session_id: &str) {
+    let Some(derivation) = derive_plain_session_token_table(state, session_id).await else {
+        return;
+    };
+    push_plain_session_token_table(state, session_id, &derivation).await;
 }
 
 /// POST a built token table to the container's token endpoint. Returns true
-/// when the container accepted it (a 2xx).
+/// when the container accepted it (a 2xx). `generation` is the refresh
+/// generation that produced the table (ANT-470) and is recorded with the
+/// accepted table.
 async fn post_token_table(
     state: &AppState,
     session_id: &str,
     session_data: &Value,
     table: &Value,
+    generation: u64,
 ) -> bool {
     // Build the target host:port set (session ip + container registry).
     let mut targets: Vec<(String, Option<u16>)> = Vec::new();
     if let Some(ip) = session_data.get("ip").and_then(|v| v.as_str()) {
-        let port = session_data.get("port").and_then(|v| v.as_u64()).map(|p| p as u16);
+        let port = session_data
+            .get("port")
+            .and_then(|v| v.as_u64())
+            .map(|p| p as u16);
         targets.push((ip.to_string(), port));
     }
-    if let Some(registry) = session_data.get("container_registry").and_then(|v| v.as_object()) {
+    if let Some(registry) = session_data
+        .get("container_registry")
+        .and_then(|v| v.as_object())
+    {
         for c in registry.values() {
             if let Some(ip) = c.get("ip").and_then(|v| v.as_str()) {
                 let port = c.get("port").and_then(|v| v.as_u64()).map(|p| p as u16);
@@ -727,8 +824,7 @@ async fn post_token_table(
         session_data.get("custom_user").and_then(|v| v.as_str()),
         session_data.get("password").and_then(|v| v.as_str()),
     ) {
-        let b64 = base64::engine::general_purpose::STANDARD
-            .encode(format!("{user}:{pass}"));
+        let b64 = base64::engine::general_purpose::STANDARD.encode(format!("{user}:{pass}"));
         stacked.insert("Authorization".to_string(), format!("Basic {b64}"));
     }
 
@@ -765,12 +861,20 @@ async fn post_token_table(
                 Ok(resp) => {
                     if resp.status().is_success() {
                         // Record for the connect/disconnect refresh's dedupe
-                        // (ANT-443): an unchanged re-derivation skips the POST.
+                        // (ANT-443): an unchanged re-derivation skips the
+                        // POST. The stamp lets a later refresh tell whether
+                        // the container holds the newest push (ANT-470).
                         state
                             .last_pushed_token_tables
                             .write()
                             .await
-                            .insert(session_id.to_string(), table.clone());
+                            .insert(
+                                session_id.to_string(),
+                                PushedTokenTable {
+                                    generation,
+                                    table: table.clone(),
+                                },
+                            );
                         return true;
                     }
                 }
