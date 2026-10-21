@@ -381,9 +381,11 @@ async fn test_join_hop_cookie_admits_joiner() {
     )
     .await;
 
-    // Join, then follow the hop exactly the way the browser does.
+    // Join, then follow the hop exactly the way the browser does. The client
+    // sends an E2EE-encrypted empty body via secureFetch; the F4 join gate
+    // (ANT-469) requires it.
     let (status, data) = sc
-        .call("POST", &format!("/api/sessions/{other}/join"), None)
+        .call("POST", &format!("/api/sessions/{other}/join"), Some(&json!({})))
         .await;
     assert_eq!(status, StatusCode::OK, "join should succeed: {data:?}");
     let hop = sc
