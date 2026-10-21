@@ -220,6 +220,20 @@ async fn joiner_client(state: &AppState) -> SecureClient {
     sc
 }
 
+/// The owner's express grant the ANT-472 join gate requires: a named share
+/// link inviting the user. These tests exercise the join mechanics (F2), so
+/// the grant is seeded up front rather than asserted on.
+async fn owner_grants(sc: &SecureClient, sid: &str, username: &str) {
+    let (status, resp) = sc
+        .call(
+            "POST",
+            &format!("/api/sessions/{sid}/shares"),
+            Some(&json!({ "role": "full", "username": username })),
+        )
+        .await;
+    assert_eq!(status, StatusCode::OK, "owner grant (named invite): {resp:?}");
+}
+
 /// The token out of a join response's session URL.
 fn join_token(data: &Value) -> String {
     let url = data["session_url"].as_str().expect("session_url");
@@ -249,9 +263,13 @@ async fn test_participants_list_shows_joiner() {
     let (sid, _) = seed_plain_session(&owner.state, &upstream, &app_id).await;
     let joiner = joiner_client(&owner.state).await;
 
-    // alice self-serves a join into the owner's running session.
+    // alice joins the owner's running session. The join now rides the
+    // ANT-472 owner-grant gate (named invite seeded below), and the F4
+    // CSRF gate requires the E2EE-encrypted body the client sends via
+    // secureFetch.
+    owner_grants(&owner, &sid, "alice").await;
     let (status, data) = joiner
-        .call("POST", &format!("/api/sessions/{sid}/join"), None)
+        .call("POST", &format!("/api/sessions/{sid}/join"), Some(&json!({})))
         .await;
     assert_eq!(status, StatusCode::OK, "join should succeed: {data:?}");
 
@@ -332,9 +350,11 @@ async fn test_revoke_joiner_drops_on_next_request() {
     let app_id = seed_app(&owner).await;
     let (sid, _) = seed_plain_session(&owner.state, &upstream, &app_id).await;
     let joiner = joiner_client(&owner.state).await;
+    // ANT-472 owner-grant gate: the named invite lets the join through.
+    owner_grants(&owner, &sid, "alice").await;
 
     let (status, data) = joiner
-        .call("POST", &format!("/api/sessions/{sid}/join"), None)
+        .call("POST", &format!("/api/sessions/{sid}/join"), Some(&json!({})))
         .await;
     assert_eq!(status, StatusCode::OK, "{data:?}");
     let token = join_token(data.as_ref().unwrap());
@@ -415,7 +435,7 @@ async fn test_revoke_joiner_drops_on_next_request() {
 
     // A re-join mints a fresh token (the old one stays dead).
     let (status, data2) = joiner
-        .call("POST", &format!("/api/sessions/{sid}/join"), None)
+        .call("POST", &format!("/api/sessions/{sid}/join"), Some(&json!({})))
         .await;
     assert_eq!(status, StatusCode::OK, "{data2:?}");
     let token2 = join_token(data2.as_ref().unwrap());
@@ -446,8 +466,10 @@ async fn test_revoke_unknown_and_double_joiner() {
     let app_id = seed_app(&owner).await;
     let (sid, _) = seed_plain_session(&owner.state, &upstream, &app_id).await;
     let joiner = joiner_client(&owner.state).await;
+    // ANT-472 owner-grant gate: the named invite lets the join through.
+    owner_grants(&owner, &sid, "alice").await;
     let (status, data) = joiner
-        .call("POST", &format!("/api/sessions/{sid}/join"), None)
+        .call("POST", &format!("/api/sessions/{sid}/join"), Some(&json!({})))
         .await;
     assert_eq!(status, StatusCode::OK, "{data:?}");
 
@@ -481,9 +503,11 @@ async fn test_revoke_joiner_on_legacy_session() {
     let app_id = seed_app(&owner).await;
     let (sid, _) = seed_plain_session(&owner.state, &upstream, &app_id).await;
     let joiner = joiner_client(&owner.state).await;
+    // ANT-472 owner-grant gate: the named invite lets the join through.
+    owner_grants(&owner, &sid, "alice").await;
 
     let (status, data) = joiner
-        .call("POST", &format!("/api/sessions/{sid}/join"), None)
+        .call("POST", &format!("/api/sessions/{sid}/join"), Some(&json!({})))
         .await;
     assert_eq!(status, StatusCode::OK, "{data:?}");
     let token = join_token(data.as_ref().unwrap());
@@ -555,9 +579,11 @@ async fn test_join_ttl_sweep_expires_grant() {
     let app_id = seed_app(&owner).await;
     let (sid, _) = seed_plain_session(&owner.state, &upstream, &app_id).await;
     let joiner = joiner_client(&owner.state).await;
+    // ANT-472 owner-grant gate: the named invite lets the join through.
+    owner_grants(&owner, &sid, "alice").await;
 
     let (status, data) = joiner
-        .call("POST", &format!("/api/sessions/{sid}/join"), None)
+        .call("POST", &format!("/api/sessions/{sid}/join"), Some(&json!({})))
         .await;
     assert_eq!(status, StatusCode::OK, "{data:?}");
     let token = join_token(data.as_ref().unwrap());
@@ -611,9 +637,11 @@ async fn test_rejoin_after_expiry_refreshes_ttl() {
     let app_id = seed_app(&owner).await;
     let (sid, _) = seed_plain_session(&owner.state, &upstream, &app_id).await;
     let joiner = joiner_client(&owner.state).await;
+    // ANT-472 owner-grant gate: the named invite lets the join through.
+    owner_grants(&owner, &sid, "alice").await;
 
     let (status, data) = joiner
-        .call("POST", &format!("/api/sessions/{sid}/join"), None)
+        .call("POST", &format!("/api/sessions/{sid}/join"), Some(&json!({})))
         .await;
     assert_eq!(status, StatusCode::OK, "{data:?}");
     let token = join_token(data.as_ref().unwrap());
@@ -622,7 +650,7 @@ async fn test_rejoin_after_expiry_refreshes_ttl() {
     // TTL — no second grant, no second viewers entry.
     expire_join(&owner.state, &sid, &token).await;
     let (status, data2) = joiner
-        .call("POST", &format!("/api/sessions/{sid}/join"), None)
+        .call("POST", &format!("/api/sessions/{sid}/join"), Some(&json!({})))
         .await;
     assert_eq!(status, StatusCode::OK, "{data2:?}");
     let token2 = join_token(data2.as_ref().unwrap());
@@ -662,9 +690,11 @@ async fn test_rejoin_backfills_ttl_for_pre_085_grants() {
     let app_id = seed_app(&owner).await;
     let (sid, _) = seed_plain_session(&owner.state, &upstream, &app_id).await;
     let joiner = joiner_client(&owner.state).await;
+    // ANT-472 owner-grant gate: the named invite lets the join through.
+    owner_grants(&owner, &sid, "alice").await;
 
     let (status, data) = joiner
-        .call("POST", &format!("/api/sessions/{sid}/join"), None)
+        .call("POST", &format!("/api/sessions/{sid}/join"), Some(&json!({})))
         .await;
     assert_eq!(status, StatusCode::OK, "{data:?}");
     let token = join_token(data.as_ref().unwrap());
@@ -702,7 +732,7 @@ async fn test_rejoin_backfills_ttl_for_pre_085_grants() {
     }
 
     let (status, data2) = joiner
-        .call("POST", &format!("/api/sessions/{sid}/join"), None)
+        .call("POST", &format!("/api/sessions/{sid}/join"), Some(&json!({})))
         .await;
     assert_eq!(status, StatusCode::OK, "{data2:?}");
     let session = owner.state.sessions.read().await.get(&sid).cloned().unwrap();
@@ -735,9 +765,11 @@ async fn test_join_ttl_constant() {
     let app_id = seed_app(&owner).await;
     let (sid, _) = seed_plain_session(&owner.state, &upstream, &app_id).await;
     let joiner = joiner_client(&owner.state).await;
+    // ANT-472 owner-grant gate: the named invite lets the join through.
+    owner_grants(&owner, &sid, "alice").await;
 
     let (status, data) = joiner
-        .call("POST", &format!("/api/sessions/{sid}/join"), None)
+        .call("POST", &format!("/api/sessions/{sid}/join"), Some(&json!({})))
         .await;
     assert_eq!(status, StatusCode::OK, "{data:?}");
     let token = join_token(data.as_ref().unwrap());
