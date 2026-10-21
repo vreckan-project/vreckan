@@ -25,8 +25,11 @@ release notes and the image tag always agree.
    ./scripts/bump-version.sh minor   # or: major | patch (default: patch)
    ```
    `scripts/bump-version.sh` is the single source of version math, shared by
-   the GitHub and Gitea-side workflows. Commit both changes together and push
-   to `main`.
+   the GitHub and Gitea-side workflows. Beyond `VERSION` it re-points the root
+   `Cargo.toml` `[package] version` and the matching `Cargo.lock` entry in the
+   same run, and verifies all three files read back the new version. Commit
+   the changelog entry and every file change the script makes together, and
+   push to `main`.
 2. **`bump-and-tag` fires** (GitHub Actions, on push to `main`): it reads
    `VERSION`; if tag `v<VERSION>` does not exist yet, it mints a short-lived
    GitHub App installation token, creates and pushes the annotated tag
