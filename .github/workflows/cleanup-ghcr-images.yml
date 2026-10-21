@@ -25,6 +25,14 @@
 # per-version DELETE route (some GitHub API front-ends only implement
 # that one, not the batched POST ?version_ids= variant).
 #
+# Why a repo secret instead of GITHUB_TOKEN: the versions in this package
+# were created by the identity that pushes them (the Gitea build's GHCR
+# credentials), and the Packages API returns 404 — not 403 — for
+# delete-by-another-identity, so the short-lived GITHUB_TOKEN (and even
+# the vreckan-ci app's token) cannot delete them. The job therefore
+# authenticates with the GHCR_CLEANUP_TOKEN repo secret: a token of the
+# org owner, who can delete every version in the org's packages.
+#
 # First run: dispatch with dry-run=true to log what would be deleted.
 name: Cleanup GHCR Images
 
@@ -51,10 +59,18 @@ jobs:
           OWNER: vreckan-project
           PACKAGE: vreckan
           KEEP_BUILDS: "5"
-          GITHUB_TOKEN: ${{ github.token }}
+          # Org-owner PAT that can delete versions created by the push
+          # identity (GITHUB_TOKEN cannot — see header). See "Why a repo
+          # secret" above.
+          GHCR_CLEANUP_TOKEN: ${{ secrets.GHCR_CLEANUP_TOKEN }}
           DRY_RUN: ${{ inputs.dry-run || false }}
         run: |
           set -euo pipefail
+
+          if [ -z "$GHCR_CLEANUP_TOKEN" ]; then
+            echo "GHCR_CLEANUP_TOKEN repo secret is not set" >&2
+            exit 1
+          fi
 
           # Keep-list tiers (ANT-478):
           #   forever — v* releases, nightly-* (incl. nightly-latest), latest
@@ -62,7 +78,7 @@ jobs:
           FOREVER='^(v[0-9].*|nightly-latest|nightly-.*|latest)$'
           BUILD='^[0-9]{12}$'
           API="https://api.github.com/orgs/$OWNER/packages/container/$PACKAGE/versions"
-          AUTH=(-H "Authorization: Bearer $GITHUB_TOKEN" -H "Accept: application/vnd.github+json")
+          AUTH=(-H "Authorization: Bearer $GHCR_CLEANUP_TOKEN" -H "Accept: application/vnd.github+json")
 
           # Page through every version: id<TAB>created_at<TAB>tag1,tag2,...
           # (the API reflects the tags currently attached to each version).
@@ -136,9 +152,21 @@ jobs:
           else
             n=0
             while IFS= read -r id; do
-              curl -sS -f -X DELETE "${AUTH[@]}" "$API/$id" > /dev/null
-              n=$((n + 1))
-              echo "Deleted version $id ($n/$total)"
+              # 404 = already gone (e.g. deleted with its index, or a
+              # concurrent run got there first) — treat as done.
+              code=$(curl -sS -o /dev/null -w '%{http_code}' -X DELETE \
+                "${AUTH[@]}" "$API/$id")
+              case "$code" in
+                200|202|204)
+                  n=$((n + 1))
+                  echo "Deleted version $id ($n/$total)" ;;
+                404)
+                  n=$((n + 1))
+                  echo "Already gone, skipped: $id ($n/$total)" ;;
+                *)
+                  echo "Delete failed: version $id -> HTTP $code" >&2
+                  exit 1 ;;
+              esac
             done < "$delete_ids"
             echo "Deleted $total version(s)"
           fi
