@@ -198,7 +198,12 @@ function renderSessions(sessions, sharesBySession = {}) {
           recreate.disabled = true;
           recreate.textContent = t("sessions.recreating");
           try {
-            await secureFetch(`/api/sessions/${s.session_id}/recreate`, { method: "POST" });
+            // F4-followup (ANT-471): the encrypted empty body is the CSRF gate —
+            // a cross-site form POST without a crypto session is rejected 400.
+            await secureFetch(`/api/sessions/${s.session_id}/recreate`, {
+              method: "POST",
+              body: {},
+            });
             toast(t("sessions.recreated"));
             loadSessions();
           } catch (e) {
@@ -222,7 +227,12 @@ function renderSessions(sessions, sharesBySession = {}) {
       kill.textContent = t("sessions.kill");
       kill.addEventListener("click", async () => {
         try {
-          await secureFetch(`/api/sessions/${s.session_id}`, { method: "DELETE" });
+          // F4-followup (ANT-471): the encrypted empty body is the CSRF gate —
+          // a cross-site form POST/DELETE without a crypto session is rejected 400.
+          await secureFetch(`/api/sessions/${s.session_id}`, {
+            method: "DELETE",
+            body: {},
+          });
           toast(t("sessions.terminated"));
           loadSessions();
         } catch (e) {
