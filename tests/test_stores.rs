@@ -1380,10 +1380,15 @@ async fn test_vreckan_apps_to_sealskin_migration() {
         .unwrap();
     assert_eq!(rows.len(), 1);
     assert_eq!(rows[0].name, "SealSkin Apps");
-    let stores = state.app_stores.read().await;
-    assert_eq!(stores.len(), 1);
-    assert_eq!(stores[0].name, "SealSkin Apps");
-    assert_eq!(stores[0].url, STORE_URL);
+    // Scope the read guards so they drop before the next `load_app_stores`
+    // call, which takes the write lock (a guard held across it would
+    // deadlock).
+    {
+        let stores = state.app_stores.read().await;
+        assert_eq!(stores.len(), 1);
+        assert_eq!(stores[0].name, "SealSkin Apps");
+        assert_eq!(stores[0].url, STORE_URL);
+    }
     // The cached catalog was renamed in place, not dropped.
     let old_file = format!("{cache_dir}/Vreckan Apps.yml");
     let new_file = format!("{cache_dir}/SealSkin Apps.yml");
@@ -1409,10 +1414,12 @@ async fn test_vreckan_apps_to_sealskin_migration() {
         .unwrap();
     assert_eq!(rows.len(), 1);
     assert_eq!(rows[0].name, "SealSkin Apps");
-    let stores = state.app_stores.read().await;
-    assert_eq!(stores.len(), 1);
-    assert_eq!(stores[0].name, "SealSkin Apps");
-    assert_eq!(stores[0].url, STORE_URL);
+    {
+        let stores = state.app_stores.read().await;
+        assert_eq!(stores.len(), 1);
+        assert_eq!(stores[0].name, "SealSkin Apps");
+        assert_eq!(stores[0].url, STORE_URL);
+    }
     assert!(!std::path::Path::new(&old_file).exists());
     assert_eq!(std::fs::read_to_string(&new_file).unwrap(), yaml);
     assert_eq!(
