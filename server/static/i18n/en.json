@@ -233,7 +233,6 @@
     "kvDiskUsed": "Disk used",
     "kvGpus": "GPUs",
     "kvApiPort": "API port",
-    "kvSessionPort": "Session port",
     "yes": "yes",
     "no": "no"
   },

@@ -221,7 +221,6 @@
     "kvDiskUsed": "디스크 사용량",
     "kvGpus": "GPU",
     "kvApiPort": "API 포트",
-    "kvSessionPort": "세션 포트",
     "yes": "예",
     "no": "아니요"
   },

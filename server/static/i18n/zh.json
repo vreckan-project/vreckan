@@ -221,7 +221,6 @@
     "kvDiskUsed": "磁盘已用",
     "kvGpus": "GPU",
     "kvApiPort": "API 端口",
-    "kvSessionPort": "会话端口",
     "yes": "是",
     "no": "否"
   },

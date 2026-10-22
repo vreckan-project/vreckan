@@ -60,7 +60,6 @@ async function renderOverview() {
     [t("overview.kvDiskUsed"), status.data && status.data.disk_used != null ? `${(status.data.disk_used / 1048576).toFixed(1)} MB` : "—"],
     [t("overview.kvGpus"), gpus.length ? gpus.map((g) => g.device || "GPU").join(", ") : t("common.none")],
     [t("overview.kvApiPort"), data.data && data.data.api_port],
-    [t("overview.kvSessionPort"), data.data && data.data.session_port],
   ];
 
   const kvHtml = kv

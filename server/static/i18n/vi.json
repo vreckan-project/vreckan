@@ -221,7 +221,6 @@
     "kvDiskUsed": "Ổ đĩa đã dùng",
     "kvGpus": "GPU",
     "kvApiPort": "Cổng API",
-    "kvSessionPort": "Cổng phiên",
     "yes": "có",
     "no": "không"
   },
