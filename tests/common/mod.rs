@@ -116,7 +116,7 @@ pub async fn build_state_with(
     // Load application templates (built-in YAML + DB overrides; seeds a blank
     // "Default" template when none exist). Mirrors the lifespan startup.
     vreckan::catalog::load_app_templates(&state).await;
-    // Load the app stores (seeds the default "Vreckan Apps" store on first
+    // Load the app stores (seeds the default "SealSkin Apps" store on first
     // run). Mirrors the lifespan startup.
     vreckan::catalog::load_app_stores(&state).await;
     // Load the installed apps and warm the image-metadata cache (the

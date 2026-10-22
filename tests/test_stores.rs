@@ -19,6 +19,7 @@ mod common;
 use base64::Engine;
 use common::{build_state, build_state_with, SecureClient, TempDir};
 use http::StatusCode;
+use sea_orm::{ActiveValue, EntityTrait};
 use serde_json::{json, Value};
 use std::collections::HashMap;
 use std::sync::{Arc, Mutex};
@@ -219,7 +220,7 @@ async fn test_list_stores_seeds_default() {
     let sc = admin_client(state).await;
     let (status, body) = sc.call("GET", "/api/admin/apps/stores", None).await;
     assert_eq!(status, StatusCode::OK, "{body:?}");
-    assert_eq!(body, Some(json!([{"name": "Vreckan Apps", "url": STORE_URL}])));
+    assert_eq!(body, Some(json!([{"name": "SealSkin Apps", "url": STORE_URL}])));
 }
 
 #[tokio::test]
@@ -242,7 +243,7 @@ async fn test_add_store() {
         .map(|s| s["name"].as_str().unwrap())
         .collect();
     assert!(names.contains(&"Test Store"));
-    assert!(names.contains(&"Vreckan Apps")); // the seeded default store is kept
+    assert!(names.contains(&"SealSkin Apps")); // the seeded default store is kept
 }
 
 #[tokio::test]
@@ -310,7 +311,7 @@ async fn test_delete_store() {
         .iter()
         .map(|s| s["name"].as_str().unwrap())
         .collect();
-    assert_eq!(names, vec!["Vreckan Apps"]);
+    assert_eq!(names, vec!["SealSkin Apps"]);
 }
 
 /// Register a "Test Store" whose cached catalog contains the Firefox entry
@@ -1307,4 +1308,115 @@ async fn test_auto_update_status_disabled() {
     assert!(data["next_check_at"].is_null());
     assert_eq!(data["updates_available"], 0);
     assert_eq!(data["auto_update_apps_count"], 0);
+}
+
+// ---------------------------------------------------------------------------
+// The v0.8.6 "Vreckan Apps" → "SealSkin Apps" startup migration (ANT-492)
+// ---------------------------------------------------------------------------
+
+/// A deployment that still carries the pre-rename "Vreckan Apps" store gets
+/// it renamed on its next start — the store row, the cached catalog file,
+/// and the installed apps' `source` (in the DB and in memory) — and a
+/// second start is a no-op.
+#[tokio::test]
+async fn test_vreckan_apps_to_sealskin_migration() {
+    let _root = TempDir::new();
+    let state = build_state(_root.path()).await;
+    let conn = &state.db.conn;
+    // `build_state` already seeded the new "SealSkin Apps" default; restore
+    // the deployment to its pre-0.8.6 state: the legacy store row, a cached
+    // catalog for it, and an installed app sourced from it.
+    let old_am = vreckan::entities::app_store::ActiveModel {
+        name: ActiveValue::Set("SealSkin Apps".to_string()),
+        url: ActiveValue::NotSet,
+    };
+    vreckan::entities::app_store::Entity::delete(old_am)
+        .exec(conn)
+        .await
+        .unwrap();
+    let new_am = vreckan::entities::app_store::ActiveModel {
+        name: ActiveValue::Set("Vreckan Apps".to_string()),
+        url: ActiveValue::Set(STORE_URL.to_string()),
+    };
+    vreckan::entities::app_store::Entity::insert(new_am)
+        .exec(conn)
+        .await
+        .unwrap();
+    let cache_dir = &state.settings.app_store_cache_path;
+    std::fs::create_dir_all(cache_dir).unwrap();
+    let yaml = serde_yaml::to_string(&json!({ "apps": [store_app()] })).unwrap();
+    std::fs::write(format!("{cache_dir}/Vreckan Apps.yml"), &yaml).unwrap();
+    let app_data = json!({
+        "id": "app-1",
+        "name": "Firefox",
+        "logo": "x",
+        "url": "https://example.invalid/firefox",
+        "source": "Vreckan Apps",
+        "source_app_id": "firefox",
+        "provider": "docker",
+        "provider_config": {
+            "image": "lscr.io/linuxserver/firefox:latest",
+            "port": 3000,
+            "type": "browser",
+        }
+    });
+    let app_am = vreckan::entities::installed_app::ActiveModel {
+        id: ActiveValue::Set("app-1".to_string()),
+        data: ActiveValue::Set(app_data),
+    };
+    vreckan::entities::installed_app::Entity::insert(app_am)
+        .exec(conn)
+        .await
+        .unwrap();
+
+    // First start after the rename (the main.rs load order: installed apps
+    // first, then the stores, which is when the migration runs).
+    vreckan::catalog::load_installed_apps(&state).await;
+    vreckan::catalog::load_app_stores(&state).await;
+    // The store row is renamed; the in-memory listing carries the rename.
+    let rows = vreckan::entities::app_store::Entity::find()
+        .all(conn)
+        .await
+        .unwrap();
+    assert_eq!(rows.len(), 1);
+    assert_eq!(rows[0].name, "SealSkin Apps");
+    let stores = state.app_stores.read().await;
+    assert_eq!(stores.len(), 1);
+    assert_eq!(stores[0].name, "SealSkin Apps");
+    assert_eq!(stores[0].url, STORE_URL);
+    // The cached catalog was renamed in place, not dropped.
+    let old_file = format!("{cache_dir}/Vreckan Apps.yml");
+    let new_file = format!("{cache_dir}/SealSkin Apps.yml");
+    assert!(!std::path::Path::new(&old_file).exists());
+    assert_eq!(std::fs::read_to_string(&new_file).unwrap(), yaml);
+    // The installed app's source is backfilled in the DB and in memory.
+    let app_rows = vreckan::entities::installed_app::Entity::find()
+        .all(conn)
+        .await
+        .unwrap();
+    assert_eq!(app_rows[0].data["source"], "SealSkin Apps");
+    assert_eq!(
+        state.installed_apps.read().await["app-1"].source,
+        "SealSkin Apps"
+    );
+
+    // Simulated restart: the second load is a no-op (no double-rename, and
+    // the state stays stable).
+    vreckan::catalog::load_app_stores(&state).await;
+    let rows = vreckan::entities::app_store::Entity::find()
+        .all(conn)
+        .await
+        .unwrap();
+    assert_eq!(rows.len(), 1);
+    assert_eq!(rows[0].name, "SealSkin Apps");
+    let stores = state.app_stores.read().await;
+    assert_eq!(stores.len(), 1);
+    assert_eq!(stores[0].name, "SealSkin Apps");
+    assert_eq!(stores[0].url, STORE_URL);
+    assert!(!std::path::Path::new(&old_file).exists());
+    assert_eq!(std::fs::read_to_string(&new_file).unwrap(), yaml);
+    assert_eq!(
+        state.installed_apps.read().await["app-1"].source,
+        "SealSkin Apps"
+    );
 }

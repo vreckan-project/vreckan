@@ -503,7 +503,6 @@ async fn get_management_data(
         "roles": roles,
         "volume_mounts": volume_mounts,
         "api_port": state.settings.api_port,
-        "session_port": state.settings.session_port,
         "gpus": gpus,
     });
     e2ee::encrypt_response(&state, &headers, StatusCode::OK, value).await

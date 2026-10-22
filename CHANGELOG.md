@@ -9,6 +9,17 @@ is committed normally in `vreckan`. The changelog is the authoritative
 record of what shipped in each release — see
 [`docs/release.md`](./docs/release.md) for the conventions.
 
+## 2026-10-22 — v0.8.6: base-image bump + "SealSkin Apps" default store rename + `VRECKAN_SESSION_PORT` removal (ANT-492; ANT-480)
+
+This release completes the v0.8.6 cut: the nightly base-image update that
+landed on `main` (PR #82) ships together with the Rust-side ANT-480 work —
+the app-store rename and the session-port variable that was metadata-only in
+the Rust port.
+
+- **The build base advanced to the latest `vreckan-base-build` image.** The `Dockerfile` build-stage pin and `.base-image-digest` were re-pointed by the nightly scan bot (PR #82) from `sha256:adc4459d…` to `sha256:11861969…`; this release is built on the new base. The `vreckan` crate version is re-synced to 0.8.6 in `Cargo.toml`/`Cargo.lock`, which the nightly's `VERSION`-only bump had left at 0.8.5.
+- **The default app store is renamed from "Vreckan Apps" to "SealSkin Apps".** A fresh install seeds the default store under the new name. On existing deployments, an idempotent startup migration runs on the first start after the upgrade: it renames the "Vreckan Apps" store row to "SealSkin Apps" (store names are unique per deployment, so that row is always the seeded default — even on hosts with a custom `VRECKAN_APP_RESOURCE_PATH`), renames the cached catalog file in place (under `/data/app_stores_cache`) so the store is served from its existing cache instead of being refetched from scratch, backfills the `source` of installed apps recorded against the store, and drops the orphaned `VRECKAN_SESSION_PORT` `app_settings` row. The migration logs once; a second start is a no-op (ANT-492).
+- **`VRECKAN_SESSION_PORT` is removed.** The Rust port serves the session proxy on the same listener as the API, so the variable was metadata-only: it is no longer a defined setting (it also drops out of the admin settings response), and no `VRECKAN_*` environment variable with that name is read anymore. `VRECKAN_API_PORT` (the bind port) and the `api_port` metadata setting are unchanged (ANT-492; ANT-480).
+
 ## 2026-10-21 — F2: owner-visible participant list with per-joiner revoke and a 24-hour join-token TTL, v0.8.5 (ANT-467)
 
 Finding F2 of the 0.8.5 review round closes the board-accepted v1 tradeoff recorded in v0.8.4 (ANT-444, F2): join grants were permanent and had no owner-side revoke path — the owner's only levers were killing or recreating the session.
