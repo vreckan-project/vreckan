@@ -221,7 +221,6 @@
     "kvDiskUsed": "Brugt disk",
     "kvGpus": "GPUs",
     "kvApiPort": "API-port",
-    "kvSessionPort": "Sessionport",
     "yes": "ja",
     "no": "nej"
   },

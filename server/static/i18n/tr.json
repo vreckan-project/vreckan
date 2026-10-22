@@ -221,7 +221,6 @@
     "kvDiskUsed": "Kullanılan disk",
     "kvGpus": "GPU'lar",
     "kvApiPort": "API portu",
-    "kvSessionPort": "Oturum portu",
     "yes": "evet",
     "no": "hayır"
   },

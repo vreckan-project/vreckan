@@ -221,7 +221,6 @@
     "kvDiskUsed": "Gebruikte schijf",
     "kvGpus": "GPUs",
     "kvApiPort": "API-poort",
-    "kvSessionPort": "Sessiepoort",
     "yes": "ja",
     "no": "nee"
   },

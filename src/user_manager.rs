@@ -173,12 +173,14 @@ fn json_str_list(v: Option<serde_json::Value>) -> Vec<String> {
 
 /// Process-wide values set at startup (mirrors the Python module globals).
 struct ServerState {
-    /// The server's public key PEM, for log messages.
+    /// The server's public key PEM, for log messages. Written at startup;
+    /// the last reader (`set_external_ports`) left with the session port
+    /// (v0.8.6, ANT-492), so this is pending cleanup with the rest of the
+    /// Python-port residue.
+    #[allow(dead_code)]
     pub server_public_key_pem: Option<String>,
     /// The externally-visible API port.
     pub external_api_port: i64,
-    /// The externally-visible session-proxy port.
-    pub external_session_port: i64,
 }
 
 static SERVER_STATE: OnceLock<ServerState> = OnceLock::new();
@@ -188,24 +190,9 @@ pub fn set_server_public_key(key: &str) {
     let mut state = ServerState {
         server_public_key_pem: Some(key.to_string()),
         external_api_port: 8000,
-        external_session_port: 8443,
     };
     if let Some(existing) = SERVER_STATE.get() {
         state.external_api_port = existing.external_api_port;
-        state.external_session_port = existing.external_session_port;
-    }
-    let _ = SERVER_STATE.set(state);
-}
-
-/// Set the externally-visible API and session-proxy ports.
-pub fn set_external_ports(api_port: i64, session_port: i64) {
-    let mut state = ServerState {
-        server_public_key_pem: None,
-        external_api_port: api_port,
-        external_session_port: session_port,
-    };
-    if let Some(existing) = SERVER_STATE.get() {
-        state.server_public_key_pem = existing.server_public_key_pem.clone();
     }
     let _ = SERVER_STATE.set(state);
 }

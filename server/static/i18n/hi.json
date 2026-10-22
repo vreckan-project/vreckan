@@ -221,7 +221,6 @@
     "kvDiskUsed": "उपयोग किया गया डिस्क",
     "kvGpus": "GPUs",
     "kvApiPort": "API पोर्ट",
-    "kvSessionPort": "सत्र पोर्ट",
     "yes": "हाँ",
     "no": "नहीं"
   },

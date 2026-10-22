@@ -305,8 +305,10 @@ pub async fn save_installed_apps(state: &AppState) {
 }
 
 /// Load the configured app stores from the database into `state.app_stores`.
-/// On first run (no rows) the default Vreckan Apps store is seeded. Mirrors
-/// `load_app_configs` (the app-stores half).
+/// On first run (no rows) the default SealSkin Apps store is seeded; on the
+/// first run after the v0.8.6 rename, the legacy "Vreckan Apps" row is
+/// migrated to "SealSkin Apps" (ANT-492). Mirrors `load_app_configs` (the
+/// app-stores half).
 pub async fn load_app_stores(state: &AppState) {
     let rows = match entities::app_store::Entity::find().all(&state.db.conn).await {
         Ok(rows) => rows,
@@ -317,7 +319,7 @@ pub async fn load_app_stores(state: &AppState) {
     };
     if rows.is_empty() {
         let default = AppStore {
-            name: "Vreckan Apps".to_string(),
+            name: "SealSkin Apps".to_string(),
             url: state.settings.app_resource_path.clone(),
         };
         let am = entities::app_store::ActiveModel {
@@ -328,9 +330,11 @@ pub async fn load_app_stores(state: &AppState) {
             warn!("Failed to seed default app store: {e}");
         }
         *state.app_stores.write().await = vec![default];
-        info!("Seeded the default Vreckan Apps store.");
+        info!("Seeded the default SealSkin Apps store.");
         return;
     }
+    let mut rows = rows;
+    migrate_vreckan_apps_to_sealskin_apps(state, &mut rows).await;
     let stores: Vec<AppStore> = rows
         .into_iter()
         .map(|r| AppStore { name: r.name, url: r.url })
@@ -338,6 +342,115 @@ pub async fn load_app_stores(state: &AppState) {
     let count = stores.len();
     *state.app_stores.write().await = stores;
     info!("Loaded {count} app store(s) from the database.");
+}
+
+/// v0.8.6 startup migration (ANT-492): rename the seeded "Vreckan Apps"
+/// store to "SealSkin Apps", carrying the rename into the cached catalog
+/// file and the installed apps recorded against the store.
+///
+/// Idempotent: it runs only while a "Vreckan Apps" row exists and no
+/// "SealSkin Apps" row does, so a second (or later) start is a no-op. Store
+/// names are unique per deployment (`POST /api/admin/apps/stores` rejects
+/// duplicates), so a "Vreckan Apps" row can only ever be the seeded default
+/// — even on hosts with a custom `VRECKAN_APP_RESOURCE_PATH`.
+///
+/// `rows` is the store listing just read from the database; it is updated
+/// in place so the caller loads the post-migration state.
+async fn migrate_vreckan_apps_to_sealskin_apps(
+    state: &AppState,
+    rows: &mut Vec<entities::app_store::Model>,
+) {
+    const OLD: &str = "Vreckan Apps";
+    const NEW: &str = "SealSkin Apps";
+    let has_old = rows.iter().any(|r| r.name == OLD);
+    let has_new = rows.iter().any(|r| r.name == NEW);
+    if !has_old || has_new {
+        return;
+    }
+    let conn = &state.db.conn;
+    let old_url = match rows.iter().find(|r| r.name == OLD) {
+        Some(r) => r.url.clone(),
+        None => return,
+    };
+    // 1) Rename the store row (insert-new + delete-old, the same shape as
+    //    `save_app_stores`'s full-replace; the name is the primary key).
+    let am = entities::app_store::ActiveModel {
+        name: ActiveValue::Set(NEW.to_string()),
+        url: ActiveValue::Set(old_url),
+    };
+    if let Err(e) = entities::app_store::Entity::insert(am).exec(conn).await {
+        warn!("App store migration: failed to insert renamed store: {e}");
+        return;
+    }
+    let del = entities::app_store::ActiveModel {
+        name: ActiveValue::Set(OLD.to_string()),
+        url: ActiveValue::NotSet,
+    };
+    if let Err(e) = entities::app_store::Entity::delete(del).exec(conn).await {
+        warn!("App store migration: failed to delete old store row: {e}");
+        return;
+    }
+    // 2) Rename the cached catalog file so the renamed store is served from
+    //    its existing cache instead of being refetched from scratch.
+    let cache_dir = &state.settings.app_store_cache_path;
+    let old_file = format!("{cache_dir}/{OLD}.yml");
+    let new_file = format!("{cache_dir}/{NEW}.yml");
+    if std::path::Path::new(&old_file).exists() {
+        if std::path::Path::new(&new_file).exists() {
+            // Both files exist: the new-name file wins; drop the stale one.
+            let _ = std::fs::remove_file(&old_file);
+        } else if let Err(e) = std::fs::rename(&old_file, &new_file) {
+            warn!("App store migration: failed to rename cache file: {e}");
+        }
+    }
+    // 3) Backfill `installed_app.source` so the installed-apps table keeps
+    //    pointing at the renamed store.
+    let mut backfilled = 0;
+    if let Ok(app_rows) = entities::installed_app::Entity::find().all(conn).await {
+        for row in app_rows {
+            if row.data.get("source").and_then(|v| v.as_str()) != Some(OLD) {
+                continue;
+            }
+            let mut data = row.data;
+            data["source"] = serde_json::Value::String(NEW.to_string());
+            let am = entities::installed_app::ActiveModel {
+                id: ActiveValue::Set(row.id),
+                data: ActiveValue::Set(data),
+            };
+            if entities::installed_app::Entity::update(am).exec(conn).await.is_ok() {
+                backfilled += 1;
+            } else {
+                warn!("App store migration: failed to backfill installed app source");
+            }
+        }
+    }
+    // 4) Drop the orphaned `app_settings` override row for the session port:
+    //    the setting is gone in v0.8.6, so a value left behind would ride
+    //    along in every backup dump as dead data (the delete is a no-op when
+    //    the row is absent).
+    let orphan = entities::app_setting::ActiveModel {
+        key: ActiveValue::Set("VRECKAN_SESSION_PORT".to_string()),
+        value: ActiveValue::NotSet,
+    };
+    let _ = entities::app_setting::Entity::delete(orphan).exec(conn).await;
+    // Keep the in-memory installed-app set consistent regardless of load
+    // order (main.rs loads the installed apps before the stores; the test
+    // harness loads the stores first).
+    {
+        let mut apps = state.installed_apps.write().await;
+        for app in apps.values_mut() {
+            if app.source == OLD {
+                app.source = NEW.to_string();
+            }
+        }
+    }
+    // Reflect the rename in the caller's in-memory listing.
+    if let Some(pos) = rows.iter().position(|r| r.name == OLD) {
+        rows[pos].name = NEW.to_string();
+    }
+    info!(
+        "Migrated the default app store '{OLD}' to '{NEW}' (v0.8.6, ANT-492); backfilled the source of {backfilled} installed app(s)."
+    );
 }
 
 /// Sync the in-memory app-store list to the database (full replace). Mirrors

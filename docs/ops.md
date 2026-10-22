@@ -44,9 +44,7 @@ P2-6).
 
 The server binds `0.0.0.0:$VRECKAN_API_PORT` (default **443**) with TLS
 (rustls/ring) and serves the API, web client, and session proxy on that
-single listener. `VRECKAN_SESSION_PORT` (default 8443) is carried-over
-metadata from the Python port, which ran the session proxy on a separate
-listener; it does not change the bind port in the Rust port.
+single listener.
 
 ## 2. Quick start
 

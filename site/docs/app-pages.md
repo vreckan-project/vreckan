@@ -105,7 +105,7 @@ description: A page-by-page walkthrough of the Vreckan web app — what each pag
   <h3>Overview</h3>
   <p>The landing page of the admin area — visible to anyone who can see the admin area at all. It has two cards:</p>
   <ul>
-    <li><strong>Server status</strong> — who you are (username, whether you're an admin), the server's CPU model, total/used disk, the GPUs it sees, and the API and session ports. A <strong>How to Use Vreckan</strong> button opens a short built-in guide: launching an app, opening a file in an app, managing persistent storage, saving launch options, and the admin toolkit.</li>
+    <li><strong>Server status</strong> — who you are (username, whether you're an admin), the server's CPU model, total/used disk, the GPUs it sees, and the API port. A <strong>How to Use Vreckan</strong> button opens a short built-in guide: launching an app, opening a file in an app, managing persistent storage, saving launch options, and the admin toolkit.</li>
     <li><strong>My Settings</strong> — edit <em>your own</em> account settings (self-service; administrators edit other people's settings from Accounts):
       <ul>
         <li><strong>Group</strong> — your primary group.</li>

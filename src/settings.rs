@@ -25,7 +25,6 @@ pub struct SettingDef {
 pub const SETTING_DEFINITIONS: &[SettingDef] = &[
     SettingDef { name: "log_level", type_: "str", default: "INFO", help: "Logging level (e.g., DEBUG, INFO, WARNING)." },
     SettingDef { name: "api_port", type_: "int", default: "8000", help: "Port for the main API server." },
-    SettingDef { name: "session_port", type_: "int", default: "8443", help: "Port for the session proxy server." },
     SettingDef { name: "database_url", type_: "str", default: "", help: "Full database URL override (sqlx format, e.g. postgres://user:pass@host:5432/db). If empty, the URL is built from the db_* settings below." },
     SettingDef { name: "db_backend", type_: "str", default: "sqlite", help: "Database backend: 'sqlite', 'postgres', or 'mysql'." },
     SettingDef { name: "db_host", type_: "str", default: "localhost", help: "Database host (postgres/mysql)." },
@@ -117,7 +116,6 @@ fn parse_value(type_: &str, raw: &str) -> String {
 pub struct Settings {
     pub log_level: String,
     pub api_port: i64,
-    pub session_port: i64,
     pub database_url: String,
     pub db_backend: String,
     pub db_host: String,
@@ -203,7 +201,6 @@ impl Settings {
         Self {
             log_level: get("log_level"),
             api_port: get_int("api_port"),
-            session_port: get_int("session_port"),
             database_url: get("database_url"),
             db_backend: get("db_backend"),
             db_host: get("db_host"),
@@ -280,7 +277,6 @@ impl Settings {
         Some(match name {
             "log_level" => self.log_level.clone(),
             "api_port" => self.api_port.to_string(),
-            "session_port" => self.session_port.to_string(),
             "database_url" => self.database_url.clone(),
             "db_backend" => self.db_backend.clone(),
             "db_host" => self.db_host.clone(),
