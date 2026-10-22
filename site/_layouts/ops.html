@@ -83,7 +83,7 @@ layout: default
       </tbody>
     </table>
     <p>The <strong><code>postgres:16</code></strong> service is included in the compose file and is the v0.6.0 default database (see <a href="{% if page.section == nil %}#database{% else %}{{ '/docs/ops/database' | relative_url }}{% endif %}">§4</a>); since v0.6.1 its host port is published on loopback only (<code>127.0.0.1:5432</code>) instead of every interface.</p>
-    <p>The server binds <code>0.0.0.0:$VRECKAN_API_PORT</code> (default <strong>443</strong>) with TLS (rustls/ring) and serves the API, web client, and session proxy on that single listener. <code>VRECKAN_SESSION_PORT</code> (default 8443) is carried-over metadata from the Python port, which ran the session proxy on a separate listener; it does not change the bind port in the Rust port.</p>
+    <p>The server binds <code>0.0.0.0:$VRECKAN_API_PORT</code> (default <strong>443</strong>) with TLS (rustls/ring) and serves the API, web client, and session proxy on that single listener.</p>
   </section>
   {% endif %}
 

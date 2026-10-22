@@ -28,7 +28,7 @@ The server is a single Rust binary (axum + tokio; SeaORM on SQLite, Postgres, or
 *   **API (control plane):** Handles user authentication, application management, and the orchestration of new application sessions. All management communication is protected by end-to-end encryption.
 *   **Session proxy (data plane):** A set of reverse-proxy routes (`/api/apps/session/{id}/...`) that forward live application traffic (HTTP and WebSockets) to the internal application containers, so the containers are never directly exposed to the internet.
 
-The server terminates TLS itself and listens on a single endpoint: `0.0.0.0:$VRECKAN_API_PORT` (default **443**). In the Rust port both planes are served on that one listener; the `api_port` / `session_port` settings are carried over from the Python port as published-port metadata.
+The server terminates TLS itself and listens on a single endpoint: `0.0.0.0:$VRECKAN_API_PORT` (default **443**). In the Rust port both planes are served on that one listener; the `api_port` setting is carried over from the Python port as published-port metadata.
 
 All durable configuration (users, groups, applications, sessions, tokens, shares, templates) lives in a database — the bundled compose deployment defaults to the included `postgres` service (PostgreSQL), the server's built-in default is SQLite, and MySQL is supported — rather than config files.
 
@@ -111,7 +111,6 @@ The Vreckan server is configured entirely through `VRECKAN_*` environment variab
 | --- | --- | --- |
 | `VRECKAN_LOG_LEVEL` | Logging level (e.g., DEBUG, INFO, WARNING). | `INFO` |
 | `VRECKAN_API_PORT` | Port the server binds with TLS. The entrypoint reads this directly and defaults to `443` when it is unset. The `api_port` entry on the admin Settings page is carried-over metadata from the Python port (default `8000`); it does not affect the bind port. | `443` |
-| `VRECKAN_SESSION_PORT` | Published-port metadata for session-proxy traffic (carried over from the Python port; in the Rust port the session proxy is served on the same listener). | `8443` |
 | `VRECKAN_DATABASE_URL` | Full override of the configuration-database URL (sqlx format). When empty, the URL is built from the `VRECKAN_DB_*` settings below. | *(empty)* |
 | `VRECKAN_APP_RESOURCE_PATH` | URL for the YAML file defining default available applications. | `https://raw.githubusercontent.com/linuxserver/sealskin-apps/refs/heads/master/apps.yml` |
 | `VRECKAN_DEFAULT_APP_TEMPLATES_PATH` | Path to the directory for default application templates. | `server/default_templates` |

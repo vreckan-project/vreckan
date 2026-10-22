@@ -33,7 +33,6 @@ cp .env.example .env</code></pre>
     </thead>
     <tbody>
       <tr><td><code>VRECKAN_API_PORT</code></td><td>Port the server listens on (TLS). The Rust server entrypoint reads this directly and defaults to <code>443</code> when unset.</td><td><code>443</code></td></tr>
-      <tr><td><code>VRECKAN_SESSION_PORT</code></td><td>Carried-over metadata from the Python port; in the Rust port the session proxy is served on the same listener as the API (the bind port above).</td><td><code>8443</code></td></tr>
       <tr><td><code>VRECKAN_DATABASE_URL</code></td><td>Configuration database. A bare-binary run defaults to a SQLite file; the bundled compose deployment defaults to the bundled PostgreSQL service (see below).</td><td>*(empty)* — SQLite file at <code>/data/vreckan.db</code></td></tr>
       <tr><td><code>VRECKAN_STORAGE_PATH</code></td><td>Base directory for user home directories.</td><td><code>/data/storage</code></td></tr>
       <tr><td><code>VRECKAN_LOG_LEVEL</code></td><td>Logging level (DEBUG, INFO, WARNING, ERROR).</td><td><code>INFO</code></td></tr>
