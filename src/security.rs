@@ -41,9 +41,15 @@ pub const SECURITY_HEADERS: [(&str, &str); 8] = [
 /// The looser CSP used for the reverse-proxied session page (noVNC and other
 /// third-party app-container HTML that may rely on inline script/style).
 /// Mirrors `_SESSION_CSP` in `server/api`.
+///
+/// `data:` is allowed in `script-src`/`worker-src` because the selkies
+/// app-container loads its Playback AudioWorklet from a `data:text/javascript`
+/// URL (ANT-537); without it the browser blocks the worklet and in-container
+/// audio dies. The page already allows `'unsafe-inline'`, so a `data:` script
+/// adds no real capability.
 pub const SESSION_CSP: &str = "default-src 'self'; \
-     script-src 'self' 'unsafe-inline' blob:; \
-     worker-src 'self' blob:; \
+     script-src 'self' 'unsafe-inline' blob: data:; \
+     worker-src 'self' blob: data:; \
      style-src 'self' 'unsafe-inline'; \
      img-src 'self' data: blob: https://raw.githubusercontent.com https://github.com; \
      frame-src 'self'; \

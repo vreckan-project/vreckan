@@ -391,6 +391,23 @@ async fn test_session_proxy_gets_loose_csp() {
     let csp = resp.header("content-security-policy").unwrap();
     assert_eq!(csp, security::SESSION_CSP);
     assert!(csp.contains("'unsafe-inline'"));
+
+    // The selkies audio pipeline loads its Playback AudioWorklet from a
+    // data:text/javascript URL, so the session CSP must allow data: in both
+    // script-src and worker-src (ANT-537) or the worklet is blocked and
+    // in-container audio dies.
+    let directive = |name: &str| {
+        let rest = csp.split(name).nth(1).unwrap_or("");
+        rest.split(';').next().unwrap_or("")
+    };
+    assert!(
+        directive("script-src").contains("data:"),
+        "session CSP script-src must allow data: (got: {csp})"
+    );
+    assert!(
+        directive("worker-src").contains("data:"),
+        "session CSP worker-src must allow data: (got: {csp})"
+    );
 }
 
 // ---------------------------------------------------------------------------
