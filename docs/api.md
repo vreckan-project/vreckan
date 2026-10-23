@@ -16,7 +16,7 @@ share-session links routes).
 
 ## How requests are protected
 
-Two orthogonal layers:
+Three layers, the first two orthogonal:
 
 1. **Transport:** every response carries the standard security headers
    (CSP, HSTS, `X-Content-Type-Options`, `X-Frame-Options`, Permissions-Policy,
@@ -39,6 +39,18 @@ Two orthogonal layers:
      catalog; the `admin` super-permission implies all). Auth-failure
      responses are deliberately plaintext in both ports (401 bypasses the
      E2EE wrapper).
+3. **Client identity and scheme (trusted proxies).** `X-Forwarded-For` (the
+   client IP the login limiter keys on) and `X-Forwarded-Proto` (the session
+   cookie's `Secure` flag, and the scheme of a derived OIDC `redirect_uri`) are
+   honoured **only when the direct TCP peer matches `VRECKAN_TRUSTED_PROXIES`**
+   (ANT-346/ANT-276); otherwise the peer address and the real connection
+   scheme — always `https`, the server terminates TLS itself — are used, and
+   malformed list entries never match. The setting is **environment-only**: it
+   is a `SettingDef` read from the env layer (`settings.trusted_proxies`), not
+   an admin-UI field, and it appears in no admin-settings payload — the
+   `values.*` object on `GET /api/admin/certificates` is the ACME config only,
+   and `GET /api/admin/global-settings` is the GPU default. See
+   [ops.md §5](./ops.md) for the deployment guidance.
 
 | Mark | Meaning |
 |---|---|

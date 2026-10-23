@@ -186,6 +186,7 @@ All persistent data lives under the data root (`VRECKAN_DATA_ROOT`, default `/da
 | `VRECKAN_DEFAULT_PASSWORD_POLICY` | Policy for logging in with the literal default password `admin1234` while the account is still marked must-change: `allow`, `warn`, or `reject`. | `warn` |
 | `VRECKAN_LOGIN_MAX_ATTEMPTS` | Failed logins from one (client IP, username) pair within the lockout window before a temporary lockout (HTTP 429, fail closed); a successful login clears the pair. 0 disables the limiter. | `5` |
 | `VRECKAN_LOGIN_LOCKOUT_SECONDS` | Length of the failed-login window and of the temporary lockout (seconds). Counters are in-memory only (a restart resets them); lockout events are logged at `warn`. | `900` |
+| `VRECKAN_TRUSTED_PROXIES` | Comma-separated IPs/CIDRs of reverse proxies that may sit in front of the server. Only when the **direct TCP peer** matches this list are forwarded headers honoured: the leftmost `X-Forwarded-For` entry for the login limiter, and `X-Forwarded-Proto` for the session cookie's `Secure` flag and the OIDC redirect URL. Empty = trust no proxy (fail closed) — correct for a directly-exposed origin. Environment-only: there is no admin-UI field and no admin-settings API field for it. | _empty_ |
 
 ### OIDC / SSO
 

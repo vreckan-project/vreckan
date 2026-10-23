@@ -51,7 +51,7 @@ layout: default
   {% if page.section == 'protection' or page.section == nil %}
   <section id="protection">
     <h2>How requests are protected</h2>
-    <p>Two orthogonal layers:</p>
+    <p>Three layers, the first two orthogonal:</p>
     <ol>
       <li><strong>Transport:</strong> every response carries the standard security headers (CSP, HSTS, <code>X-Content-Type-Options</code>, <code>X-Frame-Options</code>, Permissions-Policy, COEP, COOP, CORP) via a shared middleware. The collaboration-room and public-password pages use a per-response nonce CSP; proxied session traffic gets the looser session CSP.</li>
       <li>
@@ -61,6 +61,9 @@ layout: default
           <li><strong>E2EE routes</strong> (catalog, launch, sessions, files, upload, homedirs, pinned, and all of <code>/api/admin/*</code>) require the same token and <strong>AES-256-GCM-encrypted request/response bodies</strong>. The client first runs the handshake (<code>/api/handshake/*</code>) to establish the per-session crypto key (RSA-PSS-signed nonce → RSA-OAEP key wrap → AES-GCM; the AAD binds the key to the session id, and <code>X-Session-ID</code> carries it).</li>
           <li><strong>Admin routes</strong> additionally enforce per-permission RBAC (18-permission catalog; the <code>admin</code> super-permission implies all). Auth-failure responses are deliberately plaintext in both ports (401 bypasses the E2EE wrapper).</li>
         </ul>
+      </li>
+      <li>
+        <strong>Client identity and scheme (trusted proxies).</strong> <code>X-Forwarded-For</code> (the client IP the login limiter keys on) and <code>X-Forwarded-Proto</code> (the session cookie's <code>Secure</code> flag, and the scheme of a derived OIDC <code>redirect_uri</code>) are honoured <strong>only when the direct TCP peer matches <code>VRECKAN_TRUSTED_PROXIES</code></strong> (ANT-346/ANT-276); otherwise the peer address and the real connection scheme — always <code>https</code>, the server terminates TLS itself — are used, and malformed list entries never match. The setting is <strong>environment-only</strong>: it is a <code>SettingDef</code> read from the env layer (<code>settings.trusted_proxies</code>), not an admin-UI field, and it appears in no admin-settings payload — the <code>values.*</code> object on <code>GET /api/admin/certificates</code> is the ACME config only, and <code>GET /api/admin/global-settings</code> is the GPU default. See <a href="{{ '/docs/ops/tls' | relative_url }}">the ops guide §5</a> for the deployment guidance.
       </li>
     </ol>
     <table>

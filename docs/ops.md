@@ -78,6 +78,15 @@ same window (HTTP 429, fail closed); lockout events are logged at `warn`
 and a successful login clears the pair. Counters are in-memory only, so a
 server restart resets them.
 
+The client IP here is the **direct TCP peer** unless you name your reverse
+proxy: `X-Forwarded-For` is honoured only when that peer matches
+`VRECKAN_TRUSTED_PROXIES` (see §5), because a client that reaches the origin
+port directly can otherwise rotate the header to dodge the limiter. Behind an
+unnamed proxy every client therefore shares one bucket — set
+`VRECKAN_TRUSTED_PROXIES` to the proxy's IP or CIDR (e.g.
+`10.0.0.0/8, 192.168.1.5`; malformed entries never match, so a typo fails
+closed rather than opening the gate).
+
 Local build instead of pulling the image:
 
 ```bash
@@ -459,6 +468,22 @@ comparison plus an `/api/health` check), are covered there step by step.
     server falls back to the self-signed one.
   - **Hot-reload.** After a successful issuance or renewal, the TLS
     endpoint is reloaded in-place — no server restart is needed.
+- **Behind a TLS-terminating reverse proxy (optional).** The server
+  terminates TLS itself by default (the ACME flows above assume that). If you
+  do terminate TLS at a proxy in front of it, set
+  `VRECKAN_TRUSTED_PROXIES` to that proxy's IP or CIDR — comma-separated,
+  e.g. `10.0.0.0/8, 192.168.1.5`. Only when the **direct TCP peer** matches
+  the list are `X-Forwarded-Proto` and the leftmost `X-Forwarded-For` entry
+  honoured. `X-Forwarded-Proto` drives the session cookie's `Secure` flag and
+  the scheme of the OIDC `redirect_uri` when that URI is derived from the
+  request rather than set explicitly (`VRECKAN_OIDC_REDIRECT_URI`); otherwise
+  the scheme is the real connection scheme, which is always `https` here. The
+  default empty value trusts no proxy — the safe posture for a directly
+  exposed origin, and it also keeps the login limiter from keying on the
+  proxy's address (§2), which is the usual reason to set this. Malformed
+  entries never match, so a typo fails closed. This is an environment setting
+  only: no admin-UI field, and it appears in no admin-settings payload (see
+  the API reference).
 
 ## 6. Host privileges & devices (docker-sock, DRI, groups)
 
