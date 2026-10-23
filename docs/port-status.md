@@ -15,7 +15,7 @@ follow-up does not change the endpoint surface.
 
 | Area | Status |
 |---|---|
-| Endpoint surface | **Complete** — all unique paths of the original present (101 unique paths in the current tree; see [api.md](./api.md)); representation-level differences only; 1 additive Rust endpoint (`/api/health`) |
+| Endpoint surface | **Complete** — all unique paths of the original present (106 unique paths in the current tree; see [api.md](./api.md)); representation-level differences only; 1 additive Rust endpoint (`/api/health`) |
 | 13-table config schema + column migrations | ✅ matches (SeaORM schema-sync subsumes Python `init_db` + `migrate_db`) |
 | E2EE handshake (RSA-PSS / RSA-OAEP / AES-GCM, AAD=session) | ✅ matches |
 | Auth (cookie/Bearer tokens), OIDC provisioning + group re-stamp, RBAC | ✅ matches |

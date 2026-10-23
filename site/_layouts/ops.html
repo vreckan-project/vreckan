@@ -68,7 +68,7 @@ layout: default
       <tbody>
         <tr>
           <td><code>image</code></td>
-          <td>the published <code>ghcr.io/vreckan-project/vreckan</code> tag — <code>:latest</code> by default; pin a versioned tag (e.g. <code>:v0.8.1</code>) and drop <code>build:</code> in a real deployment (Rust cutover complete)</td>
+          <td>the published <code>ghcr.io/vreckan-project/vreckan</code> tag — <code>:latest</code> by default; pin a versioned tag (e.g. <code>:v0.8.7</code>) and drop <code>build:</code> in a real deployment (Rust cutover complete)</td>
           <td><code>build: .</code> is the local fallback: <code>docker compose build</code> / <code>up --build</code> builds the <strong>Rust</strong> image from this repo and tags it under the <code>image:</code> name, so a local checkout runs the Rust server even without a registry</td>
         </tr>
         <tr><td><code>ports</code></td><td><code>443:443</code></td><td>Single TLS port for API + session proxy + web client</td></tr>

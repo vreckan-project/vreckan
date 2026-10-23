@@ -19,7 +19,7 @@ description: Prerequisites, server installation, configuration, and getting your
   <h2>1. Get the image</h2>
   <p>Vreckan ships as a container image. Pull the latest release:</p>
   <pre><code>docker pull ghcr.io/vreckan-project/vreckan:latest</code></pre>
-  <p>Versioned tags (for example <code>:v0.8.1</code>) are published alongside <code>latest</code> for every release. The current release is **v0.8.1** — see the <a href="https://github.com/vreckan-project/vreckan/blob/main/CHANGELOG.md">changelog</a> for what changed in each version.</p>
+  <p>Versioned tags (for example <code>:v0.8.7</code>) are published alongside <code>latest</code> for every release. The current release is **v0.8.7** — see the <a href="https://github.com/vreckan-project/vreckan/blob/main/CHANGELOG.md">changelog</a> for what changed in each version.</p>
 
   <h2>2. Configure</h2>
   <p>Vreckan is configured entirely through <code>VRECKAN_*</code> environment variables. The repository ships a <code>.env.example</code> you can copy and edit:</p>
