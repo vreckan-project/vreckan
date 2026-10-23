@@ -9,6 +9,37 @@ is committed normally in `vreckan`. The changelog is the authoritative
 record of what shipped in each release — see
 [`docs/release.md`](./docs/release.md) for the conventions.
 
+## 2026-10-23 — v0.8.8: in-container audio — session-page CSP allows `data:` scripts/workers (ANT-537)
+
+One-line: audio was dead in containers because our session-page CSP blocked
+selkies' `data:`-URL AudioWorklet.
+
+- **`SESSION_CSP` — the loose CSP applied to reverse-proxied container session
+  pages — now allows `data:` in `script-src` and `worker-src`.** The selkies
+  app container initializes its playback audio pipeline through an AudioWorklet
+  module loaded from a `data:text/javascript` URL. The old policy
+  (`script-src 'self' 'unsafe-inline' blob:` / `worker-src 'self' blob:`) was
+  written for noVNC-style pages and never anticipated a `data:`-URL worklet, so
+  the browser refused the module, `AudioWorklet.addModule` failed with
+  `DOMException: The operation was aborted`, and the app logged
+  "AudioDecoderWorker not ready". This was a gap in our CSP, not in selkies.
+
+- **Scope: the session-page policy only.** The strict default CSP (all
+  main-app pages) and the nonce-based strict CSP (collaboration room, public
+  password page) are untouched — no `data:` anywhere outside the third-party
+  container session pages. The session page already permits `'unsafe-inline'`
+  scripts, and a `data:` script on such a page is no more powerful than inline
+  code (its payload is trivially base64-encodable inline), so the marginal risk
+  is ~0 while audio works again.
+
+- **`tests/test_security.rs`**: `test_session_proxy_gets_loose_csp` now also
+  asserts the proxied session page's CSP allows `data:` in both `script-src`
+  and `worker-src`.
+
+`VERSION`/`Cargo.toml`/`Cargo.lock` moved 0.8.7 → 0.8.8 via
+`scripts/bump-version.sh patch`. `.base-image-digest`/`Dockerfile` are
+untouched — those move with the nightly base-bump.
+
 ## 2026-10-23 — v0.8.7: base-image bump + refreshed build-base cache, no source changes since v0.8.6 (ANT-501)
 
 Nightly base-bump cut. `main` has no commits past the `v0.8.6` tag, so this is a
