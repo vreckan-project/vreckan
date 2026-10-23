@@ -82,7 +82,7 @@ tag points at the published `ghcr.io/vreckan-project/vreckan` tag (Rust
 cutover complete, ANT-40); `build: .` is the local fallback — it always
 builds the Rust image from this repo when the tag is not present, so a local
 checkout runs the Rust server either way. Versioned image tags (e.g.
-`:v0.8.1`) are published alongside `latest` for every release — see the
+`:v0.8.7`) are published alongside `latest` for every release — see the
 [release process](./docs/release.md).
 
 To run from source instead (e.g. for development): install the Rust toolchain
