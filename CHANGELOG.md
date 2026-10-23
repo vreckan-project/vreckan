@@ -9,6 +9,25 @@ is committed normally in `vreckan`. The changelog is the authoritative
 record of what shipped in each release — see
 [`docs/release.md`](./docs/release.md) for the conventions.
 
+## 2026-10-23 — v0.8.7: base-image bump + refreshed build-base cache, no source changes since v0.8.6 (ANT-501)
+
+Nightly base-bump cut. `main` has no commits past the `v0.8.6` tag, so this is a
+build-base-only patch release: the shipped image is `v0.8.6`'s source compiled on
+the refreshed build base.
+
+- **The build base advanced to the latest `vreckan-base-build` image.** The
+  `Dockerfile` build-stage pin and `.base-image-digest` move together (ANT-277)
+  from `sha256:11861969…` (the 2026-10-22 re-bake) to `sha256:d8afdab8…` (the
+  2026-10-23 re-bake). The re-bake fired because the upstream `rust:1.99-slim`
+  digest moved (`sha256:d5928c68…` → `sha256:aab42391…`); the amd64 layers that
+  base contributes — the Debian trixie layer and the Rust toolchain layer — are
+  byte-identical across the two images, so `rustc`/`cargo` stay at 1.99 and the
+  digest moved at the manifest-list level. What actually changed is our own
+  layer set: the `-sys` build-dependency layer re-resolved against the current
+  Debian trixie snapshot, and the crates.io/git dependency cache re-baked against
+  `main` at `13a3543`, so the warm cache now matches this release's `Cargo.lock`.
+  No operator-visible behavior changes — `git log v0.8.6..HEAD` is empty.
+
 ## 2026-10-22 — v0.8.6: base-image bump + "SealSkin Apps" default store rename + `VRECKAN_SESSION_PORT` removal (ANT-492; ANT-480)
 
 This release completes the v0.8.6 cut: the nightly base-image update that
