@@ -27,6 +27,14 @@ ignore = [
   # (crypto-bigint migration pending; tracked in RustCrypto/RSA#626). We use
   # rsa for offline RSA-PSS/OAEP key ops, not an attacker-observable channel.
   { id = "RUSTSEC-2023-0071", reason = "rsa Marvin-attack timing sidechannel; no safe upgrade yet, offline key usage" },
+  # crypto-bigint 0.5.5 — constant-time timing variability (RustCrypto
+  # crypto-bigint#1365), fixed only in >=0.7.6; no 0.5.x patch exists. The
+  # 0.7.5 instance in this tree was bumped to 0.7.6 (ANT-545); the 0.5.5
+  # instance is pinned by elliptic-curve 0.13.8 via p256 0.13 / p384 0.13,
+  # which both jsonwebtoken majors (10 via jwks 0.5, 11 direct) require —
+  # neither has released an elliptic-curve 0.14-based line yet (ANT-545
+  # follow-up tracks the ecosystem bump).
+  { id = "RUSTSEC-2026-0387", reason = "crypto-bigint 0.5.5 timing variability; 0.7.x instance bumped to 0.7.6, 0.5.x line has no patch yet" },
   # rustls-pemfile 2.2 — archived/unmaintained. Thin wrapper over
   # rustls-pki-types (its parsing code moved there); accepted until we drop it.
   { id = "RUSTSEC-2025-0134", reason = "rustls-pemfile archived; thin wrapper over rustls-pki-types" },
