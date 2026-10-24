@@ -9,6 +9,42 @@ is committed normally in `vreckan`. The changelog is the authoritative
 record of what shipped in each release — see
 [`docs/release.md`](./docs/release.md) for the conventions.
 
+## 2026-10-24 — v0.8.9: base-image bump + crypto-bigint 0.7.5 → 0.7.6 clears RUSTSEC-2026-0387 (ANT-541, ANT-545)
+
+Nightly base-bump cut. Since `v0.8.8`, `main` gained exactly one source
+change — the `crypto-bigint` security fix (ANT-545) — which this release
+ships alongside the re-baked build base.
+
+- **The build base advanced to the latest `vreckan-base-build` image.** The
+  `Dockerfile` build-stage pin and `.base-image-digest` move together (ANT-277)
+  from `sha256:d8afdab8…` (the 2026-10-23 re-bake) to `sha256:089625b2…` (the
+  2026-10-24 re-bake). This re-bake fired because vreckan's `main` moved past
+  the commit the current base was baked against: the daily change-check saw
+  the baked lockfile still tracking the v0.8.6-era commit (`13a3543`) while
+  `main` was at the `v0.8.8` merge (`c4b408d`). The warm crates.io/git
+  dependency cache is now baked against the current `v0.8.8` `Cargo.lock` —
+  the only dependency delta is `ctutils 0.4.3 → 0.4.5` (the RUSTSEC-2026-0385
+  fix that landed in `v0.8.7`), so local and CI builds resolve the current
+  lockfile straight from the warm cache. The upstream `rust:1.99-slim` digest
+  is unchanged (`sha256:aab42391…`) — `rustc`/`cargo` stay at 1.99 and no
+  toolchain layers moved.
+
+- **`crypto-bigint 0.7.5 → 0.7.6` clears RUSTSEC-2026-0387** (ANT-545,
+  PR #92). The 2026-10-23 RustSec advisory flags constant-time timing
+  variability in operations meant to be constant-time (secret-dependent
+  branches in subtraction / zero counting / division / Montgomery
+  multiplication, early-terminating `UintRef` equality, branching
+  `BoxedMontyForm::invert`; RustCrypto/crypto-bigint#1365). The tree's 0.7.5
+  instance (parented by `rsa 0.10.0-rc.19` and `crypto-primes 0.7.2`) bumps
+  in place — no other dependency moves. The second flagged instance, 0.5.5,
+  is pinned by `elliptic-curve 0.13.8` via `p256`/`p384 0.13` (`jsonwebtoken`
+  10/11) with no 0.5.x patch out until the ecosystem ships an elliptic-curve
+  0.14 line, so it rides in `deny.toml` as a documented allowance (same shape
+  as the `rsa 0.9.10` / RUSTSEC-2023-0071 entry).
+
+`VERSION`/`Cargo.toml`/`Cargo.lock` moved 0.8.8 → 0.8.9 via
+`scripts/bump-version.sh patch`.
+
 ## 2026-10-23 — v0.8.8: in-container audio — session-page CSP allows `data:` scripts/workers (ANT-537)
 
 One-line: audio was dead in containers because our session-page CSP blocked
