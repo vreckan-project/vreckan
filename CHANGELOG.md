@@ -9,6 +9,39 @@ is committed normally in `vreckan`. The changelog is the authoritative
 record of what shipped in each release — see
 [`docs/release.md`](./docs/release.md) for the conventions.
 
+## 2026-10-26 — v0.9.0: collaboration-room Font Awesome icons vendored (ANT-570, PR #94)
+
+First source change on `main` since `v0.8.9` (v0.8.10 was a base-bump-only
+cut). The board directed the version move 0.8.10 → 0.9.0 alongside the fix
+below.
+
+- **The collaboration room no longer loads Font Awesome from cdnjs
+  (ANT-570).** `server/static/collaboration/room.html` linked
+  `https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css`,
+  which neither CSP in play for the room allows — the global `style-src
+  'self'` and the room's strict nonce CSP (`'nonce-…'` authorizes inline
+  styles only) — so all 19 room icons (mute, reload stream, mic, video,
+  settings, invite, chat, send) rendered blank. The fix vendors
+  Font Awesome Free 6.4.0 into
+  `server/static/collaboration/font-awesome/` — `css/all.min.css` plus the
+  single webfont the room actually loads, `webfonts/fa-solid-900.woff2`
+  (every room icon uses the `fas` family; the `far`/`fab` `@font-face`
+  rules in the CSS never trigger, so their webfonts are not needed) — with
+  the CC BY 4.0 / OFL 1.1 / MIT attribution in `NOTICE.md`. The `<link>`
+  now points at the absolute path
+  `/collaboration/font-awesome/css/all.min.css`, so both the rendered
+  `/room/{session_id}` page and the static `/collaboration/room.html`
+  entry resolve the same local file under `style-src 'self'` with no CSP
+  change; air-gapped deployments where cdnjs is unreachable gain the icons
+  as well. A regression test (`test_room_font_awesome_vendored` in
+  `tests/test_security.rs`) pins the local link and asserts the CSS
+  (`text/css`) and woff2 (`font/woff2`) are served from the static tree.
+  `docs/port-status.md` G6 (the icon-font half of the Rust strict-CSP
+  divergence) is marked resolved.
+
+`VERSION`/`Cargo.toml`/`Cargo.lock` moved 0.8.10 → 0.9.0 via
+`scripts/bump-version.sh minor`.
+
 ## 2026-10-25 — v0.8.10: base-image bump + rust:1.99-slim re-push, warm cache now tracks the v0.8.9 lockfile
 
 Base-bump-only release: no source change landed on `main` since `v0.8.9`
