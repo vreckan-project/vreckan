@@ -8,7 +8,12 @@
          until room.js has loaded. -->
     <title>Vreckan Collaboration</title>
     <link rel="stylesheet" href="room.css">
-    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+    <!-- Font Awesome 6.4.0, vendored locally (font-awesome/) so the room
+         works under the strict CSP (style-src 'self') and on air-gapped
+         boxes where cdnjs is unreachable. Absolute path so the rendered
+         /room/{session_id} page and the static /collaboration/room.html
+         entry resolve the same file. -->
+    <link rel="stylesheet" href="/collaboration/font-awesome/css/all.min.css">
 </head>
 <body>
     <div id="disconnection-overlay" class="hidden">
