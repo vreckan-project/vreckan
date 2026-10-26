@@ -299,6 +299,48 @@ async fn test_security_headers_present() {
 }
 
 // ---------------------------------------------------------------------------
+// Vendored Font Awesome (ANT-570)
+// ---------------------------------------------------------------------------
+
+#[tokio::test]
+async fn test_room_font_awesome_vendored() {
+    let _root = TempDir::new();
+    let sc = SecureClient::new(build_state(_root.path()).await);
+
+    // The room page links the vendored stylesheet, not the cdnjs copy that
+    // the strict CSP (`style-src 'self'`) used to block.
+    let page = sc.http.get("/collaboration/room.html").await;
+    assert_eq!(page.status, StatusCode::OK);
+    let html = String::from_utf8_lossy(&page.body);
+    assert!(!html.contains("cdnjs.cloudflare.com"), "room.html: {html}");
+    assert!(
+        html.contains(
+            r#"<link rel="stylesheet" href="/collaboration/font-awesome/css/all.min.css">"#
+        ),
+        "room.html: {html}"
+    );
+
+    // The stylesheet is served from the static tree ('self' under both CSPs).
+    let css = sc
+        .http
+        .get("/collaboration/font-awesome/css/all.min.css")
+        .await;
+    assert_eq!(css.status, StatusCode::OK);
+    assert_eq!(css.header("content-type").unwrap(), "text/css");
+    assert!(String::from_utf8_lossy(&css.body).contains("Font Awesome Free 6.4.0"));
+
+    // The solid webfont resolves from the CSS's relative `../webfonts/` path
+    // and is served as `font/woff2` ('self' under default-src).
+    let font = sc
+        .http
+        .get("/collaboration/font-awesome/webfonts/fa-solid-900.woff2")
+        .await;
+    assert_eq!(font.status, StatusCode::OK);
+    assert_eq!(font.header("content-type").unwrap(), "font/woff2");
+    assert_eq!(&font.body[..4], b"wOF2");
+}
+
+// ---------------------------------------------------------------------------
 // Password page strict CSP
 // ---------------------------------------------------------------------------
 
