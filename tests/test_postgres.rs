@@ -40,7 +40,9 @@ use vreckan::user_manager;
 #[derive(Debug)]
 struct PgServer {
     url: String,
-    client: bollard::Docker,
+    /// `None` when no Docker daemon is reachable (the skip-marker and
+    /// env-URL paths never use it; only a spun-up container needs one).
+    client: Option<bollard::Docker>,
     /// Empty when the server came from an env var (nothing to clean up).
     container_id: String,
     /// Where this process's container marker file lives (ANT-378).
@@ -370,8 +372,10 @@ async fn pg_server() -> &'static PgServer {
     let server = match resolve_pg_url() {
         Some(url) => PgServer {
             url,
-            client: bollard::Docker::connect_with_local_defaults()
-                .expect("connect docker"),
+            // Tolerate a missing daemon here: an env-provided URL needs no
+            // container, and panicking would poison `PG_LOCK` for the other
+            // tests in this binary.
+            client: bollard::Docker::connect_with_local_defaults().ok(),
             container_id: String::new(),
             marker_dir,
         },
@@ -379,11 +383,13 @@ async fn pg_server() -> &'static PgServer {
             if !docker_available().await {
                 eprintln!("skipping postgres tests: no Postgres URL and no Docker daemon");
                 // Park a marker with an empty URL; each test checks `pg_ready`
-                // before running.
+                // before running. The connect just failed, so the client is
+                // `None` — tolerate it instead of `.expect()`-ing a second
+                // time (that panic is what poisoned `PG_LOCK` and turned the
+                // 6 skips into 6 failures on docker-less runners).
                 let marker = PgServer {
                     url: String::new(),
-                    client: bollard::Docker::connect_with_local_defaults()
-                        .expect("connect docker"),
+                    client: bollard::Docker::connect_with_local_defaults().ok(),
                     container_id: String::new(),
                     marker_dir,
                 };
@@ -393,7 +399,7 @@ async fn pg_server() -> &'static PgServer {
             let (url, client, cid) = spin_up_postgres(&marker_dir).await;
             PgServer {
                 url,
-                client,
+                client: Some(client),
                 container_id: cid,
                 marker_dir,
             }
@@ -424,7 +430,9 @@ impl Drop for PgServer {
             return;
         }
         let cid = self.container_id.clone();
-        let client = self.client.clone();
+        // A non-empty `container_id` only comes from `spin_up_postgres`,
+        // which always produced a live client.
+        let client = self.client.clone().expect("spun-up server has a client");
         let cid_short = cid.clone();
         let teardown = async move {
             let _ = client

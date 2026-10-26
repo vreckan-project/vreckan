@@ -28,6 +28,15 @@ use std::sync::{Arc, Mutex};
 /// connection refusal, which keeps the tests hermetic.
 const STORE_URL: &str = "http://127.0.0.1:9/apps.yml";
 
+/// Is a Docker daemon reachable? (Checked inside a tokio runtime so the
+/// bollard ping has a time driver.)
+async fn docker_available() -> bool {
+    match bollard::Docker::connect_with_local_defaults() {
+        Ok(c) => c.ping().await.is_ok(),
+        Err(_) => false,
+    }
+}
+
 /// A 1x1 transparent PNG, base64 — small enough to inline, valid enough for
 /// the icon round-trip assertions.
 const PNG_B64: &str =
@@ -566,6 +575,14 @@ async fn test_check_app_update_unknown() {
 
 #[tokio::test]
 async fn test_check_app_update_no_remote() {
+    // The 502 no-digest path needs a live daemon to resolve
+    // `registry.invalid`; with no daemon the handler's connect step fails
+    // first with a 500. Skip (not fail) on docker-less hosts — mirrors the
+    // `test_docker_launch` skip discipline.
+    if !docker_available().await {
+        eprintln!("skipping: no Docker daemon");
+        return;
+    }
     let _root = TempDir::new();
     let state = build_state(_root.path()).await;
     let sc = admin_client(state).await;
