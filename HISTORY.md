@@ -1,13 +1,24 @@
 # Vreckan — History: the hard fork of SealSkin 0.3.2
 
-Vreckan is a **hard fork of SealSkin 0.3.2** (the upstream's `VERSION` file;
-`release-notes/` runs 0.3.0 → 0.3.2). This document catalogs **every difference**
-between the untouched upstream tree (`~/work/sealskin-original`) and the fork as
-it stood on 2026-09-23, and quantifies how much of the original was rewritten.
+Vreckan started as a hard fork of SealSkin 0.3.2. That is the version in the
+upstream `VERSION` file, and the upstream release notes run from 0.3.0 to
+0.3.2. Vreckan has since grown into its own standalone app and is no longer a
+SealSkin derivative.
 
-> **Development since the fork** is tracked in [`CHANGELOG.md`](./CHANGELOG.md).
-> The "Post-fork" notes in the tables below are cross-referenced there; see also
-> `~/work/memory.md` (§13.x) for full detail.
+The earlier sections list every difference between the untouched upstream
+tree at `~/work/sealskin-original` and the fork as it stood on 2026-09-23,
+which was the Python/FastAPI tree. They also quantify how much of the original
+was rewritten. That snapshot is the origin story of the document. The final
+section brings the catalogue up to the current tree, which is the Rust server
+that replaced the Python one in the v0.6.0 switchover on 2026-10-13. From
+that point on, Vreckan stands on its own.
+
+> Development since the fork is tracked in [`CHANGELOG.md`](./CHANGELOG.md).
+> The "Post-fork" notes in the tables are cross-referenced there, and
+> `~/work/memory.md` has the full detail. The snapshot figures (40.6% rewritten,
+> 52,863 original lines and 67,230 Vreckan lines) describe the Python tree as
+> it stood on 2026-09-23. The current Rust tree is measured in the final
+> section.
 
 ---
 
@@ -279,3 +290,120 @@ its own self-contained `translation.js`.
 
 ---
 
+## 7. The current code: the Rust server (from v0.6.0 to v0.9.0, 2026-10)
+
+Everything above is a snapshot of the Python tree as it stood on 2026-09-23,
+in the v0.5.x era. Since then, Vreckan has had a second
+and larger rewrite. The Python server was replaced by a single static Rust
+binary in v0.6.0 on 2026-10-13, and the Python tree moved to the
+`vreckan-python` archive repo. That is the point from which Vreckan is its own
+app and no longer a SealSkin fork. This section catalogs the current tree as of
+v0.9.0 on 2026-10-26. Per-release detail lives in
+[`CHANGELOG.md`](./CHANGELOG.md), and the open port gaps live in
+[`docs/port-status.md`](./docs/port-status.md).
+
+### 7.1 Timeline
+
+| Date | Era | What happened |
+|---|---|---|
+| 2026-09-15 to 2026-09-25 | Python (this document's snapshot) | Deployment and auth groundwork, the first test suite, templates, test tiers 1 to 5, RBAC, the SSO config page, a directory reorganization, i18n re-added, and branding plus strict CSP and DAST hardening. These are the [2026-09 CHANGELOG entries](./CHANGELOG.md). |
+| 2026-10-12 | Rust port kickoff | The initial Rust port of the server lands. A parity audit establishes the gap list G1 to G11. The multi-stage image and compose land, and the `docs/` tree lands. |
+| 2026-10-13 | v0.6.0 switchover | Rust becomes the primary code in `vreckan`, and the Python server moves to the `vreckan-python` archive repo with its workflows disabled. Postgres becomes the default deployment database. The SQLite to Postgres migration tool lands, and the multi-stage image plus the GitHub-light and Gitea-heavy CI/CD finalize. |
+| 2026-10-14 to 2026-10-16 | v0.6.1 to v0.7.0 | Post-release security fixes: a non-root container, a first-boot admin that must change the password, a persisted E2EE key, login rate limiting, and a Postgres loopback guard. The crypto stack is unified (aes-gcm 0.11, rsa 0.10, pkcs8 0.11, rand 0.10). Native ACME via `acmex` replaces the certbot sidecar, with 3 CAs, 11 DNS-01 providers, and ECDSA P-256 account keys. A per-app Launch dialog, session naming, and a first-signin password prompt land. Installed apps get real image identity and a scheduled auto-update. A recurring weekly security batch lands. |
+| 2026-10-18 to 2026-10-23 | v0.8.0 to v0.8.3 | Share-session links land. They are account-less `/share/{id}` with Full and View-only roles, per-capability file access, a password, an expiry, per-visit tokens, and per-link revoke, with lazy secure-mode promotion. Share redirects become `no-store` and the file root is browse-gated. The control-page auto-update is fixed and file permissions are disciplined. The `X-Forwarded-Proto` trusted-proxy gate lands, and collab-room tokens use constant-time comparisons. |
+| 2026-10-21 to 2026-10-26 | v0.8.4 to v0.9.0 | Selkies multi-user lands, with launch-time secure-mode promotion, a first-class Join, owner control that is never lost, and pre-2.0 detection. The legacy guacamole-lite tier works behind the session proxy via path remapping and a token-gated data plane. A participant list, per-joiner revoke, and a 24-hour join-token TTL land. The "SealSkin Apps" store is renamed and `VRECKAN_SESSION_PORT` is removed (v0.8.6). The session-page CSP `data:` fix for selkies audio lands (v0.8.8). Nightly base-image re-bakes (v0.8.7 and v0.8.10) and the `crypto-bigint` 0.7.6 security fix (v0.8.9) land. Font Awesome is vendored into the collaboration room (v0.9.0). |
+
+### 7.2 What the current tree looks like (v0.9.0)
+
+| Path | Size | Role |
+|---|---:|---|
+| `src/` (25 Rust modules: `app`, `state`, `e2ee`, `session_proxy`, `session_shares`, `collaboration`, `admin`, `auth`, `permissions`, `user_manager`, `files`, `catalog`, `docker_provider`, `db`, `entities`, `settings`, `security`, `acme`, `acme_orchestrator`, `backup_manager`, `static_files`, `tls`, `tokens`, `main`, `lib`) | 27,204 lines | The server. A single static Rust binary built on axum and tokio. It uses SeaORM for SQLite, PostgreSQL, and MySQL, `ring` for the E2EE crypto, `bollard` for the Docker provider, `tokio-tungstenite` for the WebSocket legs, and `acmex` for ACME issuance. It replaces the Python `server/` tree catalogued earlier in this document. |
+| `tests/` (30 Rust integration-test files) | 516 tests | The ported suite. That is 376 of the 388 Python baseline tests, plus 32 Rust-only additions made at the v0.6.0 port. The releases from v0.6.0 to v0.9.0 added a further 108 tests covering shares, multi-user, ACME, Postgres, RBAC, and security. Test-parity detail is in [`docs/port-status.md`](./docs/port-status.md). |
+| `server/static/` (the hand-written web client: the SPA plus the collaboration room) | 72 files / 32,987 lines | The hand-written web SPA, carried over byte-identical at the v0.6.0 switchover. The only changes since the port are the v0.8.x share and multi-user UI (the share modal, the participant list, and the join-confirm modal) and the v0.9.0 vendored Font Awesome link in the room. |
+| `server/template_schema.yml` | 1,210 lines | The template-editor baseline, unchanged since the fork. |
+| `site/` (the Jekyll project site) | n/a | New since the fork: usage docs, the API reference, and the "Sharing a session" page. It is built into the `vreckan-site` image, which runs on nginx and is digest-pinned. |
+| `docs/` (`api.md`, `ops.md`, `release.md`, `port-status.md`, `cutover.md`) | n/a | New since the fork: the endpoint reference, the deployment and registry and CI guide, the release and changelog process, the living record of known gaps, and the SQLite to Postgres cutover runbook. |
+| `scripts/` | 840 lines of Python | Ops tooling. This is the only Python left in the repo: `migrate-sqlite-to-postgres.py`, `snapshot-sqlite.py`, and `verify-cutover.py`, plus shell helpers (`backup-postgres.sh`, `bump-version.sh`, `mirror-to-gitea.sh`, `trigger-gitea.sh`). |
+| `Dockerfile`, `docker-compose.yml`, `.base-image-digest`, `deny.toml`, `VERSION` | n/a | A multi-stage image. The digest-pinned `vreckan-base-build` build stage produces a `debian:trixie-slim` runtime with no Python in it, and the binary runs as non-root UID 1000. The single compose file bundles a `postgres:16` service, which is the default database, and serves TLS on 443. |
+
+The `.github/` workflows deleted from the Python-era tree are back, in a
+different shape. `gitea-mirror-trigger.yml` mirrors `main` and pull requests to
+the Gitea mirror and dispatches the heavy build and test job on the
+self-hosted runner. `cleanup-ghcr-images.yml` prunes registry images.
+
+### 7.3 The Python to Rust replacement
+
+The Python modules catalogued earlier in this document have Rust counterparts
+in `src/`. The evaluation that justified the rewrite is in
+[`REWRITE_EVALUATION.md`](./REWRITE_EVALUATION.md).
+
+| Python (v0.5.x) | Rust (current) |
+|---|---|
+| `server/api.py` (app factory, E2EE handshake, session proxy, global state) | `app.rs`, `state.rs`, `e2ee.rs`, `session_proxy.rs` |
+| `server/routers/` (8 modules: admin, auth, files, homedir, pinned, session, upload, encrypted) | `admin.rs`, `auth.rs`, `files.rs`, `catalog.rs`, `session_shares.rs` |
+| `server/collaboration.py` | `collaboration.rs` |
+| `server/db.py` (SQLAlchemy-async, 13 tables) | `db.rs` and `entities.rs` (SeaORM for SQLite, PostgreSQL, and MySQL) |
+| `server/user_manager.py`, `server/permissions.py` | `user_manager.rs` and `permissions.rs` |
+| `server/settings.py` | `settings.rs` |
+| `server/providers/docker_provider.py` | `docker_provider.rs` (bollard) |
+| `server/security.py` (the E2EE half and the CSP middleware) | `e2ee.rs`, `security.rs`, `tokens.rs` |
+| `server/le_certbot.py` (the certbot Docker sidecar) | `acme.rs` and `acme_orchestrator.rs` (a native `acmex` client. The sidecar is gone) |
+| `server/backup_manager.py` | `backup_manager.rs` |
+| `run_https.py` (the TLS uvicorn supervisor) | `main.rs` and `tls.rs` (axum-server and rustls) |
+| `server/static/` (served by the Python app) | `static_files.rs` (the client itself is unchanged) |
+
+The Python tree itself (about 12,211 lines of server code) lives in the
+`vreckan-python` archive repo, and its CI workflows are disabled.
+
+### 7.4 What the current code has that upstream 0.3.2 does not
+
+Earlier in this document, the Python-era additions are catalogued: OIDC/SSO,
+session persistence, backup and restore, volume mounts, app stores,
+templates, GPU passthrough, session naming, RBAC, and strict CSP. The Rust
+era added:
+
+- A single static Rust binary. One `vreckan` executable with no runtime
+  language in the image, and memory-safe, compile-time-checked SQL.
+- Postgres as the default database. The bundled `postgres:16` compose service
+  provides it. SQLite and MySQL remain options, and the cutover runbook is in
+  [`docs/cutover.md`](./docs/cutover.md).
+- Native ACME via `acmex`. Three CAs (Let's Encrypt, ZeroSSL, and Google
+  Public Certificates) and eleven DNS-01 providers. The issued cert is stored
+  in the config database and hot-reloaded. The certbot sidecar is retired.
+- A non-root container (UID 1000, with `cap_net_bind_service` for 443), login
+  rate limiting, and a trusted-proxy gate on `X-Forwarded-For` and
+  `X-Forwarded-Proto`.
+- Share-session links (v0.8.0). Account-less `/share/{id}` with Full and
+  View-only roles, per-capability file access, an optional password and
+  expiry, per-visit tokens, and per-link revoke.
+- Selkies multi-user (v0.8.4 and v0.8.5). Launch-time secure-mode promotion, a
+  self-serve Join with a 24-hour join-token TTL, an owner-visible participant
+  list with per-joiner revoke, owner control (MK) that can never be lost, and
+  the pre-2.0 legacy guacamole-lite tier working behind the session proxy.
+- App-store operations (v0.7.0). Real image identity in the Installed Apps
+  table, check and update with an amber "update available" state, and a
+  scheduled auto-update job with an optional auto-pull.
+- The security batches (the recurring weekly batch and the 0.8.x releases). ACME and OIDC secrets
+  are redacted in backups, key creation is owner-only from the first byte,
+  token comparisons are constant-time, share and invite redirects are
+  no-store, and the session page allows `data:` in the CSP for selkies audio.
+
+### 7.5 Current status (v0.9.0, 2026-10-26)
+
+- Release. The current release is v0.9.0, which is the current `main` and is
+  published to `ghcr.io/vreckan-project/vreckan` and the Gitea registry.
+  Per-release detail is in [`CHANGELOG.md`](./CHANGELOG.md).
+- Parity. The endpoint surface is complete. There are 106 unique paths, all of
+  the original plus one additive `GET /api/health`. The 13-table config
+  schema, the E2EE handshake, auth and RBAC, launch orchestration, session
+  persistence, and backup and restore all match the Python original, per the parity audit.
+- Known gaps. G1 to G11 (3 P1, 3 P2, 5 P3) are tracked in the living record at
+  [`docs/port-status.md`](./docs/port-status.md). The most user-visible are G1
+  (admin volume mounts are defined but not applied at launch), G2 (there is no
+  crypto-session sweeper), and G3 (stale sessions are not relaunched after a
+  host reboot). G6 (the room's strict CSP) is partially resolved by the v0.9.0
+  vendored Font Awesome.
+- Deployment. The digest-pinned `vreckan-base-build` image is re-baked
+  nightly, and the `.base-image-digest` and `Dockerfile` pins move in
+  lockstep. The runtime is a `debian:trixie-slim` image with no Python. CI is
+  GitHub-light and Gitea-heavy. See [`docs/ops.md`](./docs/ops.md).
