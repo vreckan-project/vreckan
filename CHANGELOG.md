@@ -9,6 +9,32 @@ is committed normally in `vreckan`. The changelog is the authoritative
 record of what shipped in each release — see
 [`docs/release.md`](./docs/release.md) for the conventions.
 
+## 2026-10-25 — v0.8.10: base-image bump + rust:1.99-slim re-push, warm cache now tracks the v0.8.9 lockfile
+
+Base-bump-only release: no source change landed on `main` since `v0.8.9`
+(`git log v0.8.9..HEAD` is empty), so this release simply advances the pinned
+build base to the 2026-10-25 re-bake.
+
+- **The build base advanced to the latest `vreckan-base-build` image.** The
+  `Dockerfile` build-stage pin and `.base-image-digest` move together
+  (ANT-277) from `sha256:089625b2…` (the 2026-10-24 re-bake) to
+  `sha256:2734691e…` (the 2026-10-25 re-bake). The daily change-check fired
+  on two signals: the upstream `rust:1.99-slim` digest moved
+  (`sha256:aab42391…` → `sha256:1a939748…`) — a re-push of the same
+  toolchain, `rustc`/`cargo` stay at 1.99.1 (verified by running both base
+  images) — and vreckan's `main` moved past the commit the prior base was
+  baked against (`c4b408d`, the v0.8.8 merge → `0fca397`, the v0.8.9
+  merge). The warm crates.io/git dependency cache is now baked against the
+  v0.8.9 `Cargo.lock`: the only dependency delta is `crypto-bigint 0.7.5 →
+  0.7.6` (the RUSTSEC-2026-0387 fix that shipped in `v0.8.9`; the new
+  image's cache carries `crypto-bigint-0.7.6.crate`), so local and CI builds
+  resolve the current lockfile straight from the warm cache. No user- or
+  operator-visible behavior change: the runtime stage, binary, and
+  configuration are unchanged.
+
+`VERSION`/`Cargo.toml`/`Cargo.lock` moved 0.8.9 → 0.8.10 via
+`scripts/bump-version.sh patch`.
+
 ## 2026-10-24 — v0.8.9: base-image bump + crypto-bigint 0.7.5 → 0.7.6 clears RUSTSEC-2026-0387 (ANT-541, ANT-545)
 
 Nightly base-bump cut. Since `v0.8.8`, `main` gained exactly one source
