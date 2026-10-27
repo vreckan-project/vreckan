@@ -9,7 +9,7 @@ import { initFilesView, showFilesTab, loadHomedirs } from "./files.js";
 import { initAdminView, showAdminTab, refreshAdminSection } from "./admin.js";
 import { loadTranslator, applyTranslations, setLanguage, t, activeLanguage, SUPPORTED_UI_LANGS, resolveLanguage } from "./i18n.js";
 import { showView, activateView, refreshMainLists } from "./app/nav.js";
-import { renderSessions, loadSessions, refreshShareBadges, getSessions, joinTargetForApp, joinSession, isMine } from "./app/sessions.js";
+import { renderSessions, loadSessions, refreshShareBadges } from "./app/sessions.js";
 import { populateLanguageDropdown, populateGpuDropdown, handleAppSelection, launchModalApp, syncLaunchFileFields, handleLaunchConfirm, pickFileForStorageUpload } from "./app/launch.js";
 import { populateHomeSelect, openHomeDirsModal } from "./app/homedirs.js";
 import { loadPinned, applyPreset, openSavePresetModal, pinnedBehaviors } from "./app/pinned.js";
@@ -104,32 +104,10 @@ function renderAppCards(apps) {
     }
     if (meta.children.length) card.appendChild(meta);
 
-    // Join (ANT-440, ANT-618): shown alongside the tile's Launch affordance
-    // only when the app's most recently launched running session belongs to
-    // another user — on the caller's own session it is redundant with
-    // Launch. The button stops propagation so a Join click does not also
-    // open the launch modal; Launch semantics are otherwise untouched.
-    const joinTarget = joinTargetForApp(app.id);
-    if (joinTarget && !isMine(joinTarget)) {
-      const actions = document.createElement("div");
-      actions.className = "app-tile-actions";
-      const join = document.createElement("button");
-      join.type = "button";
-      join.className = "btn btn-primary btn-sm app-tile-join";
-      join.textContent = t("apps.join");
-      const runningCount = getSessions().filter((s) => s.app_id === app.id).length;
-      join.title =
-        runningCount > 1
-          ? t("apps.joinTitleCount", { count: runningCount })
-          : t("apps.joinTitle");
-      join.addEventListener("click", (e) => {
-        e.stopPropagation();
-        joinSession(joinTarget, join);
-      });
-      actions.appendChild(join);
-      card.appendChild(actions);
-    }
-
+    // The tile keeps only its Launch affordance (ANT-618): the ANT-440
+    // "join a running session" action lives on the session's Active Sessions
+    // row, which renders only when the caller is invited to that session
+    // (the owner's express grant, ANT-472).
     card.addEventListener("click", () => handleAppSelection(app));
     grid.appendChild(card);
   }

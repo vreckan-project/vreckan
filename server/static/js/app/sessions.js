@@ -27,7 +27,7 @@ export function joinTargetForApp(appId) {
 // The backend marks each entry `is_mine`; older backends return only the
 // caller's own sessions without the field, in which case every entry is
 // ours and behavior is unchanged.
-export function isMine(s) {
+function isMine(s) {
   return s.is_mine !== false;
 }
 
@@ -45,12 +45,10 @@ function sessionDisplayName(s) {
   return s.name ? `${s.app_name} - ${s.name}` : s.app_name;
 }
 
-// Pre-join confirmation (ANT-440): state the v1 participant role and the
-// observed WS behavior (review-gate evidence of 2026-10-20): with the
-// default WebSockets transport the current driver's live stream ends while
-// the joiner is connected (session and token survive, re-entry at any
-// time); the joiner may need a refresh to gain keyboard/mouse control
-// (selkies 2.0.0 MK_ACCESS quirk, ANT-443).
+// Pre-join confirmation (ANT-440, trimmed by ANT-618): states the v1
+// participant role only. The WebSockets/MK_ACCESS driver-handoff notes
+// (selkies 2.0.0 quirk) no longer appear in user-facing text — they stay
+// tracked in ANT-443, out of the way.
 async function confirmJoin(s) {
   return confirmModal(t("sessions.joinConfirmMsg", { name: sessionDisplayName(s) }), {
     title: t("sessions.joinConfirmTitle"),
