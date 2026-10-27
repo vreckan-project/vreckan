@@ -296,11 +296,11 @@ async function launchFileApp(app, payload, statusEl) {
 }
 
 // Confirm the launch modal. The endpoint follows the app's capabilities:
-// a URL is opened via /api/launch/url when the user enters one (required for
-// apps without a file section); file-capable apps post /api/launch/file,
-// /api/launch/file_path, or /api/launch/simple depending on the file inputs;
-// everything else posts /api/launch/simple. The session name is sent on
-// every branch.
+// a URL is opened via /api/launch/url when the user enters one; file-capable
+// apps post /api/launch/file, /api/launch/file_path, or /api/launch/simple
+// depending on the file inputs; everything else posts /api/launch/simple
+// (a blank URL on a URL-capable app launches it as-is, with $VRECKAN_URL
+// left unset server-side). The session name is sent on every branch.
 async function handleLaunchConfirm(app) {
   const errEl = $("launch-error");
   const statusEl = $("launch-upload-status");
@@ -325,9 +325,12 @@ async function handleLaunchConfirm(app) {
         // fall back to the file flow (open a file or launch plain).
         result = await launchFileApp(app, payload, statusEl);
       } else {
-        errEl.textContent = t("launch.urlRequired");
-        errEl.hidden = false;
-        return;
+        // URL-capable app without a file section, no URL entered: launch the
+        // app as-is (mirrors the plain-app branch).
+        result = await secureFetch("/api/launch/simple", {
+          method: "POST",
+          body: payload,
+        });
       }
     } else if (app.home_directories) {
       result = await launchFileApp(app, payload, statusEl);
