@@ -9,16 +9,24 @@ is committed normally in `vreckan`. The changelog is the authoritative
 record of what shipped in each release — see
 [`docs/release.md`](./docs/release.md) for the conventions.
 
-## 2026-10-27 — v0.9.2: "Join" hidden on your own Active Sessions rows (ANT-618)
+## 2026-10-27 — v0.9.2: "Join" offered only where you're invited — on rows, not tiles, with a slimmer join confirmation (ANT-618)
 
-- **Your own Active Sessions rows no longer show a "Join" button
-  (ANT-618).** On the Apps page, `server/static/js/app/sessions.js`
-  appended the Join action (ANT-440 — a second user joining a running
-  session) to every joinable session, including the caller's own, so an
-  owner's row carried both "Open" and "Join". The action now renders only
-  on other users' joinable rows (`!mine && isJoinable(s)`); your own rows
-  keep Open / Share / Send File / Kill (and Recreate when out of date).
-  The app tiles' Join affordance is unchanged.
+- **"Join" is now offered only where it is actually usable
+  (ANT-618).** On the Apps page, the Join action (ANT-440 — a second user
+  joining a running session) is cleaned up in three places. Your own
+  Active Sessions rows no longer render a Join next to "Open"
+  (`!mine && isJoinable(s)` in `server/static/js/app/sessions.js`);
+  other users' session rows show Join when — and only when — the caller
+  has been invited (the owner's express grant, ANT-472), which is also
+  what makes the session appear in the caller's Active Sessions list at
+  all. The app tiles drop their Join button entirely: an invited session
+  is joined from its Active Sessions row, not from the card
+  (`server/static/js/app.js`). And the pre-join confirmation modal
+  (`sessions.joinConfirmMsg` in `server/static/i18n/en.json`) now states
+  only the participant role — "You'll join "{name}" as a participant with
+  input control." — dropping the WebSockets/selkies transport notes
+  (still tracked in ANT-443) and internal ticket references from
+  user-facing text.
 
 `VERSION`/`Cargo.toml`/`Cargo.lock` moved 0.9.1 → 0.9.2 via
 `scripts/bump-version.sh patch`.
