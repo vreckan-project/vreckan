@@ -9,16 +9,19 @@ is committed normally in `vreckan`. The changelog is the authoritative
 record of what shipped in each release — see
 [`docs/release.md`](./docs/release.md) for the conventions.
 
-## 2026-10-27 — v0.9.2: "Join" hidden on your own Active Sessions rows (ANT-618)
+## 2026-10-27 — v0.9.2: "Join" hidden on your own Active Sessions rows and app tiles (ANT-618)
 
-- **Your own Active Sessions rows no longer show a "Join" button
-  (ANT-618).** On the Apps page, `server/static/js/app/sessions.js`
-  appended the Join action (ANT-440 — a second user joining a running
-  session) to every joinable session, including the caller's own, so an
-  owner's row carried both "Open" and "Join". The action now renders only
-  on other users' joinable rows (`!mine && isJoinable(s)`); your own rows
-  keep Open / Share / Send File / Kill (and Recreate when out of date).
-  The app tiles' Join affordance is unchanged.
+- **Your own sessions no longer offer a redundant "Join" button
+  (ANT-618).** On the Apps page, the Join action (ANT-440 — a second user
+  joining a running session) rendered in two places the caller cannot use:
+  next to "Open" on the caller's own Active Sessions rows, and on the app
+  tiles, whose Join affordance targets the app's most recently launched
+  running session — own or another user's. Both now render only for other
+  users' sessions: row Join behind `!mine && isJoinable(s)` in
+  `server/static/js/app/sessions.js`, and tile Join behind the same gate on
+  its join target in `server/static/js/app.js`. Your own rows keep Open /
+  Share / Send File / Kill (and Recreate when out of date); other users'
+  joinable rows and tiles keep Join.
 
 `VERSION`/`Cargo.toml`/`Cargo.lock` moved 0.9.1 → 0.9.2 via
 `scripts/bump-version.sh patch`.

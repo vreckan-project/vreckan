@@ -27,7 +27,7 @@ export function joinTargetForApp(appId) {
 // The backend marks each entry `is_mine`; older backends return only the
 // caller's own sessions without the field, in which case every entry is
 // ours and behavior is unchanged.
-function isMine(s) {
+export function isMine(s) {
   return s.is_mine !== false;
 }
 
