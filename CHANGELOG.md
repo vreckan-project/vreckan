@@ -9,6 +9,20 @@ is committed normally in `vreckan`. The changelog is the authoritative
 record of what shipped in each release — see
 [`docs/release.md`](./docs/release.md) for the conventions.
 
+## 2026-10-27 — v0.9.2: "Join" hidden on your own Active Sessions rows (ANT-618)
+
+- **Your own Active Sessions rows no longer show a "Join" button
+  (ANT-618).** On the Apps page, `server/static/js/app/sessions.js`
+  appended the Join action (ANT-440 — a second user joining a running
+  session) to every joinable session, including the caller's own, so an
+  owner's row carried both "Open" and "Join". The action now renders only
+  on other users' joinable rows (`!mine && isJoinable(s)`); your own rows
+  keep Open / Share / Send File / Kill (and Recreate when out of date).
+  The app tiles' Join affordance is unchanged.
+
+`VERSION`/`Cargo.toml`/`Cargo.lock` moved 0.9.1 → 0.9.2 via
+`scripts/bump-version.sh patch`.
+
 ## 2026-10-27 — v0.9.1: base-image bump + last Windows-written files normalized (PR #95, ANT-589)
 
 - **The underlying Rust build container was bumped** to the

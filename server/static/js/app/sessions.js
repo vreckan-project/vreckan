@@ -194,9 +194,10 @@ function renderSessions(sessions, sharesBySession = {}) {
     open.textContent = t("common.open");
     if (mine) actions.appendChild(open);
 
-    // Join (ANT-440): own rows get it next to Open; other users' rows show
-    // only Join. Absent on room sessions (v1) and when not joinable.
-    if (isJoinable(s)) actions.appendChild(makeJoinButton(s));
+    // Join (ANT-440): other users' rows only — on own rows it is redundant
+    // with Open (ANT-618). Absent on room sessions (v1) and when not
+    // joinable.
+    if (!mine && isJoinable(s)) actions.appendChild(makeJoinButton(s));
 
     if (mine) {
       const share = document.createElement("button");
