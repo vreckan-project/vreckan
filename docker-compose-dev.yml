@@ -1,0 +1,52 @@
+name: vreckan
+
+services:
+  vreckan-http:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    image: ghcr.io/vreckan-project/vreckan:latest
+    container_name: vreckan-http
+    restart: unless-stopped
+    working_dir: /app
+    ports:
+      - "${VRECKAN_HOST_PORT:-443}:${VRECKAN_API_PORT:-443}"
+    environment:
+      - VRECKAN_DATABASE_URL=${VRECKAN_DATABASE_URL:-postgres://${VRECKAN_DB_USER:-vreckan}:${VRECKAN_DB_PASS:-vreckan}@postgres:5432/${VRECKAN_DB_NAME:-vreckan}}
+    depends_on:
+      postgres:
+        condition: service_healthy
+      data-perms:
+        condition: service_completed_successfully
+    env_file:
+      - .env
+    ipc: host
+    devices:
+      - /dev/dri:/dev/dri
+    group_add:
+      - "990"
+      - "44"
+      - "${VRECKAN_DOCKER_GROUP:-973}"
+    volumes:
+      - ${VRECKAN_DATA_PATH:-./vreckan-data}:${VRECKAN_DATA_ROOT:-/data}
+      - /var/run/docker.sock:/var/run/docker.sock
+      - /dev/dri:/dev/dri
+
+  postgres:
+    image: postgres:16
+    container_name: vreckan-postgres
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: ${VRECKAN_DB_USER:-vreckan}
+      POSTGRES_PASSWORD: ${VRECKAN_DB_PASS:-vreckan}
+      POSTGRES_DB: ${VRECKAN_DB_NAME:-vreckan}
+    ports:
+      - "${VRECKAN_POSTGRES_PORT:-127.0.0.1:5432}:5432"
+    volumes:
+      - ./vreckan-postgres-data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${VRECKAN_DB_USER:-vreckan} -d ${VRECKAN_DB_NAME:-vreckan}"]
+      interval: 5s
+      timeout: 5s
+      retries: 12
+      start_period: 10s

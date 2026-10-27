@@ -64,6 +64,10 @@ The interaction between the web client and the server follows a secure and orche
 ### Prerequisites
 *   A server with **Docker** and **Docker Compose** installed, with access to the Docker daemon (the server spawns and manages app containers through it).
 *   An SSL certificate for your domain (optional — a self-signed certificate is generated automatically on first run, and ACME can be enabled to issue real certificates from Let's Encrypt, ZeroSSL, or Google).
+*   For GPU-accelerated apps, install the host GPU drivers first:
+    *   **NVIDIA:** use the closed-source NVIDIA drivers with the `nvidia-drm.modeset=1` kernel module parameter set, and install the [NVIDIA Container Toolkit](https://docs.nvidia.com/datacenter/cloud-native/container-toolkit/latest/install-guide.html).
+    *   **Intel:** install the [Intel Xe drivers](https://dgpu-docs.intel.com/installation-guides/index.html).
+    *   **AMD:** install the [AMD GPU drivers](https://amdgpu-install.readthedocs.io/en/latest/).
 
 ### 1. Run the server
 The recommended deployment is the pre-built container image:
@@ -75,26 +79,9 @@ cp .env.example .env   # edit to taste (OIDC, ACME, ...)
 docker compose up -d
 ```
 
-This runs the server with TLS on port 443, a persistent `vreckan-data`
+* This runs the server with TLS on port 443 by default, a persistent `vreckan-data`
 bind mount, Docker-socket access for the app containers, and DRI/GPU device
-pass-through (see [docs/ops.md](./docs/ops.md)). The compose file's `image:`
-tag points at the published `ghcr.io/vreckan-project/vreckan` tag (Rust
-cutover complete, ANT-40); `build: .` is the local fallback — it always
-builds the Rust image from this repo when the tag is not present, so a local
-checkout runs the Rust server either way. Versioned image tags (e.g.
-`:v0.8.7`) are published alongside `latest` for every release — see the
-[release process](./docs/release.md).
-
-To run from source instead (e.g. for development): install the Rust toolchain
-(the image build stage is the pinned `vreckan-base-build` base image, built on
-`rust:1.99-slim`; any recent stable release works) and Docker on the host, then:
-
-```bash
-cargo run --release
-```
-
-The binary reads the same `VRECKAN_*` environment variables; point
-`VRECKAN_DATA_ROOT` at a scratch directory for a throwaway dev instance.
+pass-through (see [docs/ops.md](./docs/ops.md)). 
 
 ### 2. Web Client Access
 1.  Open the server's web address in any modern browser (for example, `https://<your-server>/`).
