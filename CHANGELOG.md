@@ -9,6 +9,42 @@ is committed normally in `vreckan`. The changelog is the authoritative
 record of what shipped in each release — see
 [`docs/release.md`](./docs/release.md) for the conventions.
 
+## 2026-10-27 — v0.9.1: base-image bump + last Windows-written files normalized (PR #95, ANT-589)
+
+Nightly base-bump release. Since `v0.9.0`, `main` gained exactly one source
+change — the Windows-era file cleanup below — which this release ships
+alongside the re-baked build base.
+
+- **The build base advanced to the latest `vreckan-base-build` image.** The
+  `Dockerfile` build-stage pin and `.base-image-digest` move together
+  (ANT-277) from `sha256:2734691e…` (the 2026-10-25 bake) to
+  `sha256:7b2cc27f…` (the 2026-10-27 bake). The daily change-check fired
+  because vreckan's `main` moved past the commit the prior base was baked
+  against: the v0.9.0 version bump (`fb2f981`) is the only `Cargo.lock`
+  delta since that bake, and it changes only the `vreckan` path-crate's own
+  version line, which `cargo fetch` never pulls. The re-bake is therefore
+  content-neutral: the upstream `rust:1.99-slim` (Debian trixie) base and
+  toolchain layers are unchanged, `rustc`/`cargo` stay at 1.99.1, and every
+  warm crates.io/git dependency-cache layer is byte-identical to the prior
+  bake (verified: all layer digests and the image config match). No user-
+  or operator-visible behavior change: the runtime stage, binary, and
+  configuration are unchanged.
+
+- **The last of the Windows-written files were normalized (PR #95,
+  ANT-589).** `LICENSE`, `PRIVACY.md`, `README.md`, and the four
+  `site/assets/img` SVGs (favicon, app icon, and both wordmarks) are
+  rewritten from CRLF to LF — the final files in the tree that still carried
+  the line endings of the original Windows working copy, so the repo's
+  human-readable text is now uniformly LF. The same PR brings `HISTORY.md`
+  up to the current Rust server (ANT-589): the fork catalogue's scope note
+  now states that Vreckan has grown into a standalone app rather than a
+  SealSkin derivative, and a final section extends the per-file rewrite
+  catalogue to the Rust tree that replaced the Python server in the v0.6.0
+  switchover.
+
+`VERSION`/`Cargo.toml`/`Cargo.lock` moved 0.9.0 → 0.9.1 via
+`scripts/bump-version.sh patch`.
+
 ## 2026-10-26 — v0.9.0: collaboration-room Font Awesome icons vendored (ANT-570, PR #94)
 
 First source change on `main` since `v0.8.9` (v0.8.10 was a base-bump-only
