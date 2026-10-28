@@ -468,6 +468,16 @@ two auto-update endpoints added in v0.7.0).
 | GET | `/api/admin/backup/{name}/download` | `download_backup` |
 | DELETE | `/api/admin/backup/{name}` | `delete_backup` |
 
+### App store `logo` key — apps routes
+
+Each entry returned by `GET /api/admin/apps/available` (and each app in
+`GET /api/admin/apps/installed`) may carry a `logo` field: an `http(s)` URL
+or a custom icon path (`/api/app_icon/{app_id}`). The admin UI renders it as
+a fixed 32×32 icon in the store list and the installed-apps table; entries
+without a resolvable logo fall back to the built-in placeholder
+(`/img/icon128.png`). Third-party store YAML may therefore include a `logo:`
+key per entry (ANT-657).
+
 ### Certificate fields — `admin.rs`
 
 The three certificate endpoints exchange the following fields (all
