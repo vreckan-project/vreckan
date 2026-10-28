@@ -3133,6 +3133,18 @@ async fn get_all_sessions(
                     .unwrap_or(Value::Null),
                 "name": s_data.get("name").and_then(|v| v.as_str()).map(|s| s.to_string()),
                 "out_of_date": out_of_date,
+                // ANT-654: readiness state for the admin session list.
+                // Pre-ANT-654 rows have no `ready` flag and launched
+                // synchronously to readiness, so they read as ready.
+                "ready": s_data.get("ready").and_then(|v| v.as_bool()).unwrap_or(true),
+                "launch_failed": s_data
+                    .get("launch_failed")
+                    .and_then(|v| v.as_bool())
+                    .unwrap_or(false),
+                "launch_error": s_data
+                    .get("launch_error")
+                    .and_then(|v| v.as_str())
+                    .map(|s| s.to_string()),
             }));
     }
     let mut response: Vec<Value> = Vec::new();

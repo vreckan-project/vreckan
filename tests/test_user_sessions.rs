@@ -1153,8 +1153,83 @@ async fn test_session_status_no_upstream() {
     assert_eq!(status, StatusCode::OK);
     assert_eq!(
         data,
-        Some(json!({ "ready": false, "detail": "No upstream address recorded." }))
+        Some(json!({
+            "ready": false,
+            "detail": "No upstream address recorded.",
+            "launch_failed": false,
+            "launch_error": null
+        }))
     );
+}
+
+#[tokio::test]
+async fn test_session_status_recorded_ready_wins_over_probe() {
+    // ANT-654: a session the background launch task confirmed ready answers
+    // ready immediately, even though a live probe of this row (no ip/port)
+    // would say otherwise.
+    let _root = TempDir::new();
+    let mut sc = SecureClient::new(build_state(_root.path()).await);
+    sc.http.login("admin", "admin1234").await;
+    sc.handshake().await;
+    let sid = seed_session(&sc, "admin", json!({ "ready": true })).await;
+    let (status, data) = sc
+        .call("GET", &format!("/api/sessions/{sid}/status"), None)
+        .await;
+    assert_eq!(status, StatusCode::OK);
+    assert_eq!(data.as_ref().unwrap()["ready"], true);
+    assert_eq!(data.as_ref().unwrap()["detail"], "ready");
+    assert_eq!(data.as_ref().unwrap()["launch_failed"], false);
+}
+
+#[tokio::test]
+async fn test_session_status_recorded_launch_failed_surfaces_error() {
+    // ANT-654: a background start failure is surfaced through the status
+    // endpoint — the recorded error detail, not a live-probe guess.
+    let _root = TempDir::new();
+    let mut sc = SecureClient::new(build_state(_root.path()).await);
+    sc.http.login("admin", "admin1234").await;
+    sc.handshake().await;
+    let sid = seed_session(
+        &sc,
+        "admin",
+        json!({ "ready": false, "launch_failed": true, "launch_error": "boom" }),
+    )
+    .await;
+    let (status, data) = sc
+        .call("GET", &format!("/api/sessions/{sid}/status"), None)
+        .await;
+    assert_eq!(status, StatusCode::OK);
+    assert_eq!(data.as_ref().unwrap()["ready"], false);
+    assert_eq!(data.as_ref().unwrap()["detail"], "boom");
+    assert_eq!(data.as_ref().unwrap()["launch_failed"], true);
+    assert_eq!(data.as_ref().unwrap()["launch_error"], "boom");
+}
+
+#[tokio::test]
+async fn test_session_status_recorded_not_ready_still_probes() {
+    // ANT-654: a session still waiting on the background readiness task
+    // reports not-ready with the live-probe detail and no failure flag.
+    let _root = TempDir::new();
+    let mut sc = SecureClient::new(build_state(_root.path()).await);
+    sc.http.login("admin", "admin1234").await;
+    sc.handshake().await;
+    let sid = seed_session(
+        &sc,
+        "admin",
+        json!({ "ready": false, "ip": "127.0.0.1", "port": 9 }),
+    )
+    .await;
+    let (status, data) = sc
+        .call("GET", &format!("/api/sessions/{sid}/status"), None)
+        .await;
+    assert_eq!(status, StatusCode::OK);
+    assert_eq!(data.as_ref().unwrap()["ready"], false);
+    assert!(data.as_ref().unwrap()["detail"]
+        .as_str()
+        .unwrap()
+        .starts_with("unreachable ("));
+    assert_eq!(data.as_ref().unwrap()["launch_failed"], false);
+    assert_eq!(data.as_ref().unwrap()["launch_error"], serde_json::Value::Null);
 }
 
 #[tokio::test]

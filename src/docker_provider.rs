@@ -205,8 +205,14 @@ impl DockerProvider {
         Ok(())
     }
 
-    /// Launch a container for the application and wait until it is ready.
-    /// Mirrors `launch()`.
+    /// Pull the app's image (if missing), then create and start a container
+    /// for the application. Since ANT-654 this does NOT block on the
+    /// app's health check: the readiness wait is split out into
+    /// `wait_for_container_ready`, which the caller may run in a background
+    /// task so the launch HTTP response returns as soon as the container is
+    /// created and started. The returned `ip` is best-effort (empty when the
+    /// daemon has not reported one yet); `wait_for_container_ready` returns
+    /// the confirmed address. Mirrors `launch()`.
     ///
     /// `ephemeral` marks short-lived (cleanroom) session containers: they get
     /// the `no` restart policy instead of `unless-stopped`, so a Docker daemon
@@ -221,9 +227,12 @@ impl DockerProvider {
         path_prefix_map: &HashMap<String, String>,
         gpu_config: Option<GpuInfo>,
         network: Option<String>,
-        is_collaboration: bool,
-        master_token: Option<String>,
-        initial_tokens: Option<Value>,
+        // Kept for caller compatibility; the readiness gate that consumes
+        // these (collaboration token push) moved to
+        // `wait_for_container_ready` (ANT-654).
+        _is_collaboration: bool,
+        _master_token: Option<String>,
+        _initial_tokens: Option<Value>,
         ephemeral: bool,
     ) -> Result<LaunchResult, LaunchError> {
         let config = self.provider_config();
@@ -465,19 +474,20 @@ impl DockerProvider {
             image
         );
 
-        // --- Wait for the app inside the container to become ready ----------
-        let subfolder = env_vars.get("SUBFOLDER").cloned().unwrap_or_default();
-        let ip = self
-            .wait_for_container_ready(
-                &container_id,
-                session_id,
-                &subfolder,
-                &env_vars,
-                is_collaboration,
-                master_token.as_deref(),
-                initial_tokens.as_ref(),
-            )
-            .await?;
+        // --- Resolve the container IP (best-effort) -------------------------
+        // The daemon assigns the bridge IP at container create/start, but the
+        // inspect API can lag a moment; a few short retries cover it. When it
+        // is still unknown the caller records an empty address and the
+        // background `wait_for_container_ready` fills in the confirmed one
+        // (ANT-654).
+        let mut ip = String::new();
+        for _ in 0..4 {
+            if let Some(resolved) = self.container_ip(&container_id).await {
+                ip = resolved;
+                break;
+            }
+            tokio::time::sleep(Duration::from_millis(500)).await;
+        }
 
         let port = config
             .get("port")
@@ -613,9 +623,12 @@ impl DockerProvider {
     }
 
     /// Poll the container until the app inside answers a health check.
+    /// Since ANT-654 this is public so the launch flow can defer the wait to
+    /// a background task: it returns the confirmed container IP, stops the
+    /// container, and reports a 504 `LaunchError` on timeout.
     /// Mirrors `_wait_for_container_ready`.
     #[allow(clippy::too_many_arguments)]
-    async fn wait_for_container_ready(
+    pub async fn wait_for_container_ready(
         &self,
         container_id: &str,
         session_id: &str,
