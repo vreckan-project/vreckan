@@ -468,6 +468,35 @@ comparison plus an `/api/health` check), are covered there step by step.
     server falls back to the self-signed one.
   - **Hot-reload.** After a successful issuance or renewal, the TLS
     endpoint is reloaded in-place — no server restart is needed.
+- **Same-port HTTP→HTTPS redirect (default on, ANT-652).** Because the
+  container exposes a single TLS port, a client that connects with
+  plaintext HTTP (e.g. `http://host:443`, or any host port published onto
+  the container's 443) used to die in the TLS handshake with a
+  "wrong version number" error before any request was parsed. The server
+  now peeks the first byte of each new connection: a TLS ClientHello
+  begins with a handshake record (`0x16`) and proceeds to the rustls
+  handshake exactly as before, while any other first byte is treated as
+  plaintext HTTP — the server reads the request line and `Host` header
+  and answers `301 https://{Host}{uri}` (the same one-port HTTP+HTTPS
+  technique Caddy, h2o, and nginx's `stream`/`ssl_preread` use). The
+  redirect preserves the `Host` header, so a non-443 published port
+  stays in the redirect target. The switch is `VRECKAN_TLS_HTTP_REDIRECT_ENABLED`
+  (default `true`; `false` restores the handshake-only behavior). This is
+  an environment setting only: no admin-UI field, and it appears in no
+  admin-settings payload (see the API reference).
+  - **When to turn it off.** Deployments behind a TLS-terminating reverse
+    proxy that already terminates TLS and redirects should set
+    `VRECKAN_TLS_HTTP_REDIRECT_ENABLED=false` — the proxy speaks TLS to
+    the origin, so the origin's first byte is always `0x16` and the sniff
+    is dead weight there.
+  - **Documented limitation.** This covers *the TLS port only*. Bare
+    `http://host` on port 80 is still refused (nothing listens on 80); a
+    separate port-80 listener is a future option, not part of ANT-652.
+  - **Edge cases.** Stray non-HTTP/non-TLS connections on the port get a
+    301 and then disconnect (harmless). The redirect response carries the
+    same HSTS header as every other response, and uses `Connection: close`
+    so the client re-issues the request over the new `https://` URL.
+
 - **Behind a TLS-terminating reverse proxy (optional).** The server
   terminates TLS itself by default (the ACME flows above assume that). If you
   do terminate TLS at a proxy in front of it, set
