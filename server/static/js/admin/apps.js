@@ -523,6 +523,15 @@ async function renderApps() {
             <option value="86400">${t("apps.interval24h")}</option>
           </select>
         </label>
+        <label>${t("apps.pullConcurrency")}
+          <select id="auto-update-pull-concurrency">
+            <option value="1">1</option>
+            <option value="2" selected>2</option>
+            <option value="4">4</option>
+            <option value="8">8</option>
+            <option value="16">16</option>
+          </select>
+        </label>
         <span class="muted fs-xs flex-grow" id="auto-update-status"></span>
       </div>
       <table class="admin-table">
@@ -716,6 +725,7 @@ async function renderApps() {
   // "unavailable" only when the fetch actually fails).
   const auEnabled = $("auto-update-enabled");
   const auInterval = $("auto-update-interval");
+  const auPullConcurrency = $("auto-update-pull-concurrency");
   const auStatus = $("auto-update-status");
   const AUTO_UPDATE_INTERVAL_PRESETS = [
     [3600, "apps.interval1h"],
@@ -742,6 +752,19 @@ async function renderApps() {
       auInterval.appendChild(opt);
     }
     auInterval.value = String(interval);
+    if (auPullConcurrency) {
+      const pullConcurrency =
+        autoUpdateState && Number.isInteger(autoUpdateState.pull_concurrency)
+          ? autoUpdateState.pull_concurrency
+          : 2;
+      if (![...auPullConcurrency.options].some((o) => Number(o.value) === pullConcurrency)) {
+        const opt = document.createElement("option");
+        opt.value = String(pullConcurrency);
+        opt.textContent = String(pullConcurrency);
+        auPullConcurrency.appendChild(opt);
+      }
+      auPullConcurrency.value = String(pullConcurrency);
+    }
     if (autoUpdateState) {
       auStatus.textContent = autoUpdateStatusText(autoUpdateState, apps.length, optedInCount());
     } else if (!autoUpdateSettled) {
@@ -757,11 +780,14 @@ async function renderApps() {
   async function saveAutoUpdate() {
     const enabled = auEnabled.checked;
     const intervalSeconds = Number(auInterval.value);
+    const pullConcurrency = auPullConcurrency ? Number(auPullConcurrency.value) : 2;
     auEnabled.disabled = true;
     auInterval.disabled = true;
-    const r = await request("/api/admin/apps/auto_update", "PUT", { enabled, interval_seconds: intervalSeconds });
+    if (auPullConcurrency) auPullConcurrency.disabled = true;
+    const r = await request("/api/admin/apps/auto_update", "PUT", { enabled, interval_seconds: intervalSeconds, pull_concurrency: pullConcurrency });
     auEnabled.disabled = false;
     auInterval.disabled = false;
+    if (auPullConcurrency) auPullConcurrency.disabled = false;
     if (r.error) return toast(r.error.message, "error");
     toast(t("common.saved"));
     // Refresh the live status line (and control values) from the job status.
@@ -771,7 +797,9 @@ async function renderApps() {
     if (!s.error && s.data) {
       autoUpdateState = s.data;
     } else {
-      autoUpdateState = autoUpdateState ? { ...autoUpdateState, enabled, interval_seconds: intervalSeconds } : { enabled, interval_seconds: intervalSeconds };
+      autoUpdateState = autoUpdateState
+        ? { ...autoUpdateState, enabled, interval_seconds: intervalSeconds, pull_concurrency: pullConcurrency }
+        : { enabled, interval_seconds: intervalSeconds, pull_concurrency: pullConcurrency };
     }
     applyAutoUpdateControls();
   }
@@ -779,6 +807,7 @@ async function renderApps() {
   applyAutoUpdateControls();
   if (auEnabled) auEnabled.addEventListener("change", saveAutoUpdate);
   if (auInterval) auInterval.addEventListener("change", saveAutoUpdate);
+  if (auPullConcurrency) auPullConcurrency.addEventListener("change", saveAutoUpdate);
   // The panel is painted. While the initial status fetch is still in flight
   // (ANT-347: it can hang for a long time while the server's auto-update job
   // holds its lock), make the wait visible: a sticky "Checking for updates…"
