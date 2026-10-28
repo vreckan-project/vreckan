@@ -7,7 +7,7 @@
 import { $, toast, uploadFileChunks } from "../util.js";
 import { secureFetch } from "../api.js";
 import { availableGpus, currentSettings, globalDefaultGpu } from "../app.js";
-import { loadSessions } from "./sessions.js";
+import { loadSessions, highlightSessionRow } from "./sessions.js";
 import { applyPreset, pinnedBehaviors } from "./pinned.js";
 import { t } from "../i18n.js";
 
@@ -109,10 +109,25 @@ function currentLaunchPayload(applicationId, extra) {
   };
 }
 
-function openSession(result) {
+// Open the launched session in a new tab. When `preopenedWin` is passed, the
+// tab was already created during the user gesture (see handleLaunchConfirm)
+// and is navigated here once the URL is known; otherwise `window.open` runs
+// now. A `null` result means the popup blocker won — fall back to a visible
+// affordance (toast + highlighted session row) instead of a silent failure
+// (ANT-661).
+function openSession(result, preopenedWin) {
   if (result && result.session_url) {
-    window.open(result.session_url, "_blank", "noopener");
-    toast(t("launch.sessionLaunched"));
+    // No noopener feature: browsers return null for it even when the tab
+    // opens; the opener link is severed manually instead (ANT-661).
+    const win = preopenedWin || window.open(result.session_url, "_blank");
+    if (win) {
+      win.opener = null;
+      if (preopenedWin) win.location.replace(result.session_url);
+      toast(t("launch.sessionLaunched"));
+    } else {
+      toast(t("launch.popupBlocked"), "warning", { ttl: 8000 });
+      highlightSessionRow(result.session_id);
+    }
   } else {
     toast(t("launch.noSessionUrl"), "error");
   }
@@ -311,6 +326,16 @@ async function handleLaunchConfirm(app) {
 
   errEl.hidden = true;
   submitBtn.disabled = true;
+
+  // (ANT-661) Pre-open the session tab while the click/Enter's user
+  // activation is still transiently valid. The launch POST runs the image
+  // pull + container start, which can outrun the browser's ~5 s popup
+  // window; a popup opened after the await was then swallowed silently —
+  // the intermittent "custom-name launches don't open a tab" report. The
+  // placeholder navigates once the URL is known (a failed launch closes
+  // it), and the null-return fallback below covers the rest.
+  const launchWin = window.open("about:blank", "_blank");
+
   try {
     let result;
     if (app.url_support) {
@@ -342,8 +367,16 @@ async function handleLaunchConfirm(app) {
       });
     }
     $("modal-launch").hidden = true;
-    openSession(result);
+    openSession(result, launchWin);
   } catch (e) {
+    // Don't leave a blank placeholder tab behind a failed launch.
+    if (launchWin) {
+      try {
+        launchWin.close();
+      } catch (_) {
+        /* closing a closed/cross-origin window can throw — harmless */
+      }
+    }
     errEl.textContent = e.message;
     errEl.hidden = false;
   } finally {
