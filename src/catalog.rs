@@ -358,7 +358,7 @@ pub async fn load_app_stores(state: &AppState) {
 /// in place so the caller loads the post-migration state.
 async fn migrate_vreckan_apps_to_sealskin_apps(
     state: &AppState,
-    rows: &mut Vec<entities::app_store::Model>,
+    rows: &mut [entities::app_store::Model],
 ) {
     const OLD: &str = "Vreckan Apps";
     const NEW: &str = "SealSkin Apps";
@@ -793,7 +793,7 @@ pub async fn inspect_self_container(state: &AppState) {
     {
         if let Some(c) = list
             .iter()
-            .find(|c| c.names.as_ref().map_or(false, |names| {
+            .find(|c| c.names.as_ref().is_some_and(|names| {
                 names.iter().any(|n| n.trim_start_matches('/') == "vreckan")
             }))
         {
@@ -1812,12 +1812,8 @@ pub fn parse_selkies_version(output: &str) -> Option<(u32, String)> {
 /// - Anything else: ambiguous.
 pub fn classify_sessions_probe(status: u16, content_type: Option<&str>) -> Option<SelkiesProbe> {
     let ct = content_type.unwrap_or("");
-    if ct.contains("application/json") {
+    if ct.contains("application/json") || (status == 401 && ct.contains("text/plain")) {
         Some(SelkiesProbe::Secure { version: None })
-    } else if status == 401 && ct.contains("text/plain") {
-        Some(SelkiesProbe::Secure { version: None })
-    } else if ct.contains("text/html") {
-        None
     } else {
         None
     }
@@ -3620,7 +3616,7 @@ async fn get_my_sessions(
                     .get("access_token")
                     .and_then(|v| v.as_str())
                     .unwrap_or_default();
-                Some(owner_session_url(&sid, &token))
+                Some(owner_session_url(sid, token))
             }
         } else {
             None
@@ -3676,7 +3672,7 @@ async fn get_my_sessions(
             is_mine,
             joinable,
             participants: if is_mine {
-                session_shares::participant_usernames(&s_data)
+                session_shares::participant_usernames(s_data)
             } else {
                 Vec::new()
             },
@@ -3890,7 +3886,7 @@ async fn recreate_my_session(
                     .get("access_token")
                     .and_then(|v| v.as_str())
                     .unwrap_or_default();
-                owner_session_url(&session_id, &token)
+                owner_session_url(&session_id, token)
             };
             let value = serde_json::json!({ "session_id": session_id, "session_url": session_url });
             e2ee::encrypt_response(&state, &headers, StatusCode::OK, value).await
