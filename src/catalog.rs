@@ -497,11 +497,25 @@ fn yaml_file_to_json(path: &str) -> Option<Value> {
     serde_json::to_value(yaml_val).ok()
 }
 
+/// Tag a template value with its provenance (`"default"` for built-in /
+/// seeded templates, `"custom"` for user-created ones). The marker is exposed
+/// by `GET /api/admin/apps/templates` so clients can hide the template
+/// dropdown when no custom templates exist (ANT-655).
+pub fn template_with_provenance(mut data: Value, provenance: &str) -> Value {
+    if let Some(obj) = data.as_object_mut() {
+        obj.insert("provenance".to_string(), Value::String(provenance.to_string()));
+    }
+    data
+}
+
 /// Load application templates into `state.app_templates`.
 ///
 /// Built-in templates ship as YAML files under `default_app_templates_path`;
 /// user-defined templates live in the database and override built-ins by name.
-/// If no templates exist, a blank "Default" template is seeded. Mirrors
+/// If no templates exist, a blank "Default" template is seeded. Every entry
+/// is tagged with its provenance (`"default"` vs `"custom"`): a DB row that
+/// overrides a built-in of the same name is `custom`, except for the seeded
+/// blank "Default" row, which stays `default`. Mirrors
 /// `load_app_templates`.
 pub async fn load_app_templates(state: &AppState) {
     let mut templates: HashMap<String, Value> = HashMap::new();
@@ -521,7 +535,7 @@ pub async fn load_app_templates(state: &AppState) {
             }
             if let Some(data) = yaml_file_to_json(path.to_str().unwrap_or("")) {
                 if let Some(name) = data.get("name").and_then(|v| v.as_str()).map(String::from) {
-                    templates.insert(name, data);
+                    templates.insert(name, template_with_provenance(data, "default"));
                 }
             }
         }
@@ -530,9 +544,22 @@ pub async fn load_app_templates(state: &AppState) {
     // User-defined templates from the database (override built-ins by name).
     if let Ok(rows) = entities::app_template::Entity::find().all(&state.db.conn).await {
         for row in rows {
+            let settings = row.settings.clone();
+            // A DB row overriding a built-in of the same name is a custom
+            // override. The lone exception is the blank "Default" row seeded
+            // on a fresh install (name "Default", empty settings): it must
+            // keep reading as `default` on later startups.
+            let overrides_builtin = templates.contains_key(&row.name);
+            let is_seeded_default = !overrides_builtin
+                && row.name == "Default"
+                && matches!(&settings, Value::Object(o) if o.is_empty());
+            let value = serde_json::json!({ "name": row.name, "settings": settings });
             templates.insert(
-                row.name.clone(),
-                serde_json::json!({ "name": row.name, "settings": row.settings }),
+                row.name,
+                template_with_provenance(
+                    value,
+                    if is_seeded_default { "default" } else { "custom" },
+                ),
             );
         }
     }
@@ -547,7 +574,7 @@ pub async fn load_app_templates(state: &AppState) {
         if let Err(e) = entities::app_template::Entity::insert(am).exec(&state.db.conn).await {
             warn!("Failed to seed default template: {e}");
         }
-        templates.insert("Default".to_string(), default);
+        templates.insert("Default".to_string(), template_with_provenance(default, "default"));
     }
 
     let count = templates.len();

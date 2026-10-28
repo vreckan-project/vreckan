@@ -2942,7 +2942,13 @@ async fn save_app_template(
         .await;
     }
     let settings = decrypted.get("settings").cloned().unwrap_or(serde_json::json!({}));
-    let template = serde_json::json!({ "name": name, "settings": settings });
+    // Anything saved through the editor is user-created, including a template
+    // whose name collides with a built-in (which it then overrides), so it is
+    // tagged `custom` in the in-memory catalog as well as the response.
+    let template = catalog::template_with_provenance(
+        serde_json::json!({ "name": name, "settings": settings }),
+        "custom",
+    );
     state.app_templates.write().await.insert(name.to_string(), template.clone());
     let conn = &state.db.conn;
     let existing = entities::app_template::Entity::find()
@@ -3036,7 +3042,10 @@ async fn delete_app_template(
                             .app_templates
                             .write()
                             .await
-                            .insert(template_name.clone(), data);
+                            .insert(
+                                template_name.clone(),
+                                catalog::template_with_provenance(data, "default"),
+                            );
                     }
                 }
             }

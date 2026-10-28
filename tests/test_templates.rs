@@ -86,7 +86,30 @@ async fn test_list_templates_default() {
     // single blank "Default" template in the database.
     let (status, body) = sc.call("GET", "/api/admin/apps/templates", None).await;
     assert_eq!(status, StatusCode::OK, "{:?}", body);
-    assert_eq!(body, Some(json!([ { "name": "Default", "settings": {} }])));
+    assert_eq!(
+        body,
+        Some(json!([ { "name": "Default", "settings": {}, "provenance": "default" }]))
+    );
+}
+
+/// The seeded blank "Default" row must keep reading as `default` (not
+/// `custom`) when the templates are reloaded, i.e. on the next startup after
+/// a fresh install (ANT-655).
+#[tokio::test]
+async fn test_seeded_default_stays_default_after_reload() {
+    let _root = TempDir::new();
+    let mut sc = SecureClient::new(build_state(_root.path()).await);
+    sc.http.login("admin", "admin1234").await;
+    sc.handshake().await;
+    // build_state already loaded the templates once (seeding the "Default"
+    // row into the DB); simulate the next startup with that row present.
+    catalog::load_app_templates(&sc.state).await;
+    let (status, body) = sc.call("GET", "/api/admin/apps/templates", None).await;
+    assert_eq!(status, StatusCode::OK, "{:?}", body);
+    assert_eq!(
+        body,
+        Some(json!([ { "name": "Default", "settings": {}, "provenance": "default" }]))
+    );
 }
 
 #[tokio::test]
@@ -103,7 +126,10 @@ async fn test_create_template() {
         )
         .await;
     assert_eq!(status, StatusCode::CREATED, "{:?}", body);
-    assert_eq!(body, Some(json!({ "name": "My Template", "settings": { "TITLE": "X" } })));
+    assert_eq!(
+        body,
+        Some(json!({ "name": "My Template", "settings": { "TITLE": "X" }, "provenance": "custom" }))
+    );
     let (status, templates) = sc.call("GET", "/api/admin/apps/templates", None).await;
     assert_eq!(status, StatusCode::OK);
     let names: Vec<&str> = templates
@@ -116,6 +142,37 @@ async fn test_create_template() {
         .collect();
     assert!(names.contains(&"My Template"));
     assert!(names.contains(&"Default"));
+    // A user-created template is `custom`; the seeded blank default is not.
+    let list = templates.as_ref().unwrap().as_array().unwrap();
+    let custom = list.iter().find(|t| t["name"] == "My Template").unwrap();
+    assert_eq!(custom["provenance"], "custom");
+    let default = list.iter().find(|t| t["name"] == "Default").unwrap();
+    assert_eq!(default["provenance"], "default");
+}
+
+/// Once the user creates a single custom template, the list must expose the
+/// provenance split the install modal relies on to show its dropdown (ANT-655).
+#[tokio::test]
+async fn test_list_templates_mixed_provenance() {
+    let _root = TempDir::new();
+    let mut sc = SecureClient::new(build_state(_root.path()).await);
+    sc.http.login("admin", "admin1234").await;
+    sc.handshake().await;
+    let (status, _) = sc
+        .call(
+            "POST",
+            "/api/admin/apps/templates",
+            Some(&json!({ "name": "Custom One", "settings": { "TITLE": "One" } })),
+        )
+        .await;
+    assert_eq!(status, StatusCode::CREATED);
+    let (status, templates) = sc.call("GET", "/api/admin/apps/templates", None).await;
+    assert_eq!(status, StatusCode::OK, "{:?}", templates);
+    let list = templates.as_ref().unwrap().as_array().unwrap();
+    let custom = list.iter().find(|t| t["name"] == "Custom One").unwrap();
+    assert_eq!(custom["provenance"], "custom");
+    let default = list.iter().find(|t| t["name"] == "Default").unwrap();
+    assert_eq!(default["provenance"], "default");
 }
 
 #[tokio::test]
@@ -241,7 +298,7 @@ async fn test_list_templates_with_builtin() {
     assert_eq!(status, StatusCode::OK, "{:?}", body);
     assert_eq!(
         body,
-        Some(json!([ { "name": "Built-In", "settings": { "TITLE": "Built In" } } ]))
+        Some(json!([ { "name": "Built-In", "settings": { "TITLE": "Built In" }, "provenance": "default" } ]))
     );
 }
 
@@ -287,8 +344,40 @@ async fn test_builtin_template_override_and_restore() {
     assert_eq!(status, StatusCode::OK);
     assert_eq!(
         templates,
-        Some(json!([ { "name": "Built-In", "settings": { "TITLE": "Built In" } } ]))
+        Some(json!([ { "name": "Built-In", "settings": { "TITLE": "Built In" }, "provenance": "default" } ]))
     );
+}
+
+/// While a user override of a built-in is in place, the merged entry must be
+/// reported as `custom` (the DB row wins over the file); deleting the
+/// override flips it back to `default` (covered above) (ANT-655).
+#[tokio::test]
+async fn test_builtin_override_reports_custom() {
+    let _root = TempDir::new();
+    let mut sc = SecureClient::new(build_state(_root.path()).await);
+    sc.http.login("admin", "admin1234").await;
+    sc.handshake().await;
+    builtin_templates(&mut sc).await;
+    let (status, _) = sc
+        .call(
+            "POST",
+            "/api/admin/apps/templates",
+            Some(&json!({ "name": "Built-In", "settings": { "TITLE": "Overridden" } })),
+        )
+        .await;
+    assert_eq!(status, StatusCode::CREATED);
+    let (status, templates) = sc.call("GET", "/api/admin/apps/templates", None).await;
+    assert_eq!(status, StatusCode::OK, "{:?}", templates);
+    let entry = templates
+        .as_ref()
+        .unwrap()
+        .as_array()
+        .unwrap()
+        .iter()
+        .find(|t| t["name"] == "Built-In")
+        .unwrap();
+    assert_eq!(entry["settings"], json!({ "TITLE": "Overridden" }));
+    assert_eq!(entry["provenance"], "custom");
 }
 
 // ---------------------------------------------------------------------------
