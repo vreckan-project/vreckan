@@ -18,6 +18,33 @@ Never push directly to the Gitea `vreckan/vreckan` mirror — feature branches
 go to GitHub only, and `gitea-mirror-trigger.yml` is the sole Gitea writer
 (`pr/<N>` branches; `bump-and-tag` for main/tags). See `docs/ops.md` §3.3.
 
+## Wake-path (parking) rule (ANT-635)
+
+Any run that parks an engineer issue must leave a **live wake path** before
+it exits: a non-null `monitorNextCheckAt` (set via `executionPolicy.monitor`
+on the issue PATCH) **or** a first-class blocker (`blockedByIssueIds`, or an
+unblock descriptor owned by the run with a concrete action); a pending
+board/approval interaction on the issue also counts as a live path. Parking
+to `in_progress`/`in_review` with none of these leaves the issue with no
+wake path at all — the board sees it "showing broken" and nothing re-wakes
+the assignee. **Verify the path from the stored issue state after parking**:
+the PATCH response must echo a non-null `monitorNextCheckAt` on an
+agent-assigned, user-unassigned `in_progress`/`in_review` issue (the monitor
+scheduler only fires for that combination) — "I set it" is not verification.
+A run that cannot satisfy this must say so explicitly in its exit comment
+("parked with no wake path — needs a side wake").
+
+**Standing sweep (null-monitor stall check).** Owner: Boberta (PM). Cadence:
+daily, standing section of the Daily standup routine (Mon–Fri 05:00 MST).
+Any `in_progress`/`in_review` issue with `monitorNextCheckAt: null` and no
+first-class blocker is a stall — except when it has an active run or a
+pending interaction/approval constituting a live path. Stalls get (a) a
+specific comment on the stalled issue asking the assignee to state and
+restore the wake path, (b) a line each in the standup summary's "Stall
+sweep" section, and (c) escalation to Bob (CEO) when the stall has been
+stale for 2+ hours (heuristic: `lastActivityAt` older than 2 h at sweep
+time).
+
 ## Local development environment (vreckan)
 
 For local vreckan-rust work (build / test / run / debug), use the prebuilt
