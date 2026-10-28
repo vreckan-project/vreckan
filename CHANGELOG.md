@@ -9,6 +9,26 @@ is committed normally in `vreckan`. The changelog is the authoritative
 record of what shipped in each release — see
 [`docs/release.md`](./docs/release.md) for the conventions.
 
+## 2026-10-28 — v0.9.4: base-image bump, no source changes since v0.9.3 (ANT-638)
+
+Nightly base-bump cut. `main` has no commits past the `v0.9.3` tag (`git log
+v0.9.3..HEAD` is empty), so this is a build-base-only patch release: the
+shipped image is `v0.9.3`'s source compiled on the refreshed build base.
+
+- **The build base advanced to the latest `vreckan-base-build` image.** The
+  `Dockerfile` build-stage pin and `.base-image-digest` move together (ANT-277)
+  from `sha256:7b2cc27f…` (the 2026-10-27 re-bake) to `sha256:6f0055d3…` (the
+  2026-10-28 re-bake). The re-bake fired because vreckan's `main` moved past
+  the commit the current base was baked against: the new bake tracks the
+  `v0.9.3` tree (`7a54f73`), so the warm crates.io/git dependency cache is now
+  baked against the current `Cargo.lock`. The Rust toolchain inside is
+  unchanged (rustc/cargo verified at 1.99.1 by running the new base image), so
+  nothing user-visible changes with this container bump.
+
+`VERSION`/`Cargo.toml`/`Cargo.lock` moved 0.9.3 → 0.9.4 via
+`scripts/bump-version.sh patch`. `.base-image-digest`/`Dockerfile` moved
+together to the new base digest.
+
 ## 2026-10-29 — v0.9.3: "URL to open" is now optional for browser apps, and the locale catalogs are back in sync (ANT-626, ANT-628)
 
 - **"URL to open" is now optional for browser apps
