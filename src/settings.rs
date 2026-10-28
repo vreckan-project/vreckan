@@ -76,6 +76,8 @@ pub const SETTING_DEFINITIONS: &[SettingDef] = &[
     SettingDef { name: "login_max_attempts", type_: "int", default: "5", help: "Failed logins from one (client IP, username) pair within the lockout window before the pair is temporarily locked out. 0 disables the limiter." },
     SettingDef { name: "login_lockout_seconds", type_: "int", default: "900", help: "Length of the failed-login window and of the temporary lockout (seconds)." },
     SettingDef { name: "trusted_proxies", type_: "str", default: "", help: "Comma-separated IPs/CIDRs of reverse proxies that may sit in front of the server (e.g. '10.0.0.0/8, 192.168.1.5'). Only when the direct TCP peer matches this list are forwarded headers honoured: the leftmost `X-Forwarded-For` entry for the login rate limiter (otherwise the direct peer address is used) and the `X-Forwarded-Proto` scheme for the session cookie's Secure flag and OIDC redirect URL (otherwise the actual connection scheme, https, is used). Empty = trust no proxy (fail closed)." },
+    // --- TLS / listener (ANT-652) ---
+    SettingDef { name: "tls_http_redirect_enabled", type_: "bool", default: "true", help: "Same-port HTTP→HTTPS redirect (ANT-652): each new connection to the TLS port is sniffed on its first byte; a TLS ClientHello (0x16) proceeds to the rustls handshake, anything else is answered with a 301 to https://{Host}{uri} so plain-HTTP clients (http://host:443) bounce to the working HTTPS URL instead of a handshake error. Off = today's behavior (plain-HTTP connections fail the TLS handshake). Deployments behind a TLS-terminating reverse proxy that already redirects should set this off." },
     // --- ACME (native acmex) ---
     SettingDef { name: "acme_enabled", type_: "bool", default: "false", help: "Issue ACME (Let's Encrypt / ZeroSSL / Google) certificates. When off, the server uses a self-signed certificate." },
     SettingDef { name: "acme_ca", type_: "str", default: "letsencrypt", help: "The ACME certificate authority to use: 'letsencrypt' (default), 'zerossl', 'google', or a full custom ACME directory URL. Only letsencrypt honours acme_staging (staging vs production)." },
@@ -164,6 +166,7 @@ pub struct Settings {
     pub login_max_attempts: i64,
     pub login_lockout_seconds: i64,
     pub trusted_proxies: String,
+    pub tls_http_redirect_enabled: bool,
     /// The resolved `VRECKAN_ALLOW_DEFAULT_DB_CREDS` escape hatch (ANT-45
     /// P2-6), captured at settings-build time so callers (startup guard,
     /// default-password login policy) share one value.
@@ -249,6 +252,7 @@ impl Settings {
             login_max_attempts: get_int("login_max_attempts"),
             login_lockout_seconds: get_int("login_lockout_seconds"),
             trusted_proxies: get("trusted_proxies"),
+            tls_http_redirect_enabled: get_bool("tls_http_redirect_enabled"),
             default_db_creds_policy: default_db_creds_policy(),
             acme_enabled: get_bool("acme_enabled"),
             acme_ca: get("acme_ca"),
@@ -338,6 +342,7 @@ impl Settings {
             "acme_dns_provider" => self.acme_dns_provider.clone(),
             "acme_cloudflare_zone_id" => self.acme_cloudflare_zone_id.clone(),
             "acme_dns_provider_config" => self.acme_dns_provider_config.clone(),
+            "tls_http_redirect_enabled" => self.tls_http_redirect_enabled.to_string(),
             _ => return None,
         })
     }

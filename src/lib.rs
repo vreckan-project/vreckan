@@ -20,6 +20,7 @@ pub mod files;
 pub mod acme_orchestrator;
 pub mod permissions;
 pub mod security;
+pub mod serve;
 pub mod session_proxy;
 pub mod session_shares;
 pub mod settings;
