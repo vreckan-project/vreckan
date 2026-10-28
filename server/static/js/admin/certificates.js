@@ -100,8 +100,13 @@ function statusHtml(status) {
         : t("certificates.daysRemaining", { days: days });
   const validCls = status.valid ? "ok" : "err";
   const validLabel = status.valid ? t("certificates.valid") : t("certificates.invalid");
+  // The self-signed fallback is shown when no ACME cert exists: lead with
+  // what the server is actually serving (ANT-660).
+  const notice =
+    status.source === "self-signed" ? `<p class="muted">${t("certificates.selfSigned")}</p>` : "";
   return `<div class="card">
     <h3>${t("certificates.statusTitle")}</h3>
+    ${notice}
     <div class="field mt-8"><label>${t("certificates.source")}</label><div>${esc(status.source || "—")}</div></div>
     <div class="field mt-8"><label>${t("certificates.expiry")}</label><div>${esc(status.expiry || "—")}</div></div>
     <div class="field mt-8"><label>${t("certificates.daysRemainingLabel")}</label><div>${daysLabel}</div></div>

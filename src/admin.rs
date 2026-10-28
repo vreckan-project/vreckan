@@ -986,6 +986,17 @@ async fn get_certificates(
         sources.insert((*name).to_string(), Value::String(setting_source(&state, name).await));
     }
     let mut status = crate::acme_orchestrator::cert_status(&state, &domains).await;
+    // Display-only fallback (ANT-660): with no ACME cert the server serves
+    // its built-in self-signed dev cert (tls.rs), so report that instead of
+    // "no certificate". Kept out of `cert_status` so the renewal/issue
+    // logic never sees the dev cert.
+    if !status.get("present").and_then(|v| v.as_bool()).unwrap_or(false) {
+        if let Some(dev) =
+            crate::acme_orchestrator::self_signed_status(&state.settings.data_root)
+        {
+            status = dev;
+        }
+    }
     // Elide the private-key PEM from the admin's response (ANT-275).
     crate::acme_orchestrator::mask_status_key(&mut status);
     let value = serde_json::json!({
