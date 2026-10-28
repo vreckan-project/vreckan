@@ -586,6 +586,7 @@
     "interval12h": "12 oras",
     "interval24h": "24 oras",
     "intervalCustom": "I-customize ({seconds} s)",
+    "pullConcurrency": "Mga sabay-sabay na pull",
     "auto": "Auto",
     "nextCheckIn": "Susunod na pagsusuri sa loob ng {time}",
     "lastCheckedAt": "Huling nasuri {time}",

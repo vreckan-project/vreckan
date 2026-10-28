@@ -586,6 +586,7 @@
     "interval12h": "12 ชั่วโมง",
     "interval24h": "24 ชั่วโมง",
     "intervalCustom": "กำหนดเอง ({seconds} วิ)",
+    "pullConcurrency": "การดึงพร้อมกัน",
     "auto": "อัตโนมัติ",
     "nextCheckIn": "ตรวจสอบครั้งถัดไปใน {time}",
     "lastCheckedAt": "ตรวจสอบล่าสุดเมื่อ {time}",

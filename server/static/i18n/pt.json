@@ -586,6 +586,7 @@
     "interval12h": "12 horas",
     "interval24h": "24 horas",
     "intervalCustom": "Personalizado ({seconds} s)",
+    "pullConcurrency": "Pulls simultâneos",
     "auto": "Auto",
     "nextCheckIn": "Próxima verificação em {time}",
     "lastCheckedAt": "Verificado às {time}",

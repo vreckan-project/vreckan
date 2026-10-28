@@ -586,6 +586,7 @@
     "interval12h": "12 小时",
     "interval24h": "24 小时",
     "intervalCustom": "自定义（{seconds} 秒）",
+    "pullConcurrency": "并发拉取",
     "auto": "自动",
     "nextCheckIn": "下次检查：{time} 后",
     "lastCheckedAt": "上次检查 {time}",

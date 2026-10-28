@@ -586,6 +586,7 @@
     "interval12h": "12 saat",
     "interval24h": "24 saat",
     "intervalCustom": "Özel ({seconds} sn)",
+    "pullConcurrency": "Eşzamanlı çekimler",
     "auto": "Oto",
     "nextCheckIn": "Sonraki kontrol {time} içinde",
     "lastCheckedAt": "Son kontrol {time}",

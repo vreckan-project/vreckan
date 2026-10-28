@@ -586,6 +586,7 @@
     "interval12h": "12 часов",
     "interval24h": "24 часа",
     "intervalCustom": "Свой ({seconds} с)",
+    "pullConcurrency": "Одновременные загрузки",
     "auto": "Авто",
     "nextCheckIn": "Следующая проверка через {time}",
     "lastCheckedAt": "Проверено в {time}",

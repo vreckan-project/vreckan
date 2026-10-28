@@ -586,6 +586,7 @@
     "interval12h": "12 ساعة",
     "interval24h": "24 ساعة",
     "intervalCustom": "مخصص ({seconds} ث)",
+    "pullConcurrency": "سحب متزامن",
     "auto": "تلقائي",
     "nextCheckIn": "التحقق التالي خلال {time}",
     "lastCheckedAt": "آخر تحقق {time}",

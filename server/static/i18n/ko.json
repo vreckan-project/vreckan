@@ -586,6 +586,7 @@
     "interval12h": "12시간",
     "interval24h": "24시간",
     "intervalCustom": "사용자 지정({seconds}초)",
+    "pullConcurrency": "동시 풀",
     "auto": "자동",
     "nextCheckIn": "{time} 후 다음 확인",
     "lastCheckedAt": "마지막 확인 {time}",

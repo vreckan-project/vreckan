@@ -586,6 +586,7 @@
     "interval12h": "12 timer",
     "interval24h": "24 timer",
     "intervalCustom": "Tilpasset ({seconds} s)",
+    "pullConcurrency": "Samtidige træk",
     "auto": "Auto",
     "nextCheckIn": "Næste tjek om {time}",
     "lastCheckedAt": "Sidst tjekket {time}",
