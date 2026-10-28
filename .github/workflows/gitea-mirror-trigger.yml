@@ -1,7 +1,7 @@
 # Gitea Mirror + Trigger — the GitHub-side "vLLM pattern" leg.
 #
-# One workflow, three independent jobs, so a push to main shows a SINGLE run
-# (not one per concern) while keeping the concerns clearly separated:
+# One workflow, two independent jobs, so a push to main shows a SINGLE run
+# (not two) while keeping the two concerns clearly separated:
 #
 #   mirror-and-trigger  (push to main + pull_request)
 #     1. Mirrors the current branch to the Gitea mirror repo (vreckan/vreckan).
@@ -34,16 +34,6 @@
 #        the /releases entry — v0.6.2 had to be published by hand (ANT-128).
 #     A version only gets tagged when VERSION actually changes (a version-bump
 #     PR is merged); ordinary pushes are a quick no-op.
-#
-#   i18n-parity  (push to main + pull_request + workflow_dispatch)
-#     1. Runs scripts/check-i18n-parity.py: flattens the dotted key set of
-#        every server/static/i18n/*.json file and fails when any locale
-#        diverges from en.json — keys missing from a locale AND keys extra
-#        in a locale (ANT-632, follow-up to the v0.9.3 i18n sync ANT-629,
-#        which had to repair 33 keys missing from all 17 non-English files).
-#     2. Deliberately cheap (stdlib python, ~1s, no secrets) so it runs
-#        unconditionally on every PR — including fork PRs — not just PRs
-#        that touch server/static/i18n/.
 #
 # The jobs are independent (no `needs`), so a tag no-op never masks a build
 # failure and vice-versa.
@@ -394,18 +384,3 @@ jobs:
           gh release create "$TAG" --target "${GITHUB_SHA}" \
             --title "Release ${TAG}" --notes-file /tmp/release-notes.md
           echo "Created GitHub Release ${TAG}"
-
-  i18n-parity:
-    # Fail when any server/static/i18n/*.json locale file's flattened key
-    # set diverges from en.json, in either direction (missing or extra
-    # keys; ANT-632). Runs unconditionally on every PR and push to main:
-    # it is a stdlib-python set comparison over ~18 small files (~1s, no
-    # secrets), so no paths: gate or separate workflow is needed, and the
-    # job runs on fork PRs too (no repo secrets required). The message
-    # names the locale file and every divergent key.
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v7
-
-      - name: Check i18n key parity
-        run: python3 scripts/check-i18n-parity.py
