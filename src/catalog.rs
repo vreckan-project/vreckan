@@ -1349,23 +1349,35 @@ fn apply_pull_progress_event(prog: &mut Value, line: &Value) {
             let layer = layers_obj
                 .entry(layer_id.to_string())
                 .or_insert_with(|| serde_json::json!({ "current": 0, "total": 0 }));
+            // Only the download phase carries transfer counters. Extraction
+            // events reuse the same layer id but report a separate (much
+            // smaller) extraction counter; folding those would make the
+            // aggregate dip mid-pull. Events without a status (older
+            // daemons) are accepted.
+            let event_status = line.get("status").and_then(|v| v.as_str());
+            let has_counters = matches!(
+                event_status,
+                Some("Downloading") | Some("Download complete")
+            ) || event_status.is_none();
             // Byte counters arrive nested in `progressDetail` on modern
             // daemons; fall back to top-level `current`/`total` for older
             // ones. An event with neither leaves the layer indeterminate.
-            let detail = line.get("progressDetail");
-            if let Some(current) = detail
-                .and_then(|d| d.get("current"))
-                .and_then(|v| v.as_i64())
-                .or_else(|| line.get("current").and_then(|v| v.as_i64()))
-            {
-                layer["current"] = Value::Number(current.into());
-            }
-            if let Some(total) = detail
-                .and_then(|d| d.get("total"))
-                .and_then(|v| v.as_i64())
-                .or_else(|| line.get("total").and_then(|v| v.as_i64()))
-            {
-                layer["total"] = Value::Number(total.into());
+            if has_counters {
+                let detail = line.get("progressDetail");
+                if let Some(current) = detail
+                    .and_then(|d| d.get("current"))
+                    .and_then(|v| v.as_i64())
+                    .or_else(|| line.get("current").and_then(|v| v.as_i64()))
+                {
+                    layer["current"] = Value::Number(current.into());
+                }
+                if let Some(total) = detail
+                    .and_then(|d| d.get("total"))
+                    .and_then(|v| v.as_i64())
+                    .or_else(|| line.get("total").and_then(|v| v.as_i64()))
+                {
+                    layer["total"] = Value::Number(total.into());
+                }
             }
         }
     }
@@ -4339,6 +4351,30 @@ mod tests {
         assert_eq!(prog["percentage"], Value::Null);
         assert_eq!(prog["total"], serde_json::json!(0));
         assert!(prog["_layers"].get("sha256:ccc").is_some());
+    }
+
+    #[test]
+    fn pull_progress_extract_counters_do_not_regress() {
+        // Extraction events reuse the layer id but report their own (much
+        // smaller) extraction counter; folding those in would make the
+        // aggregate dip mid-pull. Only download-phase counters count.
+        let mut prog = fresh_pull_progress();
+        apply_pull_progress_event(
+            &mut prog,
+            &serde_json::json!({ "id": "sha256:eee", "status": "Downloading",
+                                 "progressDetail": { "current": 90, "total": 100 } }),
+        );
+        assert_eq!(prog["percentage"], serde_json::json!(90.0));
+        apply_pull_progress_event(
+            &mut prog,
+            &serde_json::json!({ "id": "sha256:eee", "status": "Extracting",
+                                 "progressDetail": { "current": 7, "total": 140 } }),
+        );
+        assert_eq!(prog["percentage"], serde_json::json!(90.0));
+        assert_eq!(prog["current"], serde_json::json!(90));
+        assert_eq!(prog["total"], serde_json::json!(100));
+        // The phase text still tracks the daemon's status string.
+        assert_eq!(prog["status"], "Extracting");
     }
 
     #[test]
