@@ -31,6 +31,21 @@ function fmtBytes(n) {
   return `${n.toFixed(n >= 100 || i === 0 ? 0 : 1)} ${units[i]}`;
 }
 
+// Drive a .progress-fill from the latest poll. A real percentage fills the
+// bar; a null percentage (the daemon reported no byte sizes for this pull)
+// shows the indeterminate shimmer instead of a frozen 0% — the phase text is
+// the primary indicator in that case.
+function setPullFill(fill, pct) {
+  if (!fill) return;
+  if (pct == null) {
+    fill.classList.add("progress-indeterminate");
+    fill.style.width = "";
+  } else {
+    fill.classList.remove("progress-indeterminate");
+    fill.style.width = `${pct}%`;
+  }
+}
+
 // Update the progress bar inside an installed-apps table row in place, so
 // the table visibly tracks the download without a full re-render.
 function updatePullProgressRow(appId, app) {
@@ -40,9 +55,8 @@ function updatePullProgressRow(appId, app) {
   if (ps === "pulling" || ps === "queued") {
     wrap.hidden = false;
     const prog = app.pull_progress || {};
-    const fill = wrap.querySelector(".progress-fill");
+    setPullFill(wrap.querySelector(".progress-fill"), prog.percentage);
     const label = wrap.querySelector(".progress-pct");
-    if (fill && prog.percentage != null) fill.style.width = `${prog.percentage}%`;
     if (label)
       label.textContent =
         prog.percentage != null
@@ -50,10 +64,13 @@ function updatePullProgressRow(appId, app) {
           : prog.status || "starting…";
   } else {
     wrap.hidden = true;
-    // The pull reached a terminal state — refresh the status badge in place so
-    // it no longer reads "pulling"/"waiting to start" (the badge is otherwise
-    // only refreshed on a full table re-render). The status badge is the last
-    // badge in the image cell (the first is the short-SHA badge).
+    // The pull reached a terminal state — stop the indeterminate shimmer in
+    // case the bar is re-shown before the next poll, and refresh the status
+    // badge in place so it no longer reads "pulling"/"waiting to start" (the
+    // badge is otherwise only refreshed on a full table re-render). The
+    // status badge is the last badge in the image cell (the first is the
+    // short-SHA badge).
+    wrap.querySelector(".progress-fill")?.classList.remove("progress-indeterminate");
     const badges = wrap.closest(".image-meta")?.querySelectorAll(".badge") || [];
     const badge = badges[badges.length - 1];
     if (badge) {
@@ -97,8 +114,7 @@ async function trackPullInModal(appId, box, confirmBtn, close, isDismissed) {
     const prog = app.pull_progress || {};
     updatePullProgressRow(appId, app);
     if (ps === "pulling" || ps === "queued") {
-      const f = fill();
-      if (f && prog.percentage != null) f.style.width = `${prog.percentage}%`;
+      setPullFill(fill(), prog.percentage);
       const p = pct();
       if (p) p.textContent = prog.percentage != null ? `${Math.floor(prog.percentage)}%` : "";
       const textEl = text();
@@ -106,6 +122,8 @@ async function trackPullInModal(appId, box, confirmBtn, close, isDismissed) {
       continue;
     }
     if (ps === "pull_failed" || (typeof ps === "string" && ps.startsWith("error"))) {
+      const f = fill();
+      if (f) f.classList.remove("progress-indeterminate");
       const textEl = text();
       if (textEl) textEl.textContent = t("apps.downloadFailed");
       const errEl = box.querySelector("#install-error");
@@ -116,9 +134,13 @@ async function trackPullInModal(appId, box, confirmBtn, close, isDismissed) {
       confirmBtn.textContent = t("apps.close");
       return "failed";
     }
-    // pull_status cleared -> success
+    // pull_status cleared -> success: stop the shimmer and snap the bar to a
+    // full 100%.
     const f = fill();
-    if (f) f.style.width = "100%";
+    if (f) {
+      f.classList.remove("progress-indeterminate");
+      f.style.width = "100%";
+    }
     const p = pct();
     if (p) p.textContent = "100%";
     const textEl = text();
@@ -169,7 +191,7 @@ async function openInstallModal(avail, storeName) {
           <span id="install-progress-text">${t("apps.downloading")}</span>
           <span id="install-progress-pct" class="muted"></span>
         </div>
-        <div class="progress-track"><div class="progress-fill" id="install-progress-fill"></div></div>
+        <div class="progress-track"><div class="progress-fill progress-indeterminate" id="install-progress-fill"></div></div>
       </div>
       <p id="install-error" class="error" hidden></p>
       <div class="modal-actions">
@@ -478,8 +500,16 @@ async function renderApps() {
         ? `<span class="badge" title="${esc(a.image_sha)}">${shortSha(a.image_sha)}</span>`
         : `<span class="muted fs-xs" title="${t("apps.imageNotInspected")}">${t("apps.imageNotInspected")}</span>`;
       // Always render the progress wrap (hidden unless pulling) so the
-      // in-place progress updater can find it right after a re-render.
-      const progress = `<div class="row-progress" data-progress-for="${esc(a.id)}" ${pulling ? "" : "hidden"}><div class="progress-track"><div class="progress-fill" ></div></div><div class="progress-pct muted"></div></div>`;
+      // in-place progress updater can find it right after a re-render. Seed
+      // the bar from the latest poll: a real percentage, or the indeterminate
+      // shimmer while the daemon hasn't reported byte sizes yet.
+      const rowProg = a.pull_progress || {};
+      const rowFillAttrs = pulling
+        ? rowProg.percentage != null
+          ? ` class="progress-fill" style="width: ${rowProg.percentage}%"`
+          : ` class="progress-fill progress-indeterminate"`
+        : ` class="progress-fill"`;
+      const progress = `<div class="row-progress" data-progress-for="${esc(a.id)}" ${pulling ? "" : "hidden"}><div class="progress-track"><div${rowFillAttrs}></div></div><div class="progress-pct muted"></div></div>`;
       return `
       <tr>
         <td><strong>${esc(a.name)}</strong><div class="muted fs-xs" >${esc(a.id)}</div></td>
