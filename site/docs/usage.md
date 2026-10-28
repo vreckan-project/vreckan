@@ -28,11 +28,12 @@ description: Launching apps, managing files and shares, and the administrator's 
     </thead>
     <tbody>
       <tr><td><strong>Session name</strong> (optional)</td><td>Shown</td><td>Shown</td><td>Shown</td></tr>
-      <tr><td><strong>URL to open</strong></td><td>Shown (required)</td><td>—</td><td>—</td></tr>
+      <tr><td><strong>URL to open</strong></td><td>Shown (optional)</td><td>—</td><td>—</td></tr>
       <tr><td><strong>Open file on launch</strong> — upload a file from your computer, or name a file already in shared storage</td><td>—</td><td>Shown (optional)</td><td>—</td></tr>
       <tr><td><strong>Launch options</strong> — home directory, language, GPU, room mode, Wayland</td><td>Shown</td><td>Shown</td><td>Shown</td></tr>
     </tbody>
   </table>
+  <p>The <strong>URL to open</strong> field is optional for browser apps: a blank URL launches the app as-is (e.g. the browser opens to its default page) rather than failing a required-field check. A no-URL launch leaves <code>$VRECKAN_URL</code> unset (not empty) in the session env — launch-time URL semantics apply only when the variable is present, which is what meta-app (Laboratory) autostart scripts key off.</p>
   <p>The <strong>Session name</strong> (optional) appears in the session's window title and in the active-sessions list, so you can tell sessions apart — most useful for browser sessions, where one app can be pointed at many different sites.</p>
   <p>For file apps, the file section also has an <em>Upload a file to shared storage</em> button (hidden when persistent storage is off) if you first need to get a file into shared storage to open it.</p>
 

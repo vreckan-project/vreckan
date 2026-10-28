@@ -9,6 +9,26 @@ is committed normally in `vreckan`. The changelog is the authoritative
 record of what shipped in each release — see
 [`docs/release.md`](./docs/release.md) for the conventions.
 
+## 2026-10-29 — v0.9.3: "URL to open" is now optional for browser apps, and the locale catalogs are back in sync (ANT-626, ANT-628)
+
+- **"URL to open" is now optional for browser apps
+  (ANT-626).** Launching Firefox, Chrome, or Brave with a blank URL opens
+  the app as-is (its default page) instead of showing a "required" error. A
+  no-URL launch leaves `$VRECKAN_URL` unset (not empty) in the session env —
+  launch-time URL semantics apply only when the variable is present, which is
+  what meta-app (Laboratory) autostart scripts key off.
+
+- **i18n synchronized across all 17 non-English locales
+  (ANT-628/T1).** 33 keys missing from every non-English locale since v0.9.2
+  were added; all 18 locale files now carry an identical key set.
+
+- **Process note for future UI work:** new strings must be added to **all**
+  files under `server/static/i18n/`, not just `en.json` — the drift this
+  release fixes accumulated because strings landed in English only.
+
+`VERSION`/`Cargo.toml`/`Cargo.lock` moved 0.9.2 → 0.9.3 via
+`scripts/bump-version.sh patch`.
+
 ## 2026-10-27 — v0.9.2: "Join" offered only where you're invited — on rows, not tiles, with a slimmer join confirmation (ANT-618)
 
 - **"Join" is now offered only where it is actually usable
