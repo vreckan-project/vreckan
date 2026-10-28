@@ -555,6 +555,7 @@
     "installTitle": "Cài đặt {name}",
     "installHelp": "Cài đặt ứng dụng và tải xuống image container của nó. Việc tải xuống chạy ở chế độ nền — tiến trình được hiển thị bên dưới.",
     "appTemplate": "Mẫu ứng dụng",
+    "templateAutoSelected": "Đã chọn tự động — chưa có mẫu tùy chỉnh",
     "accessLabel": "Ai có thể sử dụng ứng dụng này",
     "allUsers": "Tất cả người dùng",
     "accessUsersSection": "Người dùng",

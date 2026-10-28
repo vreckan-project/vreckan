@@ -1716,6 +1716,26 @@ label:has(.src-badge) {
   margin-top: 3px;
 }
 
+/* Install modal: the static template value shown when no custom templates
+   exist (ANT-655) — the dropdown is replaced by the auto-selected template
+   name. Mirrors the themed select's box (sizing, padding, radius) with a
+   dashed border marking it as non-editable. */
+.install-template-static {
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+  font-size: 15px;
+  color: var(--text);
+  background: var(--bg);
+  border: 1px dashed var(--border);
+  border-radius: var(--radius-sm);
+  padding: 9px 12px;
+}
+
+.install-template-static-note {
+  font-size: 0.75rem;
+}
+
 /* ===== Spinner ===== */
 .spinner {
   width: 18px;

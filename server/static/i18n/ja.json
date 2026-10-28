@@ -555,6 +555,7 @@
     "installTitle": "{name} をインストール",
     "installHelp": "アプリをインストールし、そのコンテナイメージをダウンロードします。ダウンロードはバックグラウンドで実行され、進捗は下に表示されます。",
     "appTemplate": "アプリテンプレート",
+    "templateAutoSelected": "自動選択済み — カスタムテンプレートなし",
     "accessLabel": "このアプリを使用できるユーザー",
     "allUsers": "全ユーザー",
     "accessUsersSection": "ユーザー",

@@ -555,6 +555,7 @@
     "installTitle": "Instalar {name}",
     "installHelp": "Instala la app y descarga su imagen de contenedor. La descarga se ejecuta en segundo plano — el progreso se muestra a continuación.",
     "appTemplate": "Plantilla de app",
+    "templateAutoSelected": "Seleccionado automáticamente — sin plantillas personalizadas",
     "accessLabel": "Quién puede usar esta app",
     "allUsers": "Todos los usuarios",
     "accessUsersSection": "Usuarios",

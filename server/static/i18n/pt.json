@@ -555,6 +555,7 @@
     "installTitle": "Instalar {name}",
     "installHelp": "Instala a app e baixa a imagem do container. O download ocorre em segundo plano — o progresso é mostrado abaixo.",
     "appTemplate": "Modelo da app",
+    "templateAutoSelected": "Selecionado automaticamente — sem modelos personalizados",
     "accessLabel": "Quem pode usar esta app",
     "allUsers": "Todos os usuários",
     "accessUsersSection": "Usuários",

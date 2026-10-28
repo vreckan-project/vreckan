@@ -555,6 +555,7 @@
     "installTitle": "安装 {name}",
     "installHelp": "安装应用并下载其容器镜像。下载在后台进行 — 进度显示在下方。",
     "appTemplate": "应用模板",
+    "templateAutoSelected": "已自动选择 — 无自定义模板",
     "accessLabel": "谁可以使用此应用",
     "allUsers": "所有用户",
     "accessUsersSection": "用户",

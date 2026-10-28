@@ -555,6 +555,7 @@
     "installTitle": "Installer {name}",
     "installHelp": "Installerer appen og downloader dens container-image. Downloaden kører i baggrunden — fremdriften vises nedenfor.",
     "appTemplate": "App-skabelon",
+    "templateAutoSelected": "Valgt automatisk — ingen tilpassede skabeloner",
     "accessLabel": "Hvem kan bruge denne app",
     "allUsers": "Alle brugere",
     "accessUsersSection": "Brugere",

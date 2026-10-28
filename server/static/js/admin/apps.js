@@ -140,9 +140,27 @@ async function openInstallModal(avail, storeName) {
   } catch (_) {
     /* template list is optional */
   }
-  const tplOptions = (templates.length ? templates : [{ name: "default" }])
-    .map((t) => `<option value="${esc(t.name)}">${esc(t.name)}</option>`)
+  // The template dropdown only earns its place once the admin has created a
+  // custom template; otherwise the first entry in the list is auto-selected
+  // (the seeded "Default" on a fresh install) and its real name is sent on
+  // submit — the old lowercase "default" fallback literal never matched the
+  // case-sensitive template lookup in the catalog. A server that predates
+  // provenance tagging (no entry carries the field) keeps the dropdown as a
+  // conservative fallback.
+  const autoTemplate = (templates[0] && templates[0].name) || "Default";
+  const showTemplateSelect =
+    templates.some((x) => x.provenance === "custom") ||
+    !templates.some((x) => x.provenance !== undefined);
+  const tplOptions = (templates.length ? templates : [{ name: autoTemplate }])
+    .map((x) => `<option value="${esc(x.name)}">${esc(x.name)}</option>`)
     .join("");
+  const templateField = showTemplateSelect
+    ? `<label>${t("apps.appTemplate")}
+        <select id="install-template">${tplOptions}</select>
+      </label>`
+    : `<label>${t("apps.appTemplate")}
+        <span class="install-template-static">${esc(autoTemplate)}<span class="muted install-template-static-note">${t("apps.templateAutoSelected")}</span></span>
+      </label>`;
   const { userNames, groupNames } = await rosterNames();
 
   let phase = "confirm"; // confirm -> downloading -> done | failed
@@ -155,9 +173,7 @@ async function openInstallModal(avail, storeName) {
     },
     body: `
       <p class="muted">${t("apps.installHelp")}</p>
-      <label>${t("apps.appTemplate")}
-        <select id="install-template">${tplOptions}</select>
-      </label>
+      ${templateField}
       <div class="admin-form-row mt-12" >
         <div class="field flex-1" >
           <label>${t("apps.accessLabel")}</label>
@@ -186,7 +202,8 @@ async function openInstallModal(avail, storeName) {
 
   confirmBtn.addEventListener("click", async () => {
     if (phase === "confirm") {
-      const appTemplate = box.querySelector("#install-template").value || "default";
+      const templateSelect = box.querySelector("#install-template");
+      const appTemplate = (templateSelect && templateSelect.value) || autoTemplate;
       const payload = {
         id: crypto.randomUUID(),
         name: avail.name,

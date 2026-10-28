@@ -555,6 +555,7 @@
     "installTitle": "I-install ang {name}",
     "installHelp": "Ii-install ang app at i-download ang container image nito. Ang download ay gagawin sa background — ipinapakita ang progress sa ibaba.",
     "appTemplate": "Template ng app",
+    "templateAutoSelected": "Awtomatik na napili — wala pang custom na template",
     "accessLabel": "Sino ang makakagamit ng app na ito",
     "allUsers": "Lahat ng user",
     "accessUsersSection": "Mga user",
