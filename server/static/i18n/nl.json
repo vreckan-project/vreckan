@@ -556,6 +556,7 @@
     "installTitle": "Installeer {name}",
     "installHelp": "Installeert de app en downloadt de container-image. De download verloopt op de achtergrond — de voortgang wordt hieronder getoond.",
     "appTemplate": "App-template",
+    "templateAutoSelected": "Automatisch geselecteerd — geen aangepaste sjablonen",
     "accessLabel": "Wie kan deze app gebruiken",
     "allUsers": "Alle gebruikers",
     "accessUsersSection": "Gebruikers",

@@ -556,6 +556,7 @@
     "installTitle": "Install {name}",
     "installHelp": "Installs the app and downloads its container image. The download runs in the background — progress is shown below.",
     "appTemplate": "App template",
+    "templateAutoSelected": "Auto-selected — no custom templates",
     "accessLabel": "Who can use this app",
     "allUsers": "All users",
     "accessUsersSection": "Users",

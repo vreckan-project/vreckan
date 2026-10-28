@@ -556,6 +556,7 @@
     "installTitle": "{name} yükle",
     "installHelp": "Uygulamayı yükler ve konteyner imajını indirir. İndirme arka planda çalışır — ilerleme aşağıda gösterilir.",
     "appTemplate": "Uygulama şablonu",
+    "templateAutoSelected": "Otomatik seçildi — özel şablon yok",
     "accessLabel": "Bu uygulamayı kimler kullanabilir",
     "allUsers": "Tüm kullanıcılar",
     "accessUsersSection": "Kullanıcılar",
