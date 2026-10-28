@@ -62,6 +62,11 @@ pub struct LoginAttemptWindow {
     pub locked_until: f64,
 }
 
+/// Per-session selkies data-plane connections: session id ->
+/// [(token presented to selkies, connect sequence)] in connect order
+/// (ANT-443).
+type SelkiesClientConns = HashMap<String, Vec<(String, u64)>>;
+
 /// The shared application state, passed to every axum handler.
 #[derive(Clone)]
 pub struct AppState {
@@ -140,7 +145,7 @@ pub struct AppState {
     /// down; the plain-session token-table refresh grants `mk_control` to the
     /// most recently connected controller (the "newest-controller-wins"
     /// hand-off selkies' primary kill enforces).
-    pub selkies_client_conns: Arc<RwLock<HashMap<String, Vec<(String, u64)>>>>,
+    pub selkies_client_conns: Arc<RwLock<SelkiesClientConns>>,
     /// Monotonic connect sequence for `selkies_client_conns` (in-memory only;
     /// ordering within one vreckan process is all the derivation needs).
     pub selkies_conn_seq: Arc<std::sync::atomic::AtomicU64>,

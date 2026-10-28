@@ -440,7 +440,7 @@ mod tests {
         let key = RsaPrivateKey::new(&mut rand::rng(), 2048).unwrap();
         std::fs::write(
             &path,
-            key.to_pkcs8_pem(LineEnding::LF).unwrap().to_string(),
+            key.to_pkcs8_pem(LineEnding::LF).unwrap(),
         )
         .unwrap();
         std::fs::set_permissions(&path, PermissionsExt::from_mode(0o644)).unwrap();
