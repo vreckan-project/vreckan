@@ -339,7 +339,7 @@ async fn test_share_visit_e2e_real_selkies_container() {
     let loc = location(&grant);
     let token = loc
         .strip_prefix(&format!("/api/apps/session/{sid}/?token="))
-        .expect(&format!("promoted redirect: {loc}"))
+        .unwrap_or_else(|| panic!("promoted redirect: {loc}"))
         .split('&')
         .next()
         .expect("token")
