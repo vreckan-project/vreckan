@@ -44,6 +44,7 @@ pub const SETTING_DEFINITIONS: &[SettingDef] = &[
     SettingDef { name: "app_store_cache_path", type_: "str", default: "/data/app_stores_cache", help: "Directory to cache app store YAML files." },
     SettingDef { name: "auto_update_apps", type_: "bool", default: "true", help: "Enable automatic pulling of the latest app images in the background." },
     SettingDef { name: "auto_update_interval_seconds", type_: "int", default: "3600", help: "How often to check for app image updates (in seconds)." },
+    SettingDef { name: "registry_pull_concurrency", type_: "int", default: "2", help: "Maximum number of concurrent image pulls across the whole server (auto-update tick, 'Update all', single-app pulls, and launch-time pulls). Lower is gentler on per-IP registry pull-rate budgets (e.g. lscr.io); values are clamped to 1–128." },
     SettingDef { name: "puid", type_: "int", default: "1000", help: "Default User ID to run containers as." },
     SettingDef { name: "pgid", type_: "int", default: "1000", help: "Default Group ID to run containers as." },
     SettingDef { name: "data_root", type_: "str", default: "/data", help: "Root of the persistent data tree (database, storage, caches, backups)." },
@@ -79,6 +80,8 @@ pub const SETTING_DEFINITIONS: &[SettingDef] = &[
     // --- CORS (ANT-653) ---
     SettingDef { name: "cors_mode", type_: "str", default: "loose", help: "CORS behavior for API calls from a different origin (e.g. the same server reached via a different hostname, IP address, or port): 'loose' (default) echoes the requesting origin with credentials and issues the login cookie as SameSite=None; Secure; 'strict' sends no CORS headers at all (same-origin only, the pre-0.9.5 behavior)." },
     SettingDef { name: "cors_allowed_origins", type_: "str", default: "", help: "Comma-separated origin allowlist for loose CORS mode (e.g. 'https://a.example.com, https://b.example.com'). Empty = every origin is accepted." },
+    // --- TLS / listener (ANT-652) ---
+    SettingDef { name: "tls_http_redirect_enabled", type_: "bool", default: "true", help: "Same-port HTTP→HTTPS redirect (ANT-652): each new connection to the TLS port is sniffed on its first byte; a TLS ClientHello (0x16) proceeds to the rustls handshake, anything else is answered with a 301 to https://{Host}{uri} so plain-HTTP clients (http://host:443) bounce to the working HTTPS URL instead of a handshake error. Off = today's behavior (plain-HTTP connections fail the TLS handshake). Deployments behind a TLS-terminating reverse proxy that already redirects should set this off." },
     // --- ACME (native acmex) ---
     SettingDef { name: "acme_enabled", type_: "bool", default: "false", help: "Issue ACME (Let's Encrypt / ZeroSSL / Google) certificates. When off, the server uses a self-signed certificate." },
     SettingDef { name: "acme_ca", type_: "str", default: "letsencrypt", help: "The ACME certificate authority to use: 'letsencrypt' (default), 'zerossl', 'google', or a full custom ACME directory URL. Only letsencrypt honours acme_staging (staging vs production)." },
@@ -138,6 +141,7 @@ pub struct Settings {
     pub app_store_cache_path: String,
     pub auto_update_apps: bool,
     pub auto_update_interval_seconds: i64,
+    pub registry_pull_concurrency: i64,
     pub puid: i64,
     pub pgid: i64,
     pub data_root: String,
@@ -169,6 +173,7 @@ pub struct Settings {
     pub trusted_proxies: String,
     pub cors_mode: String,
     pub cors_allowed_origins: String,
+    pub tls_http_redirect_enabled: bool,
     /// The resolved `VRECKAN_ALLOW_DEFAULT_DB_CREDS` escape hatch (ANT-45
     /// P2-6), captured at settings-build time so callers (startup guard,
     /// default-password login policy) share one value.
@@ -225,6 +230,7 @@ impl Settings {
             app_store_cache_path: get("app_store_cache_path"),
             auto_update_apps: get_bool("auto_update_apps"),
             auto_update_interval_seconds: get_int("auto_update_interval_seconds"),
+            registry_pull_concurrency: get_int("registry_pull_concurrency"),
             puid: get_int("puid"),
             pgid: get_int("pgid"),
             data_root: get("data_root"),
@@ -256,6 +262,7 @@ impl Settings {
             trusted_proxies: get("trusted_proxies"),
             cors_mode: get("cors_mode"),
             cors_allowed_origins: get("cors_allowed_origins"),
+            tls_http_redirect_enabled: get_bool("tls_http_redirect_enabled"),
             default_db_creds_policy: default_db_creds_policy(),
             acme_enabled: get_bool("acme_enabled"),
             acme_ca: get("acme_ca"),
@@ -303,6 +310,7 @@ impl Settings {
             "app_store_cache_path" => self.app_store_cache_path.clone(),
             "auto_update_apps" => self.auto_update_apps.to_string(),
             "auto_update_interval_seconds" => self.auto_update_interval_seconds.to_string(),
+            "registry_pull_concurrency" => self.registry_pull_concurrency.to_string(),
             "puid" => self.puid.to_string(),
             "pgid" => self.pgid.to_string(),
             "data_root" => self.data_root.clone(),
@@ -347,6 +355,7 @@ impl Settings {
             "acme_dns_provider" => self.acme_dns_provider.clone(),
             "acme_cloudflare_zone_id" => self.acme_cloudflare_zone_id.clone(),
             "acme_dns_provider_config" => self.acme_dns_provider_config.clone(),
+            "tls_http_redirect_enabled" => self.tls_http_redirect_enabled.to_string(),
             _ => return None,
         })
     }

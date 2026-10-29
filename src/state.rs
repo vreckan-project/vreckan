@@ -13,7 +13,7 @@
 
 use std::collections::HashMap;
 use std::sync::{Arc, Mutex};
-use tokio::sync::RwLock;
+use tokio::sync::{RwLock, Semaphore};
 
 use axum_server::tls_rustls::RustlsConfig;
 
@@ -94,6 +94,17 @@ pub struct AppState {
     /// Live image-pull status, keyed by image name
     /// ("queued" / "pulling" / "pull_failed"). Mirrors `api.PULL_STATUS`.
     pub pull_status: Arc<RwLock<HashMap<String, String>>>,
+    /// In-process cap on concurrent image pulls (ANT-668), seeded from the
+    /// `registry_pull_concurrency` setting at startup. The semaphore lives
+    /// in a mutex so [`AppState::pull_semaphore`] can swap it when the
+    /// effective DB-over-env-over-default value changes (an admin edit then
+    /// applies without a restart). In-process on purpose: it caps the
+    /// fan-out of this server regardless of where the Docker daemon runs
+    /// (remote `DOCKER_HOST` included).
+    pub pull_sem: Arc<Mutex<Arc<Semaphore>>>,
+    /// Permit count of the cached `pull_sem`; `pull_semaphore()` rebuilds
+    /// when the effective setting differs from it.
+    pub pull_sem_permits: Arc<std::sync::atomic::AtomicUsize>,
     /// Cached image metadata, keyed by image name. Besides the local `sha`
     /// (image ID) / `digests` / `last_checked_at`, entries may carry the
     /// registry comparison from an update check: `remote_digest`,
@@ -189,6 +200,7 @@ pub struct AppState {
 
 impl AppState {
     pub fn new(settings: Settings, db: Db) -> Self {
+        let pull_permits = settings.registry_pull_concurrency.clamp(1, 128) as usize;
         Self {
             settings,
             db,
@@ -200,6 +212,8 @@ impl AppState {
             download_tokens: Arc::new(RwLock::new(HashMap::new())),
             pull_progress: Arc::new(Mutex::new(HashMap::new())),
             pull_status: Arc::new(RwLock::new(HashMap::new())),
+            pull_sem: Arc::new(Mutex::new(Arc::new(Semaphore::new(pull_permits)))),
+            pull_sem_permits: Arc::new(std::sync::atomic::AtomicUsize::new(pull_permits)),
             image_metadata: Arc::new(RwLock::new(HashMap::new())),
             auto_update_job: Arc::new(RwLock::new(AutoUpdateJobState::default())),
             installed_apps: Arc::new(RwLock::new(HashMap::new())),
@@ -225,5 +239,85 @@ impl AppState {
             fake_selkies_probe: Arc::new(RwLock::new(None)),
             tls_config: None,
         }
+    }
+
+    /// The pull semaphore with the *current* effective
+    /// `registry_pull_concurrency` (DB-over-env-over-default, clamped to
+    /// 1–128). Returns the cached semaphore when the effective value is
+    /// unchanged; otherwise rebuilds it under the `pull_sem` mutex. A
+    /// permit held on a just-replaced semaphore stays valid, so a
+    /// concurrent rebuild can only transiently widen the cap by one, never
+    /// deadlock. The mutex section contains no `.await`.
+    pub async fn pull_semaphore(&self) -> Arc<Semaphore> {
+        let permits = self
+            .settings
+            .get_setting(&self.db, "registry_pull_concurrency")
+            .await
+            .as_i64()
+            .unwrap_or(2)
+            .clamp(1, 128) as usize;
+        let mut slot = self
+            .pull_sem
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner);
+        if self.pull_sem_permits.load(std::sync::atomic::Ordering::Relaxed) != permits {
+            *slot = Arc::new(Semaphore::new(permits));
+            self.pull_sem_permits.store(permits, std::sync::atomic::Ordering::Relaxed);
+        }
+        slot.clone()
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// The pull semaphore tracks the effective `registry_pull_concurrency`
+    /// (DB-over-env-over-default): it is cached while the value is
+    /// unchanged, rebuilt when the DB layer overrides it, and shared across
+    /// `AppState` clones (ANT-668).
+    #[tokio::test]
+    async fn pull_semaphore_tracks_effective_setting() {
+        let dir = std::env::temp_dir().join(format!(
+            "vreckan-state-test-{}-{}",
+            std::process::id(),
+            std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .unwrap()
+                .as_nanos()
+        ));
+        std::fs::create_dir_all(&dir).unwrap();
+        let db = crate::db::connect(&format!(
+            "sqlite://{}?mode=rwc",
+            dir.join("vreckan.db").display()
+        ))
+        .await
+        .unwrap();
+        db.init().await.unwrap();
+        let mut settings = Settings::from_env();
+        settings.registry_pull_concurrency = 2;
+        let state = AppState::new(settings, db.clone());
+
+        // env/default layer: 2 permits, served from the cache.
+        let sem = state.pull_semaphore().await;
+        assert_eq!(sem.available_permits(), 2);
+
+        // A DB override wins: the semaphore is rebuilt with the new width.
+        db.set_app_setting("VRECKAN_REGISTRY_PULL_CONCURRENCY", "5")
+            .await
+            .unwrap();
+        let sem2 = state.pull_semaphore().await;
+        assert_eq!(sem2.available_permits(), 5);
+        assert!(!Arc::ptr_eq(&sem, &sem2));
+
+        // Unchanged effective value: the rebuilt semaphore is cached.
+        let sem3 = state.pull_semaphore().await;
+        assert!(Arc::ptr_eq(&sem2, &sem3));
+
+        // Clones share the same live semaphore (the router holds clones).
+        let sem4 = state.clone().pull_semaphore().await;
+        assert!(Arc::ptr_eq(&sem2, &sem4));
+
+        let _ = std::fs::remove_dir_all(&dir);
     }
 }

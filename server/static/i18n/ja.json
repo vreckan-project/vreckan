@@ -65,7 +65,8 @@
     "revoke": "取り消す",
     "revokeConfirm": "この共有を取り消しますか？",
     "shareRevoked": "共有を取り消しました",
-    "up": "上へ"
+    "up": "上へ",
+    "openInAppPopupBlocked": "セッションが開始されました — ブラウザーが新しいタブをブロックしました。セッションリストのハイライトされた行から開いてください。"
   },
   "login": {
     "signIn": "ログイン",
@@ -114,7 +115,6 @@
     "serverFilePlaceholder": "共有ストレージのファイル名",
     "launch": "起動",
     "gpuAuto": "自動（特定のGPUなし）",
-    "sessionLaunched": "セッションを起動しました",
     "noSessionUrl": "起動に失敗しました: セッションURLが返されませんでした",
     "url": "URL",
     "launchApp": "{name} を起動",
@@ -125,7 +125,11 @@
     "finalizing": "最終処理中…",
     "fileUploaded": "ファイル '{name}' をアップロードしました。",
     "urlToOpen": "開くURL",
-    "options": "起動オプション"
+    "options": "起動オプション",
+    "sessionStarting": "セッションを開始中です — 準備ができたら自動的に開かれます。",
+    "sessionReady": "セッションの準備ができました。",
+    "sessionReadyOpenFromList": "セッションの準備ができました — セッション一覧から開いてください。",
+    "popupBlocked": "セッションが開始されました — ブラウザーが新しいタブをブロックしました。セッションリストのハイライトされた行から開いてください。"
   },
   "password": {
     "title": "パスワードを変更",
@@ -459,7 +463,8 @@
     "save": "保存",
     "saved": "証明書の設定を保存しました。",
     "statusTitle": "現在の証明書",
-    "noCert": "証明書が見つかりません。ACME を有効にして発行するか、サーバーは自己署名証明書を使用しています。",
+    "noCert": "現在、利用可能な証明書がありません。Vreckan は起動時に組み込みの自己署名証明書を生成します。これが続く場合はサーバーログを確認してください。",
+    "selfSigned": "サーバーは組み込みの自己署名証明書を使用しています。置き換えるには ACME を有効にして証明書を発行してください。",
     "source": "ソース",
     "expiry": "有効期限",
     "daysRemainingLabel": "残り日数",
@@ -562,6 +567,7 @@
     "installTitle": "{name} をインストール",
     "installHelp": "アプリをインストールし、そのコンテナイメージをダウンロードします。ダウンロードはバックグラウンドで実行され、進捗は下に表示されます。",
     "appTemplate": "アプリテンプレート",
+    "templateAutoSelected": "自動選択済み — カスタムテンプレートなし",
     "accessLabel": "このアプリを使用できるユーザー",
     "allUsers": "全ユーザー",
     "accessUsersSection": "ユーザー",
@@ -593,6 +599,7 @@
     "interval12h": "12時間",
     "interval24h": "24時間",
     "intervalCustom": "カスタム（{seconds} 秒）",
+    "pullConcurrency": "同時プル",
     "auto": "自動",
     "nextCheckIn": "次のチェックまで {time}",
     "lastCheckedAt": "最終チェック {time}",
@@ -671,7 +678,6 @@
     "recreate": "再作成",
     "recreateTitle": "最新イメージからこのセッションを再作成します（アプリは短時間オフラインになります）",
     "recreating": "再作成中…",
-    "recreated": "セッションを再作成しました",
     "noActive": "アクティブなセッションはありません。",
     "noActiveUsers": "どのユーザーにもアクティブなセッションはありません。",
     "kill": "終了",
@@ -696,7 +702,16 @@
     "ownerBy": "所有者 {owner}",
     "participantCount": "{count} 人の参加者",
     "participantCountPlural": "{count} 人の参加者",
-    "participantsBadgeTitle": "{names} — 管理するにはクリック"
+    "participantsBadgeTitle": "{names} — 管理するにはクリック",
+    "starting": "開始中…",
+    "stopping": "停止中…",
+    "failedToStart": "開始に失敗しました",
+    "failedToStartDetail": "開始に失敗しました: {error}",
+    "launchFailedToast": "セッションの開始に失敗しました: {error}",
+    "goneWhileStarting": "セッションは開始中に終了しました。",
+    "stillStarting": "セッションはまだ開始中です — 状態はセッション一覧に表示されます。",
+    "joined": "セッションに参加しました",
+    "joinedPopupBlocked": "参加しました — ブラウザーが新しいタブをブロックしました。開くには、ハイライトされた行の「参加」をもう一度クリックしてください。"
   },
   "backup": {
     "heading": "バックアップ",

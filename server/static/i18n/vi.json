@@ -65,7 +65,8 @@
     "revoke": "Thu hồi",
     "revokeConfirm": "Thu hồi chia sẻ này?",
     "shareRevoked": "Đã thu hồi chia sẻ",
-    "up": "Lên"
+    "up": "Lên",
+    "openInAppPopupBlocked": "Phiên đã khởi động — trình duyệt đã chặn tab mới. Mở nó từ dòng được đánh dấu trong danh sách phiên."
   },
   "login": {
     "signIn": "Đăng nhập",
@@ -114,7 +115,6 @@
     "serverFilePlaceholder": "tên tệp trong bộ nhớ chung",
     "launch": "Khởi chạy",
     "gpuAuto": "Tự động (không có GPU cụ thể)",
-    "sessionLaunched": "Đã khởi chạy phiên",
     "noSessionUrl": "Khởi chạy thất bại: không nhận được URL phiên",
     "url": "URL",
     "launchApp": "Khởi chạy {name}",
@@ -125,7 +125,11 @@
     "finalizing": "Đang hoàn tất…",
     "fileUploaded": "Đã tải lên tệp '{name}'.",
     "urlToOpen": "URL cần mở",
-    "options": "Tùy chọn khởi chạy"
+    "options": "Tùy chọn khởi chạy",
+    "sessionStarting": "Đang khởi động phiên — sẽ mở khi sẵn sàng.",
+    "sessionReady": "Phiên đã sẵn sàng.",
+    "sessionReadyOpenFromList": "Phiên đã sẵn sàng — mở từ danh sách phiên.",
+    "popupBlocked": "Phiên đã khởi động — trình duyệt đã chặn tab mới. Mở nó từ dòng được đánh dấu trong danh sách phiên."
   },
   "password": {
     "title": "Đổi mật khẩu",
@@ -459,7 +463,8 @@
     "save": "Lưu",
     "saved": "Đã lưu cấu hình chứng chỉ.",
     "statusTitle": "Chứng chỉ hiện tại",
-    "noCert": "Không tìm thấy chứng chỉ. Hãy bật ACME và phát hành, hoặc máy chủ đang dùng chứng chỉ tự ký.",
+    "noCert": "Hiện tại chưa có chứng chỉ nào khả dụng. Vreckan tạo chứng chỉ tự ký tích hợp khi khởi động; xem nhật ký máy chủ nếu tình trạng này kéo dài.",
+    "selfSigned": "Máy chủ đang dùng chứng chỉ tự ký tích hợp. Bật ACME và phát hành một chứng chỉ để thay thế.",
     "source": "Nguồn",
     "expiry": "Hết hạn",
     "daysRemainingLabel": "Số ngày còn lại",
@@ -562,6 +567,7 @@
     "installTitle": "Cài đặt {name}",
     "installHelp": "Cài đặt ứng dụng và tải xuống image container của nó. Việc tải xuống chạy ở chế độ nền — tiến trình được hiển thị bên dưới.",
     "appTemplate": "Mẫu ứng dụng",
+    "templateAutoSelected": "Đã chọn tự động — chưa có mẫu tùy chỉnh",
     "accessLabel": "Ai có thể sử dụng ứng dụng này",
     "allUsers": "Tất cả người dùng",
     "accessUsersSection": "Người dùng",
@@ -593,6 +599,7 @@
     "interval12h": "12 giờ",
     "interval24h": "24 giờ",
     "intervalCustom": "Tùy chỉnh ({seconds} s)",
+    "pullConcurrency": "Kéo đồng thời",
     "auto": "Tự động",
     "nextCheckIn": "Kiểm tra tiếp theo sau {time}",
     "lastCheckedAt": "Kiểm tra lần cuối lúc {time}",
@@ -671,7 +678,6 @@
     "recreate": "Tạo lại",
     "recreateTitle": "Tạo lại phiên này từ image mới nhất (ứng dụng sẽ tạm thời offline)",
     "recreating": "Đang tạo lại…",
-    "recreated": "Đã tạo lại phiên",
     "noActive": "Không có phiên hoạt động nào.",
     "noActiveUsers": "Không có phiên hoạt động nào ở tất cả người dùng.",
     "kill": "Dừng",
@@ -696,7 +702,16 @@
     "ownerBy": "của {owner}",
     "participantCount": "{count} người tham gia",
     "participantCountPlural": "{count} người tham gia",
-    "participantsBadgeTitle": "{names} — bấm để quản lý"
+    "participantsBadgeTitle": "{names} — bấm để quản lý",
+    "starting": "Đang khởi động…",
+    "stopping": "Đang dừng…",
+    "failedToStart": "Khởi động không thành công",
+    "failedToStartDetail": "Khởi động không thành công: {error}",
+    "launchFailedToast": "Phiên không khởi động được: {error}",
+    "goneWhileStarting": "Phiên đã kết thúc trong khi đang khởi động.",
+    "stillStarting": "Phiên vẫn đang khởi động — trạng thái được hiển thị trong danh sách phiên.",
+    "joined": "Đã tham gia phiên",
+    "joinedPopupBlocked": "Đã tham gia — trình duyệt đã chặn tab mới. Nhấn «Tham gia» một lần nữa trên dòng được đánh dấu để mở."
   },
   "backup": {
     "heading": "Sao Lưu",

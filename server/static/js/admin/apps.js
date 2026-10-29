@@ -3,7 +3,7 @@
 //
 // The small DOM helpers ($, esc, toast, request, setPanel) are local copies so
 // this file is self-contained; `render` comes from admin.js.
-import { $, esc, toast, request } from "../util.js";
+import { $, esc, toast, request, formatLogoSrc } from "../util.js";
 import { confirmModal, openCustomModal } from "../modal.js";
 import { t } from "../i18n.js";
 import { render, pickSectionHtml, wirePickSections } from "../admin.js";
@@ -31,6 +31,21 @@ function fmtBytes(n) {
   return `${n.toFixed(n >= 100 || i === 0 ? 0 : 1)} ${units[i]}`;
 }
 
+// Drive a .progress-fill from the latest poll. A real percentage fills the
+// bar; a null percentage (the daemon reported no byte sizes for this pull)
+// shows the indeterminate shimmer instead of a frozen 0% — the phase text is
+// the primary indicator in that case.
+function setPullFill(fill, pct) {
+  if (!fill) return;
+  if (pct == null) {
+    fill.classList.add("progress-indeterminate");
+    fill.style.width = "";
+  } else {
+    fill.classList.remove("progress-indeterminate");
+    fill.style.width = `${pct}%`;
+  }
+}
+
 // Update the progress bar inside an installed-apps table row in place, so
 // the table visibly tracks the download without a full re-render.
 function updatePullProgressRow(appId, app) {
@@ -40,9 +55,8 @@ function updatePullProgressRow(appId, app) {
   if (ps === "pulling" || ps === "queued") {
     wrap.hidden = false;
     const prog = app.pull_progress || {};
-    const fill = wrap.querySelector(".progress-fill");
+    setPullFill(wrap.querySelector(".progress-fill"), prog.percentage);
     const label = wrap.querySelector(".progress-pct");
-    if (fill && prog.percentage != null) fill.style.width = `${prog.percentage}%`;
     if (label)
       label.textContent =
         prog.percentage != null
@@ -50,10 +64,13 @@ function updatePullProgressRow(appId, app) {
           : prog.status || "starting…";
   } else {
     wrap.hidden = true;
-    // The pull reached a terminal state — refresh the status badge in place so
-    // it no longer reads "pulling"/"waiting to start" (the badge is otherwise
-    // only refreshed on a full table re-render). The status badge is the last
-    // badge in the image cell (the first is the short-SHA badge).
+    // The pull reached a terminal state — stop the indeterminate shimmer in
+    // case the bar is re-shown before the next poll, and refresh the status
+    // badge in place so it no longer reads "pulling"/"waiting to start" (the
+    // badge is otherwise only refreshed on a full table re-render). The
+    // status badge is the last badge in the image cell (the first is the
+    // short-SHA badge).
+    wrap.querySelector(".progress-fill")?.classList.remove("progress-indeterminate");
     const badges = wrap.closest(".image-meta")?.querySelectorAll(".badge") || [];
     const badge = badges[badges.length - 1];
     if (badge) {
@@ -97,8 +114,7 @@ async function trackPullInModal(appId, box, confirmBtn, close, isDismissed) {
     const prog = app.pull_progress || {};
     updatePullProgressRow(appId, app);
     if (ps === "pulling" || ps === "queued") {
-      const f = fill();
-      if (f && prog.percentage != null) f.style.width = `${prog.percentage}%`;
+      setPullFill(fill(), prog.percentage);
       const p = pct();
       if (p) p.textContent = prog.percentage != null ? `${Math.floor(prog.percentage)}%` : "";
       const textEl = text();
@@ -106,6 +122,8 @@ async function trackPullInModal(appId, box, confirmBtn, close, isDismissed) {
       continue;
     }
     if (ps === "pull_failed" || (typeof ps === "string" && ps.startsWith("error"))) {
+      const f = fill();
+      if (f) f.classList.remove("progress-indeterminate");
       const textEl = text();
       if (textEl) textEl.textContent = t("apps.downloadFailed");
       const errEl = box.querySelector("#install-error");
@@ -116,9 +134,13 @@ async function trackPullInModal(appId, box, confirmBtn, close, isDismissed) {
       confirmBtn.textContent = t("apps.close");
       return "failed";
     }
-    // pull_status cleared -> success
+    // pull_status cleared -> success: stop the shimmer and snap the bar to a
+    // full 100%.
     const f = fill();
-    if (f) f.style.width = "100%";
+    if (f) {
+      f.classList.remove("progress-indeterminate");
+      f.style.width = "100%";
+    }
     const p = pct();
     if (p) p.textContent = "100%";
     const textEl = text();
@@ -140,9 +162,27 @@ async function openInstallModal(avail, storeName) {
   } catch (_) {
     /* template list is optional */
   }
-  const tplOptions = (templates.length ? templates : [{ name: "default" }])
-    .map((t) => `<option value="${esc(t.name)}">${esc(t.name)}</option>`)
+  // The template dropdown only earns its place once the admin has created a
+  // custom template; otherwise the first entry in the list is auto-selected
+  // (the seeded "Default" on a fresh install) and its real name is sent on
+  // submit — the old lowercase "default" fallback literal never matched the
+  // case-sensitive template lookup in the catalog. A server that predates
+  // provenance tagging (no entry carries the field) keeps the dropdown as a
+  // conservative fallback.
+  const autoTemplate = (templates[0] && templates[0].name) || "Default";
+  const showTemplateSelect =
+    templates.some((x) => x.provenance === "custom") ||
+    !templates.some((x) => x.provenance !== undefined);
+  const tplOptions = (templates.length ? templates : [{ name: autoTemplate }])
+    .map((x) => `<option value="${esc(x.name)}">${esc(x.name)}</option>`)
     .join("");
+  const templateField = showTemplateSelect
+    ? `<label>${t("apps.appTemplate")}
+        <select id="install-template">${tplOptions}</select>
+      </label>`
+    : `<label>${t("apps.appTemplate")}
+        <span class="install-template-static">${esc(autoTemplate)}<span class="muted install-template-static-note">${t("apps.templateAutoSelected")}</span></span>
+      </label>`;
   const { userNames, groupNames } = await rosterNames();
 
   let phase = "confirm"; // confirm -> downloading -> done | failed
@@ -155,9 +195,7 @@ async function openInstallModal(avail, storeName) {
     },
     body: `
       <p class="muted">${t("apps.installHelp")}</p>
-      <label>${t("apps.appTemplate")}
-        <select id="install-template">${tplOptions}</select>
-      </label>
+      ${templateField}
       <div class="admin-form-row mt-12" >
         <div class="field flex-1" >
           <label>${t("apps.accessLabel")}</label>
@@ -169,7 +207,7 @@ async function openInstallModal(avail, storeName) {
           <span id="install-progress-text">${t("apps.downloading")}</span>
           <span id="install-progress-pct" class="muted"></span>
         </div>
-        <div class="progress-track"><div class="progress-fill" id="install-progress-fill"></div></div>
+        <div class="progress-track"><div class="progress-fill progress-indeterminate" id="install-progress-fill"></div></div>
       </div>
       <p id="install-error" class="error" hidden></p>
       <div class="modal-actions">
@@ -186,7 +224,8 @@ async function openInstallModal(avail, storeName) {
 
   confirmBtn.addEventListener("click", async () => {
     if (phase === "confirm") {
-      const appTemplate = box.querySelector("#install-template").value || "default";
+      const templateSelect = box.querySelector("#install-template");
+      const appTemplate = (templateSelect && templateSelect.value) || autoTemplate;
       const payload = {
         id: crypto.randomUUID(),
         name: avail.name,
@@ -428,6 +467,21 @@ function autoUpdateStatusText(status, totalApps, optedCount) {
   return parts.join(" · ");
 }
 
+// Fill a fixed 32×32 `.store-icon` slot (store rows + installed-app table
+// name cells). The Vreckan placeholder is painted first so the slot is sized
+// before the logo resolves; formatLogoSrc then swaps in the real src (custom
+// `/api/app_icon/…` logos arrive as data URLs). A remote load that 404s
+// falls back to the placeholder — no broken-image glyph, no layout shift.
+function bindStoreIcon(img, app) {
+  img.src = "/img/icon128.png";
+  img.onerror = () => {
+    if (img.getAttribute("src") !== "/img/icon128.png") img.src = "/img/icon128.png";
+  };
+  formatLogoSrc(app).then((src) => {
+    if (img.isConnected) img.src = src;
+  });
+}
+
 async function renderApps() {
   // Kick off auto_update_status in parallel but do NOT await it before the
   // first paint: a slow or hung status endpoint (see ANT-347/ANT-348) must
@@ -478,11 +532,19 @@ async function renderApps() {
         ? `<span class="badge" title="${esc(a.image_sha)}">${shortSha(a.image_sha)}</span>`
         : `<span class="muted fs-xs" title="${t("apps.imageNotInspected")}">${t("apps.imageNotInspected")}</span>`;
       // Always render the progress wrap (hidden unless pulling) so the
-      // in-place progress updater can find it right after a re-render.
-      const progress = `<div class="row-progress" data-progress-for="${esc(a.id)}" ${pulling ? "" : "hidden"}><div class="progress-track"><div class="progress-fill" ></div></div><div class="progress-pct muted"></div></div>`;
+      // in-place progress updater can find it right after a re-render. Seed
+      // the bar from the latest poll: a real percentage, or the indeterminate
+      // shimmer while the daemon hasn't reported byte sizes yet.
+      const rowProg = a.pull_progress || {};
+      const rowFillAttrs = pulling
+        ? rowProg.percentage != null
+          ? ` class="progress-fill" style="width: ${rowProg.percentage}%"`
+          : ` class="progress-fill progress-indeterminate"`
+        : ` class="progress-fill"`;
+      const progress = `<div class="row-progress" data-progress-for="${esc(a.id)}" ${pulling ? "" : "hidden"}><div class="progress-track"><div${rowFillAttrs}></div></div><div class="progress-pct muted"></div></div>`;
       return `
       <tr>
-        <td><strong>${esc(a.name)}</strong><div class="muted fs-xs" >${esc(a.id)}</div></td>
+        <td><div class="store-name"><img class="store-icon" alt=""><span><strong>${esc(a.name)}</strong><div class="muted fs-xs" >${esc(a.id)}</div></span></div></td>
         <td>${esc(a.source || "")} / ${esc(a.source_app_id || "")}</td>
         <td>${a.home_directories ? t("apps.yes") : t("apps.no")}</td>
         <td>${a.users ? a.users.join(", ") : ""}</td>
@@ -523,6 +585,15 @@ async function renderApps() {
             <option value="86400">${t("apps.interval24h")}</option>
           </select>
         </label>
+        <label>${t("apps.pullConcurrency")}
+          <select id="auto-update-pull-concurrency">
+            <option value="1">1</option>
+            <option value="2" selected>2</option>
+            <option value="4">4</option>
+            <option value="8">8</option>
+            <option value="16">16</option>
+          </select>
+        </label>
         <span class="muted fs-xs flex-grow" id="auto-update-status"></span>
       </div>
       <table class="admin-table">
@@ -542,6 +613,14 @@ async function renderApps() {
       <div id="avail-list"></div>
     </div>
   `);
+
+  // Bind the installed-apps table name-cell icons. The slots are fixed-size
+  // and start on the placeholder, so painting them after the panel settles
+  // (and again on every re-render) never shifts the table.
+  const nameIcons = $("app-rows") ? $("app-rows").querySelectorAll(".store-icon") : [];
+  apps.forEach((a, i) => {
+    if (nameIcons[i]) bindStoreIcon(nameIcons[i], a);
+  });
 
   // The store-management cards ("Add app store" + "Configured stores") used
   // to live on a separate Stores page; they now follow the install-from-store
@@ -573,7 +652,8 @@ async function renderApps() {
     availList.innerHTML = filtered
       .map(
         (a) => `
-        <div class="share-row">
+        <div class="store-row">
+          <img class="store-icon" alt="">
           <div class="share-meta">
             <strong>${esc(a.name)}</strong>
             <span class="muted">${esc(a.id)} · ${esc(a.provider || "")}</span>
@@ -582,6 +662,13 @@ async function renderApps() {
         </div>`
       )
       .join("");
+    // Icons are bound after insertion: the fixed-size slots hold the layout
+    // while each logo resolves (and re-resolving is a no-op for plain http(s)
+    // URLs, so live-filtering never re-fetches).
+    const icons = availList.querySelectorAll(".store-icon");
+    filtered.forEach((a, i) => {
+      if (icons[i]) bindStoreIcon(icons[i], a);
+    });
   }
 
   // Delegated handler for the per-app Install buttons. Attached once to the
@@ -716,6 +803,7 @@ async function renderApps() {
   // "unavailable" only when the fetch actually fails).
   const auEnabled = $("auto-update-enabled");
   const auInterval = $("auto-update-interval");
+  const auPullConcurrency = $("auto-update-pull-concurrency");
   const auStatus = $("auto-update-status");
   const AUTO_UPDATE_INTERVAL_PRESETS = [
     [3600, "apps.interval1h"],
@@ -742,6 +830,19 @@ async function renderApps() {
       auInterval.appendChild(opt);
     }
     auInterval.value = String(interval);
+    if (auPullConcurrency) {
+      const pullConcurrency =
+        autoUpdateState && Number.isInteger(autoUpdateState.pull_concurrency)
+          ? autoUpdateState.pull_concurrency
+          : 2;
+      if (![...auPullConcurrency.options].some((o) => Number(o.value) === pullConcurrency)) {
+        const opt = document.createElement("option");
+        opt.value = String(pullConcurrency);
+        opt.textContent = String(pullConcurrency);
+        auPullConcurrency.appendChild(opt);
+      }
+      auPullConcurrency.value = String(pullConcurrency);
+    }
     if (autoUpdateState) {
       auStatus.textContent = autoUpdateStatusText(autoUpdateState, apps.length, optedInCount());
     } else if (!autoUpdateSettled) {
@@ -757,11 +858,14 @@ async function renderApps() {
   async function saveAutoUpdate() {
     const enabled = auEnabled.checked;
     const intervalSeconds = Number(auInterval.value);
+    const pullConcurrency = auPullConcurrency ? Number(auPullConcurrency.value) : 2;
     auEnabled.disabled = true;
     auInterval.disabled = true;
-    const r = await request("/api/admin/apps/auto_update", "PUT", { enabled, interval_seconds: intervalSeconds });
+    if (auPullConcurrency) auPullConcurrency.disabled = true;
+    const r = await request("/api/admin/apps/auto_update", "PUT", { enabled, interval_seconds: intervalSeconds, pull_concurrency: pullConcurrency });
     auEnabled.disabled = false;
     auInterval.disabled = false;
+    if (auPullConcurrency) auPullConcurrency.disabled = false;
     if (r.error) return toast(r.error.message, "error");
     toast(t("common.saved"));
     // Refresh the live status line (and control values) from the job status.
@@ -771,7 +875,9 @@ async function renderApps() {
     if (!s.error && s.data) {
       autoUpdateState = s.data;
     } else {
-      autoUpdateState = autoUpdateState ? { ...autoUpdateState, enabled, interval_seconds: intervalSeconds } : { enabled, interval_seconds: intervalSeconds };
+      autoUpdateState = autoUpdateState
+        ? { ...autoUpdateState, enabled, interval_seconds: intervalSeconds, pull_concurrency: pullConcurrency }
+        : { enabled, interval_seconds: intervalSeconds, pull_concurrency: pullConcurrency };
     }
     applyAutoUpdateControls();
   }
@@ -779,6 +885,7 @@ async function renderApps() {
   applyAutoUpdateControls();
   if (auEnabled) auEnabled.addEventListener("change", saveAutoUpdate);
   if (auInterval) auInterval.addEventListener("change", saveAutoUpdate);
+  if (auPullConcurrency) auPullConcurrency.addEventListener("change", saveAutoUpdate);
   // The panel is painted. While the initial status fetch is still in flight
   // (ANT-347: it can hang for a long time while the server's auto-update job
   // holds its lock), make the wait visible: a sticky "Checking for updates…"

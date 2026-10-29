@@ -65,7 +65,8 @@
     "revoke": "Tilbagekald",
     "revokeConfirm": "Tilbagekald denne deling?",
     "shareRevoked": "Deling tilbagekaldt",
-    "up": "Op"
+    "up": "Op",
+    "openInAppPopupBlocked": "Session startet — browseren blokerede den nye fane. Åbn den fra den fremhævede række i sessionslisten."
   },
   "login": {
     "signIn": "Log ind",
@@ -114,7 +115,6 @@
     "serverFilePlaceholder": "filnavn i fælles lager",
     "launch": "Start",
     "gpuAuto": "Auto (ingen bestemt GPU)",
-    "sessionLaunched": "Session startet",
     "noSessionUrl": "Start fejlede: ingen session-URL returneret",
     "url": "URL",
     "launchApp": "Start {name}",
@@ -125,7 +125,11 @@
     "finalizing": "Afslutter…",
     "fileUploaded": "Fil '{name}' uploadet.",
     "urlToOpen": "URL der skal åbnes",
-    "options": "Startindstillinger"
+    "options": "Startindstillinger",
+    "sessionStarting": "Sessionen starter — den åbnes, så snart den er klar.",
+    "sessionReady": "Sessionen er klar.",
+    "sessionReadyOpenFromList": "Sessionen er klar — åbn den fra sessionsoversigten.",
+    "popupBlocked": "Session startet — browseren blokerede den nye fane. Åbn den fra den fremhævede række i sessionslisten."
   },
   "password": {
     "title": "Skift adgangskode",
@@ -459,7 +463,8 @@
     "save": "Gem",
     "saved": "Certifikatindstillinger gemt.",
     "statusTitle": "Aktuelt certifikat",
-    "noCert": "Intet certifikat fundet. Aktivér ACME og udsted ét, eller serveren bruger et selvsigneret certifikat.",
+    "noCert": "Intet certifikat er tilgængeligt i øjeblikket. Vreckan genererer sit indbyggede selvsignerede certifikat ved opstart; se serverloggen, hvis dette vedvarer.",
+    "selfSigned": "Serveren bruger dets indbyggede selvsignerede certifikat. Aktivér ACME og udsted et certifikat for at erstatte det.",
     "source": "Kilde",
     "expiry": "Udløber",
     "daysRemainingLabel": "Dage tilbage",
@@ -562,6 +567,7 @@
     "installTitle": "Installer {name}",
     "installHelp": "Installerer appen og downloader dens container-image. Downloaden kører i baggrunden — fremdriften vises nedenfor.",
     "appTemplate": "App-skabelon",
+    "templateAutoSelected": "Valgt automatisk — ingen tilpassede skabeloner",
     "accessLabel": "Hvem kan bruge denne app",
     "allUsers": "Alle brugere",
     "accessUsersSection": "Brugere",
@@ -593,6 +599,7 @@
     "interval12h": "12 timer",
     "interval24h": "24 timer",
     "intervalCustom": "Tilpasset ({seconds} s)",
+    "pullConcurrency": "Samtidige træk",
     "auto": "Auto",
     "nextCheckIn": "Næste tjek om {time}",
     "lastCheckedAt": "Sidst tjekket {time}",
@@ -671,7 +678,6 @@
     "recreate": "Opret igen",
     "recreateTitle": "Opret denne session igen fra det nyeste image (appen er kort offline)",
     "recreating": "Opretter igen…",
-    "recreated": "Session oprettet igen",
     "noActive": "Ingen aktive sessioner.",
     "noActiveUsers": "Ingen aktive sessioner tværgående brugere.",
     "kill": "Dræb",
@@ -696,7 +702,16 @@
     "ownerBy": "af {owner}",
     "participantCount": "{count} deltager",
     "participantCountPlural": "{count} deltagere",
-    "participantsBadgeTitle": "{names} — klik for at administrere"
+    "participantsBadgeTitle": "{names} — klik for at administrere",
+    "starting": "Starter…",
+    "stopping": "Stops…",
+    "failedToStart": "Kunne ikke starte",
+    "failedToStartDetail": "Kunne ikke starte: {error}",
+    "launchFailedToast": "Sessionen kunne ikke starte: {error}",
+    "goneWhileStarting": "Sessionen afsluttedes, mens den startede.",
+    "stillStarting": "Sessionen starter stadig — dens tilstand ses i sessionsoversigten.",
+    "joined": "Du deltaget i sessionen",
+    "joinedPopupBlocked": "Deltager — browseren blokerede den nye fane. Klik igen på «Deltag» i den fremhævede række for at åbne den."
   },
   "backup": {
     "heading": "Backup",

@@ -6,6 +6,7 @@ import { base64ToArrayBuffer } from "./crypto.js";
 import { openCustomModal, confirmModal, promptModal, escModal } from "./modal.js";
 import { $, toast, formatBytes, uploadFileChunks } from "./util.js";
 import { resolveLaunchGpu } from "./app/launch.js";
+import { highlightSessionRow } from "./app/sessions.js";
 import { t } from "./i18n.js";
 
 const PER_PAGE = 50;
@@ -456,8 +457,23 @@ async function openInAppModal() {
       });
       close();
       const appName = app?.name || t("files.app");
-      toast(t("files.launched", { name: appName }));
-      if (result && result.session_url) window.open(result.session_url, "_blank", "noopener");
+      if (result && result.session_url) {
+        // No noopener feature: browsers return null for it even when the tab
+        // opens; the opener link is severed manually instead (ANT-661).
+        const win = window.open(result.session_url, "_blank");
+        if (win) {
+          win.opener = null;
+          toast(t("files.launched", { name: appName }));
+        } else {
+          // Popup blocker swallowed the tab (ANT-661): the session is
+          // running — make it reachable from the session list instead of
+          // failing silently.
+          toast(t("files.openInAppPopupBlocked"), "warning", { ttl: 8000 });
+          highlightSessionRow(result.session_id, { switchToSessions: true });
+        }
+      } else {
+        toast(t("files.launched", { name: appName }));
+      }
       window.dispatchEvent(new CustomEvent("vreckan:sessions-changed"));
     } catch (err) {
       errEl.textContent = err.message;

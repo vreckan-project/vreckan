@@ -65,7 +65,8 @@
     "revoke": "Revocar",
     "revokeConfirm": "¿Revocar este compartido?",
     "shareRevoked": "Compartido revocado",
-    "up": "Subir"
+    "up": "Subir",
+    "openInAppPopupBlocked": "Sesión iniciada — el navegador bloqueó la nueva pestaña. Ábrela desde la fila resaltada de la lista de sesiones."
   },
   "login": {
     "signIn": "Iniciar sesión",
@@ -114,7 +115,6 @@
     "serverFilePlaceholder": "nombre del archivo en el almacenamiento compartido",
     "launch": "Lanzar",
     "gpuAuto": "Auto (sin GPU específica)",
-    "sessionLaunched": "Sesión lanzada",
     "noSessionUrl": "Error al lanzar: no se devolvió URL de sesión",
     "url": "URL",
     "launchApp": "Lanzar {name}",
@@ -125,7 +125,11 @@
     "finalizing": "Finalizando…",
     "fileUploaded": "Archivo '{name}' subido.",
     "urlToOpen": "URL a abrir",
-    "options": "Opciones de inicio"
+    "options": "Opciones de inicio",
+    "sessionStarting": "La sesión se está iniciando; se abrirá en cuanto esté lista.",
+    "sessionReady": "La sesión está lista.",
+    "sessionReadyOpenFromList": "La sesión está lista; ábrela desde la lista de sesiones.",
+    "popupBlocked": "Sesión iniciada — el navegador bloqueó la nueva pestaña. Ábrela desde la fila resaltada de la lista de sesiones."
   },
   "password": {
     "title": "Cambiar contraseña",
@@ -459,7 +463,8 @@
     "save": "Guardar",
     "saved": "Ajustes de certificados guardados.",
     "statusTitle": "Certificado actual",
-    "noCert": "No se encontró ningún certificado. Habilite ACME y emita uno, o el servidor está usando un certificado autofirmado.",
+    "noCert": "Actualmente no hay ningún certificado disponible. Vreckan genera su certificado autofirmado integrado al iniciar; consulte los registros del servidor si esto persiste.",
+    "selfSigned": "El servidor está usando su certificado autofirmado integrado. Habilite ACME y emita un certificado para reemplazarlo.",
     "source": "Origen",
     "expiry": "Caduca",
     "daysRemainingLabel": "Días restantes",
@@ -562,6 +567,7 @@
     "installTitle": "Instalar {name}",
     "installHelp": "Instala la app y descarga su imagen de contenedor. La descarga se ejecuta en segundo plano — el progreso se muestra a continuación.",
     "appTemplate": "Plantilla de app",
+    "templateAutoSelected": "Seleccionado automáticamente — sin plantillas personalizadas",
     "accessLabel": "Quién puede usar esta app",
     "allUsers": "Todos los usuarios",
     "accessUsersSection": "Usuarios",
@@ -593,6 +599,7 @@
     "interval12h": "12 horas",
     "interval24h": "24 horas",
     "intervalCustom": "Personalizado ({seconds} s)",
+    "pullConcurrency": "Obtenciones simultáneas",
     "auto": "Auto",
     "nextCheckIn": "Próxima comprobación en {time}",
     "lastCheckedAt": "Comprobado a las {time}",
@@ -671,7 +678,6 @@
     "recreate": "Recrear",
     "recreateTitle": "Recrear esta sesión desde la imagen más reciente (la app se quedará fuera de línea brevemente)",
     "recreating": "Recreando…",
-    "recreated": "Sesión recreada",
     "noActive": "No hay sesiones activas.",
     "noActiveUsers": "No hay sesiones activas entre usuarios.",
     "kill": "Terminar",
@@ -696,7 +702,16 @@
     "ownerBy": "por {owner}",
     "participantCount": "{count} participante",
     "participantCountPlural": "{count} participantes",
-    "participantsBadgeTitle": "{names} — clic para gestionar"
+    "participantsBadgeTitle": "{names} — clic para gestionar",
+    "starting": "Iniciando…",
+    "stopping": "Deteniendo…",
+    "failedToStart": "Error de inicio",
+    "failedToStartDetail": "Error de inicio: {error}",
+    "launchFailedToast": "La sesión no pudo iniciarse: {error}",
+    "goneWhileStarting": "La sesión terminó mientras se estaba iniciando.",
+    "stillStarting": "La sesión aún se está iniciando; su estado se muestra en la lista de sesiones.",
+    "joined": "Te has unido a la sesión",
+    "joinedPopupBlocked": "Te has unido — el navegador bloqueó la nueva pestaña. Vuelve a hacer clic en «Unirse» en la fila resaltada para abrirla."
   },
   "backup": {
     "heading": "Copia De Seguridad",

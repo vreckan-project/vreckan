@@ -36,11 +36,15 @@ use vreckan::user_manager;
 // ---------------------------------------------------------------------------
 
 /// A Postgres server backing the tests: a connection URL plus (optionally) a
-/// throwaway container that must be torn down.
+/// throwaway container that must be torn down. `client` is `None` when no
+/// Docker daemon is reachable — the skip branch below parks the server with
+/// an empty URL, and `connect_with_local_defaults` hard-errs (rather than
+/// failing lazily at ping time) when the socket file is absent, so the
+/// daemon-less build-image runner skips instead of panicking (ANT-685).
 #[derive(Debug)]
 struct PgServer {
     url: String,
-    client: bollard::Docker,
+    client: Option<bollard::Docker>,
     /// Empty when the server came from an env var (nothing to clean up).
     container_id: String,
     /// Where this process's container marker file lives (ANT-378).
@@ -370,8 +374,9 @@ async fn pg_server() -> &'static PgServer {
     let server = match resolve_pg_url() {
         Some(url) => PgServer {
             url,
-            client: bollard::Docker::connect_with_local_defaults()
-                .expect("connect docker"),
+            // The client is unused on this path (no throwaway container); it
+            // is best-effort because the socket may be absent (ANT-685).
+            client: bollard::Docker::connect_with_local_defaults().ok(),
             container_id: String::new(),
             marker_dir,
         },
@@ -379,11 +384,12 @@ async fn pg_server() -> &'static PgServer {
             if !docker_available().await {
                 eprintln!("skipping postgres tests: no Postgres URL and no Docker daemon");
                 // Park a marker with an empty URL; each test checks `pg_ready`
-                // before running.
+                // before running. The client is best-effort: a missing socket
+                // is exactly the daemon-absent case we are skipping for
+                // (ANT-685).
                 let marker = PgServer {
                     url: String::new(),
-                    client: bollard::Docker::connect_with_local_defaults()
-                        .expect("connect docker"),
+                    client: bollard::Docker::connect_with_local_defaults().ok(),
                     container_id: String::new(),
                     marker_dir,
                 };
@@ -393,7 +399,7 @@ async fn pg_server() -> &'static PgServer {
             let (url, client, cid) = spin_up_postgres(&marker_dir).await;
             PgServer {
                 url,
-                client,
+                client: Some(client),
                 container_id: cid,
                 marker_dir,
             }
@@ -424,8 +430,14 @@ impl Drop for PgServer {
             return;
         }
         let cid = self.container_id.clone();
-        let client = self.client.clone();
         let cid_short = cid.clone();
+        // A non-empty container_id only ever comes from the spin-up branch,
+        // which always holds a connected client.
+        let Some(client) = self.client.clone() else {
+            eprintln!("warning: postgres test container {cid_short} teardown: \
+                       no docker client; marker left for the next run's sweep");
+            return;
+        };
         let teardown = async move {
             let _ = client
                 .stop_container(

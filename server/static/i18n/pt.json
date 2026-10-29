@@ -65,7 +65,8 @@
     "revoke": "Revogar",
     "revokeConfirm": "Revogar este compartilhamento?",
     "shareRevoked": "Compartilhamento revogado",
-    "up": "Acima"
+    "up": "Acima",
+    "openInAppPopupBlocked": "Sessão iniciada — o navegador bloqueou a nova aba. Abra-a a partir da linha destacada na lista de sessões."
   },
   "login": {
     "signIn": "Entrar",
@@ -114,7 +115,6 @@
     "serverFilePlaceholder": "nome do arquivo no armazenamento compartilhado",
     "launch": "Iniciar",
     "gpuAuto": "Auto (sem GPU específica)",
-    "sessionLaunched": "Sessão iniciada",
     "noSessionUrl": "Falha ao iniciar: nenhuma URL de sessão retornada",
     "url": "URL",
     "launchApp": "Iniciar {name}",
@@ -125,7 +125,11 @@
     "finalizing": "Finalizando…",
     "fileUploaded": "Arquivo '{name}' enviado.",
     "urlToOpen": "URL a abrir",
-    "options": "Opções de inicialização"
+    "options": "Opções de inicialização",
+    "sessionStarting": "A sessão está a iniciar — será aberta assim que estiver pronta.",
+    "sessionReady": "A sessão está pronta.",
+    "sessionReadyOpenFromList": "A sessão está pronta — abra-a a partir da lista de sessões.",
+    "popupBlocked": "Sessão iniciada — o navegador bloqueou a nova aba. Abra-a a partir da linha destacada na lista de sessões."
   },
   "password": {
     "title": "Alterar senha",
@@ -459,7 +463,8 @@
     "save": "Salvar",
     "saved": "Configurações de certificados salvas.",
     "statusTitle": "Certificado atual",
-    "noCert": "Nenhum certificado encontrado. Ative ACME e emita um, ou o servidor está usando um certificado autoassinado.",
+    "noCert": "Atualmente não há nenhum certificado disponível. O Vreckan gera seu certificado autoassinado embutido na inicialização; consulte os logs do servidor se isso persistir.",
+    "selfSigned": "O servidor está usando o seu certificado autoassinado embutido. Ative ACME e emita um certificado para substituí-lo.",
     "source": "Origem",
     "expiry": "Expira",
     "daysRemainingLabel": "Dias restantes",
@@ -562,6 +567,7 @@
     "installTitle": "Instalar {name}",
     "installHelp": "Instala a app e baixa a imagem do container. O download ocorre em segundo plano — o progresso é mostrado abaixo.",
     "appTemplate": "Modelo da app",
+    "templateAutoSelected": "Selecionado automaticamente — sem modelos personalizados",
     "accessLabel": "Quem pode usar esta app",
     "allUsers": "Todos os usuários",
     "accessUsersSection": "Usuários",
@@ -593,6 +599,7 @@
     "interval12h": "12 horas",
     "interval24h": "24 horas",
     "intervalCustom": "Personalizado ({seconds} s)",
+    "pullConcurrency": "Pulls simultâneos",
     "auto": "Auto",
     "nextCheckIn": "Próxima verificação em {time}",
     "lastCheckedAt": "Verificado às {time}",
@@ -671,7 +678,6 @@
     "recreate": "Recriar",
     "recreateTitle": "Recriar esta sessão a partir da imagem mais recente (a app ficará brevemente offline)",
     "recreating": "Recriando…",
-    "recreated": "Sessão recriada",
     "noActive": "Nenhuma sessão ativa.",
     "noActiveUsers": "Nenhuma sessão ativa entre os usuários.",
     "kill": "Encerrar",
@@ -696,7 +702,16 @@
     "ownerBy": "por {owner}",
     "participantCount": "{count} participante",
     "participantCountPlural": "{count} participantes",
-    "participantsBadgeTitle": "{names} — clique para gerenciar"
+    "participantsBadgeTitle": "{names} — clique para gerenciar",
+    "starting": "A iniciar…",
+    "stopping": "A parar…",
+    "failedToStart": "Falha ao iniciar",
+    "failedToStartDetail": "Falha ao iniciar: {error}",
+    "launchFailedToast": "A sessão não pôde ser iniciada: {error}",
+    "goneWhileStarting": "A sessão terminou enquanto estava a iniciar.",
+    "stillStarting": "A sessão ainda está a iniciar — o estado está na lista de sessões.",
+    "joined": "Você entrou na sessão",
+    "joinedPopupBlocked": "Você entrou — o navegador bloqueou a nova aba. Clique novamente em «Participar» na linha destacada para abri-la."
   },
   "backup": {
     "heading": "Backup",

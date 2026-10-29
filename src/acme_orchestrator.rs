@@ -463,6 +463,34 @@ pub async fn cert_status(state: &AppState, domains: &[String]) -> Value {
     }
 }
 
+/// Display-only status for the built-in self-signed dev cert (ANT-660).
+/// `get_certificates` falls back to this when no ACME cert exists, so the
+/// card states the server is on its self-signed certificate instead of
+/// "no certificate found". The expiry comes from the `vreckan_dev.expiry`
+/// sidecar written by `generate_self_signed`; the PEM is parsed as a
+/// fallback. Deliberately not part of [`cert_status`]: the renewal/issue
+/// logic (`ensure_acme_cert`, `select_cert`) must not treat the dev cert as
+/// an ACME candidate. Returns `None` when the dev cert file is missing.
+pub fn self_signed_status(data_root: &str) -> Option<Value> {
+    let ssl_dir = std::path::Path::new(data_root).join("ssl");
+    let cert_path = ssl_dir.join("vreckan_dev.crt");
+    let key_path = ssl_dir.join("vreckan_dev.key");
+    if !cert_path.exists() {
+        return None;
+    }
+    let expiry_path = ssl_dir.join("vreckan_dev.expiry");
+    let exp = std::fs::read_to_string(&expiry_path)
+        .ok()
+        .and_then(|s| s.trim().parse::<i64>().ok())
+        .or_else(|| cert_expiry(&cert_path.to_string_lossy()));
+    Some(status_json(
+        "self-signed",
+        &cert_path.to_string_lossy(),
+        &key_path.to_string_lossy(),
+        exp,
+    ))
+}
+
 /// True when the cert should be renewed: it is present and expires within
 /// `renew_before_days` days (or is already expired). Mirrors `needs_renewal`.
 pub fn needs_renewal(days_remaining: Option<i64>, renew_before_days: i64) -> bool {
@@ -778,5 +806,67 @@ mod tests {
     fn sanitize_short_errors_pass_through() {
         let cfg = test_cfg("letsencrypt");
         assert_eq!(sanitize_acme_error("boom", &cfg), "boom");
+    }
+
+    #[test]
+    fn self_signed_status_from_sidecar() {
+        let dir = std::env::temp_dir().join(format!(
+            "vreckan-acme-ss-{}-{}",
+            std::process::id(),
+            "sidecar"
+        ));
+        let _ = std::fs::remove_dir_all(&dir);
+        std::fs::create_dir_all(dir.join("ssl")).unwrap();
+        let cert = dir.join("ssl/vreckan_dev.crt");
+        let key = dir.join("ssl/vreckan_dev.key");
+        let exp = dir.join("ssl/vreckan_dev.expiry");
+        std::fs::write(&cert, "PEM CONTENT").unwrap();
+        std::fs::write(&key, "KEY").unwrap();
+        let now = std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .unwrap()
+            .as_secs() as i64;
+        let future = now + 90 * 86400;
+        std::fs::write(&exp, format!("{future}\n")).unwrap();
+
+        let st = self_signed_status(dir.to_str().unwrap()).unwrap();
+        assert_eq!(st["present"], true);
+        assert_eq!(st["source"], "self-signed");
+        assert_eq!(st["days_remaining"], 90);
+        assert_eq!(st["valid"], true);
+        assert!(st["expiry"].as_str().is_some());
+        std::fs::remove_dir_all(&dir).ok();
+    }
+
+    #[test]
+    fn self_signed_status_pem_fallback_and_missing() {
+        let dir = std::env::temp_dir().join(format!(
+            "vreckan-acme-ss-{}-{}",
+            std::process::id(),
+            "pem"
+        ));
+        let _ = std::fs::remove_dir_all(&dir);
+        std::fs::create_dir_all(dir.join("ssl")).unwrap();
+
+        // No cert file at all -> None (the card keeps the empty state).
+        assert!(self_signed_status(dir.to_str().unwrap()).is_none());
+
+        // A real self-signed PEM with no sidecar -> expiry parsed from the
+        // certificate itself.
+        use rcgen::{CertificateParams, IsCa, KeyPair};
+        let key_pair = KeyPair::generate().unwrap();
+        let mut params = CertificateParams::default();
+        params.not_before = time::OffsetDateTime::now_utc();
+        params.not_after = params.not_before + time::Duration::days(3 * 365);
+        params.is_ca = IsCa::Ca(rcgen::BasicConstraints::Unconstrained);
+        let pem = params.self_signed(&key_pair).unwrap().pem();
+        std::fs::write(dir.join("ssl/vreckan_dev.crt"), pem).unwrap();
+
+        let st = self_signed_status(dir.to_str().unwrap()).unwrap();
+        assert_eq!(st["source"], "self-signed");
+        let days = st["days_remaining"].as_i64().unwrap();
+        assert!((3 * 365 - 2..=3 * 365).contains(&days), "days={days}");
+        assert_eq!(st["valid"], true);
+        std::fs::remove_dir_all(&dir).ok();
     }
 }

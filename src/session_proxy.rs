@@ -237,6 +237,61 @@ fn rewrite_legacy_refs(body: &[u8], public_prefix: &str) -> Vec<u8> {
     out
 }
 
+/// The session page's "waiting for app to start" screen (ANT-654): a
+/// self-contained HTML page that auto-reloads the session root while the
+/// background launch task is waiting for the app to become ready, replacing
+/// the bare 502 JSON a pre-ready request used to produce. When
+/// `failed_detail` is set the background start failed (the container is
+/// already stopped), so the page shows the error and stops retrying.
+fn waiting_screen(failed_detail: Option<String>) -> String {
+    let (body, script) = match failed_detail {
+        Some(err) => {
+            let escaped = err
+                .replace('&', "&amp;")
+                .replace('<', "&lt;")
+                .replace('>', "&gt;");
+            (
+                format!(
+                    "<div class=\"box\"><div class=\"fail\">!</div>\
+                     <h1>The app failed to start</h1>\
+                     <p>{escaped}</p>\
+                     <p class=\"hint\">Kill this session and launch it again.</p></div>"
+                ),
+                "",
+            )
+        }
+        None => (
+            "<div class=\"box\"><div class=\"spin\"></div>\
+             <h1>Waiting for the app to start&hellip;</h1>\
+             <p>This session was just launched. The page refreshes \
+             automatically once the app is ready.</p></div>"
+                .to_string(),
+            "<script>setTimeout(function(){location.reload();},4000);</script>",
+        ),
+    };
+    format!(
+        "<!doctype html><html><head><meta charset=\"utf-8\">\
+         <meta name=\"viewport\" content=\"width=device-width, initial-scale=1\">\
+         <title>Starting&hellip;</title><style>\
+         body{{margin:0;min-height:100vh;display:flex;align-items:center;\
+         justify-content:center;background:#101418;color:#e6e6e6;\
+         font-family:system-ui,sans-serif}}\
+         .box{{text-align:center;max-width:34rem;padding:2rem}}\
+         .spin{{width:34px;height:34px;margin:0 auto 18px;border-radius:50%;\
+         border:3px solid #333;border-top-color:#4da3ff;\
+         animation:rot .9s linear infinite}}\
+         @keyframes rot{{to{{transform:rotate(360deg)}}}}\
+         .fail{{width:34px;height:34px;margin:0 auto 18px;border-radius:50%;\
+         border:3px solid #d9534f;color:#d9534f;display:flex;\
+         align-items:center;justify-content:center;font-weight:700}}\
+         h1{{font-size:1.15rem;font-weight:600;margin:0 0 8px}}\
+         p{{font-size:.9rem;color:#9aa4ad;margin:0 0 4px;word-break:break-word}}\
+         .hint{{margin-top:14px;font-size:.8rem}}\
+         </style></head><body>{body}{script}\
+         </body></html>"
+    )
+}
+
 /// The upstream host (`ip:port`) for a session. Mirrors `_session_upstream_host`.
 fn session_upstream_host(session: &serde_json::Value) -> Option<String> {
     let ip = session.get("ip")?.as_str()?;
@@ -317,6 +372,38 @@ async fn proxy_session_request(
             axum::Json(serde_json::json!({ "detail": "Forbidden: Invalid session or token." })),
         )
             .into_response();
+    }
+
+    // Since ANT-654 a launch is recorded before the app inside the container
+    // is confirmed ready; until the background launch task flips `ready`,
+    // answer with a self-retrying waiting screen instead of proxying to an
+    // app that is not listening yet (which used to be a bare 502 JSON). A
+    // failed background start shows its error and stops retrying.
+    if session.get("ready").and_then(|v| v.as_bool()) == Some(false) {
+        let failed = session
+            .get("launch_failed")
+            .and_then(|v| v.as_bool())
+            .unwrap_or(false);
+        let error = if failed {
+            session
+                .get("launch_error")
+                .and_then(|v| v.as_str())
+                .map(|s| s.to_string())
+        } else {
+            None
+        };
+        let mut headers = HeaderMap::new();
+        headers.insert(
+            header::CONTENT_TYPE,
+            "text/html; charset=utf-8".parse().unwrap(),
+        );
+        // The waiting screen carries inline script and style; without its own
+        // CSP the strict default headers would block the auto-reload timer.
+        headers.insert(
+            header::CONTENT_SECURITY_POLICY,
+            HeaderValue::from_static(crate::security::SESSION_CSP),
+        );
+        return (StatusCode::ACCEPTED, headers, waiting_screen(error)).into_response();
     }
 
     // The container's reverse proxy expects the session prefix intact. This

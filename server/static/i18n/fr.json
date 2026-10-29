@@ -65,7 +65,8 @@
     "revoke": "Révoquer",
     "revokeConfirm": "Révoquer ce partage ?",
     "shareRevoked": "Partage révoqué",
-    "up": "Haut"
+    "up": "Haut",
+    "openInAppPopupBlocked": "Session démarrée — le navigateur a bloqué le nouvel onglet. Ouvrez-la depuis la ligne surlignée de la liste de sessions."
   },
   "login": {
     "signIn": "Se connecter",
@@ -114,7 +115,6 @@
     "serverFilePlaceholder": "nom du fichier dans le stockage partagé",
     "launch": "Lancer",
     "gpuAuto": "Auto (aucun GPU spécifique)",
-    "sessionLaunched": "Session lancée",
     "noSessionUrl": "Échec du lancement : aucune URL de session renvoyée",
     "url": "URL",
     "launchApp": "Lancer {name}",
@@ -125,7 +125,11 @@
     "finalizing": "Finalisation…",
     "fileUploaded": "Fichier « {name} » téléversé.",
     "urlToOpen": "URL à ouvrir",
-    "options": "Options de lancement"
+    "options": "Options de lancement",
+    "sessionStarting": "La session démarre — elle s'ouvrira dès qu'elle sera prête.",
+    "sessionReady": "La session est prête.",
+    "sessionReadyOpenFromList": "La session est prête — ouvrez-la depuis la liste des sessions.",
+    "popupBlocked": "Session démarrée — le navigateur a bloqué le nouvel onglet. Ouvrez-la depuis la ligne surlignée de la liste de sessions."
   },
   "password": {
     "title": "Changer le mot de passe",
@@ -459,7 +463,8 @@
     "save": "Enregistrer",
     "saved": "Paramètres des certificats enregistrés.",
     "statusTitle": "Certificat actuel",
-    "noCert": "Aucun certificat trouvé. Activez ACME et émettez-en un, ou le serveur utilise un certificat auto-signé.",
+    "noCert": "Aucun certificat n'est disponible pour le moment. Vreckan génère son certificat auto-signé intégré au démarrage ; consultez les journaux du serveur si cela persiste.",
+    "selfSigned": "Le serveur utilise son certificat auto-signé intégré. Activez ACME et émettez un certificat pour le remplacer.",
     "source": "Source",
     "expiry": "Expire",
     "daysRemainingLabel": "Jours restants",
@@ -562,6 +567,7 @@
     "installTitle": "Installer {name}",
     "installHelp": "Installe l'app et télécharge son image conteneur. Le téléchargement s'effectue en arrière-plan — la progression est affichée ci-dessous.",
     "appTemplate": "Modèle d'app",
+    "templateAutoSelected": "Sélectionné automatiquement — aucun modèle personnalisé",
     "accessLabel": "Qui peut utiliser cette app",
     "allUsers": "Tous les utilisateurs",
     "accessUsersSection": "Utilisateurs",
@@ -593,6 +599,7 @@
     "interval12h": "12 heures",
     "interval24h": "24 heures",
     "intervalCustom": "Personnalisé ({seconds} s)",
+    "pullConcurrency": "Pulls simultanés",
     "auto": "Auto",
     "nextCheckIn": "Prochaine vérification dans {time}",
     "lastCheckedAt": "Vérifié à {time}",
@@ -671,7 +678,6 @@
     "recreate": "Recréer",
     "recreateTitle": "Recréer cette session à partir de la dernière image (l’app sera brièvement hors ligne)",
     "recreating": "Recréation…",
-    "recreated": "Session recréée",
     "noActive": "Aucune session active.",
     "noActiveUsers": "Aucune session active pour tous les utilisateurs.",
     "kill": "Arrêter",
@@ -696,7 +702,16 @@
     "ownerBy": "par {owner}",
     "participantCount": "{count} participant",
     "participantCountPlural": "{count} participants",
-    "participantsBadgeTitle": "{names} — cliquez pour gérer"
+    "participantsBadgeTitle": "{names} — cliquez pour gérer",
+    "starting": "Démarrage…",
+    "stopping": "Arrêt en cours…",
+    "failedToStart": "Échec du démarrage",
+    "failedToStartDetail": "Échec du démarrage : {error}",
+    "launchFailedToast": "La session n'a pas pu démarrer : {error}",
+    "goneWhileStarting": "La session s'est terminée pendant son démarrage.",
+    "stillStarting": "La session est toujours en cours de démarrage — son état est affiché dans la liste des sessions.",
+    "joined": "Session rejointe",
+    "joinedPopupBlocked": "Rejoint — le navigateur a bloqué le nouvel onglet. Cliquez à nouveau sur « Rejoindre » dans la ligne surlignée pour l’ouvrir."
   },
   "backup": {
     "heading": "Sauvegarde",

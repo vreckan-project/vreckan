@@ -7,7 +7,7 @@
 import { $, toast, uploadFileChunks } from "../util.js";
 import { secureFetch } from "../api.js";
 import { availableGpus, currentSettings, globalDefaultGpu } from "../app.js";
-import { loadSessions } from "./sessions.js";
+import { loadSessions, pollSessionUntilReady, highlightSessionRow } from "./sessions.js";
 import { applyPreset, pinnedBehaviors } from "./pinned.js";
 import { t } from "../i18n.js";
 
@@ -109,14 +109,36 @@ function currentLaunchPayload(applicationId, extra) {
   };
 }
 
-function openSession(result) {
+// Re-open the modal and show a launch-request failure (the container was
+// never created, so the user can fix the input and retry).
+function showLaunchError(errEl, submitBtn, e) {
+  errEl.textContent = e.message;
+  errEl.hidden = false;
+  $("launch-upload-status").hidden = true;
+  submitBtn.disabled = false;
+}
+
+// Open the launched session in a new tab. When `preopenedWin` is passed, the
+// tab was already created during the user gesture (see handleLaunchConfirm)
+// and is navigated here once the URL is known; otherwise `window.open` runs
+// now. A `null` result means the popup blocker won — fall back to a visible
+// affordance (toast + highlighted session row) instead of a silent failure
+// (ANT-661). The caller owns the session-list refresh.
+function openSession(result, preopenedWin) {
   if (result && result.session_url) {
-    window.open(result.session_url, "_blank", "noopener");
-    toast(t("launch.sessionLaunched"));
+    // No noopener feature: browsers return null for it even when the tab
+    // opens; the opener link is severed manually instead (ANT-661).
+    const win = preopenedWin || window.open(result.session_url, "_blank");
+    if (win) {
+      win.opener = null;
+      if (preopenedWin) win.location.replace(result.session_url);
+    } else {
+      toast(t("launch.popupBlocked"), "warning", { ttl: 8000 });
+      highlightSessionRow(result.session_id);
+    }
   } else {
     toast(t("launch.noSessionUrl"), "error");
   }
-  setTimeout(loadSessions, 1500);
 }
 
 // Every app type opens the unified launch modal (ANT-228 decision D2):
@@ -255,8 +277,11 @@ function syncLaunchFileFields() {
 
 // File-backed launch (Feat 12): upload a local file, open a file already in
 // shared storage, or launch with nothing open. Only used for apps with a
-// file section (home_directories).
-async function launchFileApp(app, payload, statusEl) {
+// file section (home_directories). `onPostFired` (ANT-654) is called the
+// instant the launch request is sent — before awaiting it — so the caller
+// can close the launch modal while a local-file upload (the only phase that
+// needs the modal's progress display) has already completed.
+async function launchFileApp(app, payload, statusEl, onPostFired) {
   const fileInput = $("launch-file");
   const serverFileInput = $("launch-server-file");
   const openOnLaunch = $("launch-open-on-launch").checked;
@@ -273,7 +298,7 @@ async function launchFileApp(app, payload, statusEl) {
       statusEl.textContent = t("launch.uploadingProgress", { done, total });
     });
     statusEl.textContent = t("launch.launching");
-    return secureFetch("/api/launch/file", {
+    const pending = secureFetch("/api/launch/file", {
       method: "POST",
       body: {
         ...payload,
@@ -283,16 +308,22 @@ async function launchFileApp(app, payload, statusEl) {
         open_file_on_launch: openOnLaunch,
       },
     });
+    if (onPostFired) onPostFired();
+    return pending;
   }
   if (serverFile) {
-    return secureFetch("/api/launch/file_path", {
+    const pending = secureFetch("/api/launch/file_path", {
       method: "POST",
       body: { ...payload, filename: serverFile },
     });
+    if (onPostFired) onPostFired();
+    return pending;
   }
   // No file chosen — the file is optional, so just launch the app as-is
   // (home dir mounted per the selected mode, nothing opened in it).
-  return secureFetch("/api/launch/simple", { method: "POST", body: payload });
+  const pending = secureFetch("/api/launch/simple", { method: "POST", body: payload });
+  if (onPostFired) onPostFired();
+  return pending;
 }
 
 // Confirm the launch modal. The endpoint follows the app's capabilities:
@@ -301,6 +332,24 @@ async function launchFileApp(app, payload, statusEl) {
 // depending on the file inputs; everything else posts /api/launch/simple
 // (a blank URL on a URL-capable app launches it as-is, with $VRECKAN_URL
 // left unset server-side). The session name is sent on every branch.
+//
+// ANT-654: the launch request returns as soon as the container is created
+// and started — it no longer waits for the health check or the selkies
+// probe, but a first launch still waits inline for the image pull, so the
+// modal can no longer stay open until the response. Instead the modal closes
+// the instant the request is fired (the submit button stays disabled to
+// prevent a double launch) and the session list shows "Starting…" from the
+// recorded state.
+//
+// ANT-661: the session tab is pre-opened during the click/Enter gesture and
+// navigated once the URL is known — pre-ready it shows the self-retrying
+// waiting screen and flips to the app on its own, so the launch can no
+// longer outrun the browser's ~5 s transient-activation popup window. When
+// the placeholder is blocked, the user gets a toast plus a highlighted
+// session row instead of a silent failure; polling then offers the
+// ready-time open from the list. If the request itself fails (the container
+// was never created), the placeholder is closed and the modal re-opens with
+// the error so the user can retry.
 async function handleLaunchConfirm(app) {
   const errEl = $("launch-error");
   const statusEl = $("launch-upload-status");
@@ -311,44 +360,101 @@ async function handleLaunchConfirm(app) {
 
   errEl.hidden = true;
   submitBtn.disabled = true;
-  try {
-    let result;
-    if (app.url_support) {
-      const url = $("launch-url").value.trim();
-      if (url) {
-        result = await secureFetch("/api/launch/url", {
-          method: "POST",
-          body: { ...payload, url },
-        });
-      } else if (app.home_directories) {
-        // URL-capable app that also has a file section: no URL entered, so
-        // fall back to the file flow (open a file or launch plain).
-        result = await launchFileApp(app, payload, statusEl);
-      } else {
-        // URL-capable app without a file section, no URL entered: launch the
-        // app as-is (mirrors the plain-app branch).
-        result = await secureFetch("/api/launch/simple", {
-          method: "POST",
-          body: payload,
-        });
-      }
+
+  // (ANT-661) Pre-open the session tab while the click/Enter's user
+  // activation is still transiently valid. The launch POST runs the image
+  // pull + container start, which can outrun the browser's ~5 s popup
+  // window; a popup opened after the await was then swallowed silently —
+  // the intermittent "custom-name launches don't open a tab" report. The
+  // placeholder navigates once the URL is known (a failed launch closes
+  // it), and the null-return fallback covers the rest.
+  const launchWin = window.open("about:blank", "_blank");
+
+  let closed = false;
+  const closeModal = () => {
+    if (closed) return;
+    closed = true;
+    $("modal-launch").hidden = true;
+    statusEl.hidden = true;
+    toast(t("launch.sessionStarting"));
+  };
+
+  let launchRequest;
+  if (app.url_support) {
+    const url = $("launch-url").value.trim();
+    if (url) {
+      launchRequest = secureFetch("/api/launch/url", {
+        method: "POST",
+        body: { ...payload, url },
+      });
+      closeModal();
     } else if (app.home_directories) {
-      result = await launchFileApp(app, payload, statusEl);
+      // URL-capable app that also has a file section: no URL entered, so
+      // fall back to the file flow (open a file or launch plain). The modal
+      // closes when the launch request is fired, after any local-file
+      // upload has finished showing its progress.
+      launchRequest = launchFileApp(app, payload, statusEl, closeModal);
     } else {
-      // Plain app: nothing to pick, just launch with the selected options.
-      result = await secureFetch("/api/launch/simple", {
+      // URL-capable app without a file section, no URL entered: launch the
+      // app as-is (mirrors the plain-app branch).
+      launchRequest = secureFetch("/api/launch/simple", {
         method: "POST",
         body: payload,
       });
+      closeModal();
     }
-    $("modal-launch").hidden = true;
-    openSession(result);
+  } else if (app.home_directories) {
+    launchRequest = launchFileApp(app, payload, statusEl, closeModal);
+  } else {
+    // Plain app: nothing to pick, just launch with the selected options.
+    launchRequest = secureFetch("/api/launch/simple", {
+      method: "POST",
+      body: payload,
+    });
+    closeModal();
+  }
+
+  try {
+    const result = await launchRequest;
+    if (!(result && result.session_url && result.session_id)) {
+      // Contract anomaly (the modal is already closed; the list shows the
+      // recorded state anyway), so surface it as a toast.
+      toast(t("launch.noSessionUrl"), "error");
+      submitBtn.disabled = false;
+      if (launchWin) {
+        try {
+          launchWin.close();
+        } catch (_) {
+          /* closing a closed/cross-origin window can throw — harmless */
+        }
+      }
+      return;
+    }
+    // (ANT-661) Navigate the gesture-time tab now that the URL is known:
+    // pre-ready it shows the waiting screen and flips to the app on its
+    // own, so the launch can no longer outrun the browser's popup window.
+    openSession(result, launchWin);
+    // The session is recorded not-ready until the background launch task
+    // confirms the app is up: refresh the list so the row renders
+    // "Starting…" immediately, then track the background state. The
+    // ready-time tab open only applies when the placeholder was blocked
+    // (openTab); otherwise the waiting-page tab is already live.
+    loadSessions();
+    pollSessionUntilReady(result.session_id, result.session_url, { openTab: !launchWin });
   } catch (e) {
-    errEl.textContent = e.message;
-    errEl.hidden = false;
-  } finally {
-    submitBtn.disabled = false;
-    statusEl.hidden = true;
+    // The request failed (a failed local-file upload also lands here, with
+    // the modal still open): show the error in the modal so the user can
+    // fix the input and retry. Don't leave a blank placeholder tab behind
+    // a failed launch (ANT-661).
+    if (launchWin) {
+      try {
+        launchWin.close();
+      } catch (_) {
+        /* closing a closed/cross-origin window can throw — harmless */
+      }
+    }
+    $("modal-launch").hidden = false;
+    showLaunchError(errEl, submitBtn, e);
   }
 }
 
@@ -401,7 +507,6 @@ export {
   populateLanguageDropdown,
   populateGpuDropdown,
   currentLaunchPayload,
-  openSession,
   handleAppSelection,
   openLaunchModal,
   syncLaunchFileFields,

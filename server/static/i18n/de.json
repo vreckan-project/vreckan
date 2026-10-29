@@ -65,7 +65,8 @@
     "revoke": "Widerrufen",
     "revokeConfirm": "Diese Freigabe widerrufen?",
     "shareRevoked": "Freigabe widerrufen",
-    "up": "Hoch"
+    "up": "Hoch",
+    "openInAppPopupBlocked": "Sitzung gestartet — der Browser hat den neuen Tab blockiert. Öffne sie über die hervorgehobene Zeile in der Sitzungsliste."
   },
   "login": {
     "signIn": "Anmelden",
@@ -114,7 +115,6 @@
     "serverFilePlaceholder": "Dateiname im gemeinsamen Speicher",
     "launch": "Starten",
     "gpuAuto": "Auto (keine bestimmte GPU)",
-    "sessionLaunched": "Sitzung gestartet",
     "noSessionUrl": "Start fehlgeschlagen: keine Sitzungs-URL zurückgegeben",
     "url": "URL",
     "launchApp": "{name} starten",
@@ -125,7 +125,11 @@
     "finalizing": "Wird abgeschlossen…",
     "fileUploaded": "Datei '{name}' hochgeladen.",
     "urlToOpen": "Zu öffnende URL",
-    "options": "Startoptionen"
+    "options": "Startoptionen",
+    "sessionStarting": "Session wird gestartet — sie öffnet sich, sobald sie bereit ist.",
+    "sessionReady": "Session ist bereit.",
+    "sessionReadyOpenFromList": "Session ist bereit — öffne sie in der Sitzungsliste.",
+    "popupBlocked": "Sitzung gestartet — der Browser hat den neuen Tab blockiert. Öffne sie über die hervorgehobene Zeile in der Sitzungsliste."
   },
   "password": {
     "title": "Passwort ändern",
@@ -459,7 +463,8 @@
     "save": "Speichern",
     "saved": "Zertifikat-Einstellungen gespeichert.",
     "statusTitle": "Aktuelles Zertifikat",
-    "noCert": "Kein Zertifikat gefunden. Aktivieren Sie ACME und stellen Sie eines aus, oder der Server verwendet ein selbstsigniertes Zertifikat.",
+    "noCert": "Derzeit ist kein Zertifikat verfügbar. Vreckan erzeugt beim Start sein eingebautes selbstsigniertes Zertifikat; sehen Sie bei anhaltendem Zustand in die Server-Protokolle.",
+    "selfSigned": "Der Server verwendet sein eingebautes selbstsigniertes Zertifikat. Aktivieren Sie ACME und stellen Sie ein Zertifikat aus, um es zu ersetzen.",
     "source": "Quelle",
     "expiry": "Läuft ab",
     "daysRemainingLabel": "Verbleibende Tage",
@@ -562,6 +567,7 @@
     "installTitle": "{name} installieren",
     "installHelp": "Installiert die App und lädt ihr Container-Image herunter. Der Download läuft im Hintergrund — der Fortschritt wird unten angezeigt.",
     "appTemplate": "App-Vorlage",
+    "templateAutoSelected": "Automatisch ausgewählt — keine eigenen Vorlagen",
     "accessLabel": "Wer kann diese App verwenden",
     "allUsers": "Alle Benutzer",
     "accessUsersSection": "Benutzer",
@@ -593,6 +599,7 @@
     "interval12h": "12 Stunden",
     "interval24h": "24 Stunden",
     "intervalCustom": "Eigene ({seconds} s)",
+    "pullConcurrency": "Gleichzeitige Pulls",
     "auto": "Auto",
     "nextCheckIn": "Nächste Prüfung in {time}",
     "lastCheckedAt": "Zuletzt geprüft {time}",
@@ -671,7 +678,6 @@
     "recreate": "Neu erstellen",
     "recreateTitle": "Erstelle diese Sitzung aus dem neuesten Image neu (die App ist kurzzeitig offline)",
     "recreating": "Wird neu erstellt…",
-    "recreated": "Sitzung neu erstellt",
     "noActive": "Keine aktiven Sitzungen.",
     "noActiveUsers": "Keine aktiven Sitzungen über alle Benutzer.",
     "kill": "Beenden",
@@ -696,7 +702,16 @@
     "ownerBy": "von {owner}",
     "participantCount": "{count} Teilnehmer",
     "participantCountPlural": "{count} Teilnehmer",
-    "participantsBadgeTitle": "{names} — zum Verwalten klicken"
+    "participantsBadgeTitle": "{names} — zum Verwalten klicken",
+    "starting": "Startet…",
+    "stopping": "Wird beendet…",
+    "failedToStart": "Start fehlgeschlagen",
+    "failedToStartDetail": "Start fehlgeschlagen: {error}",
+    "launchFailedToast": "Session konnte nicht gestartet werden: {error}",
+    "goneWhileStarting": "Die Session wurde während des Startens beendet.",
+    "stillStarting": "Die Session wird noch gestartet — ihr Zustand wird in der Sitzungsliste angezeigt.",
+    "joined": "Der Sitzung beigetreten",
+    "joinedPopupBlocked": "Beigetreten — der Browser hat den neuen Tab blockiert. Klicke in der hervorgehobenen Zeile erneut auf „Beitreten“, um ihn zu öffnen."
   },
   "backup": {
     "heading": "Sicherung",

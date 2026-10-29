@@ -260,6 +260,39 @@ the Gitea `vreckan/vreckan` mirror — feature branches go to GitHub only, and
 - The compose file's `image:` tag is set by the cutover decision; `build: .`
   always builds the Rust image locally when the tag is not present.
 
+#### Pull concurrency & rate-limit retries (ANT-668)
+
+All image pulls — the auto-update tick, "Update all", a single app's
+"Pull", and launch-time pulls of a missing image — are capped by the
+process-wide **`registry_pull_concurrency`** semaphore (default **2**).
+Set it with the `VRECKAN_REGISTRY_PULL_CONCURRENCY` env var or on the
+admin Apps page (the auto-update card); a saved value is picked up on
+the next pull without a restart (values are clamped to 1–128). The cap
+is in-process, so it also limits fan-out against a remote `DOCKER_HOST`
+daemon. It is the single biggest lever on per-IP registry pull-rate
+budgets (e.g. lscr.io's `44000/minute`): when a batch of updates lands,
+pulls run as a steady width-`N` trickle instead of N at once.
+
+A failed pull stream is retried in-process before the app update
+hard-fails:
+
+- `toomanyrequests` / `429` (the registry's rate budget is exhausted):
+  up to **3 retries** with exponential backoff (5 s base, ×2 per
+  attempt, capped at 120 s) plus uniform jitter; when the daemon's
+  `retry-after:` hint is present and parseable it caps the initial wait
+  (lscr.io's observed hint is sub-millisecond, so the first retry
+  starts immediately).
+- Transport-class errors (`connect` / `refused` / `timeout` /
+  `no such host`): one backoff retry, then fail. Once the deferred
+  registry-mirror sidecar (ANT-658 §3.4) lands, a transport error via
+  the mirror first falls back once to the canonical reference.
+- Any other stream error: one backoff retry, then fail.
+
+The UI shows one clean message (e.g. "Image pull rate-limited by the
+registry — try again in a few minutes"); the raw daemon string is kept
+in the server logs (`warn!`) and in the pull progress entry's `detail`
+for admins.
+
 ### 3.5 Base-image pinning (`.base-image-digest`)
 
 `.base-image-digest` records the digest of the **build** base image
@@ -524,6 +557,35 @@ comparison plus an `/api/health` check), are covered there step by step.
     server falls back to the self-signed one.
   - **Hot-reload.** After a successful issuance or renewal, the TLS
     endpoint is reloaded in-place — no server restart is needed.
+- **Same-port HTTP→HTTPS redirect (default on, ANT-652).** Because the
+  container exposes a single TLS port, a client that connects with
+  plaintext HTTP (e.g. `http://host:443`, or any host port published onto
+  the container's 443) used to die in the TLS handshake with a
+  "wrong version number" error before any request was parsed. The server
+  now peeks the first byte of each new connection: a TLS ClientHello
+  begins with a handshake record (`0x16`) and proceeds to the rustls
+  handshake exactly as before, while any other first byte is treated as
+  plaintext HTTP — the server reads the request line and `Host` header
+  and answers `301 https://{Host}{uri}` (the same one-port HTTP+HTTPS
+  technique Caddy, h2o, and nginx's `stream`/`ssl_preread` use). The
+  redirect preserves the `Host` header, so a non-443 published port
+  stays in the redirect target. The switch is `VRECKAN_TLS_HTTP_REDIRECT_ENABLED`
+  (default `true`; `false` restores the handshake-only behavior). This is
+  an environment setting only: no admin-UI field, and it appears in no
+  admin-settings payload (see the API reference).
+  - **When to turn it off.** Deployments behind a TLS-terminating reverse
+    proxy that already terminates TLS and redirects should set
+    `VRECKAN_TLS_HTTP_REDIRECT_ENABLED=false` — the proxy speaks TLS to
+    the origin, so the origin's first byte is always `0x16` and the sniff
+    is dead weight there.
+  - **Documented limitation.** This covers *the TLS port only*. Bare
+    `http://host` on port 80 is still refused (nothing listens on 80); a
+    separate port-80 listener is a future option, not part of ANT-652.
+  - **Edge cases.** Stray non-HTTP/non-TLS connections on the port get a
+    301 and then disconnect (harmless). The redirect response carries the
+    same HSTS header as every other response, and uses `Connection: close`
+    so the client re-issues the request over the new `https://` URL.
+
 - **Behind a TLS-terminating reverse proxy (optional).** The server
   terminates TLS itself by default (the ACME flows above assume that). If you
   do terminate TLS at a proxy in front of it, set

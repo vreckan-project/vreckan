@@ -112,7 +112,10 @@ pub(crate) fn dev_cert_needs_generation(
 
 /// Generate a self-signed RSA-2048 cert (CN=localhost, SAN localhost +
 /// 127.0.0.1) and write the PEM cert, key, and expiry sidecar to disk.
-fn generate_self_signed(
+/// Crate-visible (not just private) so the same-port dispatch tests in
+/// `serve.rs` can generate a throwaway cert/key pair for a real TLS
+/// handshake (ANT-652).
+pub(crate) fn generate_self_signed(
     cert_path: &std::path::Path,
     key_path: &std::path::Path,
     expiry_path: &std::path::Path,

@@ -65,7 +65,8 @@
     "revoke": "Intrekken",
     "revokeConfirm": "Dit deel intrekken?",
     "shareRevoked": "Deel ingetrokken",
-    "up": "Omhoog"
+    "up": "Omhoog",
+    "openInAppPopupBlocked": "Sessie gestart — de browser blokkeerde het nieuwe tabblad. Open het via de gemarkeerde regel in de sessielijst."
   },
   "login": {
     "signIn": "Inloggen",
@@ -114,7 +115,6 @@
     "serverFilePlaceholder": "bestandsnaam in de gedeelde opslag",
     "launch": "Starten",
     "gpuAuto": "Auto (geen specifieke GPU)",
-    "sessionLaunched": "Sessie gestart",
     "noSessionUrl": "Starten mislukt: geen sessie-URL teruggegeven",
     "url": "URL",
     "launchApp": "Start {name}",
@@ -125,7 +125,11 @@
     "finalizing": "Afronden…",
     "fileUploaded": "Bestand '{name}' geüpload.",
     "urlToOpen": "URL om te openen",
-    "options": "Startopties"
+    "options": "Startopties",
+    "sessionStarting": "De sessie start — hij wordt geopend zodra hij klaar is.",
+    "sessionReady": "De sessie is klaar.",
+    "sessionReadyOpenFromList": "De sessie is klaar — open hem uit de sessielijst.",
+    "popupBlocked": "Sessie gestart — de browser blokkeerde het nieuwe tabblad. Open het via de gemarkeerde regel in de sessielijst."
   },
   "password": {
     "title": "Wachtwoord wijzigen",
@@ -459,7 +463,8 @@
     "save": "Opslaan",
     "saved": "Certificaatinstellingen opgeslagen.",
     "statusTitle": "Huidig certificaat",
-    "noCert": "Geen certificaat gevonden. Schakel ACME in en geef er éën uit, of de server gebruikt een zelf getekend certificaat.",
+    "noCert": "Er is op dit moment geen certificaat beschikbaar. Vreckan genereert bij het opstarten zijn ingebouwde zelf getekende certificaat; zie de serverlogs als dit aanhoudt.",
+    "selfSigned": "De server gebruikt zijn ingebouwde zelf getekende certificaat. Schakel ACME in en geef een certificaat uit om het te vervangen.",
     "source": "Bron",
     "expiry": "Vervalt",
     "daysRemainingLabel": "Overblijvende dagen",
@@ -562,6 +567,7 @@
     "installTitle": "Installeer {name}",
     "installHelp": "Installeert de app en downloadt de container-image. De download verloopt op de achtergrond — de voortgang wordt hieronder getoond.",
     "appTemplate": "App-template",
+    "templateAutoSelected": "Automatisch geselecteerd — geen aangepaste sjablonen",
     "accessLabel": "Wie kan deze app gebruiken",
     "allUsers": "Alle gebruikers",
     "accessUsersSection": "Gebruikers",
@@ -593,6 +599,7 @@
     "interval12h": "12 uur",
     "interval24h": "24 uur",
     "intervalCustom": "Aangepast ({seconds} s)",
+    "pullConcurrency": "Gelijktijdige pulls",
     "auto": "Auto",
     "nextCheckIn": "Volgende controle over {time}",
     "lastCheckedAt": "Laatst gecontroleerd {time}",
@@ -671,7 +678,6 @@
     "recreate": "Opnieuw aanmaken",
     "recreateTitle": "Maak deze sessie opnieuw aan vanuit de nieuwste image (de app is kort offline)",
     "recreating": "Opnieuw aanmaken…",
-    "recreated": "Sessie opnieuw aangemaakt",
     "noActive": "Geen actieve sessies.",
     "noActiveUsers": "Geen actieve sessies over gebruikers heen.",
     "kill": "Beëindigen",
@@ -696,7 +702,16 @@
     "ownerBy": "door {owner}",
     "participantCount": "{count} participant",
     "participantCountPlural": "{count} participants",
-    "participantsBadgeTitle": "{names} — klik om te beheren"
+    "participantsBadgeTitle": "{names} — klik om te beheren",
+    "starting": "Starten…",
+    "stopping": "Stoppen…",
+    "failedToStart": "Starten mislukt",
+    "failedToStartDetail": "Starten mislukt: {error}",
+    "launchFailedToast": "Sessie kon niet starten: {error}",
+    "goneWhileStarting": "De sessie eindigde tijdens het starten.",
+    "stillStarting": "De sessie start nog — de staat wordt getoond in de sessielijst.",
+    "joined": "Aan de sessie toegetreden",
+    "joinedPopupBlocked": "Toegetreden — de browser blokkeerde het nieuwe tabblad. Klik nogmaals op «Joinen» in de gemarkeerde regel om het te openen."
   },
   "backup": {
     "heading": "Backup",

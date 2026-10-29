@@ -65,7 +65,8 @@
     "revoke": "रद्द करें",
     "revokeConfirm": "यह शेयर रद्द करें?",
     "shareRevoked": "शेयर रद्द हो गय",
-    "up": "ऊपर"
+    "up": "ऊपर",
+    "openInAppPopupBlocked": "सत्र शुरू हुआ — ब्राउज़र ने नई टैब को ब्लॉक कर दिया। सत्र सूची की हाइलाइट की गई पंक्ति से इसे खोलें।"
   },
   "login": {
     "signIn": "साइन इन",
@@ -114,7 +115,6 @@
     "serverFilePlaceholder": "साझा स्टोरेज में फ़ाइल का नाम",
     "launch": "शुरू करें",
     "gpuAuto": "ऑटो (कोई विशिष्ट GPU नहिन)",
-    "sessionLaunched": "सेशन लॉन्च हो गय",
     "noSessionUrl": "लॉन्च वीफल: कोई सेशन URL लौटे नहिन",
     "url": "URL",
     "launchApp": "{name} लॉन्च करें",
@@ -125,7 +125,11 @@
     "finalizing": "अंतिम रूप दे रहें…",
     "fileUploaded": "फ़ाइल '{name}' अपलोड हो गयी।",
     "urlToOpen": "खोलने के लिए URL",
-    "options": "लॉन्च विकल्प"
+    "options": "लॉन्च विकल्प",
+    "sessionStarting": "सेशन शुरू हो रहा है — तैयार होते ही खुल जाएगा।",
+    "sessionReady": "सेशन तैयार है।",
+    "sessionReadyOpenFromList": "सेशन तैयार है — सेशन सूची से खोलें।",
+    "popupBlocked": "सत्र शुरू हुआ — ब्राउज़र ने नई टैब को ब्लॉक कर दिया। सत्र सूची की हाइलाइट की गई पंक्ति से इसे खोलें।"
   },
   "password": {
     "title": "पासवर्ड बदलें",
@@ -459,7 +463,8 @@
     "save": "सहेजें",
     "saved": "प्रमाणपत्र सेटिंग सहेजी गईं।",
     "statusTitle": "वर्तमान प्रमाणपत्र",
-    "noCert": "कोई प्रमाणपत्र नहीं मिला। ACME सक्रिय करें और एक जारी करें, या सर्वर एक self-signed प्रमाणपत्र उपयोग कर रहा है।",
+    "noCert": "फिलहाल कोई प्रमाणपत्र उपलब्ध नहीं है। Vreckan स्टार्टअप पर उसका बिल्ट-इन self-signed प्रमाणपत्र बनाता है; यदि यह जारी रहे तो सर्वर लॉग देखें।",
+    "selfSigned": "सर्वर उसका बिल्ट-इन self-signed प्रमाणपत्र उपयोग कर रहा है। इसे बदलने के लिए ACME सक्रिय करें और एक प्रमाणपत्र जारी करें।",
     "source": "स्रोत",
     "expiry": "समाप्ति",
     "daysRemainingLabel": "शेष दिन",
@@ -562,6 +567,7 @@
     "installTitle": "{name} इंस्टॉल करें",
     "installHelp": "ऐप इंस्टॉल करता है और उसकी कंटेनर छवि डाउनलोड करता है। डाउनलोड पृष्ठभूमि में चलता है — प्रगति नीचे दिखाई देगी।",
     "appTemplate": "ऐप टेम्पलेट",
+    "templateAutoSelected": "स्वतः चुना गया — कोई कस्टम टेम्पलेट नहीं",
     "accessLabel": "यह ऐप कौन उपयोग कर सकता है",
     "allUsers": "सभी उपयोगकर्ता",
     "accessUsersSection": "उपयोगकर्ता",
@@ -593,6 +599,7 @@
     "interval12h": "12 घंटे",
     "interval24h": "24 घंटे",
     "intervalCustom": "कस्टम ({seconds} से)",
+    "pullConcurrency": "समांतर pulls",
     "auto": "ऑटो",
     "nextCheckIn": "अगली जाँच {time} में",
     "lastCheckedAt": "अंतिम जाँच {time}",
@@ -671,7 +678,6 @@
     "recreate": "पुनः सिर्जना करें",
     "recreateTitle": "इस सेशन क नवतम छवि सें पुनः सिर्जना करें (ऐप थोड़ी देर ऑफ़लाइन हो)",
     "recreating": "पुनः सिर्जना हो रह हए…",
-    "recreated": "सेशन पुनः सिर्जना हो गय हए",
     "noActive": "कोई सक्रिय सत्र नहीं।",
     "noActiveUsers": "किसी भी उपयोगकर्ता के लिए कोई सक्रिय सत्र नहीं मिला।",
     "kill": "रोकें",
@@ -696,7 +702,16 @@
     "ownerBy": "द्वारा {owner}",
     "participantCount": "{count} participant",
     "participantCountPlural": "{count} participants",
-    "participantsBadgeTitle": "{names} — प्रबंधित करने के लिए क्लिक करें"
+    "participantsBadgeTitle": "{names} — प्रबंधित करने के लिए क्लिक करें",
+    "starting": "शुरू हो रहा है…",
+    "stopping": "रुक रहा है…",
+    "failedToStart": "शुरुआत विफल",
+    "failedToStartDetail": "शुरुआत विफल: {error}",
+    "launchFailedToast": "सेशन शुरू नहीं हो सका: {error}",
+    "goneWhileStarting": "सेशन शुरू होते ही समाप्त हो गया।",
+    "stillStarting": "सेशन अभी भी शुरू हो रहा है — इसकी स्थिति सेशन सूची में दिखाई गई है।",
+    "joined": "आप सत्र से जुड़ गए",
+    "joinedPopupBlocked": "जुड़ गए — ब्राउज़र ने नई टैब को ब्लॉक कर दिया। खोलने के लिए हाइलाइट की गई पंक्ति पर «जुड़ें» पर फिर क्लिक करें।"
   },
   "backup": {
     "heading": "बैकअप",

@@ -22,7 +22,7 @@ use rand::Rng;
 use sea_orm::{ActiveValue, EntityTrait};
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
-use tracing::{debug, info, warn};
+use tracing::{debug, error, info, warn};
 
 use crate::auth;
 use crate::docker_provider::{DockerProvider, GpuInfo, LaunchResult, VolumeSpec};
@@ -206,6 +206,17 @@ pub struct ActiveSessionInfo {
     #[serde(skip_serializing_if = "Option::is_none")]
     pub name: Option<String>,
     pub out_of_date: bool,
+    /// Whether the app inside the session is confirmed ready (ANT-654):
+    /// `false` while the background launch task is still waiting, `true`
+    /// once the readiness gate passes (and for pre-ANT-654 sessions, which
+    /// always launched synchronously to readiness).
+    pub ready: bool,
+    /// The background launch task failed (ANT-654): the start error is in
+    /// `launch_error`.
+    #[serde(skip_serializing_if = "is_false")]
+    pub launch_failed: bool,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub launch_error: Option<String>,
     /// The session's owner (ANT-440): surfaced on other users' sessions so
     /// the list can show whose session it is.
     pub username: String,
@@ -223,6 +234,12 @@ pub struct ActiveSessionInfo {
     /// (other users' participants are not the caller's concern).
     #[serde(skip_serializing_if = "Vec::is_empty")]
     pub participants: Vec<String>,
+}
+
+/// `true` when the value is `false` (for `serde(skip_serializing_if)` on the
+/// session list's `launch_failed` flag, ANT-654).
+fn is_false(v: &bool) -> bool {
+    !v
 }
 
 /// The response to a session recreate. Mirrors `models.SessionRecreateResponse`.
@@ -497,11 +514,25 @@ fn yaml_file_to_json(path: &str) -> Option<Value> {
     serde_json::to_value(yaml_val).ok()
 }
 
+/// Tag a template value with its provenance (`"default"` for built-in /
+/// seeded templates, `"custom"` for user-created ones). The marker is exposed
+/// by `GET /api/admin/apps/templates` so clients can hide the template
+/// dropdown when no custom templates exist (ANT-655).
+pub fn template_with_provenance(mut data: Value, provenance: &str) -> Value {
+    if let Some(obj) = data.as_object_mut() {
+        obj.insert("provenance".to_string(), Value::String(provenance.to_string()));
+    }
+    data
+}
+
 /// Load application templates into `state.app_templates`.
 ///
 /// Built-in templates ship as YAML files under `default_app_templates_path`;
 /// user-defined templates live in the database and override built-ins by name.
-/// If no templates exist, a blank "Default" template is seeded. Mirrors
+/// If no templates exist, a blank "Default" template is seeded. Every entry
+/// is tagged with its provenance (`"default"` vs `"custom"`): a DB row that
+/// overrides a built-in of the same name is `custom`, except for the seeded
+/// blank "Default" row, which stays `default`. Mirrors
 /// `load_app_templates`.
 pub async fn load_app_templates(state: &AppState) {
     let mut templates: HashMap<String, Value> = HashMap::new();
@@ -521,7 +552,7 @@ pub async fn load_app_templates(state: &AppState) {
             }
             if let Some(data) = yaml_file_to_json(path.to_str().unwrap_or("")) {
                 if let Some(name) = data.get("name").and_then(|v| v.as_str()).map(String::from) {
-                    templates.insert(name, data);
+                    templates.insert(name, template_with_provenance(data, "default"));
                 }
             }
         }
@@ -530,9 +561,22 @@ pub async fn load_app_templates(state: &AppState) {
     // User-defined templates from the database (override built-ins by name).
     if let Ok(rows) = entities::app_template::Entity::find().all(&state.db.conn).await {
         for row in rows {
+            let settings = row.settings.clone();
+            // A DB row overriding a built-in of the same name is a custom
+            // override. The lone exception is the blank "Default" row seeded
+            // on a fresh install (name "Default", empty settings): it must
+            // keep reading as `default` on later startups.
+            let overrides_builtin = templates.contains_key(&row.name);
+            let is_seeded_default = !overrides_builtin
+                && row.name == "Default"
+                && matches!(&settings, Value::Object(o) if o.is_empty());
+            let value = serde_json::json!({ "name": row.name, "settings": settings });
             templates.insert(
-                row.name.clone(),
-                serde_json::json!({ "name": row.name, "settings": row.settings }),
+                row.name,
+                template_with_provenance(
+                    value,
+                    if is_seeded_default { "default" } else { "custom" },
+                ),
             );
         }
     }
@@ -547,7 +591,7 @@ pub async fn load_app_templates(state: &AppState) {
         if let Err(e) = entities::app_template::Entity::insert(am).exec(&state.db.conn).await {
             warn!("Failed to seed default template: {e}");
         }
-        templates.insert("Default".to_string(), default);
+        templates.insert("Default".to_string(), template_with_provenance(default, "default"));
     }
 
     let count = templates.len();
@@ -1330,30 +1374,54 @@ pub async fn load_sessions(state: &AppState) {
 // ---------------------------------------------------------------------------
 
 /// Fold one Docker pull progress event into the aggregate per-image progress
-/// state. Mirrors `_update_pull_progress`.
-fn update_pull_progress(state: &AppState, image_name: &str, line: &Value) {
-    let mut progress = state
-        .pull_progress
-        .lock()
-        .unwrap_or_else(std::sync::PoisonError::into_inner);
-    let prog = progress
-        .entry(image_name.to_string())
-        .or_insert(serde_json::json!({ "status": "pulling", "percentage": null, "current": 0, "total": 0 }));
+/// value. Mirrors `_update_pull_progress`.
+fn apply_pull_progress_event(prog: &mut Value, line: &Value) {
     if let Some(status) = line.get("status").and_then(|v| v.as_str()) {
         prog["status"] = Value::String(status.to_string());
     }
-    if let Some(partial) = line.get("partial").and_then(|v| v.as_str()) {
+    // The daemon keys each layer by its id (bollard `CreateImageInfo.id`);
+    // older daemons used a top-level `partial` field for the same purpose.
+    let layer_id = line
+        .get("id")
+        .and_then(|v| v.as_str())
+        .or_else(|| line.get("partial").and_then(|v| v.as_str()));
+    if let Some(layer_id) = layer_id {
         if !prog.get("_layers").map(|v| v.is_object()).unwrap_or(false) {
             prog["_layers"] = Value::Object(serde_json::Map::new());
         }
         if let Some(layers_obj) = prog.get_mut("_layers").and_then(|v| v.as_object_mut()) {
             let layer = layers_obj
-                .entry(partial.to_string())
+                .entry(layer_id.to_string())
                 .or_insert_with(|| serde_json::json!({ "current": 0, "total": 0 }));
-            if let Some(total) = line.get("total").and_then(|v| v.as_i64()) {
-                layer["total"] = Value::Number(total.into());
-            } else if let Some(current) = line.get("current").and_then(|v| v.as_i64()) {
-                layer["current"] = Value::Number(current.into());
+            // Only the download phase carries transfer counters. Extraction
+            // events reuse the same layer id but report a separate (much
+            // smaller) extraction counter; folding those would make the
+            // aggregate dip mid-pull. Events without a status (older
+            // daemons) are accepted.
+            let event_status = line.get("status").and_then(|v| v.as_str());
+            let has_counters = matches!(
+                event_status,
+                Some("Downloading") | Some("Download complete")
+            ) || event_status.is_none();
+            // Byte counters arrive nested in `progressDetail` on modern
+            // daemons; fall back to top-level `current`/`total` for older
+            // ones. An event with neither leaves the layer indeterminate.
+            if has_counters {
+                let detail = line.get("progressDetail");
+                if let Some(current) = detail
+                    .and_then(|d| d.get("current"))
+                    .and_then(|v| v.as_i64())
+                    .or_else(|| line.get("current").and_then(|v| v.as_i64()))
+                {
+                    layer["current"] = Value::Number(current.into());
+                }
+                if let Some(total) = detail
+                    .and_then(|d| d.get("total"))
+                    .and_then(|v| v.as_i64())
+                    .or_else(|| line.get("total").and_then(|v| v.as_i64()))
+                {
+                    layer["total"] = Value::Number(total.into());
+                }
             }
         }
     }
@@ -1377,6 +1445,19 @@ fn update_pull_progress(state: &AppState, image_name: &str, line: &Value) {
     }
 }
 
+/// Fold one Docker pull progress event into the aggregate per-image progress
+/// state.
+fn update_pull_progress(state: &AppState, image_name: &str, line: &Value) {
+    let mut progress = state
+        .pull_progress
+        .lock()
+        .unwrap_or_else(std::sync::PoisonError::into_inner);
+    let prog = progress
+        .entry(image_name.to_string())
+        .or_insert(serde_json::json!({ "status": "pulling", "percentage": null, "current": 0, "total": 0 }));
+    apply_pull_progress_event(prog, line);
+}
+
 /// Run the actual pull + metadata caching for an image. The caller must have
 /// claimed the image in `pull_status` first. On success the status is cleared;
 /// on failure it is left as "pull_failed". Mirrors `_do_pull_and_cache_image`.
@@ -1394,6 +1475,23 @@ pub async fn do_pull_and_cache_image(
         let _ = app;
         return;
     }
+    // Cap the fan-out (ANT-668): claim a pull-concurrency permit *before*
+    // the image is marked "pulling", so images waiting on the cap stay
+    // "queued" in the UI instead of pretending to download. The permit is
+    // held until the pull + metadata cache completes.
+    let sem = state.pull_semaphore().await;
+    let _permit = match sem.clone().acquire_owned().await {
+        Ok(p) => p,
+        Err(_) => {
+            state
+                .pull_status
+                .write()
+                .await
+                .insert(image_name.to_string(), "pull_failed".to_string());
+            warn!("Pull semaphore closed while queueing '{image_name}'");
+            return;
+        }
+    };
     state.pull_status.write().await.insert(image_name.to_string(), "pulling".to_string());
     state
         .pull_progress
@@ -1404,7 +1502,9 @@ pub async fn do_pull_and_cache_image(
             serde_json::json!({ "status": "pulling", "percentage": null, "current": 0, "total": 0 }),
         );
     let provider = match DockerProvider::new(serde_json::json!({ "provider_config": { "image": image_name } })) {
-        Ok(p) => p,
+        // The caller already holds the permit (ANT-668); the provider
+        // must not re-acquire it.
+        Ok(p) => p.with_pull_sem(sem).pull_sem_held(true),
         Err(e) => {
             state
                 .pull_status
@@ -1474,9 +1574,22 @@ pub async fn do_pull_and_cache_image(
                 .lock()
                 .unwrap_or_else(std::sync::PoisonError::into_inner);
             if let Some(prog) = progress.get_mut(image_name) {
-                prog["status"] = Value::String(format!("failed: {}", e.detail));
+                // One clean message in the UI (no doubled "failed: failed:");
+                // the raw daemon string stays in `detail` for admins
+                // (ANT-668).
+                prog["status"] = Value::String(e.detail.clone());
+                if let Some(raw) = &e.raw {
+                    prog["detail"] = Value::String(raw.clone());
+                }
             }
-            warn!("Background pull for '{image_name}' failed: {}", e.detail);
+            warn!(
+                "Background pull for '{image_name}' failed: {}{}",
+                e.detail,
+                e.raw
+                    .as_ref()
+                    .map(|raw| format!(" (raw: {raw})"))
+                    .unwrap_or_default()
+            );
         }
     }
     let _ = app;
@@ -2386,7 +2499,7 @@ pub async fn launch_common(
     // record the launch kwargs + app config (mirrors the Python FakeProvider).
     // The real branch keeps the provider alive so the launch-time capability
     // probe can exec into the container (ANT-438).
-    let (instance_details, launch_digest, probe_provider) =
+    let (instance_details, launch_digest, probe_provider, wait_env, wait_initial_tokens) =
         if state.fake_provider.load(std::sync::atomic::Ordering::Relaxed) {
             let mut rec = serde_json::Map::new();
             rec.insert("app_config".into(), app_config_dict.clone());
@@ -2403,12 +2516,24 @@ pub async fn launch_common(
                 },
                 None,
                 None,
+                Some(std::collections::HashMap::new()),
+                None,
             )
         } else {
             let provider = match DockerProvider::new(app_config_dict.clone()) {
-                Ok(p) => p,
+                // Launch-time pulls (image missing locally) join the same
+                // process-wide pull cap (ANT-668); the provider acquires
+                // the permit inside `pull_image`.
+                Ok(p) => p.with_pull_sem(state.pull_semaphore().await),
                 Err(e) => return Err((StatusCode::from_u16(e.status).unwrap_or(StatusCode::INTERNAL_SERVER_ERROR), e.detail)),
             };
+            // ANT-654: the readiness wait + capability probe run in a
+            // background task, so the launch response returns as soon as the
+            // container is created and started. The background task gets its
+            // own copies of the env (health-check auth + SUBFOLDER) and the
+            // initial token table.
+            let wait_env = Some(final_env.clone());
+            let wait_initial_tokens = initial_tokens.clone();
             let result = provider
                 .launch(
                     &session_id,
@@ -2435,7 +2560,7 @@ pub async fn launch_common(
             };
             // Record the launch digest (best-effort) for out-of-date detection.
             let digest = provider.get_remote_image_digest(&app.provider_config.base.image).await;
-            (details, digest, Some(provider))
+            (details, digest, Some(provider), wait_env, wait_initial_tokens)
         };
 
     // A launch pulls a missing image on demand; cache the image's metadata so
@@ -2491,7 +2616,7 @@ pub async fn launch_common(
         session["viewers"] = serde_json::json!([]);
     }
 
-    // --- Launch-time capability probe (ANT-438) ------------------------------
+    // --- Readiness state + capability probe (ANT-438, ANT-654) ---------------
     // Plain sessions enter selkies secure mode at launch: the master token
     // was in the container's boot env and the owner's controller entry is the
     // initial token table. The probe decides promote-vs-legacy-fallback for
@@ -2499,10 +2624,139 @@ pub async fn launch_common(
     // capability on the session. Room launches are already secure by
     // construction (the readiness gate requires the initial table push to be
     // accepted), so only the capability record is added.
+    //
+    // Since ANT-654 a real-provider launch records the session as *not*
+    // ready and defers the readiness wait + probe to a background task: the
+    // launch response returns as soon as the container is created and
+    // started, and `GET /sessions/{id}/status` plus the session page's
+    // waiting screen surface the background state. The `fake_provider` test
+    // hook is ready the moment it is created, so it runs the probe
+    // synchronously exactly as before.
+    if probe_provider.is_none() {
+        apply_selkies_probe(state, None, &mut session, &session_id, &app, launch_in_room_mode).await;
+        session["ready"] = Value::Bool(true);
+    } else {
+        session["ready"] = Value::Bool(false);
+    }
+
+    state.sessions.write().await.insert(session_id.clone(), session);
+    save_sessions(state).await;
+
+    if let (Some(provider), Some(wait_env)) = (probe_provider, wait_env) {
+        let state_bg = state.clone();
+        let session_id_bg = session_id.clone();
+        let application_id_bg = application_id.to_string();
+        let instance_id = instance_details.instance_id.clone();
+        let port = instance_details.port;
+        let app_bg = app.clone();
+        let host_mount_path_bg = host_mount_path.clone();
+        let shared_files_path_bg = shared_files_path.clone();
+        let ephemeral_base_bg = ephemeral_base.clone();
+        let subfolder = wait_env.get("SUBFOLDER").cloned().unwrap_or_default();
+        tokio::spawn(async move {
+            match provider
+                .wait_for_container_ready(
+                    &instance_id,
+                    &session_id_bg,
+                    &subfolder,
+                    &wait_env,
+                    launch_in_room_mode,
+                    master_token.as_deref(),
+                    wait_initial_tokens.as_ref(),
+                )
+                .await
+            {
+                Ok(ip) => {
+                    // The session may have been killed while the wait was in
+                    // flight; skip the write-back then (kill already ran its
+                    // own cleanup).
+                    let Some(mut s) = state_bg.sessions.read().await.get(&session_id_bg).cloned() else {
+                        return;
+                    };
+                    s["ip"] = Value::String(ip.clone());
+                    if let Some(reg) = s.get_mut("container_registry").and_then(Value::as_object_mut) {
+                        for entry in reg.values_mut() {
+                            if entry.get("app_id").and_then(|v| v.as_str()) == Some(application_id_bg.as_str()) {
+                                entry["ip"] = Value::String(ip.clone());
+                            }
+                        }
+                    }
+                    apply_selkies_probe(&state_bg, Some(&provider), &mut s, &session_id_bg, &app_bg, launch_in_room_mode).await;
+                    s["ready"] = Value::Bool(true);
+                    s["launch_failed"] = Value::Bool(false);
+                    s["launch_error"] = Value::Null;
+                    let mut sessions = state_bg.sessions.write().await;
+                    if sessions.contains_key(&session_id_bg) {
+                        sessions.insert(session_id_bg.clone(), s);
+                    }
+                    drop(sessions);
+                    save_sessions(&state_bg).await;
+                    info!(
+                        "[{session_id_bg}] Session ready. Proxying to {ip}:{port}."
+                    );
+                }
+                Err(e) => {
+                    // The wait already stopped the container on timeout; run
+                    // the same ephemeral cleanup the inline failure path used
+                    // to and record the failure on the session, so polling
+                    // surfaces it instead of losing it (ANT-654).
+                    error!(
+                        "[{session_id_bg}] Background readiness wait failed: {}",
+                        e.detail
+                    );
+                    cleanup_ephemeral(&host_mount_path_bg, &ephemeral_base_bg);
+                    if let Some(sfp) = &shared_files_path_bg {
+                        if sfp.starts_with(&ephemeral_base_bg) && std::path::Path::new(sfp).exists() {
+                            let _ = std::fs::remove_dir_all(sfp);
+                        }
+                    }
+                    let mut sessions = state_bg.sessions.write().await;
+                    if let Some(s) = sessions.get_mut(&session_id_bg) {
+                        s["ready"] = Value::Bool(false);
+                        s["launch_failed"] = Value::Bool(true);
+                        s["launch_error"] = Value::String(e.detail);
+                    }
+                    drop(sessions);
+                    save_sessions(&state_bg).await;
+                }
+            }
+        });
+    }
+
+    info!(
+        "[{session_id}] Container started for {username}; readiness is confirmed in the background. Proxying to {}:{}.",
+        instance_details.ip, instance_details.port
+    );
+
+    let session_url = if launch_in_room_mode {
+        format!("/room/{session_id}?access_token={access_token}&token={}", controller_token.clone().unwrap_or_default())
+    } else {
+        owner_session_url(&session_id, &access_token)
+    };
+
+    Ok(LaunchResponse { session_url, session_id })
+}
+
+/// Apply the launch-time capability probe (ANT-438) to a session: record the
+/// detected selkies capability + version, run the initial token-table push
+/// for a secure plain session, and roll back to the documented legacy path
+/// for pre-2.0 containers. With `provider == None` the `fake_selkies_probe`
+/// test hook stands in for the live probe (a recorded probe result, or the
+/// 2.0.0-class happy path when absent) — the fake provider is ready
+/// immediately, so that path runs synchronously; a real provider runs the
+/// live probe from the background readiness task (ANT-654).
+async fn apply_selkies_probe(
+    state: &AppState,
+    provider: Option<&DockerProvider>,
+    session: &mut Value,
+    session_id: &str,
+    app: &InstalledApp,
+    launch_in_room_mode: bool,
+) {
     let probe = if launch_in_room_mode {
         SelkiesProbe::Secure { version: None }
-    } else if let Some(p) = &probe_provider {
-        probe_selkies_capability(state, p, &session, &session_id).await
+    } else if let Some(p) = provider {
+        probe_selkies_capability(state, p, session, session_id).await
     } else {
         // Test hook: a recorded probe result stands in for the live probe;
         // absent one, assume the 2.0.0-class happy path.
@@ -2531,7 +2785,7 @@ pub async fn launch_common(
             // re-pushed on the next share visit (ANT-305).
             let mut pushed = false;
             for _ in 0..5 {
-                if crate::collaboration::push_token_table(state, &session_id, &session).await {
+                if crate::collaboration::push_token_table(state, session_id, session).await {
                     pushed = true;
                     break;
                 }
@@ -2556,21 +2810,6 @@ pub async fn launch_common(
             session["selkies_version"]
         );
     }
-    state.sessions.write().await.insert(session_id.clone(), session);
-    save_sessions(state).await;
-
-    info!(
-        "[{session_id}] Session ready for {username}. Proxying to {}:{}.",
-        instance_details.ip, instance_details.port
-    );
-
-    let session_url = if launch_in_room_mode {
-        format!("/room/{session_id}?access_token={access_token}&token={}", controller_token.clone().unwrap_or_default())
-    } else {
-        owner_session_url(&session_id, &access_token)
-    };
-
-    Ok(LaunchResponse { session_url, session_id })
 }
 
 /// Resolve the autostart script content + subpath for a launch. Mirrors the
@@ -3266,43 +3505,62 @@ pub async fn stop_session(state: &AppState, session_id: &str) {
     // UI shows "session ended" instead of a dead iframe. A no-op for
     // non-collaboration sessions (they have no room connections).
     crate::collaboration::notify_session_ended(state, session_id).await;
-    let registry = session_data
+    save_sessions(state).await;
+    info!(
+        "[{session_id}] Session stopped; containers are torn down in the background."
+    );
+
+    // Since ANT-654 the slow part (Docker stop with its 5 s grace period +
+    // removal, ephemeral directory cleanup) runs in a background task, so
+    // the stop response goes out as soon as the session is gone from the
+    // live list. The teardown inputs are taken from the removed session
+    // record, which this task owns.
+    let registry_map = session_data
         .get("container_registry")
         .cloned()
-        .unwrap_or_else(|| serde_json::json!({}));
-    let registry_map = registry.as_object().cloned().unwrap_or_default();
-    for (app_id, container_info) in registry_map.iter() {
-        let Some(instance_id) = container_info.get("instance_id").and_then(|v| v.as_str()) else {
-            continue;
-        };
-        // The stop path only needs the daemon connection, so fall back to an
-        // empty provider when the app was uninstalled since launch — without
-        // this the container would be orphaned (ANT-378).
-        let provider = match state.installed_apps.read().await.get(app_id).cloned() {
-            Some(app) => DockerProvider::new(serde_json::to_value(&app).unwrap_or_default()),
-            None => DockerProvider::new(serde_json::json!({})),
-        };
-        if let Ok(provider) = provider {
-            provider.stop(instance_id).await;
-        }
-    }
-    save_sessions(state).await;
-    let ephemeral_base = format!("{}/vreckan_ephemeral", state.settings.storage_path);
-    if let Some(hmp) = session_data.get("host_mount_path").and_then(|v| v.as_str()) {
-        if hmp.starts_with(&ephemeral_base) && std::path::Path::new(hmp).exists() {
-            let _ = std::fs::remove_dir_all(hmp);
-        }
-    }
-    if let Some(sfp) = session_data
+        .and_then(|v| v.as_object().cloned())
+        .unwrap_or_default();
+    let host_mount_path = session_data
+        .get("host_mount_path")
+        .and_then(|v| v.as_str())
+        .map(|s| s.to_string());
+    let shared_files_path = session_data
         .get("shared_files_path")
         .and_then(|v| v.as_str())
-    {
-        if sfp.starts_with(&ephemeral_base) && std::path::Path::new(sfp).exists() {
-            let _ = std::fs::remove_dir_all(sfp);
-            info!("[{session_id}] Removed ephemeral shared files directory.");
+        .map(|s| s.to_string());
+    let storage_path = state.settings.storage_path.clone();
+    let state_bg = state.clone();
+    let session_id_bg = session_id.to_string();
+    tokio::spawn(async move {
+        for (app_id, container_info) in registry_map.iter() {
+            let Some(instance_id) = container_info.get("instance_id").and_then(|v| v.as_str()) else {
+                continue;
+            };
+            // The stop path only needs the daemon connection, so fall back to
+            // an empty provider when the app was uninstalled since launch —
+            // without this the container would be orphaned (ANT-378).
+            let provider = match state_bg.installed_apps.read().await.get(app_id).cloned() {
+                Some(app) => DockerProvider::new(serde_json::to_value(&app).unwrap_or_default()),
+                None => DockerProvider::new(serde_json::json!({})),
+            };
+            if let Ok(provider) = provider {
+                provider.stop(instance_id).await;
+            }
         }
-    }
-    info!("[{session_id}] Session stopped and cleaned up successfully.");
+        let ephemeral_base = format!("{}/vreckan_ephemeral", storage_path);
+        if let Some(hmp) = &host_mount_path {
+            if hmp.starts_with(&ephemeral_base) && std::path::Path::new(hmp).exists() {
+                let _ = std::fs::remove_dir_all(hmp);
+            }
+        }
+        if let Some(sfp) = &shared_files_path {
+            if sfp.starts_with(&ephemeral_base) && std::path::Path::new(sfp).exists() {
+                let _ = std::fs::remove_dir_all(sfp);
+                info!("[{session_id_bg}] Removed ephemeral shared files directory.");
+            }
+        }
+        info!("[{session_id_bg}] Containers stopped and cleaned up.");
+    });
 }
 
 /// Whether a session was launched with ephemeral (cleanroom) storage.
@@ -3416,7 +3674,14 @@ pub async fn recreate_session(
         .map(|s| s.to_string());
     let registry_map = registry.as_object().cloned().unwrap_or_default();
     let prefix_map = state.path_prefix_map.read().await.clone();
+    // ANT-654: the new containers launch in a not-ready state; the
+    // readiness wait + capability probe run in a background task after the
+    // recreate response goes out.
+    session_data["ready"] = serde_json::json!(false);
+    session_data["launch_failed"] = serde_json::json!(false);
+    session_data["launch_error"] = Value::Null;
     let mut primary_restored = false;
+    let mut pending_waits: Vec<RecreateWait> = Vec::new();
     for (app_id, container_info) in registry_map.iter() {
         let Some(app_config) = container_info.get("app_config") else {
             continue;
@@ -3484,6 +3749,11 @@ pub async fn recreate_session(
                 }
             }
         }
+        // ANT-654: the background readiness wait needs its own copies of the
+        // launch inputs (the launch call consumes the originals).
+        let wait_env = env_vars.clone();
+        let wait_initial_tokens = initial_tokens.clone();
+        let wait_master_token = master_token.clone();
         match provider
             .launch(
                 session_id,
@@ -3517,6 +3787,15 @@ pub async fn recreate_session(
                     "[{session_id}] Recreated container for app '{app_id}' ({}).",
                     details.instance_id
                 );
+                pending_waits.push(RecreateWait {
+                    provider,
+                    instance_id: details.instance_id,
+                    env_vars: wait_env,
+                    is_collaboration,
+                    master_token: wait_master_token,
+                    initial_tokens: wait_initial_tokens,
+                    app_id: app_id.clone(),
+                });
             }
             Err(e) => {
                 warn!("[{session_id}] Failed to recreate container for app '{app_id}': {}", e.detail);
@@ -3546,7 +3825,102 @@ pub async fn recreate_session(
     let updated = session_data.clone();
     drop(sessions);
     save_sessions(state).await;
+
+    // ANT-654: run the readiness wait + capability probe in the background
+    // so the recreate response returns as soon as the containers are
+    // created and started.
+    if !pending_waits.is_empty() {
+        let app_for_probe = match &primary_app_id {
+            Some(id) => state.installed_apps.read().await.get(id).cloned(),
+            None => None,
+        };
+        let is_room = updated
+            .get("is_collaboration")
+            .and_then(|v| v.as_bool())
+            .unwrap_or(false);
+        let state_bg = state.clone();
+        let session_id_bg = session_id.to_string();
+        let primary_app_id_bg = primary_app_id.clone();
+        tokio::spawn(async move {
+            let mut failed_detail = None;
+            let mut primary_ip = None;
+            for w in &pending_waits {
+                let subfolder = w.env_vars.get("SUBFOLDER").cloned().unwrap_or_default();
+                match w
+                    .provider
+                    .wait_for_container_ready(
+                        &w.instance_id,
+                        &session_id_bg,
+                        &subfolder,
+                        &w.env_vars,
+                        w.is_collaboration,
+                        w.master_token.as_deref(),
+                        w.initial_tokens.as_ref(),
+                    )
+                    .await
+                {
+                    Ok(ip)
+                        if Some(w.app_id.as_str()) == primary_app_id_bg.as_deref() =>
+                    {
+                        primary_ip = Some(ip);
+                    }
+                    Ok(_) => {}
+                    Err(e) => {
+                        failed_detail = Some(e.detail);
+                        break;
+                    }
+                }
+            }
+            // The session may have been killed while the wait was in flight;
+            // skip the write-back then.
+            let Some(mut s) = state_bg.sessions.read().await.get(&session_id_bg).cloned() else {
+                return;
+            };
+            if let Some(ip) = &primary_ip {
+                s["ip"] = Value::String(ip.clone());
+                if let Some(reg) = s.get_mut("container_registry").and_then(Value::as_object_mut) {
+                    if let Some(entry) = reg.get_mut(primary_app_id_bg.as_deref().unwrap_or_default()) {
+                        entry["ip"] = Value::String(ip.clone());
+                    }
+                }
+            }
+            if let Some(detail) = failed_detail {
+                s["ready"] = Value::Bool(false);
+                s["launch_failed"] = Value::Bool(true);
+                s["launch_error"] = Value::String(detail);
+            } else {
+                let primary_wait = pending_waits
+                    .iter()
+                    .find(|w| primary_app_id_bg.as_deref() == Some(w.app_id.as_str()));
+                if let (Some(w), Some(app)) = (primary_wait, &app_for_probe) {
+                    apply_selkies_probe(&state_bg, Some(&w.provider), &mut s, &session_id_bg, app, is_room).await;
+                }
+                s["ready"] = Value::Bool(true);
+                s["launch_failed"] = Value::Bool(false);
+                s["launch_error"] = Value::Null;
+            }
+            let mut sessions = state_bg.sessions.write().await;
+            if sessions.contains_key(&session_id_bg) {
+                sessions.insert(session_id_bg.clone(), s);
+            }
+            drop(sessions);
+            save_sessions(&state_bg).await;
+        });
+    }
     Ok(updated)
+}
+
+/// A deferred readiness wait for a recreated container (ANT-654): everything
+/// `DockerProvider::wait_for_container_ready` needs, owned by the background
+/// task.
+struct RecreateWait {
+    provider: DockerProvider,
+    instance_id: String,
+    env_vars: HashMap<String, String>,
+    is_collaboration: bool,
+    master_token: Option<String>,
+    initial_tokens: Option<Value>,
+    app_id: String,
 }
 
 // ---------------------------------------------------------------------------
@@ -3668,6 +4042,25 @@ async fn get_my_sessions(
                 None
             },
             out_of_date,
+            // ANT-654: readiness state. Pre-ANT-654 session rows have no
+            // `ready` flag and always launched synchronously to readiness, so
+            // they read as ready.
+            ready: s_data
+                .get("ready")
+                .and_then(|v| v.as_bool())
+                .unwrap_or(true),
+            launch_failed: s_data
+                .get("launch_failed")
+                .and_then(|v| v.as_bool())
+                .unwrap_or(false),
+            launch_error: if reveal_context {
+                s_data
+                    .get("launch_error")
+                    .and_then(|v| v.as_str())
+                    .map(|s| s.to_string())
+            } else {
+                None
+            },
             username: owner,
             is_mine,
             joinable,
@@ -3723,9 +4116,59 @@ async fn get_session_status(
         )
         .await;
     }
+    // Since ANT-654 the launch/kill responses return before the container
+    // lifecycle has settled, so the session carries an authoritative `ready`
+    // flag maintained by the background launch task. The recorded flag wins
+    // over the live probe; sessions without it (pre-ANT-654 rows persisted to
+    // disk) fall back to the live probe alone.
+    let (ready, detail) = match session_data.get("ready").and_then(|v| v.as_bool()) {
+        Some(true) => (true, "ready".to_string()),
+        Some(false)
+            if session_data
+                .get("launch_failed")
+                .and_then(|v| v.as_bool())
+                .unwrap_or(false) =>
+        {
+            let detail = session_data
+                .get("launch_error")
+                .and_then(|v| v.as_str())
+                .map(|s| s.to_string())
+                .unwrap_or_else(|| "App failed to start.".to_string());
+            (false, detail)
+        }
+        Some(false) => {
+            let (_, detail) = probe_upstream(&session_data).await;
+            (false, detail)
+        }
+        None => probe_upstream(&session_data).await,
+    };
+    let launch_failed = session_data
+        .get("launch_failed")
+        .and_then(|v| v.as_bool())
+        .unwrap_or(false);
+    let launch_error = if launch_failed {
+        session_data
+            .get("launch_error")
+            .and_then(|v| v.as_str())
+            .map(|s| s.to_string())
+    } else {
+        None
+    };
+    let value = serde_json::json!({
+        "ready": ready,
+        "detail": detail,
+        "launch_failed": launch_failed,
+        "launch_error": launch_error,
+    });
+    e2ee::encrypt_response(&state, &headers, StatusCode::OK, value).await
+}
+
+/// The live upstream health probe behind `get_session_status`: GET the
+/// session's root route and classify the answer. Returns `(ready, detail)`.
+async fn probe_upstream(session_data: &serde_json::Value) -> (bool, String) {
     let ip = session_data.get("ip").and_then(|v| v.as_str()).map(|s| s.to_string());
     let port = session_data.get("port").and_then(|v| v.as_i64()).map(|p| p as u16);
-    let (ready, detail) = match (ip, port) {
+    match (ip, port) {
         (Some(ip), Some(port)) => {
             let url = format!("http://{ip}:{port}/");
             match reqwest::Client::builder()
@@ -3747,9 +4190,7 @@ async fn get_session_status(
             }
         }
         _ => (false, "No upstream address recorded.".to_string()),
-    };
-    let value = serde_json::json!({ "ready": ready, "detail": detail });
-    e2ee::encrypt_response(&state, &headers, StatusCode::OK, value).await
+    }
 }
 
 /// `DELETE /api/sessions/{session_id}` — stop the caller's session.
@@ -4234,5 +4675,121 @@ mod tests {
         // A non-401 plain body is not selkies' secure-mode 401.
         assert_eq!(classify_sessions_probe(502, Some("text/plain")), None);
         assert_eq!(classify_sessions_probe(200, Some("text/plain")), None);
+    }
+
+    fn fresh_pull_progress() -> Value {
+        serde_json::json!({ "status": "pulling", "percentage": null, "current": 0, "total": 0 })
+    }
+
+    #[test]
+    fn pull_progress_modern_daemon_shape() {
+        // The daemon streams one `CreateImageInfo` per layer: id + status,
+        // with byte counters nested in `progressDetail`. Two layers of 100 and
+        // 200 bytes; the stream interleaves the layers like a real pull.
+        let mut prog = fresh_pull_progress();
+        apply_pull_progress_event(&mut prog, &serde_json::json!({ "status": "Pulling" }));
+        assert_eq!(prog["percentage"], Value::Null);
+
+        apply_pull_progress_event(&mut prog, &serde_json::json!({ "id": "sha256:aaa", "status": "Waiting" }));
+        apply_pull_progress_event(
+            &mut prog,
+            &serde_json::json!({ "id": "sha256:aaa", "status": "Downloading",
+                                 "progressDetail": { "current": 25, "total": 100 } }),
+        );
+        assert_eq!(prog["percentage"], serde_json::json!(25.0));
+
+        apply_pull_progress_event(
+            &mut prog,
+            &serde_json::json!({ "id": "sha256:bbb", "status": "Downloading",
+                                 "progressDetail": { "current": 50, "total": 200 } }),
+        );
+        // 75 of 300 bytes across both layers.
+        assert_eq!(prog["percentage"], serde_json::json!(25.0));
+        assert_eq!(prog["current"], serde_json::json!(75));
+        assert_eq!(prog["total"], serde_json::json!(300));
+
+        apply_pull_progress_event(
+            &mut prog,
+            &serde_json::json!({ "id": "sha256:aaa", "status": "Download complete",
+                                 "progressDetail": { "current": 100, "total": 100 } }),
+        );
+        apply_pull_progress_event(&mut prog, &serde_json::json!({ "id": "sha256:aaa", "status": "Pull complete" }));
+        apply_pull_progress_event(
+            &mut prog,
+            &serde_json::json!({ "id": "sha256:bbb", "status": "Download complete",
+                                 "progressDetail": { "current": 200, "total": 200 } }),
+        );
+        apply_pull_progress_event(&mut prog, &serde_json::json!({ "id": "sha256:bbb", "status": "Pull complete" }));
+        assert_eq!(prog["percentage"], serde_json::json!(100.0));
+        assert_eq!(prog["status"], "Pull complete");
+        // The internal per-layer map is tracked under a `_`-prefixed key so
+        // the API response can strip it (see the installed-apps endpoint).
+        assert!(prog["_layers"].is_object());
+        assert!(prog.get("_layers").unwrap().get("sha256:aaa").is_some());
+    }
+
+    #[test]
+    fn pull_progress_older_daemon_top_level_counters() {
+        // Pre-`progressDetail` daemons report counters at the top level and
+        // identify the layer with `partial`; both fall back cleanly.
+        let mut prog = fresh_pull_progress();
+        apply_pull_progress_event(
+            &mut prog,
+            &serde_json::json!({ "partial": "layer-1", "status": "Downloading",
+                                 "current": 40, "total": 100 }),
+        );
+        assert_eq!(prog["percentage"], serde_json::json!(40.0));
+        assert!(prog["_layers"].get("layer-1").is_some());
+    }
+
+    #[test]
+    fn pull_progress_indeterminate_without_sizes() {
+        // Layers that only ever report status strings ("Waiting",
+        // "Verifying Checksum", "Pull complete") carry no byte counters, so
+        // the aggregate percentage must stay null (the UI shows an
+        // indeterminate indicator instead of a frozen 0%).
+        let mut prog = fresh_pull_progress();
+        apply_pull_progress_event(&mut prog, &serde_json::json!({ "id": "sha256:ccc", "status": "Waiting" }));
+        apply_pull_progress_event(&mut prog, &serde_json::json!({ "id": "sha256:ccc", "status": "Verifying Checksum" }));
+        apply_pull_progress_event(&mut prog, &serde_json::json!({ "id": "sha256:ccc", "status": "Pull complete" }));
+        assert_eq!(prog["percentage"], Value::Null);
+        assert_eq!(prog["total"], serde_json::json!(0));
+        assert!(prog["_layers"].get("sha256:ccc").is_some());
+    }
+
+    #[test]
+    fn pull_progress_extract_counters_do_not_regress() {
+        // Extraction events reuse the layer id but report their own (much
+        // smaller) extraction counter; folding those in would make the
+        // aggregate dip mid-pull. Only download-phase counters count.
+        let mut prog = fresh_pull_progress();
+        apply_pull_progress_event(
+            &mut prog,
+            &serde_json::json!({ "id": "sha256:eee", "status": "Downloading",
+                                 "progressDetail": { "current": 90, "total": 100 } }),
+        );
+        assert_eq!(prog["percentage"], serde_json::json!(90.0));
+        apply_pull_progress_event(
+            &mut prog,
+            &serde_json::json!({ "id": "sha256:eee", "status": "Extracting",
+                                 "progressDetail": { "current": 7, "total": 140 } }),
+        );
+        assert_eq!(prog["percentage"], serde_json::json!(90.0));
+        assert_eq!(prog["current"], serde_json::json!(90));
+        assert_eq!(prog["total"], serde_json::json!(100));
+        // The phase text still tracks the daemon's status string.
+        assert_eq!(prog["status"], "Extracting");
+    }
+
+    #[test]
+    fn pull_progress_percentage_rounds_to_tenths() {
+        let mut prog = fresh_pull_progress();
+        apply_pull_progress_event(
+            &mut prog,
+            &serde_json::json!({ "id": "sha256:ddd", "status": "Downloading",
+                                 "progressDetail": { "current": 1, "total": 3 } }),
+        );
+        // 33.333…% rounds to one decimal place.
+        assert_eq!(prog["percentage"], serde_json::json!(33.3));
     }
 }

@@ -65,7 +65,8 @@
     "revoke": "Revoke",
     "revokeConfirm": "Revoke this share?",
     "shareRevoked": "Share revoked",
-    "up": "Up"
+    "up": "Up",
+    "openInAppPopupBlocked": "Session started — the browser blocked the new tab. Open it from the highlighted row in the session list."
   },
   "login": {
     "signIn": "Sign in",
@@ -114,7 +115,6 @@
     "serverFilePlaceholder": "filename in shared storage",
     "launch": "Launch",
     "gpuAuto": "Auto (no specific GPU)",
-    "sessionLaunched": "Session launched",
     "noSessionUrl": "Launch failed: no session URL returned",
     "url": "URL",
     "launchApp": "Launch {name}",
@@ -125,7 +125,11 @@
     "finalizing": "Finalizing…",
     "fileUploaded": "File '{name}' uploaded.",
     "urlToOpen": "URL to open",
-    "options": "Launch options"
+    "options": "Launch options",
+    "sessionStarting": "Session is starting — it will open as soon as it’s ready.",
+    "sessionReady": "Session is ready.",
+    "sessionReadyOpenFromList": "Session is ready — open it from the session list.",
+    "popupBlocked": "Session started — the browser blocked the new tab. Open it from the highlighted row in the session list."
   },
   "password": {
     "title": "Change password",
@@ -459,7 +463,8 @@
     "save": "Save",
     "saved": "Certificates settings saved.",
     "statusTitle": "Current certificate",
-    "noCert": "No certificate found. Enable ACME and issue one, or the server is using a self-signed certificate.",
+    "noCert": "No certificate is currently available. Vreckan generates its built-in self-signed certificate on startup; see the server logs if this persists.",
+    "selfSigned": "The server is using its built-in self-signed certificate. Enable ACME and issue a certificate to replace it.",
     "source": "Source",
     "expiry": "Expires",
     "daysRemainingLabel": "Days remaining",
@@ -562,6 +567,7 @@
     "installTitle": "Install {name}",
     "installHelp": "Installs the app and downloads its container image. The download runs in the background — progress is shown below.",
     "appTemplate": "App template",
+    "templateAutoSelected": "Auto-selected — no custom templates",
     "accessLabel": "Who can use this app",
     "allUsers": "All users",
     "accessUsersSection": "Users",
@@ -593,6 +599,7 @@
     "interval12h": "12 hours",
     "interval24h": "24 hours",
     "intervalCustom": "Custom ({seconds} s)",
+    "pullConcurrency": "Concurrent pulls",
     "auto": "Auto",
     "nextCheckIn": "Next check in {time}",
     "lastCheckedAt": "Last checked {time}",
@@ -671,7 +678,6 @@
     "recreate": "Recreate",
     "recreateTitle": "Recreate this session from the latest image (the app briefly goes offline)",
     "recreating": "Recreating…",
-    "recreated": "Session recreated",
     "noActive": "No active sessions.",
     "noActiveUsers": "No active sessions across users.",
     "kill": "Kill",
@@ -696,7 +702,16 @@
     "ownerBy": "by {owner}",
     "participantCount": "{count} participant",
     "participantCountPlural": "{count} participants",
-    "participantsBadgeTitle": "{names} — click to manage"
+    "participantsBadgeTitle": "{names} — click to manage",
+    "starting": "Starting…",
+    "stopping": "Stopping…",
+    "failedToStart": "Failed to start",
+    "failedToStartDetail": "Failed to start: {error}",
+    "launchFailedToast": "Session failed to start: {error}",
+    "goneWhileStarting": "The session ended while it was starting.",
+    "stillStarting": "The session is still starting — its state is shown in the session list.",
+    "joined": "Joined the session",
+    "joinedPopupBlocked": "Joined — the browser blocked the new tab. Click Join again on the highlighted row to open it."
   },
   "backup": {
     "heading": "Backup",

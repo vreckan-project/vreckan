@@ -65,7 +65,8 @@
     "revoke": "Geri al",
     "revokeConfirm": "Bu paylaşım geri alınsın mı?",
     "shareRevoked": "Paylaşım geri alındı",
-    "up": "Yukarı"
+    "up": "Yukarı",
+    "openInAppPopupBlocked": "Oturum başlatıldı — tarayıcı yeni sekmenin açılmasını engelledi. Oturum listesinde vurgulanan satırdan açın."
   },
   "login": {
     "signIn": "Giriş yap",
@@ -114,7 +115,6 @@
     "serverFilePlaceholder": "ortak depolamadaki dosya adı",
     "launch": "Başlat",
     "gpuAuto": "Oto (belirli bir GPU yok)",
-    "sessionLaunched": "Oturum başlatıldı",
     "noSessionUrl": "Başlatma başarısız: oturum URL'si döndürülmedi",
     "url": "URL",
     "launchApp": "{name} başlat",
@@ -125,7 +125,11 @@
     "finalizing": "Tamamlanıyor…",
     "fileUploaded": "'{name}' dosyası yüklendi.",
     "urlToOpen": "Açılacak URL",
-    "options": "Başlatma seçenekleri"
+    "options": "Başlatma seçenekleri",
+    "sessionStarting": "Oturum başlıyor — hazır olunca açılacak.",
+    "sessionReady": "Oturum hazır.",
+    "sessionReadyOpenFromList": "Oturum hazır — oturum listesinden açın.",
+    "popupBlocked": "Oturum başlatıldı — tarayıcı yeni sekmenin açılmasını engelledi. Oturum listesinde vurgulanan satırdan açın."
   },
   "password": {
     "title": "Parolayı değiştir",
@@ -459,7 +463,8 @@
     "save": "Kaydet",
     "saved": "Sertifika ayarları kaydedildi.",
     "statusTitle": "Mevcut sertifika",
-    "noCert": "Sertifika bulunamadı. ACME’yi etkinleştirip bir tane çıkarın ya da sunucu kendi kendine imzalanmış bir sertifika kullanıyor.",
+    "noCert": "Şu anda kullanılabilir bir sertifika yok. Vreckan başlarken yerleşik kendi kendine imzalanmış sertifikasını oluşturur; durum sürerse sunucu kayıtlarına bakın.",
+    "selfSigned": "Sunucu, yerleşik kendi kendine imzalanmış sertifikasını kullanıyor. Onun yerine bir sertifika çıkarmak için ACME'yi etkinleştirin.",
     "source": "Kaynak",
     "expiry": "Son kullanma",
     "daysRemainingLabel": "Kalan gün",
@@ -562,6 +567,7 @@
     "installTitle": "{name} yükle",
     "installHelp": "Uygulamayı yükler ve konteyner imajını indirir. İndirme arka planda çalışır — ilerleme aşağıda gösterilir.",
     "appTemplate": "Uygulama şablonu",
+    "templateAutoSelected": "Otomatik seçildi — özel şablon yok",
     "accessLabel": "Bu uygulamayı kimler kullanabilir",
     "allUsers": "Tüm kullanıcılar",
     "accessUsersSection": "Kullanıcılar",
@@ -593,6 +599,7 @@
     "interval12h": "12 saat",
     "interval24h": "24 saat",
     "intervalCustom": "Özel ({seconds} sn)",
+    "pullConcurrency": "Eşzamanlı çekimler",
     "auto": "Oto",
     "nextCheckIn": "Sonraki kontrol {time} içinde",
     "lastCheckedAt": "Son kontrol {time}",
@@ -671,7 +678,6 @@
     "recreate": "Yeniden oluştur",
     "recreateTitle": "Bu oturumu en son imajdan yeniden oluştur (uygulama kısa süreliğine devre dışı kalacak)",
     "recreating": "Yeniden oluşturuluyor…",
-    "recreated": "Oturum yeniden oluşturuldu",
     "noActive": "Aktif oturum yok.",
     "noActiveUsers": "Hiçbir kullanıcıda aktif oturum yok.",
     "kill": "Durdur",
@@ -696,7 +702,16 @@
     "ownerBy": "{owner} tarafından",
     "participantCount": "{count} katılımcı",
     "participantCountPlural": "{count} katılımcı",
-    "participantsBadgeTitle": "{names} — yönetmek için tıklayın"
+    "participantsBadgeTitle": "{names} — yönetmek için tıklayın",
+    "starting": "Başlıyor…",
+    "stopping": "Durduruluyor…",
+    "failedToStart": "Başlatılamadı",
+    "failedToStartDetail": "Başlatılamadı: {error}",
+    "launchFailedToast": "Oturum başlatılamadı: {error}",
+    "goneWhileStarting": "Oturum başlarken sona erdi.",
+    "stillStarting": "Oturum hâlâ başlıyor — durumu oturum listesinde gösteriliyor.",
+    "joined": "Oturuma katıldınız",
+    "joinedPopupBlocked": "Katıldınız — tarayıcı yeni sekmenin açılmasını engelledi. Açmak için vurgulanan satırdaki «Katıl» düğmesine yeniden tıklayın."
   },
   "backup": {
     "heading": "Yedek",

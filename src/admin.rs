@@ -1104,6 +1104,17 @@ async fn get_certificates(
         sources.insert((*name).to_string(), Value::String(setting_source(&state, name).await));
     }
     let mut status = crate::acme_orchestrator::cert_status(&state, &domains).await;
+    // Display-only fallback (ANT-660): with no ACME cert the server serves
+    // its built-in self-signed dev cert (tls.rs), so report that instead of
+    // "no certificate". Kept out of `cert_status` so the renewal/issue
+    // logic never sees the dev cert.
+    if !status.get("present").and_then(|v| v.as_bool()).unwrap_or(false) {
+        if let Some(dev) =
+            crate::acme_orchestrator::self_signed_status(&state.settings.data_root)
+        {
+            status = dev;
+        }
+    }
     // Elide the private-key PEM from the admin's response (ANT-275).
     crate::acme_orchestrator::mask_status_key(&mut status);
     let value = serde_json::json!({
@@ -2503,7 +2514,7 @@ async fn pull_latest_app_image(
     .await
 }
 
-/// Request body for `PUT /api/admin/apps/auto_update`. Both fields are
+/// Request body for `PUT /api/admin/apps/auto_update`. All fields are
 /// optional; omitted fields are left unchanged.
 #[derive(Deserialize)]
 struct AutoUpdateSettingsRequest {
@@ -2511,13 +2522,19 @@ struct AutoUpdateSettingsRequest {
     enabled: Option<bool>,
     #[serde(default)]
     interval_seconds: Option<i64>,
+    /// `registry_pull_concurrency` (ANT-668): the process-wide cap on
+    /// concurrent image pulls.
+    #[serde(default)]
+    pull_concurrency: Option<i64>,
 }
 
 /// `PUT /api/admin/apps/auto_update` — save the global auto-update settings
-/// (`auto_update_apps` + `auto_update_interval_seconds`) into the
-/// `app_settings` table through the same persistence path as the other admin
-/// settings pages, so the background auto-update job picks them up on its
-/// next tick without a restart.
+/// (`auto_update_apps` + `auto_update_interval_seconds` +
+/// `registry_pull_concurrency`) into the `app_settings` table through the
+/// same persistence path as the other admin settings pages, so the
+/// background auto-update job picks them up on its next tick without a
+/// restart (the pull semaphore rebuilds from the new value on the next
+/// pull, ANT-668).
 async fn save_auto_update_settings(
     State(state): State<AppState>,
     headers: HeaderMap,
@@ -2567,6 +2584,10 @@ async fn save_auto_update_settings(
     let writes: Vec<(&str, String)> = [
         ("auto_update_apps", req.enabled.map(|b| b.to_string())),
         ("auto_update_interval_seconds", req.interval_seconds.map(|n| n.to_string())),
+        (
+            "registry_pull_concurrency",
+            req.pull_concurrency.map(|n| n.to_string()),
+        ),
     ]
     .into_iter()
     .filter_map(|(name, value)| value.map(|v| (name, v)))
@@ -2585,11 +2606,15 @@ async fn save_auto_update_settings(
     }
     let enabled = state.settings.get_setting(&state.db, "auto_update_apps").await;
     let interval_seconds = state.settings.get_setting(&state.db, "auto_update_interval_seconds").await;
+    let pull_concurrency = state
+        .settings
+        .get_setting(&state.db, "registry_pull_concurrency")
+        .await;
     e2ee::encrypt_response(
         &state,
         &headers,
         StatusCode::OK,
-        serde_json::json!({ "ok": true, "enabled": enabled, "interval_seconds": interval_seconds }),
+        serde_json::json!({ "ok": true, "enabled": enabled, "interval_seconds": interval_seconds, "pull_concurrency": pull_concurrency }),
     )
     .await
 }
@@ -2639,6 +2664,12 @@ async fn get_auto_update_status(
         .await
         .as_i64()
         .unwrap_or(3600);
+    let pull_concurrency = state
+        .settings
+        .get_setting(&state.db, "registry_pull_concurrency")
+        .await
+        .as_i64()
+        .unwrap_or(2);
     let job = state.auto_update_job.read().await.clone();
     let apps = state.installed_apps.read().await.values().cloned().collect::<Vec<_>>();
     let metadata = state.image_metadata.read().await.clone();
@@ -2660,6 +2691,7 @@ async fn get_auto_update_status(
     let value = serde_json::json!({
         "enabled": enabled,
         "interval_seconds": interval,
+        "pull_concurrency": pull_concurrency,
         "last_check_at": job.last_check_at.map(Value::from),
         "next_check_at": job.next_check_at.map(Value::from),
         "updates_available": updates_available,
@@ -3060,7 +3092,13 @@ async fn save_app_template(
         .await;
     }
     let settings = decrypted.get("settings").cloned().unwrap_or(serde_json::json!({}));
-    let template = serde_json::json!({ "name": name, "settings": settings });
+    // Anything saved through the editor is user-created, including a template
+    // whose name collides with a built-in (which it then overrides), so it is
+    // tagged `custom` in the in-memory catalog as well as the response.
+    let template = catalog::template_with_provenance(
+        serde_json::json!({ "name": name, "settings": settings }),
+        "custom",
+    );
     state.app_templates.write().await.insert(name.to_string(), template.clone());
     let conn = &state.db.conn;
     let existing = entities::app_template::Entity::find()
@@ -3154,7 +3192,10 @@ async fn delete_app_template(
                             .app_templates
                             .write()
                             .await
-                            .insert(template_name.clone(), data);
+                            .insert(
+                                template_name.clone(),
+                                catalog::template_with_provenance(data, "default"),
+                            );
                     }
                 }
             }
@@ -3251,6 +3292,18 @@ async fn get_all_sessions(
                     .unwrap_or(Value::Null),
                 "name": s_data.get("name").and_then(|v| v.as_str()).map(|s| s.to_string()),
                 "out_of_date": out_of_date,
+                // ANT-654: readiness state for the admin session list.
+                // Pre-ANT-654 rows have no `ready` flag and launched
+                // synchronously to readiness, so they read as ready.
+                "ready": s_data.get("ready").and_then(|v| v.as_bool()).unwrap_or(true),
+                "launch_failed": s_data
+                    .get("launch_failed")
+                    .and_then(|v| v.as_bool())
+                    .unwrap_or(false),
+                "launch_error": s_data
+                    .get("launch_error")
+                    .and_then(|v| v.as_str())
+                    .map(|s| s.to_string()),
             }));
     }
     let mut response: Vec<Value> = Vec::new();

@@ -182,14 +182,28 @@ async fn test_launch_stop_lifecycle() {
             .iter()
             .any(|e| e.starts_with(&format!("SUBFOLDER=/api/apps/session/{session_id}/"))));
 
-        // The status endpoint agrees the upstream is ready.
-        let (status2, status_body) = sc
-            .call("GET", &format!("/api/sessions/{session_id}/status"), None)
-            .await;
-        assert_eq!(status2, StatusCode::OK);
-        assert_eq!(status_body.unwrap()["ready"], true);
+        // ANT-654: the launch response returns before the app is confirmed
+        // ready, so poll the status endpoint until the background readiness
+        // task flips the session to ready.
+        let status_body = loop {
+            let (s, b) = sc
+                .call("GET", &format!("/api/sessions/{session_id}/status"), None)
+                .await;
+            assert_eq!(s, StatusCode::OK);
+            let b = b.unwrap();
+            if b["ready"] == true {
+                break b;
+            }
+            assert!(
+                b["launch_failed"] != true,
+                "background start failed: {:?}",
+                b
+            );
+            tokio::time::sleep(std::time::Duration::from_millis(500)).await;
+        };
+        assert_eq!(status_body["ready"], true);
 
-        // Stop: 204, session gone, container removed.
+        // Stop: 204 and the session is gone from the live list immediately.
         // F4-followup (ANT-471): the client sends an E2EE-encrypted empty body
         // (`body: {}` in secureFetch); the stop route's gate requires it.
         let (status3, _) = sc
@@ -197,6 +211,14 @@ async fn test_launch_stop_lifecycle() {
             .await;
         assert_eq!(status3, StatusCode::NO_CONTENT);
         assert!(!sc.state.sessions.read().await.contains_key(&session_id));
+        // ANT-654: container teardown (stop + remove) runs in the background,
+        // so poll until the daemon has removed it.
+        for _ in 0..60 {
+            if client.inspect_container(&instance_id, None).await.is_err() {
+                break;
+            }
+            tokio::time::sleep(std::time::Duration::from_millis(500)).await;
+        }
         assert!(client.inspect_container(&instance_id, None).await.is_err());
         Ok(())
     }.await;
@@ -320,6 +342,14 @@ async fn test_ephemeral_session_container_policy_and_stop_removal() {
             .call("DELETE", &format!("/api/sessions/{session_id}"), Some(&json!({})))
             .await;
         assert_eq!(status2, StatusCode::NO_CONTENT);
+        // ANT-654: container teardown (stop + remove) runs in the background,
+        // so poll until the daemon has removed it.
+        for _ in 0..60 {
+            if client.inspect_container(&instance_id, None).await.is_err() {
+                break;
+            }
+            tokio::time::sleep(std::time::Duration::from_millis(500)).await;
+        }
         assert!(
             client.inspect_container(&instance_id, None).await.is_err(),
             "ephemeral container must be removed on session stop"

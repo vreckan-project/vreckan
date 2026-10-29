@@ -10,7 +10,8 @@ use std::path::PathBuf;
 use tracing::info;
 
 use vreckan::{
-    acme_orchestrator, app, auth, catalog, db, e2ee, files, session_shares, tls, user_manager,
+    acme_orchestrator, app, auth, catalog, db, e2ee, files, serve, session_shares, tls,
+    user_manager,
 };
 use vreckan::settings::Settings;
 use vreckan::state::AppState;
@@ -150,13 +151,32 @@ async fn main() -> anyhow::Result<()> {
         .unwrap_or(443);
     let addr: SocketAddr = format!("0.0.0.0:{port}").parse()?;
 
-    info!("vreckan (rust) listening on https://{addr}");
+    let listener = tokio::net::TcpListener::bind(addr)
+        .await
+        .map_err(anyhow::Error::msg)?;
 
-    let serve = axum_server::tls_rustls::bind_rustls(addr, tls_config)
+    // Same-port HTTP/HTTPS dispatch (ANT-652): on by default, a plain-HTTP
+    // connection to the TLS port gets a 301 to https://{Host}{uri} instead
+    // of a TLS handshake error.
+    let redirect_enabled = state.settings.tls_http_redirect_enabled;
+    if redirect_enabled {
+        info!(
+            "vreckan (rust) listening on https://{addr}; plain-HTTP connections are \
+             redirected to HTTPS (disable with VRECKAN_TLS_HTTP_REDIRECT_ENABLED=false)"
+        );
+    } else {
+        info!("vreckan (rust) listening on https://{addr}");
+    }
+
+    let serve = serve::serve_loop(
+        listener,
         // ConnectInfo exposes the client address to handlers (the login
         // rate limiter keys on it); `X-Forwarded-For` still takes precedence
         // when a reverse proxy is in front.
-        .serve(app.into_make_service_with_connect_info::<std::net::SocketAddr>());
+        app.into_make_service_with_connect_info::<std::net::SocketAddr>(),
+        tls_config,
+        redirect_enabled,
+    );
 
     // Graceful shutdown on SIGTERM/SIGINT: without a handler the default
     // signal disposition kills the process in place and every running

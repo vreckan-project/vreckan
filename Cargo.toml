@@ -1,6 +1,6 @@
 [package]
 name = "vreckan"
-version = "0.9.4"
+version = "0.10.0"
 edition = "2021"
 description = "Vreckan server (Rust port of the Python/FastAPI server)"
 # MPL-2.0 to match the upstream SealSkin fork this project derives from (see
@@ -21,10 +21,21 @@ axum-server = { version = "0.8", features = ["tls-rustls"] }
 axum-reverse-proxy = "2.2"
 tokio = { version = "1", features = ["full"] }
 hyper = { version = "1", features = ["full"] }
+# Per-connection HTTP driver for the manual accept loop in `serve.rs`
+# (the same hyper-util pieces axum-server uses internally; ANT-652).
+# `server-auto` enables the http1/h2 `auto` conn builder; `service` enables
+# `TowerToHyperService`; `tokio` enables `rt::{TokioIo, TokioExecutor}`.
+hyper-util = { version = "0.1", features = ["tokio", "server-auto", "service"] }
 http = "1"
 http-body-util = "0.1"
 futures-util = "0.3"
 tokio-tungstenite = "0.30"
+# Per-connection service plumbing for the manual accept loop in
+# `serve.rs` (ANT-652); also used by integration tests.
+tower = { version = "0.5", features = ["util"] }
+# TLS acceptor for the same-port HTTP/HTTPS dispatch (ANT-652); the ACME
+# tests use it on the client side too.
+tokio-rustls = "0.26"
 # Object-safe async trait (the `CertbotDocker` trait in `le_certbot.rs`).
 async-trait = "0.1"
 
@@ -138,11 +149,9 @@ thiserror = "2"
 anyhow = "1"
 
 [dev-dependencies]
-# Direct router invocation in integration tests (no real socket needed).
-tower = { version = "0.5", features = ["util"] }
-# TLS client for the hot-reload test (already in the tree via axum-server; a
-# direct dev-dep so the test can drive a real client handshake).
-tokio-rustls = "0.26"
+# The same-port dispatch tests in `serve.rs` build a no-verify TLS client
+# (already in the tree via rustls/axum-server).
+rustls-pki-types = "1"
 
 # The published `acmex` 0.8.0 hard-codes the ACME account key as Ed25519 and
 # signs every JWS with `alg: EdDSA`, but Let's Encrypt production no longer
