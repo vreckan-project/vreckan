@@ -366,6 +366,13 @@
     "gpuTitle": "GPU Par Défaut Global",
     "gpuHelp": "GPU de secours pour les démarrages où l'utilisateur n'en choisit pas. Les applications qui ne prennent pas en charge le type de GPU ne sont pas affectées.",
     "gpuNone": "Aucune (pas de valeur par défaut globale)",
+    "corsTitle": "",
+    "corsHelp": "",
+    "modeLabel": "",
+    "modeLoose": "",
+    "modeStrict": "",
+    "allowedOriginsLabel": "",
+    "allowedOriginsHelp": "",
     "save": "Enregistrer les paramètres globaux",
     "saved": "Paramètres globaux enregistrés.",
     "saveFailed": "Échec de l'enregistrement"

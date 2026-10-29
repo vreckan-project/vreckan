@@ -366,6 +366,13 @@
     "gpuTitle": "Global Na Default GPU",
     "gpuHelp": "Fallback GPU para sa mga launch na hindi pinipili ng user. Ang mga app na hindi sumusuporta sa uri ng GPU ay hindi naaapektuhan.",
     "gpuNone": "Wala (walang global na default)",
+    "corsTitle": "",
+    "corsHelp": "",
+    "modeLabel": "",
+    "modeLoose": "",
+    "modeStrict": "",
+    "allowedOriginsLabel": "",
+    "allowedOriginsHelp": "",
     "save": "I-save ang mga global na setting",
     "saved": "Nai-save ang mga global na setting.",
     "saveFailed": "Hindi na-save"

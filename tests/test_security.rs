@@ -8,9 +8,10 @@
 mod common;
 
 use std::collections::HashMap;
+use std::net::{IpAddr, Ipv4Addr, SocketAddr};
 
 use base64::Engine;
-use common::{build_state, SecureClient, TempDir};
+use common::{build_state, build_state_with, SecureClient, TempDir};
 use http::StatusCode;
 use serde_json::json;
 use vreckan::security;
@@ -271,8 +272,12 @@ async fn test_share_password_flow() {
 
 #[tokio::test]
 async fn test_security_headers_present() {
+    // The default mode is now loose (ANT-653); this test pins the strict
+    // header set, which strict mode must reproduce exactly.
     let _root = TempDir::new();
-    let sc = SecureClient::new(build_state(_root.path()).await);
+    let sc = SecureClient::new(
+        build_state_with(_root.path(), |s| s.cors_mode = "strict".to_string()).await,
+    );
     let resp = sc.http.get("/").await;
     assert_eq!(resp.status, StatusCode::OK);
     // CSP: strict by default — no 'unsafe-inline'.
@@ -296,6 +301,300 @@ async fn test_security_headers_present() {
     assert_eq!(resp.header("cross-origin-embedder-policy").unwrap(), "require-corp");
     assert_eq!(resp.header("cross-origin-opener-policy").unwrap(), "same-origin");
     assert_eq!(resp.header("cross-origin-resource-policy").unwrap(), "same-origin");
+}
+
+// ---------------------------------------------------------------------------
+// CORS (ANT-653)
+// ---------------------------------------------------------------------------
+
+#[tokio::test]
+async fn test_cors_loose_is_default() {
+    // Out of the box the server runs loose CORS: a request carrying an
+    // Origin gets it echoed back with credentials.
+    let _root = TempDir::new();
+    let sc = SecureClient::new(build_state(_root.path()).await);
+    let mut headers = HashMap::new();
+    headers.insert("origin".to_string(), "https://other.example.com".to_string());
+    let resp = sc.http.get_with("/", &headers).await;
+    assert_eq!(resp.status, StatusCode::OK);
+    assert_eq!(
+        resp.header("access-control-allow-origin").as_deref(),
+        Some("https://other.example.com")
+    );
+    assert_eq!(
+        resp.header("access-control-allow-credentials").as_deref(),
+        Some("true")
+    );
+    assert!(
+        resp.header("vary")
+            .map(|v| v.contains("Origin"))
+            .unwrap_or(false),
+        "vary: {:?}",
+        resp.header("vary")
+    );
+    // The cross-origin-relevant headers are relaxed in loose mode.
+    assert_eq!(
+        resp.header("cross-origin-opener-policy").as_deref(),
+        Some("same-origin-allow-popups")
+    );
+    assert_eq!(
+        resp.header("cross-origin-resource-policy").as_deref(),
+        Some("cross-origin")
+    );
+    let csp = resp.header("content-security-policy").unwrap();
+    assert!(csp.contains("connect-src 'self' https: http: ws: wss:"), "csp: {csp}");
+    // The rest of the header set is unchanged.
+    assert_eq!(
+        resp.header("cross-origin-embedder-policy").as_deref(),
+        Some("require-corp")
+    );
+    assert_eq!(resp.header("x-content-type-options").as_deref(), Some("nosniff"));
+    assert_eq!(resp.header("x-frame-options").as_deref(), Some("SAMEORIGIN"));
+    assert!(resp
+        .header("strict-transport-security")
+        .unwrap()
+        .starts_with("max-age=63072000"));
+}
+
+#[tokio::test]
+async fn test_cors_loose_no_origin_no_headers() {
+    // A request without an Origin header (same-origin, non-browser) is
+    // served the mode's security headers but no CORS headers.
+    let _root = TempDir::new();
+    let sc = SecureClient::new(build_state(_root.path()).await);
+    let resp = sc.http.get("/").await;
+    assert_eq!(resp.status, StatusCode::OK);
+    assert!(resp.header("access-control-allow-origin").is_none());
+    assert!(resp.header("access-control-allow-credentials").is_none());
+    assert!(resp.header("vary").is_none());
+}
+
+#[tokio::test]
+async fn test_cors_loose_preflight_short_circuits() {
+    let _root = TempDir::new();
+    let sc = SecureClient::new(build_state(_root.path()).await);
+    let mut headers = HashMap::new();
+    headers.insert("origin".to_string(), "https://other.example.com".to_string());
+    headers.insert(
+        "access-control-request-method".to_string(),
+        "POST".to_string(),
+    );
+    headers.insert(
+        "access-control-request-headers".to_string(),
+        "X-Session-ID, Content-Type".to_string(),
+    );
+    // An E2EE-gated admin route: without the preflight short-circuit the
+    // unauthenticated OPTIONS would reach the handler and fail the E2EE
+    // body gate (400 with an encrypted body).
+    let resp = sc
+        .http
+        .request(
+            "OPTIONS",
+            "/api/admin/global-settings",
+            None,
+            None,
+            &headers,
+        )
+        .await;
+    assert_eq!(resp.status, StatusCode::NO_CONTENT);
+    assert!(resp.body.is_empty(), "body: {:?}", String::from_utf8_lossy(&resp.body));
+    assert_eq!(
+        resp.header("access-control-allow-origin").as_deref(),
+        Some("https://other.example.com")
+    );
+    assert_eq!(
+        resp.header("access-control-allow-credentials").as_deref(),
+        Some("true")
+    );
+    let methods = resp.header("access-control-allow-methods").unwrap();
+    for m in ["GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"] {
+        assert!(methods.contains(m), "methods {methods} missing {m}");
+    }
+    let allowed_headers = resp.header("access-control-allow-headers").unwrap();
+    assert!(allowed_headers.contains("X-Session-ID"), "{allowed_headers}");
+    assert!(allowed_headers.contains("Content-Type"), "{allowed_headers}");
+    assert!(resp.header("access-control-max-age").is_some());
+    // The preflight response still carries the security headers.
+    assert!(resp.header("content-security-policy").is_some());
+    assert!(resp.header("strict-transport-security").is_some());
+}
+
+#[tokio::test]
+async fn test_cors_loose_allowlist_env() {
+    let _root = TempDir::new();
+    let sc = SecureClient::new(
+        build_state_with(_root.path(), |s| {
+            s.cors_allowed_origins = "https://a.example.com".to_string()
+        })
+        .await,
+    );
+    // A listed origin is echoed.
+    let mut headers = HashMap::new();
+    headers.insert("origin".to_string(), "https://a.example.com".to_string());
+    let resp = sc.http.get_with("/", &headers).await;
+    assert_eq!(
+        resp.header("access-control-allow-origin").as_deref(),
+        Some("https://a.example.com")
+    );
+    // Origin comparison is case-insensitive.
+    let mut headers_upper = HashMap::new();
+    headers_upper.insert("origin".to_string(), "HTTPS://A.example.com".to_string());
+    let resp_upper = sc.http.get_with("/", &headers_upper).await;
+    assert_eq!(
+        resp_upper.header("access-control-allow-origin").as_deref(),
+        Some("https://a.example.com")
+    );
+    // An unlisted origin gets no ACAO.
+    let mut headers_other = HashMap::new();
+    headers_other.insert("origin".to_string(), "https://b.example.com".to_string());
+    let resp_other = sc.http.get_with("/", &headers_other).await;
+    assert!(resp_other.header("access-control-allow-origin").is_none());
+    // ... and its preflight falls through to the route without ACAO.
+    let mut preflight = HashMap::new();
+    preflight.insert("origin".to_string(), "https://b.example.com".to_string());
+    preflight.insert("access-control-request-method".to_string(), "POST".to_string());
+    let resp_pf = sc
+        .http
+        .request("OPTIONS", "/api/admin/global-settings", None, None, &preflight)
+        .await;
+    assert!(resp_pf.header("access-control-allow-origin").is_none());
+}
+
+#[tokio::test]
+async fn test_cors_db_override_takes_effect_immediately() {
+    // The env layer is loose (the default); a DB row saved on the admin
+    // page flips the effective mode with no restart.
+    let _root = TempDir::new();
+    let sc = SecureClient::new(build_state(_root.path()).await);
+    let mut headers = HashMap::new();
+    headers.insert("origin".to_string(), "https://other.example.com".to_string());
+    sc.state
+        .db
+        .set_app_setting("VRECKAN_CORS_MODE", "strict")
+        .await
+        .unwrap();
+    let strict = sc.http.get_with("/", &headers).await;
+    assert!(strict.header("access-control-allow-origin").is_none());
+    assert_eq!(
+        strict.header("cross-origin-opener-policy").as_deref(),
+        Some("same-origin")
+    );
+    assert_eq!(
+        strict.header("cross-origin-resource-policy").as_deref(),
+        Some("same-origin")
+    );
+    assert_eq!(
+        strict.header("content-security-policy").as_deref(),
+        Some(security::SECURITY_HEADERS[0].1)
+    );
+    sc.state
+        .db
+        .set_app_setting("VRECKAN_CORS_MODE", "loose")
+        .await
+        .unwrap();
+    let loose = sc.http.get_with("/", &headers).await;
+    assert_eq!(
+        loose.header("access-control-allow-origin").as_deref(),
+        Some("https://other.example.com")
+    );
+}
+
+#[tokio::test]
+async fn test_cors_strict_mode_parity() {
+    // Strict mode reproduces the pre-ANT-653 behavior exactly: no CORS
+    // headers on any response, even when an Origin is present, and
+    // preflights reach the routes.
+    let _root = TempDir::new();
+    let sc = SecureClient::new(
+        build_state_with(_root.path(), |s| s.cors_mode = "strict".to_string()).await,
+    );
+    let mut headers = HashMap::new();
+    headers.insert("origin".to_string(), "https://other.example.com".to_string());
+    let resp = sc.http.get_with("/", &headers).await;
+    assert_eq!(resp.status, StatusCode::OK);
+    assert!(resp.header("access-control-allow-origin").is_none());
+    assert!(resp.header("access-control-allow-credentials").is_none());
+    assert!(resp.header("vary").is_none());
+    let mut preflight = headers.clone();
+    preflight.insert(
+        "access-control-request-method".to_string(),
+        "POST".to_string(),
+    );
+    let resp_pf = sc
+        .http
+        .request("OPTIONS", "/api/health", None, None, &preflight)
+        .await;
+    assert!(resp_pf.header("access-control-allow-origin").is_none());
+}
+
+// ---------------------------------------------------------------------------
+// Login cookie SameSite policy (ANT-653)
+// ---------------------------------------------------------------------------
+
+#[tokio::test]
+async fn test_login_cookie_same_site_none_in_loose_mode() {
+    // Default (loose) mode over the default https scheme: the login cookie
+    // is SameSite=None AND Secure, so it survives the cross-site hop the
+    // CORS layer exists for.
+    let _root = TempDir::new();
+    let mut sc = SecureClient::new(build_state(_root.path()).await);
+    let resp = sc.http.login("admin", "admin1234").await;
+    assert_eq!(resp.status, StatusCode::OK, "{:?}", resp.body);
+    let cookie = resp.header("set-cookie").unwrap();
+    assert!(cookie.contains("SameSite=None"), "cookie: {cookie}");
+    assert!(cookie.contains("Secure"), "cookie: {cookie}");
+    assert!(cookie.contains("HttpOnly"), "cookie: {cookie}");
+}
+
+#[tokio::test]
+async fn test_login_cookie_same_site_lax_in_strict_mode() {
+    let _root = TempDir::new();
+    let mut sc = SecureClient::new(
+        build_state_with(_root.path(), |s| s.cors_mode = "strict".to_string()).await,
+    );
+    let resp = sc.http.login("admin", "admin1234").await;
+    assert_eq!(resp.status, StatusCode::OK, "{:?}", resp.body);
+    let cookie = resp.header("set-cookie").unwrap();
+    assert!(cookie.contains("SameSite=Lax"), "cookie: {cookie}");
+    assert!(!cookie.contains("SameSite=None"), "cookie: {cookie}");
+}
+
+#[tokio::test]
+async fn test_login_cookie_same_site_none_never_without_secure() {
+    // SameSite=None is only valid together with Secure: behind a trusted
+    // proxy reporting a plain-http scheme, the cookie must fall back to
+    // Lax even in loose mode (ANT-346's trusted-proxy gate decides
+    // `secure`).
+    let _root = TempDir::new();
+    let sc = SecureClient::new(
+        build_state_with(_root.path(), |s| {
+            s.trusted_proxies = "10.0.0.1".to_string()
+        })
+        .await,
+    );
+    let remote = SocketAddr::new(IpAddr::V4(Ipv4Addr::new(10, 0, 0, 1)), 51234);
+    let mut headers = HashMap::new();
+    headers.insert("x-forwarded-proto".to_string(), "http".to_string());
+    let resp = sc
+        .http
+        .request_from(
+            "POST",
+            "/api/auth/login",
+            Some(
+                serde_json::json!({ "username": "admin", "password": "admin1234" })
+                    .to_string()
+                    .into_bytes(),
+            ),
+            Some("application/json"),
+            &headers,
+            remote,
+        )
+        .await;
+    assert_eq!(resp.status, StatusCode::OK, "{:?}", resp.body);
+    let cookie = resp.header("set-cookie").unwrap();
+    assert!(cookie.contains("SameSite=Lax"), "cookie: {cookie}");
+    assert!(!cookie.contains("SameSite=None"), "cookie: {cookie}");
+    assert!(!cookie.contains("Secure"), "cookie: {cookie}");
 }
 
 // ---------------------------------------------------------------------------

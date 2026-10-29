@@ -1058,9 +1058,17 @@ async fn test_oidc_non_admin_group_does_not_promote() {
 // ---------------------------------------------------------------------------
 
 #[tokio::test]
+// The env layer is simulated with real process env vars, since
+// `setting_source` reports "env" only when the variable is actually set
+// (ANT-653); the lock scopes the process-wide mutation to this test.
+#[allow(clippy::await_holding_lock)]
 async fn test_sso_get_reports_values_and_sources() {
+    static ENV_LOCK: std::sync::Mutex<()> = std::sync::Mutex::new(());
+    let _env_guard = ENV_LOCK.lock().unwrap();
+    std::env::set_var("VRECKAN_OIDC_ISSUER", "https://env.example/o/app/");
+    std::env::set_var("VRECKAN_OIDC_CLIENT_ID", "env-client");
     let _root = TempDir::new();
-    let mut state = build_state(_root.path()).await;
+    let state = build_state(_root.path()).await;
     // A DB value (as if saved on the SSO page) overrides the environment.
     state
         .db
@@ -1068,9 +1076,6 @@ async fn test_sso_get_reports_values_and_sources() {
         .await
         .unwrap();
     state.db.set_app_setting("VRECKAN_OIDC_ENABLED", "true").await.unwrap();
-    // Env values (struct fields) — set before cloning into the client.
-    state.settings.oidc_issuer = "https://env.example/o/app/".to_string();
-    state.settings.oidc_client_id = "env-client".to_string();
     let sc = make_logged_in_client(state.clone(), "admin", "admin1234").await;
     let (status, data) = sc.call("GET", "/api/admin/sso", None).await;
     assert_eq!(status, StatusCode::OK);
@@ -1085,6 +1090,9 @@ async fn test_sso_get_reports_values_and_sources() {
     assert_eq!(cfg.issuer, "https://db.example/o/app/");
     assert_eq!(cfg.client_id, "env-client");
     assert!(cfg.enabled);
+    // Release the process env so parallel tests in this binary see defaults.
+    std::env::remove_var("VRECKAN_OIDC_ISSUER");
+    std::env::remove_var("VRECKAN_OIDC_CLIENT_ID");
 }
 
 #[tokio::test]
