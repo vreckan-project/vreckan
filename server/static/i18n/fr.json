@@ -114,7 +114,6 @@
     "serverFilePlaceholder": "nom du fichier dans le stockage partagé",
     "launch": "Lancer",
     "gpuAuto": "Auto (aucun GPU spécifique)",
-    "sessionLaunched": "Session lancée",
     "noSessionUrl": "Échec du lancement : aucune URL de session renvoyée",
     "url": "URL",
     "launchApp": "Lancer {name}",
@@ -125,7 +124,10 @@
     "finalizing": "Finalisation…",
     "fileUploaded": "Fichier « {name} » téléversé.",
     "urlToOpen": "URL à ouvrir",
-    "options": "Options de lancement"
+    "options": "Options de lancement",
+    "sessionStarting": "La session démarre — elle s'ouvrira dès qu'elle sera prête.",
+    "sessionReady": "La session est prête.",
+    "sessionReadyOpenFromList": "La session est prête — ouvrez-la depuis la liste des sessions."
   },
   "password": {
     "title": "Changer le mot de passe",
@@ -667,7 +669,6 @@
     "recreate": "Recréer",
     "recreateTitle": "Recréer cette session à partir de la dernière image (l’app sera brièvement hors ligne)",
     "recreating": "Recréation…",
-    "recreated": "Session recréée",
     "noActive": "Aucune session active.",
     "noActiveUsers": "Aucune session active pour tous les utilisateurs.",
     "kill": "Arrêter",
@@ -692,7 +693,14 @@
     "ownerBy": "par {owner}",
     "participantCount": "{count} participant",
     "participantCountPlural": "{count} participants",
-    "participantsBadgeTitle": "{names} — cliquez pour gérer"
+    "participantsBadgeTitle": "{names} — cliquez pour gérer",
+    "starting": "Démarrage…",
+    "stopping": "Arrêt en cours…",
+    "failedToStart": "Échec du démarrage",
+    "failedToStartDetail": "Échec du démarrage : {error}",
+    "launchFailedToast": "La session n'a pas pu démarrer : {error}",
+    "goneWhileStarting": "La session s'est terminée pendant son démarrage.",
+    "stillStarting": "La session est toujours en cours de démarrage — son état est affiché dans la liste des sessions."
   },
   "backup": {
     "heading": "Sauvegarde",

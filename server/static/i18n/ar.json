@@ -114,7 +114,6 @@
     "serverFilePlaceholder": "اسم الملف في التخزين المشترك",
     "launch": "إطلاق",
     "gpuAuto": "تلقائي (بدون GPU محددة)",
-    "sessionLaunched": "أُطلقت الجلسة",
     "noSessionUrl": "فشل التشغيل: لم يُعاد رابط جلسة",
     "url": "URL",
     "launchApp": "شغّل {name}",
@@ -125,7 +124,10 @@
     "finalizing": "جارٍ الإكمال…",
     "fileUploaded": "رُفع الملف '{name}'.",
     "urlToOpen": "الرابط لفتحه",
-    "options": "خيارات الإطلاق"
+    "options": "خيارات الإطلاق",
+    "sessionStarting": "يبدأ تشغيل الجلسة — ستُفتح فور جاهزيتها.",
+    "sessionReady": "الجلسة جاهزة.",
+    "sessionReadyOpenFromList": "الجلسة جاهزة — افتحها من قائمة الجلسات."
   },
   "password": {
     "title": "تغيير كلمة المرور",
@@ -667,7 +669,6 @@
     "recreate": "إعادة الإنشاء",
     "recreateTitle": "أعد إنشاء هذه الجلسة من أحدث صورة (سيخرج التطبيق من الخدمة لفترة قصيرة)",
     "recreating": "جارٍ إعادة الإنشاء…",
-    "recreated": "أُعيد إنشاء الجلسة",
     "noActive": "لا توجد جلسات نشطة.",
     "noActiveUsers": "لم يتم العثور على جلسات نشطة لأي مستخدم.",
     "kill": "إيقاف",
@@ -692,7 +693,14 @@
     "ownerBy": "بواسطة {owner}",
     "participantCount": "{count} مشارك",
     "participantCountPlural": "{count} مشاركون",
-    "participantsBadgeTitle": "{names} — انقر للإدارة"
+    "participantsBadgeTitle": "{names} — انقر للإدارة",
+    "starting": "جارٍ البدء…",
+    "stopping": "جارٍ الإيقاف…",
+    "failedToStart": "فشل البدء",
+    "failedToStartDetail": "فشل البدء: {error}",
+    "launchFailedToast": "فشلت الجلسة في البدء: {error}",
+    "goneWhileStarting": "انتهت الجلسة أثناء بدء تشغيلها.",
+    "stillStarting": "لا تزال الجلسة تبدأ — حالتها معروضة في قائمة الجلسات."
   },
   "backup": {
     "heading": "النسخ الاحتياطي",

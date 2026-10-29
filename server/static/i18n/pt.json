@@ -114,7 +114,6 @@
     "serverFilePlaceholder": "nome do arquivo no armazenamento compartilhado",
     "launch": "Iniciar",
     "gpuAuto": "Auto (sem GPU específica)",
-    "sessionLaunched": "Sessão iniciada",
     "noSessionUrl": "Falha ao iniciar: nenhuma URL de sessão retornada",
     "url": "URL",
     "launchApp": "Iniciar {name}",
@@ -125,7 +124,10 @@
     "finalizing": "Finalizando…",
     "fileUploaded": "Arquivo '{name}' enviado.",
     "urlToOpen": "URL a abrir",
-    "options": "Opções de inicialização"
+    "options": "Opções de inicialização",
+    "sessionStarting": "A sessão está a iniciar — será aberta assim que estiver pronta.",
+    "sessionReady": "A sessão está pronta.",
+    "sessionReadyOpenFromList": "A sessão está pronta — abra-a a partir da lista de sessões."
   },
   "password": {
     "title": "Alterar senha",
@@ -667,7 +669,6 @@
     "recreate": "Recriar",
     "recreateTitle": "Recriar esta sessão a partir da imagem mais recente (a app ficará brevemente offline)",
     "recreating": "Recriando…",
-    "recreated": "Sessão recriada",
     "noActive": "Nenhuma sessão ativa.",
     "noActiveUsers": "Nenhuma sessão ativa entre os usuários.",
     "kill": "Encerrar",
@@ -692,7 +693,14 @@
     "ownerBy": "por {owner}",
     "participantCount": "{count} participante",
     "participantCountPlural": "{count} participantes",
-    "participantsBadgeTitle": "{names} — clique para gerenciar"
+    "participantsBadgeTitle": "{names} — clique para gerenciar",
+    "starting": "A iniciar…",
+    "stopping": "A parar…",
+    "failedToStart": "Falha ao iniciar",
+    "failedToStartDetail": "Falha ao iniciar: {error}",
+    "launchFailedToast": "A sessão não pôde ser iniciada: {error}",
+    "goneWhileStarting": "A sessão terminou enquanto estava a iniciar.",
+    "stillStarting": "A sessão ainda está a iniciar — o estado está na lista de sessões."
   },
   "backup": {
     "heading": "Backup",

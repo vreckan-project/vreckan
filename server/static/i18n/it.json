@@ -114,7 +114,6 @@
     "serverFilePlaceholder": "nome file nell'archivio condiviso",
     "launch": "Avvia",
     "gpuAuto": "Auto (nessuna GPU specifica)",
-    "sessionLaunched": "Sessione avviata",
     "noSessionUrl": "Avvio fallito: nessun URL di sessione restituito",
     "url": "URL",
     "launchApp": "Avvia {name}",
@@ -125,7 +124,10 @@
     "finalizing": "Finalizzazione…",
     "fileUploaded": "File '{name}' caricato.",
     "urlToOpen": "URL da aprire",
-    "options": "Opzioni di avvio"
+    "options": "Opzioni di avvio",
+    "sessionStarting": "La sessione sta partendo: verrà aperta non appena pronta.",
+    "sessionReady": "La sessione è pronta.",
+    "sessionReadyOpenFromList": "La sessione è pronta: aprila dall'elenco sessioni."
   },
   "password": {
     "title": "Cambia password",
@@ -667,7 +669,6 @@
     "recreate": "Rigenera",
     "recreateTitle": "Rigenera questa sessione dall'immagine più recente (l'app sarà brevemente offline)",
     "recreating": "Rigenerazione…",
-    "recreated": "Sessione rigenerata",
     "noActive": "Nessuna sessione attiva.",
     "noActiveUsers": "Nessuna sessione attiva tra gli utenti.",
     "kill": "Termina",
@@ -692,7 +693,14 @@
     "ownerBy": "di {owner}",
     "participantCount": "{count} partecipante",
     "participantCountPlural": "{count} partecipanti",
-    "participantsBadgeTitle": "{names} — clicca per gestire"
+    "participantsBadgeTitle": "{names} — clicca per gestire",
+    "starting": "Avvio…",
+    "stopping": "Arresto…",
+    "failedToStart": "Avvio non riuscito",
+    "failedToStartDetail": "Avvio non riuscito: {error}",
+    "launchFailedToast": "La sessione non è partita: {error}",
+    "goneWhileStarting": "La sessione è terminata durante l'avvio.",
+    "stillStarting": "La sessione è ancora in avvio: il suo stato è mostrato nell'elenco sessioni."
   },
   "backup": {
     "heading": "Backup",

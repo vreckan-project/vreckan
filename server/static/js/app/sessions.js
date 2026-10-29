@@ -1,6 +1,8 @@
 // Sessions list (main view): render, refresh, per-session file send, the
-// per-session Share action (ANT-307), and the per-session Join action
-// (ANT-440 — "Join a running session" for a second user).
+// per-session Share action (ANT-307), the per-session Join action
+// (ANT-440 — "Join a running session" for a second user), and the ANT-654
+// launch/kill responsiveness: rows render the background lifecycle state
+// (starting / failed / stopping) and the Kill action is optimistic.
 import { $, toast, formatLogoSrc, uploadFileChunks } from "../util.js";
 import { secureFetch } from "../api.js";
 import { t } from "../i18n.js";
@@ -144,6 +146,7 @@ function renderSessions(sessions, sharesBySession = {}) {
     if (!mine && s.username) metaLine.textContent += ` · ${t("sessions.ownerBy", { owner: s.username })}`;
     if (s.is_collaboration) metaLine.textContent += ` · ${t("sessions.roomMode")}`;
     if (s.out_of_date) metaLine.textContent += ` · ${t("sessions.outOfDate")}`;
+    appendSessionState(metaLine, s);
     if (mine) {
       const activeShares = (sharesBySession[s.session_id] || []).filter(
         (sh) => !sh.revoked && (!sh.expiry_timestamp || sh.expiry_timestamp * 1000 > Date.now())
@@ -216,12 +219,19 @@ function renderSessions(sessions, sharesBySession = {}) {
           try {
             // F4-followup (ANT-471): the encrypted empty body is the CSRF gate —
             // a cross-site form POST without a crypto session is rejected 400.
-            await secureFetch(`/api/sessions/${s.session_id}/recreate`, {
+            const res = await secureFetch(`/api/sessions/${s.session_id}/recreate`, {
               method: "POST",
               body: {},
             });
-            toast(t("sessions.recreated"));
+            // ANT-654: the response no longer waits for readiness — the row
+            // renders "Starting…" immediately, and the poll opens the new
+            // session tab once the app is up again. The button re-enables
+            // when the poll settles.
             loadSessions();
+            pollSessionUntilReady(s.session_id, res && res.session_url).finally(() => {
+              recreate.disabled = false;
+              recreate.textContent = t("sessions.recreate");
+            });
           } catch (e) {
             recreate.disabled = false;
             recreate.textContent = t("sessions.recreate");
@@ -241,26 +251,139 @@ function renderSessions(sessions, sharesBySession = {}) {
       const kill = document.createElement("button");
       kill.className = "btn btn-danger btn-sm";
       kill.textContent = t("sessions.kill");
-      kill.addEventListener("click", async () => {
-        try {
-          // F4-followup (ANT-471): the encrypted empty body is the CSRF gate —
-          // a cross-site form POST/DELETE without a crypto session is rejected 400.
-          await secureFetch(`/api/sessions/${s.session_id}`, {
-            method: "DELETE",
-            body: {},
-          });
-          toast(t("sessions.terminated"));
-          loadSessions();
-        } catch (e) {
-          toast(e.message, "error");
-        }
-      });
+      kill.addEventListener("click", () => killSession(s, item, kill));
       actions.appendChild(kill);
     }
     item.appendChild(actions);
 
     list.appendChild(item);
   }
+}
+
+// ---------------------------------------------------------------------------
+// ANT-654 — background lifecycle state
+// ---------------------------------------------------------------------------
+// Launch/kill/recreate responses now return before the container lifecycle
+// settles, so the row renders the state the backend records directly (no
+// extra round trips): `ready:false` without a failure is "starting",
+// `launch_failed` is "failed to start". Pre-ANT-654 rows have no `ready`
+// flag and launched synchronously to readiness; the backend reads those as
+// ready, so nothing extra renders for them.
+function appendSessionState(metaLine, s) {
+  if (s.ready === false && !s.launch_failed) {
+    const st = document.createElement("span");
+    st.className = "session-state session-state-starting";
+    st.textContent = t("sessions.starting");
+    metaLine.appendChild(st);
+  } else if (s.launch_failed === true) {
+    const st = document.createElement("span");
+    st.className = "session-state session-state-failed";
+    st.textContent = s.launch_error
+      ? t("sessions.failedToStartDetail", { error: s.launch_error })
+      : t("sessions.failedToStart");
+    if (s.launch_error) st.title = s.launch_error;
+    metaLine.appendChild(st);
+  }
+}
+
+// ANT-654: the DELETE returns as soon as the session is gone from the live
+// list; the container teardown (5 s stop grace + removal + ephemeral
+// cleanup) runs in a background task. The button and row therefore move to
+// a "Stopping…" state immediately, and the final state reconciles when the
+// DELETE resolves — by then the row is gone, so the list refresh drops it,
+// and on failure the refresh restores the row's true state.
+function killSession(s, item, kill) {
+  if (kill.disabled) return;
+  kill.disabled = true;
+  kill.textContent = t("sessions.stopping");
+  const metaLine = item.querySelector(".session-meta");
+  if (metaLine) {
+    const tag = document.createElement("span");
+    tag.className = "session-state session-state-stopping";
+    tag.textContent = t("sessions.stopping");
+    metaLine.appendChild(tag);
+  }
+  // F4-followup (ANT-471): the encrypted empty body is the CSRF gate —
+  // a cross-site form DELETE without a crypto session is rejected 400.
+  secureFetch(`/api/sessions/${s.session_id}`, { method: "DELETE", body: {} })
+    .then(() => {
+      toast(t("sessions.terminated"));
+      loadSessions();
+    })
+    .catch((e) => {
+      toast(e.message, "error");
+      loadSessions();
+    });
+}
+
+// ANT-654: launch and recreate return before the app inside the container
+// is confirmed ready; the background launch task maintains the recorded
+// state, which `GET /api/sessions/{id}/status` answers (no live probe once
+// the session is settled). Poll it every 2.5 s:
+//   * `ready: true`      → open the session tab, stop;
+//   * `launch_failed`    → toast the recorded error, stop;
+//   * 404                → the session was killed in the meantime, stop.
+// The backend readiness wait times out at 60 s (recreate waits per
+// container, sequentially), so the client caps at 120 s and defers to the
+// session list — which renders the recorded state — past that. The promise
+// resolves once the session has settled, under any outcome, so callers can
+// re-enable the control they started it from.
+export function pollSessionUntilReady(sessionId, sessionUrl) {
+  const POLL_MS = 2500;
+  const TIMEOUT_MS = 120000;
+  const startedAt = Date.now();
+  let timer = null;
+  return new Promise((resolve) => {
+    const stop = () => {
+      if (timer) clearTimeout(timer);
+      timer = null;
+    };
+    const settle = (outcome) => {
+      stop();
+      loadSessions();
+      resolve(outcome);
+    };
+    const tick = () => {
+      secureFetch(`/api/sessions/${encodeURIComponent(sessionId)}/status`, { method: "GET" })
+        .then((status) => {
+          if (status && status.ready === true) {
+            // Open the tab only once the app answers (a pre-ready tab shows
+            // the waiting screen). If the popup blocker eats the non-gesture
+            // open, the toast points at the session row's Open action.
+            const win = sessionUrl ? window.open(sessionUrl, "_blank", "noopener") : null;
+            toast(win ? t("launch.sessionReady") : t("launch.sessionReadyOpenFromList"));
+            return settle("ready");
+          }
+          if (status && status.launch_failed === true) {
+            toast(
+              t("sessions.launchFailedToast", {
+                error: status.launch_error || status.detail || t("sessions.failedToStart"),
+              }),
+              "error"
+            );
+            return settle("failed");
+          }
+          if (Date.now() - startedAt >= TIMEOUT_MS) {
+            toast(t("sessions.stillStarting"), "info");
+            return settle("timeout");
+          }
+          timer = setTimeout(tick, POLL_MS);
+        })
+        .catch((e) => {
+          if (String(e.message).includes("status: 404")) {
+            toast(t("sessions.goneWhileStarting"), "info");
+            return settle("gone");
+          }
+          // Transient error: retry until the cap, then defer to the list.
+          if (Date.now() - startedAt >= TIMEOUT_MS) {
+            toast(t("sessions.stillStarting"), "info");
+            return settle("timeout");
+          }
+          timer = setTimeout(tick, POLL_MS);
+        });
+    };
+    timer = setTimeout(tick, POLL_MS);
+  });
 }
 
 // Fetch the share list for the caller's own sessions (in parallel,

@@ -114,7 +114,6 @@
     "serverFilePlaceholder": "공유 저장소의 파일 이름",
     "launch": "시작",
     "gpuAuto": "자동 (특정 GPU 없음)",
-    "sessionLaunched": "세션 시작됨",
     "noSessionUrl": "시작 실패: 세션 URL이 반환되지 않았습니다",
     "url": "URL",
     "launchApp": "{name} 시작",
@@ -125,7 +124,10 @@
     "finalizing": "마무리 중…",
     "fileUploaded": "파일 '{name}' 업로드됨.",
     "urlToOpen": "열 URL",
-    "options": "시작 옵션"
+    "options": "시작 옵션",
+    "sessionStarting": "세션을 시작하는 중입니다 — 준비가 되면 열립니다.",
+    "sessionReady": "세션 준비가 완료되었습니다.",
+    "sessionReadyOpenFromList": "세션 준비가 완료되었습니다 — 세션 목록에서 여세요."
   },
   "password": {
     "title": "비밀번호 변경",
@@ -667,7 +669,6 @@
     "recreate": "다시 만들기",
     "recreateTitle": "최신 이미지에서 이 세션을 다시 만듭니다 (앱이 잠시 오프라인됩니다)",
     "recreating": "다시 만드는 중…",
-    "recreated": "세션 다시 생성됨",
     "noActive": "활성 세션이 없습니다.",
     "noActiveUsers": "모든 사용자에게 활성 세션이 없습니다.",
     "kill": "종료",
@@ -692,7 +693,14 @@
     "ownerBy": "{owner}에 의해",
     "participantCount": "{count}명의 participant",
     "participantCountPlural": "{count}명의 participant",
-    "participantsBadgeTitle": "{names} — 관리하려면 클릭"
+    "participantsBadgeTitle": "{names} — 관리하려면 클릭",
+    "starting": "시작하는 중…",
+    "stopping": "정지하는 중…",
+    "failedToStart": "시작 실패",
+    "failedToStartDetail": "시작 실패: {error}",
+    "launchFailedToast": "세션 시작 실패: {error}",
+    "goneWhileStarting": "세션이 시작되는 중 종료되었습니다.",
+    "stillStarting": "세션이 아직 시작 중입니다 — 상태는 세션 목록에 표시됩니다."
   },
   "backup": {
     "heading": "백업",

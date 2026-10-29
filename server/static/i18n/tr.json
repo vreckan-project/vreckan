@@ -114,7 +114,6 @@
     "serverFilePlaceholder": "ortak depolamadaki dosya adı",
     "launch": "Başlat",
     "gpuAuto": "Oto (belirli bir GPU yok)",
-    "sessionLaunched": "Oturum başlatıldı",
     "noSessionUrl": "Başlatma başarısız: oturum URL'si döndürülmedi",
     "url": "URL",
     "launchApp": "{name} başlat",
@@ -125,7 +124,10 @@
     "finalizing": "Tamamlanıyor…",
     "fileUploaded": "'{name}' dosyası yüklendi.",
     "urlToOpen": "Açılacak URL",
-    "options": "Başlatma seçenekleri"
+    "options": "Başlatma seçenekleri",
+    "sessionStarting": "Oturum başlıyor — hazır olunca açılacak.",
+    "sessionReady": "Oturum hazır.",
+    "sessionReadyOpenFromList": "Oturum hazır — oturum listesinden açın."
   },
   "password": {
     "title": "Parolayı değiştir",
@@ -667,7 +669,6 @@
     "recreate": "Yeniden oluştur",
     "recreateTitle": "Bu oturumu en son imajdan yeniden oluştur (uygulama kısa süreliğine devre dışı kalacak)",
     "recreating": "Yeniden oluşturuluyor…",
-    "recreated": "Oturum yeniden oluşturuldu",
     "noActive": "Aktif oturum yok.",
     "noActiveUsers": "Hiçbir kullanıcıda aktif oturum yok.",
     "kill": "Durdur",
@@ -692,7 +693,14 @@
     "ownerBy": "{owner} tarafından",
     "participantCount": "{count} katılımcı",
     "participantCountPlural": "{count} katılımcı",
-    "participantsBadgeTitle": "{names} — yönetmek için tıklayın"
+    "participantsBadgeTitle": "{names} — yönetmek için tıklayın",
+    "starting": "Başlıyor…",
+    "stopping": "Durduruluyor…",
+    "failedToStart": "Başlatılamadı",
+    "failedToStartDetail": "Başlatılamadı: {error}",
+    "launchFailedToast": "Oturum başlatılamadı: {error}",
+    "goneWhileStarting": "Oturum başlarken sona erdi.",
+    "stillStarting": "Oturum hâlâ başlıyor — durumu oturum listesinde gösteriliyor."
   },
   "backup": {
     "heading": "Yedek",

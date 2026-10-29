@@ -114,7 +114,6 @@
     "serverFilePlaceholder": "pangalan ng file sa shared storage",
     "launch": "Ilunsad",
     "gpuAuto": "Auto (walang partikular na GPU)",
-    "sessionLaunched": "Inilunsad ang sesyon",
     "noSessionUrl": "Nabigong ilunsad: walang naibalik na session URL",
     "url": "URL",
     "launchApp": "Ilunsad ang {name}",
@@ -125,7 +124,10 @@
     "finalizing": "Tinatapos…",
     "fileUploaded": "Na-upload ang file '{name}'.",
     "urlToOpen": "URL na bubuksan",
-    "options": "Mga launch options"
+    "options": "Mga launch options",
+    "sessionStarting": "Sinisimulan ang session — buksan ito kapag handa na.",
+    "sessionReady": "Handa na ang session.",
+    "sessionReadyOpenFromList": "Handa na ang session — buksan ito sa listahan ng sessions."
   },
   "password": {
     "title": "Baguhin ang password",
@@ -667,7 +669,6 @@
     "recreate": "Likahan ulit",
     "recreateTitle": "Likahan ulit ang sesyong ito mula sa pinakabagong imahe (ang app ay ma-offline sa isang sandali)",
     "recreating": "Naglilikha ulit…",
-    "recreated": "Nilikha ulit ang sesyon",
     "noActive": "Walang aktibong sesyon.",
     "noActiveUsers": "Walang aktibong sesyon sa lahat ng user.",
     "kill": "Patayin",
@@ -692,7 +693,14 @@
     "ownerBy": "ni {owner}",
     "participantCount": "{count} participant",
     "participantCountPlural": "{count} participants",
-    "participantsBadgeTitle": "{names} — i-click upang pamahalaan"
+    "participantsBadgeTitle": "{names} — i-click upang pamahalaan",
+    "starting": "Sinisimula…",
+    "stopping": "Sinusundo…",
+    "failedToStart": "Hindi nakapagsimula",
+    "failedToStartDetail": "Hindi nakapagsimula: {error}",
+    "launchFailedToast": "Hindi nakapagsimula ang session: {error}",
+    "goneWhileStarting": "Tapos na ang session habang sinisimula.",
+    "stillStarting": "Sinisimula pa rin ang session — ipinapakita ang estado nito sa listahan ng sessions."
   },
   "backup": {
     "heading": "Backup",
