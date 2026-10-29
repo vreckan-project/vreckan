@@ -853,32 +853,29 @@ async fn post_token_table(
             } else {
                 req = req.header("Authorization", bearer.clone());
             }
-            match req.send().await {
-                // A 2xx means the container accepted the table. Other
-                // statuses (e.g. 404 "not in secure mode" from selkies 3.x,
-                // or 401 from an older image with a different master token)
-                // try the next candidate URL.
-                Ok(resp) => {
-                    if resp.status().is_success() {
-                        // Record for the connect/disconnect refresh's dedupe
-                        // (ANT-443): an unchanged re-derivation skips the
-                        // POST. The stamp lets a later refresh tell whether
-                        // the container holds the newest push (ANT-470).
-                        state
-                            .last_pushed_token_tables
-                            .write()
-                            .await
-                            .insert(
-                                session_id.to_string(),
-                                PushedTokenTable {
-                                    generation,
-                                    table: table.clone(),
-                                },
-                            );
-                        return true;
-                    }
+            // A 2xx means the container accepted the table. Other statuses
+            // (e.g. 404 "not in secure mode" from selkies 3.x, or 401 from
+            // an older image with a different master token) and send errors
+            // try the next candidate URL.
+            if let Ok(resp) = req.send().await {
+                if resp.status().is_success() {
+                    // Record for the connect/disconnect refresh's dedupe
+                    // (ANT-443): an unchanged re-derivation skips the
+                    // POST. The stamp lets a later refresh tell whether
+                    // the container holds the newest push (ANT-470).
+                    state
+                        .last_pushed_token_tables
+                        .write()
+                        .await
+                        .insert(
+                            session_id.to_string(),
+                            PushedTokenTable {
+                                generation,
+                                table: table.clone(),
+                            },
+                        );
+                    return true;
                 }
-                Err(_) => {}
             }
         }
     }

@@ -366,6 +366,13 @@
     "gpuTitle": "Globale Standard-GPU",
     "gpuHelp": "Zurückfall-GPU für Starts, bei denen der Benutzer keine auswählt. Apps, die den GPU-Typ nicht unterstützen, sind nicht betroffen.",
     "gpuNone": "Keine (kein globaler Standard)",
+    "corsTitle": "",
+    "corsHelp": "",
+    "modeLabel": "",
+    "modeLoose": "",
+    "modeStrict": "",
+    "allowedOriginsLabel": "",
+    "allowedOriginsHelp": "",
     "save": "Globale Einstellungen speichern",
     "saved": "Globale Einstellungen gespeichert.",
     "saveFailed": "Speichern fehlgeschlagen"

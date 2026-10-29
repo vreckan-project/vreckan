@@ -366,6 +366,13 @@
     "gpuTitle": "GPU Padrão Global",
     "gpuHelp": "GPU de reserva para lançamentos em que o usuário não seleciona uma. Aplicativos que não suportam o tipo de GPU não são afetados.",
     "gpuNone": "Nenhuma (sem padrão global)",
+    "corsTitle": "",
+    "corsHelp": "",
+    "modeLabel": "",
+    "modeLoose": "",
+    "modeStrict": "",
+    "allowedOriginsLabel": "",
+    "allowedOriginsHelp": "",
     "save": "Salvar configurações globais",
     "saved": "Configurações globais salvas.",
     "saveFailed": "Falha ao salvar"

@@ -366,6 +366,13 @@
     "gpuTitle": "वैश्विक डिफ़ॉल्ट GPU",
     "gpuHelp": "उन लॉन्च के लिए बैकअप GPU जहाँ उपयोगकर्ता कोई GPU नहीं चुनता। GPU प्रकार का समर्थन न करने वाले ऐप प्रभावित नहीं होते।",
     "gpuNone": "कोई नहीं (कोई वैश्विक डिफ़ॉल्ट नहीं)",
+    "corsTitle": "",
+    "corsHelp": "",
+    "modeLabel": "",
+    "modeLoose": "",
+    "modeStrict": "",
+    "allowedOriginsLabel": "",
+    "allowedOriginsHelp": "",
     "save": "वैश्विक सेटिंग्स सहेजें",
     "saved": "वैश्विक सेटिंग्स सहेजी गईं।",
     "saveFailed": "सहेजने में विफल"

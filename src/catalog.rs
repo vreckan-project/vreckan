@@ -358,7 +358,7 @@ pub async fn load_app_stores(state: &AppState) {
 /// in place so the caller loads the post-migration state.
 async fn migrate_vreckan_apps_to_sealskin_apps(
     state: &AppState,
-    rows: &mut Vec<entities::app_store::Model>,
+    rows: &mut [entities::app_store::Model],
 ) {
     const OLD: &str = "Vreckan Apps";
     const NEW: &str = "SealSkin Apps";
@@ -793,7 +793,7 @@ pub async fn inspect_self_container(state: &AppState) {
     {
         if let Some(c) = list
             .iter()
-            .find(|c| c.names.as_ref().map_or(false, |names| {
+            .find(|c| c.names.as_ref().is_some_and(|names| {
                 names.iter().any(|n| n.trim_start_matches('/') == "vreckan")
             }))
         {
@@ -1812,12 +1812,8 @@ pub fn parse_selkies_version(output: &str) -> Option<(u32, String)> {
 /// - Anything else: ambiguous.
 pub fn classify_sessions_probe(status: u16, content_type: Option<&str>) -> Option<SelkiesProbe> {
     let ct = content_type.unwrap_or("");
-    if ct.contains("application/json") {
+    if ct.contains("application/json") || (status == 401 && ct.contains("text/plain")) {
         Some(SelkiesProbe::Secure { version: None })
-    } else if status == 401 && ct.contains("text/plain") {
-        Some(SelkiesProbe::Secure { version: None })
-    } else if ct.contains("text/html") {
-        None
     } else {
         None
     }
@@ -3620,7 +3616,7 @@ async fn get_my_sessions(
                     .get("access_token")
                     .and_then(|v| v.as_str())
                     .unwrap_or_default();
-                Some(owner_session_url(&sid, &token))
+                Some(owner_session_url(sid, token))
             }
         } else {
             None
@@ -3676,7 +3672,7 @@ async fn get_my_sessions(
             is_mine,
             joinable,
             participants: if is_mine {
-                session_shares::participant_usernames(&s_data)
+                session_shares::participant_usernames(s_data)
             } else {
                 Vec::new()
             },
@@ -3890,7 +3886,7 @@ async fn recreate_my_session(
                     .get("access_token")
                     .and_then(|v| v.as_str())
                     .unwrap_or_default();
-                owner_session_url(&session_id, &token)
+                owner_session_url(&session_id, token)
             };
             let value = serde_json::json!({ "session_id": session_id, "session_url": session_url });
             e2ee::encrypt_response(&state, &headers, StatusCode::OK, value).await
@@ -3932,14 +3928,16 @@ async fn join_my_session(
         }
     };
     // F4 (ANT-444 / ANT-469): the web client authenticates with the HttpOnly
-    // SameSite=Lax login cookie and the app has no CORS layer, so a cross-site
-    // top-level form POST reaches this route fully authenticated and would
-    // otherwise mint the victim a participant token. A form cannot set the
-    // X-Session-ID header or carry an AES-256-GCM body, so requiring the E2EE
-    // request body is the CSRF gate: the normal client flow (secureFetch with
-    // an encrypted body) passes, a cross-site form POST / XHR is rejected 400
-    // before any token is minted. The decrypted body is unused (the client
-    // sends an empty object).
+    // login cookie. Since ANT-653 the CORS layer exists and defaults to
+    // loose, so a cross-site page can reach this route fully authenticated
+    // (credentialed XHR) and would otherwise mint the victim a participant
+    // token — the E2EE request body is the CSRF gate, not the absence of a
+    // CORS layer: a cross-site form POST (and a XHR that never completed the
+    // E2EE handshake) cannot set the X-Session-ID header or carry an
+    // AES-256-GCM body, so requiring the body rejects it 400 before any
+    // token is minted, while the normal client flow (secureFetch with an
+    // encrypted body) passes. The decrypted body is unused (the client sends
+    // an empty object).
     let _ = match e2ee::decrypt_request_body(&state, &headers, body).await {
         Ok(v) => v,
         Err((s, d)) => {
