@@ -49,8 +49,9 @@ Three layers, the first two orthogonal:
    is a `SettingDef` read from the env layer (`settings.trusted_proxies`), not
    an admin-UI field, and it appears in no admin-settings payload — the
    `values.*` object on `GET /api/admin/certificates` is the ACME config only,
-   and `GET /api/admin/global-settings` is the GPU default. See
-   [ops.md §5](./ops.md) for the deployment guidance.
+    and `GET /api/admin/global-settings` carries the GPU default plus the CORS
+    configuration (ANT-653 — `cors_mode`, `cors_allowed_origins`, and their
+    effective sources). See [ops.md §5](./ops.md) for the deployment guidance.
 
 | Mark | Meaning |
 |---|---|
@@ -467,6 +468,16 @@ two auto-update endpoints added in v0.7.0).
 | POST | `/api/admin/backup/restore/finalize` | `backup_restore_finalize` |
 | GET | `/api/admin/backup/{name}/download` | `download_backup` |
 | DELETE | `/api/admin/backup/{name}` | `delete_backup` |
+
+### App store `logo` key — apps routes
+
+Each entry returned by `GET /api/admin/apps/available` (and each app in
+`GET /api/admin/apps/installed`) may carry a `logo` field: an `http(s)` URL
+or a custom icon path (`/api/app_icon/{app_id}`). The admin UI renders it as
+a fixed 32×32 icon in the store list and the installed-apps table; entries
+without a resolvable logo fall back to the built-in placeholder
+(`/img/icon128.png`). Third-party store YAML may therefore include a `logo:`
+key per entry (ANT-657).
 
 ### Certificate fields — `admin.rs`
 

@@ -368,6 +368,13 @@
     "gpuTitle": "Standaard GPU (globaal)",
     "gpuHelp": "Terugval-GPU voor starts waarbij de gebruiker er geen kiest. Apps die het GPU-type niet ondersteunen, worden niet beïnvloed.",
     "gpuNone": "Geen (geen globale standaard)",
+    "corsTitle": "",
+    "corsHelp": "",
+    "modeLabel": "",
+    "modeLoose": "",
+    "modeStrict": "",
+    "allowedOriginsLabel": "",
+    "allowedOriginsHelp": "",
     "save": "Globale instellingen opslaan",
     "saved": "Globale instellingen opgeslagen.",
     "saveFailed": "Opslaan mislukt"

@@ -87,6 +87,62 @@ unnamed proxy every client therefore shares one bucket — set
 `10.0.0.0/8, 192.168.1.5`; malformed entries never match, so a typo fails
 closed rather than opening the gate).
 
+### 2.1 CORS (ANT-653)
+
+The classic "login doesn't work" report: the user signs in at
+`https://myserver.local/`, then a page they use reaches the **same server
+under a different name** — the LAN IP (`http://192.168.1.10:443/`), a second
+hostname, or a different port. Browsers treat each `scheme + host + port` as
+a different *site*, so the login cookie (which is what the API authenticates
+with) is never sent to the other alias, and every call comes back
+"unauthenticated" — and before v0.9.5 there were no CORS headers at all to
+let the cross-origin page through in the first place.
+
+Since v0.9.5 the server ships a CORS layer with a mode switch:
+
+- **`VRECKAN_CORS_MODE=loose`** (the default) — a request carrying an
+  `Origin` gets it echoed into `Access-Control-Allow-Origin` together with
+  `Access-Control-Allow-Credentials: true` and `Vary: Origin`, and OPTIONS
+  preflights are answered directly (methods and headers including
+  `X-Session-ID` and `Content-Type`). The login cookie is issued
+  `SameSite=None; Secure` in this mode so it actually crosses to the other
+  alias. The cross-origin-relevant security headers are relaxed to match:
+  the CSP's `connect-src` widens to `https: http: ws: wss:`,
+  `Cross-Origin-Opener-Policy` becomes `same-origin-allow-popups`, and
+  `Cross-Origin-Resource-Policy` becomes `cross-origin`.
+- **`VRECKAN_CORS_MODE=strict`** — no CORS headers at all, exactly the
+  pre-v0.9.5 behaviour: only same-origin requests are accepted and the
+  cookie stays `SameSite=Lax`.
+
+**The trade-off (and the mitigations).** CORS-with-credentials is the
+classic footgun: with a fully open `loose` configuration, any site already
+open in the admin's browser can make credentialed calls to the API. Two
+things bound the exposure: the **E2EE request body remains the trust anchor
+for every state-mutating route** (a cross-site form POST or a page that
+never completed the E2EE handshake is rejected before it mutates anything —
+the same gate that has protected `join_my_session` since ANT-444), and the
+optional allowlist below. If the machine holding the admin session is
+trusted (the normal single-admin deployment), loose is safe as-is; if you
+want to tighten it, set **`VRECKAN_CORS_ALLOWED_ORIGINS`** to a
+comma-separated origin list (e.g. `https://a.example.com, https://b.example
+.com`) — in loose mode only listed origins (compared case-insensitively)
+receive the CORS headers, everything else is treated as in strict mode.
+Comparison is exact after lowercasing; there are no wildcards.
+
+Both settings are editable on the admin UI's Settings page (CORS card), and
+the effective mode is re-resolved on every request, so a change applies to
+the next request without a restart. Precedence is DB row over environment
+variable over the code default (`loose`, empty allowlist).
+
+**Interaction with `VRECKAN_TRUSTED_PROXIES` (§5).** `SameSite=None` is only
+valid with `Secure`, and the cookie's `Secure` flag follows the *effective*
+scheme — which behind a TLS-terminating proxy is whatever
+`X-Forwarded-Proto` reports (trusted-proxy gate, §5). If that scheme is
+plain `http`, the cookie falls back to `SameSite=Lax` even in loose mode so
+it stays usable; the CORS headers are still emitted, but browsers will
+reject a `SameSite=None` cookie without `Secure`, so for cross-alias
+logins behind a proxy the proxy must report `https`.
+
 Local build instead of pulling the image:
 
 ```bash

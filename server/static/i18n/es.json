@@ -368,6 +368,13 @@
     "gpuTitle": "GPU Predeterminada Global",
     "gpuHelp": "GPU de respaldo para las iniciaciones en las que el usuario no elige una. Las aplicaciones que no admiten el tipo de GPU no se ven afectadas.",
     "gpuNone": "Ninguna (sin predeterminada global)",
+    "corsTitle": "",
+    "corsHelp": "",
+    "modeLabel": "",
+    "modeLoose": "",
+    "modeStrict": "",
+    "allowedOriginsLabel": "",
+    "allowedOriginsHelp": "",
     "save": "Guardar configuración global",
     "saved": "Configuración global guardada.",
     "saveFailed": "Error al guardar"

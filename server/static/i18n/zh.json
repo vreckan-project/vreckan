@@ -368,6 +368,13 @@
     "gpuTitle": "全局默认 GPU",
     "gpuHelp": "当用户未选择 GPU 时启动所用的备用 GPU。不支持该 GPU 类型的应用不受影响。",
     "gpuNone": "无（无全局默认值）",
+    "corsTitle": "",
+    "corsHelp": "",
+    "modeLabel": "",
+    "modeLoose": "",
+    "modeStrict": "",
+    "allowedOriginsLabel": "",
+    "allowedOriginsHelp": "",
     "save": "保存全局设置",
     "saved": "全局设置已保存。",
     "saveFailed": "保存失败"

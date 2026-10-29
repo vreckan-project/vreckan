@@ -368,6 +368,13 @@
     "gpuTitle": "GPU الافتراضي العام",
     "gpuHelp": "GPU احتياطي للإطلاقات التي لا يختار فيها المستخدم GPU. لا تتأثر التطبيقات التي لا تدعم نوع GPU.",
     "gpuNone": "لا شيء (لا يوجد افتراضي عام)",
+    "corsTitle": "",
+    "corsHelp": "",
+    "modeLabel": "",
+    "modeLoose": "",
+    "modeStrict": "",
+    "allowedOriginsLabel": "",
+    "allowedOriginsHelp": "",
     "save": "حفظ الإعدادات العامة",
     "saved": "تم حفظ الإعدادات العامة.",
     "saveFailed": "فشل الحفظ"

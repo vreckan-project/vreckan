@@ -368,6 +368,13 @@
     "gpuTitle": "Global Standard-GPU",
     "gpuHelp": "Reserve-GPU til start, hvor brugeren ikke vælger en. Apps, der ikke understøtter GPU-typen, påvirkes ikke.",
     "gpuNone": "Ingen (ingen global standard)",
+    "corsTitle": "",
+    "corsHelp": "",
+    "modeLabel": "",
+    "modeLoose": "",
+    "modeStrict": "",
+    "allowedOriginsLabel": "",
+    "allowedOriginsHelp": "",
     "save": "Gem globale indstillinger",
     "saved": "Globale indstillinger gemt.",
     "saveFailed": "Gemmislykket"

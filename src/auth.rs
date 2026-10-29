@@ -33,7 +33,7 @@ use tracing::{debug, info, warn};
 
 use crate::entities;
 use crate::permissions;
-use crate::settings::{DefaultDbCredsPolicy, Settings};
+use crate::settings::{CorsMode, DefaultDbCredsPolicy, Settings};
 use crate::state::AppState;
 use crate::user_manager::{
     self, db_save_group, db_save_user_row, get_group_row, UserError, UserRecord,
@@ -156,8 +156,15 @@ pub async fn load_auth_tokens(state: &AppState) -> Result<(), DbErr> {
 /// Build the `Set-Cookie` header value for the web-login cookie. When `token`
 /// is None the cookie is cleared (Max-Age=0). The `Secure` flag mirrors the
 /// request scheme (enabled on HTTPS, disabled on plain HTTP so the cookie is
-/// usable in local/test environments).
-pub fn auth_cookie(settings: &Settings, token: Option<&str>, secure: bool) -> String {
+/// usable in local/test environments). `same_site` is the policy from
+/// [`cookie_same_site`] (ANT-653): `None` in loose CORS mode so the cookie
+/// can cross to a different hostname/IP/port alias of the same server.
+pub fn auth_cookie(
+    settings: &Settings,
+    token: Option<&str>,
+    secure: bool,
+    same_site: &str,
+) -> String {
     let max_age = if token.is_some() {
         settings.auth_token_ttl_seconds
     } else {
@@ -165,13 +172,33 @@ pub fn auth_cookie(settings: &Settings, token: Option<&str>, secure: bool) -> St
     };
     let value = token.unwrap_or("");
     let mut s = format!(
-        "{}={}; Max-Age={}; Path=/; HttpOnly; SameSite=Lax",
+        "{}={}; Max-Age={}; Path=/; HttpOnly; SameSite={same_site}",
         settings.auth_cookie_name, value, max_age
     );
     if secure {
         s.push_str("; Secure");
     }
     s
+}
+
+/// The login cookie's `SameSite` policy, resolved per request from the
+/// effective CORS mode (ANT-653): `None` in loose mode (the cookie must
+/// cross sites for the CORS layer to be useful), `Lax` in strict mode.
+///
+/// The browser drops a `SameSite=None` cookie unless it is also `Secure`
+/// (and `Secure` is only set when the effective scheme is https, via the
+/// `X-Forwarded-Proto` trusted-proxy logic in [`request_scheme`]), so a
+/// plain-HTTP request falls back to `Lax` to keep the cookie usable in
+/// local/test environments.
+pub async fn cookie_same_site(state: &AppState, secure: bool) -> &'static str {
+    if !secure {
+        return "Lax";
+    }
+    let cors = state.settings.cors_config(&state.db).await;
+    match cors.mode {
+        CorsMode::Loose => "None",
+        CorsMode::Strict => "Lax",
+    }
 }
 
 /// The request's effective scheme. The `X-Forwarded-Proto` header (set by a
@@ -730,7 +757,8 @@ async fn login(
     };
     let me = me_response(&state, &user, &effective, perms).await;
     let secure = request_scheme(&state.settings, &headers, remote) == "https";
-    let cookie = auth_cookie(&state.settings, Some(&token), secure);
+    let same_site = cookie_same_site(&state, secure).await;
+    let cookie = auth_cookie(&state.settings, Some(&token), secure, same_site);
     (
         [
             (header::SET_COOKIE, cookie),
@@ -753,7 +781,8 @@ async fn logout(
         let _ = save_auth_tokens(&state).await;
     }
     let secure = request_scheme(&state.settings, &headers, remote) == "https";
-    let cookie = auth_cookie(&state.settings, None, secure);
+    let same_site = cookie_same_site(&state, secure).await;
+    let cookie = auth_cookie(&state.settings, None, secure, same_site);
     (
         [(header::SET_COOKIE, cookie)],
         Json(serde_json::json!({ "message": "Logged out" })),
@@ -805,7 +834,8 @@ async fn revoke_sessions(
         "Self-revoke: user '{caller}' revoked {revoked} of their own web token(s)."
     );
     let secure = request_scheme(&state.settings, &headers, remote) == "https";
-    let cookie = auth_cookie(&state.settings, None, secure);
+    let same_site = cookie_same_site(&state, secure).await;
+    let cookie = auth_cookie(&state.settings, None, secure, same_site);
     (
         [(header::SET_COOKIE, cookie)],
         Json(RevokeOidcSessionResponse {
@@ -1661,7 +1691,8 @@ async fn oidc_callback(
     let _ = save_auth_tokens(&state).await;
     // 6) Redirect to the app root.
     let secure = request_scheme(&state.settings, &headers, remote) == "https";
-    let cookie = auth_cookie(&state.settings, Some(&token), secure);
+    let same_site = cookie_same_site(&state, secure).await;
+    let cookie = auth_cookie(&state.settings, Some(&token), secure, same_site);
     (
         [
             (header::LOCATION, "/".to_string()),

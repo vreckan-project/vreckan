@@ -3,7 +3,7 @@
 //
 // The small DOM helpers ($, esc, toast, request, setPanel) are local copies so
 // this file is self-contained; `render` comes from admin.js.
-import { $, esc, toast, request } from "../util.js";
+import { $, esc, toast, request, formatLogoSrc } from "../util.js";
 import { confirmModal, openCustomModal } from "../modal.js";
 import { t } from "../i18n.js";
 import { render, pickSectionHtml, wirePickSections } from "../admin.js";
@@ -467,6 +467,21 @@ function autoUpdateStatusText(status, totalApps, optedCount) {
   return parts.join(" · ");
 }
 
+// Fill a fixed 32×32 `.store-icon` slot (store rows + installed-app table
+// name cells). The Vreckan placeholder is painted first so the slot is sized
+// before the logo resolves; formatLogoSrc then swaps in the real src (custom
+// `/api/app_icon/…` logos arrive as data URLs). A remote load that 404s
+// falls back to the placeholder — no broken-image glyph, no layout shift.
+function bindStoreIcon(img, app) {
+  img.src = "/img/icon128.png";
+  img.onerror = () => {
+    if (img.getAttribute("src") !== "/img/icon128.png") img.src = "/img/icon128.png";
+  };
+  formatLogoSrc(app).then((src) => {
+    if (img.isConnected) img.src = src;
+  });
+}
+
 async function renderApps() {
   // Kick off auto_update_status in parallel but do NOT await it before the
   // first paint: a slow or hung status endpoint (see ANT-347/ANT-348) must
@@ -529,7 +544,7 @@ async function renderApps() {
       const progress = `<div class="row-progress" data-progress-for="${esc(a.id)}" ${pulling ? "" : "hidden"}><div class="progress-track"><div${rowFillAttrs}></div></div><div class="progress-pct muted"></div></div>`;
       return `
       <tr>
-        <td><strong>${esc(a.name)}</strong><div class="muted fs-xs" >${esc(a.id)}</div></td>
+        <td><div class="store-name"><img class="store-icon" alt=""><span><strong>${esc(a.name)}</strong><div class="muted fs-xs" >${esc(a.id)}</div></span></div></td>
         <td>${esc(a.source || "")} / ${esc(a.source_app_id || "")}</td>
         <td>${a.home_directories ? t("apps.yes") : t("apps.no")}</td>
         <td>${a.users ? a.users.join(", ") : ""}</td>
@@ -599,6 +614,14 @@ async function renderApps() {
     </div>
   `);
 
+  // Bind the installed-apps table name-cell icons. The slots are fixed-size
+  // and start on the placeholder, so painting them after the panel settles
+  // (and again on every re-render) never shifts the table.
+  const nameIcons = $("app-rows") ? $("app-rows").querySelectorAll(".store-icon") : [];
+  apps.forEach((a, i) => {
+    if (nameIcons[i]) bindStoreIcon(nameIcons[i], a);
+  });
+
   // The store-management cards ("Add app store" + "Configured stores") used
   // to live on a separate Stores page; they now follow the install-from-store
   // card on this page. renderStores() appends them to the panel and wires
@@ -629,7 +652,8 @@ async function renderApps() {
     availList.innerHTML = filtered
       .map(
         (a) => `
-        <div class="share-row">
+        <div class="store-row">
+          <img class="store-icon" alt="">
           <div class="share-meta">
             <strong>${esc(a.name)}</strong>
             <span class="muted">${esc(a.id)} · ${esc(a.provider || "")}</span>
@@ -638,6 +662,13 @@ async function renderApps() {
         </div>`
       )
       .join("");
+    // Icons are bound after insertion: the fixed-size slots hold the layout
+    // while each logo resolves (and re-resolving is a no-op for plain http(s)
+    // URLs, so live-filtering never re-fetches).
+    const icons = availList.querySelectorAll(".store-icon");
+    filtered.forEach((a, i) => {
+      if (icons[i]) bindStoreIcon(icons[i], a);
+    });
   }
 
   // Delegated handler for the per-app Install buttons. Attached once to the

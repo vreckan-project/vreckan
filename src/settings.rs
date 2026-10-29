@@ -77,6 +77,9 @@ pub const SETTING_DEFINITIONS: &[SettingDef] = &[
     SettingDef { name: "login_max_attempts", type_: "int", default: "5", help: "Failed logins from one (client IP, username) pair within the lockout window before the pair is temporarily locked out. 0 disables the limiter." },
     SettingDef { name: "login_lockout_seconds", type_: "int", default: "900", help: "Length of the failed-login window and of the temporary lockout (seconds)." },
     SettingDef { name: "trusted_proxies", type_: "str", default: "", help: "Comma-separated IPs/CIDRs of reverse proxies that may sit in front of the server (e.g. '10.0.0.0/8, 192.168.1.5'). Only when the direct TCP peer matches this list are forwarded headers honoured: the leftmost `X-Forwarded-For` entry for the login rate limiter (otherwise the direct peer address is used) and the `X-Forwarded-Proto` scheme for the session cookie's Secure flag and OIDC redirect URL (otherwise the actual connection scheme, https, is used). Empty = trust no proxy (fail closed)." },
+    // --- CORS (ANT-653) ---
+    SettingDef { name: "cors_mode", type_: "str", default: "loose", help: "CORS behavior for API calls from a different origin (e.g. the same server reached via a different hostname, IP address, or port): 'loose' (default) echoes the requesting origin with credentials and issues the login cookie as SameSite=None; Secure; 'strict' sends no CORS headers at all (same-origin only, the pre-0.9.5 behavior)." },
+    SettingDef { name: "cors_allowed_origins", type_: "str", default: "", help: "Comma-separated origin allowlist for loose CORS mode (e.g. 'https://a.example.com, https://b.example.com'). Empty = every origin is accepted." },
     // --- TLS / listener (ANT-652) ---
     SettingDef { name: "tls_http_redirect_enabled", type_: "bool", default: "true", help: "Same-port HTTP→HTTPS redirect (ANT-652): each new connection to the TLS port is sniffed on its first byte; a TLS ClientHello (0x16) proceeds to the rustls handshake, anything else is answered with a 301 to https://{Host}{uri} so plain-HTTP clients (http://host:443) bounce to the working HTTPS URL instead of a handshake error. Off = today's behavior (plain-HTTP connections fail the TLS handshake). Deployments behind a TLS-terminating reverse proxy that already redirects should set this off." },
     // --- ACME (native acmex) ---
@@ -168,6 +171,8 @@ pub struct Settings {
     pub login_max_attempts: i64,
     pub login_lockout_seconds: i64,
     pub trusted_proxies: String,
+    pub cors_mode: String,
+    pub cors_allowed_origins: String,
     pub tls_http_redirect_enabled: bool,
     /// The resolved `VRECKAN_ALLOW_DEFAULT_DB_CREDS` escape hatch (ANT-45
     /// P2-6), captured at settings-build time so callers (startup guard,
@@ -255,6 +260,8 @@ impl Settings {
             login_max_attempts: get_int("login_max_attempts"),
             login_lockout_seconds: get_int("login_lockout_seconds"),
             trusted_proxies: get("trusted_proxies"),
+            cors_mode: get("cors_mode"),
+            cors_allowed_origins: get("cors_allowed_origins"),
             tls_http_redirect_enabled: get_bool("tls_http_redirect_enabled"),
             default_db_creds_policy: default_db_creds_policy(),
             acme_enabled: get_bool("acme_enabled"),
@@ -332,6 +339,8 @@ impl Settings {
             "default_password_policy" => self.default_password_policy.clone(),
             "login_max_attempts" => self.login_max_attempts.to_string(),
             "login_lockout_seconds" => self.login_lockout_seconds.to_string(),
+            "cors_mode" => self.cors_mode.clone(),
+            "cors_allowed_origins" => self.cors_allowed_origins.clone(),
             "acme_enabled" => self.acme_enabled.to_string(),
             "acme_ca" => self.acme_ca.clone(),
             "acme_allow_http_ca" => self.acme_allow_http_ca.to_string(),
@@ -378,6 +387,35 @@ impl Settings {
                 parse_value("int", &raw).parse::<i64>().unwrap_or(0).into(),
             ),
             _ => serde_json::Value::String(raw),
+        }
+    }
+
+    /// The effective CORS configuration (ANT-653), resolved with the usual
+    /// DB-over-env-over-default precedence: a row in the `app_settings` table
+    /// (saved on the admin Settings page) wins over the `VRECKAN_CORS_*`
+    /// environment variables, which win over the code defaults (loose mode;
+    /// empty allowlist = every origin accepted).
+    ///
+    /// The value is re-resolved on every call, so a change saved on the admin
+    /// page takes effect on the next request without a restart.
+    pub async fn cors_config(&self, db: &crate::db::Db) -> CorsConfig {
+        let mode_raw = match db.get_app_setting("VRECKAN_CORS_MODE").await {
+            Ok(Some(v)) => v,
+            _ => self.cors_mode.clone(),
+        };
+        let origins_raw = match db.get_app_setting("VRECKAN_CORS_ALLOWED_ORIGINS").await {
+            Ok(Some(v)) => v,
+            _ => self.cors_allowed_origins.clone(),
+        };
+        let mode = CorsMode::parse(&mode_raw).unwrap_or(CorsMode::Loose);
+        let allowed_origins = origins_raw
+            .split(',')
+            .map(|o| o.trim().to_string())
+            .filter(|o| !o.is_empty())
+            .collect();
+        CorsConfig {
+            mode,
+            allowed_origins,
         }
     }
 
@@ -494,6 +532,45 @@ impl Settings {
 pub fn global_settings() -> &'static Settings {
     static SETTINGS: OnceLock<Settings> = OnceLock::new();
     SETTINGS.get_or_init(Settings::from_env)
+}
+
+/// The effective CORS mode (ANT-653).
+///
+/// - [`CorsMode::Loose`] (the default): the server echoes the request's
+///   `Origin` into `Access-Control-Allow-Origin` (with
+///   `Access-Control-Allow-Credentials: true`) and answers OPTIONS preflights,
+///   so a page served from a different origin — e.g. the same server reached
+///   via a different hostname, IP address, or port — can call the API with
+///   the login cookie. In this mode the login cookie is issued with
+///   `SameSite=None; Secure` so it can cross sites.
+/// - [`CorsMode::Strict`]: no CORS headers at all (the pre-ANT-653 behavior);
+///   only same-origin requests are accepted.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum CorsMode {
+    Loose,
+    Strict,
+}
+
+impl CorsMode {
+    /// Parse a raw setting value (`loose` / `strict`, case-insensitive).
+    /// Unrecognised values (including empty) resolve to the loose default at
+    /// the call site rather than failing.
+    pub fn parse(raw: &str) -> Option<CorsMode> {
+        match raw.trim().to_ascii_lowercase().as_str() {
+            "loose" => Some(CorsMode::Loose),
+            "strict" => Some(CorsMode::Strict),
+            _ => None,
+        }
+    }
+}
+
+/// The resolved CORS configuration for one request (ANT-653).
+#[derive(Clone, Debug)]
+pub struct CorsConfig {
+    pub mode: CorsMode,
+    /// Origins accepted in loose mode. An empty list means every origin is
+    /// accepted; comparison is case-insensitive.
+    pub allowed_origins: Vec<String>,
 }
 
 /// How the server reacts when it starts against Postgres with the default

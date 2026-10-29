@@ -368,6 +368,13 @@
     "gpuTitle": "Genel Varsayılan GPU",
     "gpuHelp": "Kullanıcının GPU seçmediği başlatmalarda yedek GPU. GPU türünü desteklemeyen uygulamalar etkilenmez.",
     "gpuNone": "Yok (genel varsayılan yok)",
+    "corsTitle": "",
+    "corsHelp": "",
+    "modeLabel": "",
+    "modeLoose": "",
+    "modeStrict": "",
+    "allowedOriginsLabel": "",
+    "allowedOriginsHelp": "",
     "save": "Genel ayarları kaydet",
     "saved": "Genel ayarlar kaydedildi.",
     "saveFailed": "Kaydedilemedi"

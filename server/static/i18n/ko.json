@@ -368,6 +368,13 @@
     "gpuTitle": "전역 기본 GPU",
     "gpuHelp": "사용자가 GPU를 선택하지 않는 경우의 대체 GPU입니다. GPU 유형을 지원하지 않는 앱에는 영향을 주지 않습니다.",
     "gpuNone": "없음(전역 기본 없음)",
+    "corsTitle": "",
+    "corsHelp": "",
+    "modeLabel": "",
+    "modeLoose": "",
+    "modeStrict": "",
+    "allowedOriginsLabel": "",
+    "allowedOriginsHelp": "",
     "save": "전역 설정 저장",
     "saved": "전역 설정이 저장되었습니다.",
     "saveFailed": "저장에 실패했습니다"

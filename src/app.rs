@@ -56,7 +56,10 @@ pub fn router(state: AppState) -> Router {
         .merge(collaboration::room_router())
         // Registered last so it never shadows explicit API/session routes.
         .route("/{*path}", any(serve_static))
-        .layer(middleware::from_fn(security::add_security_headers))
+        // CORS (ANT-653) runs inside the security-headers layer so that a
+        // preflight short-circuit still carries the full security header set.
+        .layer(middleware::from_fn_with_state(state.clone(), security::cors))
+        .layer(middleware::from_fn_with_state(state.clone(), security::add_security_headers))
         .with_state(state)
 }
 

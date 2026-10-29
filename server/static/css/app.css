@@ -1412,6 +1412,56 @@ input[type="checkbox"] {
   flex: 1;
 }
 
+/* Store rows ("Install app from store" list, admin) — same layout as
+   .share-row plus a leading app icon (ANT-657). The icon slot is
+   fixed-size so rows never shift while a logo loads or falls back. */
+.store-row {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  padding: 10px 0;
+  border-bottom: 1px solid var(--border);
+}
+
+.store-row:last-child {
+  border-bottom: none;
+}
+
+.store-row .share-meta {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 3px;
+  min-width: 180px;
+  /* Absorb the row's free space so the app text hugs the icon (left-
+     justified) instead of sitting centered between icon and button. */
+  flex: 1;
+  text-align: left;
+}
+
+/* Fixed 32×32 app-icon slot. Shared by store rows and the installed-apps
+   table name cells; starts on the Vreckan placeholder until the logo
+   resolves, so both views stay layout-stable. */
+.store-icon {
+  width: 32px;
+  height: 32px;
+  flex: 0 0 32px;
+  object-fit: contain;
+}
+
+.store-name {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  min-width: 0;
+}
+
+.store-name > span {
+  min-width: 0;
+}
+
 /* ============================ Admin console ============================ */
 /* .admin-content inherits the full-width .content column (no max-width),
    matching the antitux.dev layout so admin pages fill the window too. */
