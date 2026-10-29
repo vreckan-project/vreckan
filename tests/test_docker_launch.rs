@@ -342,6 +342,14 @@ async fn test_ephemeral_session_container_policy_and_stop_removal() {
             .call("DELETE", &format!("/api/sessions/{session_id}"), Some(&json!({})))
             .await;
         assert_eq!(status2, StatusCode::NO_CONTENT);
+        // ANT-654: container teardown (stop + remove) runs in the background,
+        // so poll until the daemon has removed it.
+        for _ in 0..60 {
+            if client.inspect_container(&instance_id, None).await.is_err() {
+                break;
+            }
+            tokio::time::sleep(std::time::Duration::from_millis(500)).await;
+        }
         assert!(
             client.inspect_container(&instance_id, None).await.is_err(),
             "ephemeral container must be removed on session stop"
