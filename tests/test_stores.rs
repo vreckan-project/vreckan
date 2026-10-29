@@ -33,6 +33,17 @@ const STORE_URL: &str = "http://127.0.0.1:9/apps.yml";
 const PNG_B64: &str =
     "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNkYAAAAAYAAjCB0CgAAAAASUVORK5CYII=";
 
+/// Is a Docker daemon reachable? (Checked inside a tokio runtime so the
+/// bollard ping has a time driver.) Daemon-dependent tests skip (not fail)
+/// when it is absent, so the suite stays runnable in docker-less build
+/// environments (ANT-685). Mirrors the skip treatment in `test_docker_launch`.
+async fn docker_available() -> bool {
+    match bollard::Docker::connect_with_local_defaults() {
+        Ok(c) => c.ping().await.is_ok(),
+        Err(_) => false,
+    }
+}
+
 /// The Firefox catalog entry (mirrors the Python `STORE_APP`).
 fn store_app() -> Value {
     json!({
@@ -566,6 +577,13 @@ async fn test_check_app_update_unknown() {
 
 #[tokio::test]
 async fn test_check_app_update_no_remote() {
+    // The digest lookup goes through the real daemon (no fake provider here),
+    // so a daemon-less runner cannot reach the 502 path — skip it the way the
+    // rest of the suite skips daemon-dependent tests (ANT-685).
+    if !docker_available().await {
+        eprintln!("skipping: Docker daemon not reachable");
+        return;
+    }
     let _root = TempDir::new();
     let state = build_state(_root.path()).await;
     let sc = admin_client(state).await;
