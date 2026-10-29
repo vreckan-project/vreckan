@@ -1357,30 +1357,54 @@ pub async fn load_sessions(state: &AppState) {
 // ---------------------------------------------------------------------------
 
 /// Fold one Docker pull progress event into the aggregate per-image progress
-/// state. Mirrors `_update_pull_progress`.
-fn update_pull_progress(state: &AppState, image_name: &str, line: &Value) {
-    let mut progress = state
-        .pull_progress
-        .lock()
-        .unwrap_or_else(std::sync::PoisonError::into_inner);
-    let prog = progress
-        .entry(image_name.to_string())
-        .or_insert(serde_json::json!({ "status": "pulling", "percentage": null, "current": 0, "total": 0 }));
+/// value. Mirrors `_update_pull_progress`.
+fn apply_pull_progress_event(prog: &mut Value, line: &Value) {
     if let Some(status) = line.get("status").and_then(|v| v.as_str()) {
         prog["status"] = Value::String(status.to_string());
     }
-    if let Some(partial) = line.get("partial").and_then(|v| v.as_str()) {
+    // The daemon keys each layer by its id (bollard `CreateImageInfo.id`);
+    // older daemons used a top-level `partial` field for the same purpose.
+    let layer_id = line
+        .get("id")
+        .and_then(|v| v.as_str())
+        .or_else(|| line.get("partial").and_then(|v| v.as_str()));
+    if let Some(layer_id) = layer_id {
         if !prog.get("_layers").map(|v| v.is_object()).unwrap_or(false) {
             prog["_layers"] = Value::Object(serde_json::Map::new());
         }
         if let Some(layers_obj) = prog.get_mut("_layers").and_then(|v| v.as_object_mut()) {
             let layer = layers_obj
-                .entry(partial.to_string())
+                .entry(layer_id.to_string())
                 .or_insert_with(|| serde_json::json!({ "current": 0, "total": 0 }));
-            if let Some(total) = line.get("total").and_then(|v| v.as_i64()) {
-                layer["total"] = Value::Number(total.into());
-            } else if let Some(current) = line.get("current").and_then(|v| v.as_i64()) {
-                layer["current"] = Value::Number(current.into());
+            // Only the download phase carries transfer counters. Extraction
+            // events reuse the same layer id but report a separate (much
+            // smaller) extraction counter; folding those would make the
+            // aggregate dip mid-pull. Events without a status (older
+            // daemons) are accepted.
+            let event_status = line.get("status").and_then(|v| v.as_str());
+            let has_counters = matches!(
+                event_status,
+                Some("Downloading") | Some("Download complete")
+            ) || event_status.is_none();
+            // Byte counters arrive nested in `progressDetail` on modern
+            // daemons; fall back to top-level `current`/`total` for older
+            // ones. An event with neither leaves the layer indeterminate.
+            if has_counters {
+                let detail = line.get("progressDetail");
+                if let Some(current) = detail
+                    .and_then(|d| d.get("current"))
+                    .and_then(|v| v.as_i64())
+                    .or_else(|| line.get("current").and_then(|v| v.as_i64()))
+                {
+                    layer["current"] = Value::Number(current.into());
+                }
+                if let Some(total) = detail
+                    .and_then(|d| d.get("total"))
+                    .and_then(|v| v.as_i64())
+                    .or_else(|| line.get("total").and_then(|v| v.as_i64()))
+                {
+                    layer["total"] = Value::Number(total.into());
+                }
             }
         }
     }
@@ -1402,6 +1426,19 @@ fn update_pull_progress(state: &AppState, image_name: &str, line: &Value) {
             );
         }
     }
+}
+
+/// Fold one Docker pull progress event into the aggregate per-image progress
+/// state.
+fn update_pull_progress(state: &AppState, image_name: &str, line: &Value) {
+    let mut progress = state
+        .pull_progress
+        .lock()
+        .unwrap_or_else(std::sync::PoisonError::into_inner);
+    let prog = progress
+        .entry(image_name.to_string())
+        .or_insert(serde_json::json!({ "status": "pulling", "percentage": null, "current": 0, "total": 0 }));
+    apply_pull_progress_event(prog, line);
 }
 
 /// Run the actual pull + metadata caching for an image. The caller must have
@@ -3990,14 +4027,16 @@ async fn join_my_session(
         }
     };
     // F4 (ANT-444 / ANT-469): the web client authenticates with the HttpOnly
-    // SameSite=Lax login cookie and the app has no CORS layer, so a cross-site
-    // top-level form POST reaches this route fully authenticated and would
-    // otherwise mint the victim a participant token. A form cannot set the
-    // X-Session-ID header or carry an AES-256-GCM body, so requiring the E2EE
-    // request body is the CSRF gate: the normal client flow (secureFetch with
-    // an encrypted body) passes, a cross-site form POST / XHR is rejected 400
-    // before any token is minted. The decrypted body is unused (the client
-    // sends an empty object).
+    // login cookie. Since ANT-653 the CORS layer exists and defaults to
+    // loose, so a cross-site page can reach this route fully authenticated
+    // (credentialed XHR) and would otherwise mint the victim a participant
+    // token — the E2EE request body is the CSRF gate, not the absence of a
+    // CORS layer: a cross-site form POST (and a XHR that never completed the
+    // E2EE handshake) cannot set the X-Session-ID header or carry an
+    // AES-256-GCM body, so requiring the body rejects it 400 before any
+    // token is minted, while the normal client flow (secureFetch with an
+    // encrypted body) passes. The decrypted body is unused (the client sends
+    // an empty object).
     let _ = match e2ee::decrypt_request_body(&state, &headers, body).await {
         Ok(v) => v,
         Err((s, d)) => {
@@ -4294,5 +4333,121 @@ mod tests {
         // A non-401 plain body is not selkies' secure-mode 401.
         assert_eq!(classify_sessions_probe(502, Some("text/plain")), None);
         assert_eq!(classify_sessions_probe(200, Some("text/plain")), None);
+    }
+
+    fn fresh_pull_progress() -> Value {
+        serde_json::json!({ "status": "pulling", "percentage": null, "current": 0, "total": 0 })
+    }
+
+    #[test]
+    fn pull_progress_modern_daemon_shape() {
+        // The daemon streams one `CreateImageInfo` per layer: id + status,
+        // with byte counters nested in `progressDetail`. Two layers of 100 and
+        // 200 bytes; the stream interleaves the layers like a real pull.
+        let mut prog = fresh_pull_progress();
+        apply_pull_progress_event(&mut prog, &serde_json::json!({ "status": "Pulling" }));
+        assert_eq!(prog["percentage"], Value::Null);
+
+        apply_pull_progress_event(&mut prog, &serde_json::json!({ "id": "sha256:aaa", "status": "Waiting" }));
+        apply_pull_progress_event(
+            &mut prog,
+            &serde_json::json!({ "id": "sha256:aaa", "status": "Downloading",
+                                 "progressDetail": { "current": 25, "total": 100 } }),
+        );
+        assert_eq!(prog["percentage"], serde_json::json!(25.0));
+
+        apply_pull_progress_event(
+            &mut prog,
+            &serde_json::json!({ "id": "sha256:bbb", "status": "Downloading",
+                                 "progressDetail": { "current": 50, "total": 200 } }),
+        );
+        // 75 of 300 bytes across both layers.
+        assert_eq!(prog["percentage"], serde_json::json!(25.0));
+        assert_eq!(prog["current"], serde_json::json!(75));
+        assert_eq!(prog["total"], serde_json::json!(300));
+
+        apply_pull_progress_event(
+            &mut prog,
+            &serde_json::json!({ "id": "sha256:aaa", "status": "Download complete",
+                                 "progressDetail": { "current": 100, "total": 100 } }),
+        );
+        apply_pull_progress_event(&mut prog, &serde_json::json!({ "id": "sha256:aaa", "status": "Pull complete" }));
+        apply_pull_progress_event(
+            &mut prog,
+            &serde_json::json!({ "id": "sha256:bbb", "status": "Download complete",
+                                 "progressDetail": { "current": 200, "total": 200 } }),
+        );
+        apply_pull_progress_event(&mut prog, &serde_json::json!({ "id": "sha256:bbb", "status": "Pull complete" }));
+        assert_eq!(prog["percentage"], serde_json::json!(100.0));
+        assert_eq!(prog["status"], "Pull complete");
+        // The internal per-layer map is tracked under a `_`-prefixed key so
+        // the API response can strip it (see the installed-apps endpoint).
+        assert!(prog["_layers"].is_object());
+        assert!(prog.get("_layers").unwrap().get("sha256:aaa").is_some());
+    }
+
+    #[test]
+    fn pull_progress_older_daemon_top_level_counters() {
+        // Pre-`progressDetail` daemons report counters at the top level and
+        // identify the layer with `partial`; both fall back cleanly.
+        let mut prog = fresh_pull_progress();
+        apply_pull_progress_event(
+            &mut prog,
+            &serde_json::json!({ "partial": "layer-1", "status": "Downloading",
+                                 "current": 40, "total": 100 }),
+        );
+        assert_eq!(prog["percentage"], serde_json::json!(40.0));
+        assert!(prog["_layers"].get("layer-1").is_some());
+    }
+
+    #[test]
+    fn pull_progress_indeterminate_without_sizes() {
+        // Layers that only ever report status strings ("Waiting",
+        // "Verifying Checksum", "Pull complete") carry no byte counters, so
+        // the aggregate percentage must stay null (the UI shows an
+        // indeterminate indicator instead of a frozen 0%).
+        let mut prog = fresh_pull_progress();
+        apply_pull_progress_event(&mut prog, &serde_json::json!({ "id": "sha256:ccc", "status": "Waiting" }));
+        apply_pull_progress_event(&mut prog, &serde_json::json!({ "id": "sha256:ccc", "status": "Verifying Checksum" }));
+        apply_pull_progress_event(&mut prog, &serde_json::json!({ "id": "sha256:ccc", "status": "Pull complete" }));
+        assert_eq!(prog["percentage"], Value::Null);
+        assert_eq!(prog["total"], serde_json::json!(0));
+        assert!(prog["_layers"].get("sha256:ccc").is_some());
+    }
+
+    #[test]
+    fn pull_progress_extract_counters_do_not_regress() {
+        // Extraction events reuse the layer id but report their own (much
+        // smaller) extraction counter; folding those in would make the
+        // aggregate dip mid-pull. Only download-phase counters count.
+        let mut prog = fresh_pull_progress();
+        apply_pull_progress_event(
+            &mut prog,
+            &serde_json::json!({ "id": "sha256:eee", "status": "Downloading",
+                                 "progressDetail": { "current": 90, "total": 100 } }),
+        );
+        assert_eq!(prog["percentage"], serde_json::json!(90.0));
+        apply_pull_progress_event(
+            &mut prog,
+            &serde_json::json!({ "id": "sha256:eee", "status": "Extracting",
+                                 "progressDetail": { "current": 7, "total": 140 } }),
+        );
+        assert_eq!(prog["percentage"], serde_json::json!(90.0));
+        assert_eq!(prog["current"], serde_json::json!(90));
+        assert_eq!(prog["total"], serde_json::json!(100));
+        // The phase text still tracks the daemon's status string.
+        assert_eq!(prog["status"], "Extracting");
+    }
+
+    #[test]
+    fn pull_progress_percentage_rounds_to_tenths() {
+        let mut prog = fresh_pull_progress();
+        apply_pull_progress_event(
+            &mut prog,
+            &serde_json::json!({ "id": "sha256:ddd", "status": "Downloading",
+                                 "progressDetail": { "current": 1, "total": 3 } }),
+        );
+        // 33.333…% rounds to one decimal place.
+        assert_eq!(prog["percentage"], serde_json::json!(33.3));
     }
 }

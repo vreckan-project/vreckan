@@ -1698,6 +1698,25 @@ label:has(.src-badge) {
   transition: width 0.4s ease;
 }
 
+/* Indeterminate pull progress: the daemon didn't report byte sizes for this
+   image, so a fill percentage would be a frozen 0% — sweep the bar instead
+   while the phase text carries the status. */
+.progress-fill.progress-indeterminate {
+  width: 40%;
+  opacity: 0.6;
+  transition: none;
+  animation: progress-sweep 1.4s linear infinite;
+}
+
+@keyframes progress-sweep {
+  from {
+    transform: translateX(-100%);
+  }
+  to {
+    transform: translateX(250%);
+  }
+}
+
 .progress-label {
   display: flex;
   justify-content: space-between;
