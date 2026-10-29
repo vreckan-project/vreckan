@@ -65,7 +65,8 @@
     "revoke": "取り消す",
     "revokeConfirm": "この共有を取り消しますか？",
     "shareRevoked": "共有を取り消しました",
-    "up": "上へ"
+    "up": "上へ",
+    "openInAppPopupBlocked": "セッションが開始されました — ブラウザーが新しいタブをブロックしました。セッションリストのハイライトされた行から開いてください。"
   },
   "login": {
     "signIn": "ログイン",
@@ -127,7 +128,8 @@
     "options": "起動オプション",
     "sessionStarting": "セッションを開始中です — 準備ができたら自動的に開かれます。",
     "sessionReady": "セッションの準備ができました。",
-    "sessionReadyOpenFromList": "セッションの準備ができました — セッション一覧から開いてください。"
+    "sessionReadyOpenFromList": "セッションの準備ができました — セッション一覧から開いてください。",
+    "popupBlocked": "セッションが開始されました — ブラウザーが新しいタブをブロックしました。セッションリストのハイライトされた行から開いてください。"
   },
   "password": {
     "title": "パスワードを変更",
@@ -707,7 +709,9 @@
     "failedToStartDetail": "開始に失敗しました: {error}",
     "launchFailedToast": "セッションの開始に失敗しました: {error}",
     "goneWhileStarting": "セッションは開始中に終了しました。",
-    "stillStarting": "セッションはまだ開始中です — 状態はセッション一覧に表示されます。"
+    "stillStarting": "セッションはまだ開始中です — 状態はセッション一覧に表示されます。",
+    "joined": "セッションに参加しました",
+    "joinedPopupBlocked": "参加しました — ブラウザーが新しいタブをブロックしました。開くには、ハイライトされた行の「参加」をもう一度クリックしてください。"
   },
   "backup": {
     "heading": "バックアップ",

@@ -9,6 +9,43 @@ import { t } from "../i18n.js";
 import { confirmModal } from "../modal.js";
 import { openSessionShareModal } from "./session-share.js";
 import { installedApps, renderAppApps } from "../app.js";
+import { activateView } from "./nav.js";
+
+// ---------------------------------------------------------------------------
+// Popup-blocker fallback (ANT-661)
+// ---------------------------------------------------------------------------
+// When a post-click `window.open` is swallowed by the browser's popup
+// blocker, the session still starts — this makes it discoverable instead:
+// its row is highlighted, scrolled into view, and (optionally) the sessions
+// view is activated. The highlight survives list re-renders until the timer
+// expires; callers show their own toast for the specific action.
+let highlightedSessionId = null;
+let highlightClearTimer = null;
+
+function applySessionHighlight(list) {
+  if (!highlightedSessionId) return;
+  const row = list.querySelector(`[data-session-id="${highlightedSessionId}"]`);
+  if (!row) return;
+  if (!row.classList.contains("session-highlight")) {
+    row.classList.add("session-highlight");
+    row.scrollIntoView({ block: "center" });
+  }
+}
+
+export function highlightSessionRow(sessionId, { switchToSessions = false } = {}) {
+  if (!sessionId) return;
+  highlightedSessionId = sessionId;
+  if (highlightClearTimer) clearTimeout(highlightClearTimer);
+  highlightClearTimer = setTimeout(() => {
+    highlightedSessionId = null;
+    const row = $("sessions-list")?.querySelector(`[data-session-id="${sessionId}"]`);
+    row?.classList.remove("session-highlight");
+  }, 20000);
+  if (switchToSessions) activateView("main");
+  // Re-fetch so the new session's row exists; renderSessions re-applies the
+  // highlight on every render while the timer is live.
+  loadSessions();
+}
 
 // Last known session list (backend order: newest first). The extended
 // backend lists every running session, each flagged `is_mine`; the app
@@ -73,9 +110,22 @@ export async function joinSession(s, button) {
     });
     const url = res && (res.session_url || res.url);
     if (url) {
-      window.open(url, "_blank", "noopener");
-      toast(t("sessions.joined"));
-      loadSessions();
+      // No noopener feature here on purpose: Chrome/Firefox return null for
+      // it even when the tab opens, which would make the null-check below
+      // fire on every successful join. The opener link is severed manually
+      // instead (ANT-661).
+      const win = window.open(url, "_blank");
+      if (win) {
+        win.opener = null;
+        toast(t("sessions.joined"));
+        loadSessions();
+      } else {
+        // Popup blocker swallowed the tab (ANT-661): the session is running
+        // and the URL is ready — make it reachable from the list instead of
+        // failing silently.
+        toast(t("sessions.joinedPopupBlocked"), "warning", { ttl: 8000 });
+        highlightSessionRow(s.session_id);
+      }
     } else {
       toast(t("sessions.joinNoUrl"), "error");
     }
@@ -122,6 +172,7 @@ function renderSessions(sessions, sharesBySession = {}) {
 
     const item = document.createElement("div");
     item.className = "session-item" + (mine ? "" : " session-other");
+    item.dataset.sessionId = s.session_id;
 
     const img = document.createElement("img");
     img.alt = "app logo";
@@ -258,6 +309,7 @@ function renderSessions(sessions, sharesBySession = {}) {
 
     list.appendChild(item);
   }
+  applySessionHighlight(list);
 }
 
 // ---------------------------------------------------------------------------
@@ -328,7 +380,10 @@ function killSession(s, item, kill) {
 // session list — which renders the recorded state — past that. The promise
 // resolves once the session has settled, under any outcome, so callers can
 // re-enable the control they started it from.
-export function pollSessionUntilReady(sessionId, sessionUrl) {
+// `openTab: false` tracks the row state only — used when the launch flow
+// already navigated its gesture-time tab to the waiting screen (ANT-661),
+// so a second ready-time tab would be a duplicate.
+export function pollSessionUntilReady(sessionId, sessionUrl, { openTab = true } = {}) {
   const POLL_MS = 2500;
   const TIMEOUT_MS = 120000;
   const startedAt = Date.now();
@@ -347,11 +402,14 @@ export function pollSessionUntilReady(sessionId, sessionUrl) {
       secureFetch(`/api/sessions/${encodeURIComponent(sessionId)}/status`, { method: "GET" })
         .then((status) => {
           if (status && status.ready === true) {
-            // Open the tab only once the app answers (a pre-ready tab shows
-            // the waiting screen). If the popup blocker eats the non-gesture
-            // open, the toast points at the session row's Open action.
-            const win = sessionUrl ? window.open(sessionUrl, "_blank", "noopener") : null;
-            toast(win ? t("launch.sessionReady") : t("launch.sessionReadyOpenFromList"));
+            if (openTab) {
+              // Open the tab only once the app answers (a pre-ready tab
+              // shows the waiting screen). If the popup blocker eats the
+              // non-gesture open, the toast points at the session row's
+              // Open action.
+              const win = sessionUrl ? window.open(sessionUrl, "_blank", "noopener") : null;
+              toast(win ? t("launch.sessionReady") : t("launch.sessionReadyOpenFromList"));
+            }
             return settle("ready");
           }
           if (status && status.launch_failed === true) {

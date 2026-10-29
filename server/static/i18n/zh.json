@@ -65,7 +65,8 @@
     "revoke": "撤销",
     "revokeConfirm": "撤销此共享？",
     "shareRevoked": "共享已撤销",
-    "up": "向上"
+    "up": "向上",
+    "openInAppPopupBlocked": "会话已启动 — 浏览器拦截了新标签页。请从会话列表中高亮的行打开。"
   },
   "login": {
     "signIn": "登录",
@@ -127,7 +128,8 @@
     "options": "启动选项",
     "sessionStarting": "会话正在启动 — 就绪后会自动打开。",
     "sessionReady": "会话已就绪。",
-    "sessionReadyOpenFromList": "会话已就绪 — 请从会话列表打开。"
+    "sessionReadyOpenFromList": "会话已就绪 — 请从会话列表打开。",
+    "popupBlocked": "会话已启动 — 浏览器拦截了新标签页。请从会话列表中高亮的行打开。"
   },
   "password": {
     "title": "更改密码",
@@ -707,7 +709,9 @@
     "failedToStartDetail": "启动失败: {error}",
     "launchFailedToast": "会话启动失败: {error}",
     "goneWhileStarting": "会话在启动过程中已结束。",
-    "stillStarting": "会话仍在启动中 — 状态显示在会话列表中。"
+    "stillStarting": "会话仍在启动中 — 状态显示在会话列表中。",
+    "joined": "已加入会话",
+    "joinedPopupBlocked": "已加入 — 浏览器拦截了新标签页。请在高亮的行再次点击「加入」以打开。"
   },
   "backup": {
     "heading": "备份",

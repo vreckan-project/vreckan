@@ -65,7 +65,8 @@
     "revoke": "Widerrufen",
     "revokeConfirm": "Diese Freigabe widerrufen?",
     "shareRevoked": "Freigabe widerrufen",
-    "up": "Hoch"
+    "up": "Hoch",
+    "openInAppPopupBlocked": "Sitzung gestartet — der Browser hat den neuen Tab blockiert. Öffne sie über die hervorgehobene Zeile in der Sitzungsliste."
   },
   "login": {
     "signIn": "Anmelden",
@@ -127,7 +128,8 @@
     "options": "Startoptionen",
     "sessionStarting": "Session wird gestartet — sie öffnet sich, sobald sie bereit ist.",
     "sessionReady": "Session ist bereit.",
-    "sessionReadyOpenFromList": "Session ist bereit — öffne sie in der Sitzungsliste."
+    "sessionReadyOpenFromList": "Session ist bereit — öffne sie in der Sitzungsliste.",
+    "popupBlocked": "Sitzung gestartet — der Browser hat den neuen Tab blockiert. Öffne sie über die hervorgehobene Zeile in der Sitzungsliste."
   },
   "password": {
     "title": "Passwort ändern",
@@ -707,7 +709,9 @@
     "failedToStartDetail": "Start fehlgeschlagen: {error}",
     "launchFailedToast": "Session konnte nicht gestartet werden: {error}",
     "goneWhileStarting": "Die Session wurde während des Startens beendet.",
-    "stillStarting": "Die Session wird noch gestartet — ihr Zustand wird in der Sitzungsliste angezeigt."
+    "stillStarting": "Die Session wird noch gestartet — ihr Zustand wird in der Sitzungsliste angezeigt.",
+    "joined": "Der Sitzung beigetreten",
+    "joinedPopupBlocked": "Beigetreten — der Browser hat den neuen Tab blockiert. Klicke in der hervorgehobenen Zeile erneut auf „Beitreten“, um ihn zu öffnen."
   },
   "backup": {
     "heading": "Sicherung",

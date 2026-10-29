@@ -850,6 +850,19 @@ label.checkbox input {
   border-style: solid;
 }
 
+/* Popup-blocker fallback (ANT-661): the session row whose new tab the
+   browser blocked gets an amber pulse so the user can find it and open it
+   from the list instead of assuming the launch failed. */
+.session-item.session-highlight {
+  border-color: var(--amber);
+  animation: session-highlight-pulse 1.2s ease-in-out infinite;
+}
+
+@keyframes session-highlight-pulse {
+  0%, 100% { box-shadow: 0 0 0 0 rgba(255, 176, 32, 0.35); }
+  50% { box-shadow: 0 0 0 5px rgba(255, 176, 32, 0.12); }
+}
+
 .session-item img {
   width: 36px;
   height: 36px;
@@ -1167,6 +1180,10 @@ label.checkbox input {
 
 .toast.success {
   border-left-color: var(--green);
+}
+
+.toast.warning {
+  border-left-color: var(--amber);
 }
 
 .toast.error {

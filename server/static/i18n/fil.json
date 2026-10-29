@@ -65,7 +65,8 @@
     "revoke": "I-revoke",
     "revokeConfirm": "I-revoke ang share na ito?",
     "shareRevoked": "Na-revoke ang share",
-    "up": "Pataas"
+    "up": "Pataas",
+    "openInAppPopupBlocked": "Nag-start ang session — binlok ng browser ang bagong tab. Buksan ito mula sa pinapahayag na linya sa listahan ng session."
   },
   "login": {
     "signIn": "Mag-sign in",
@@ -127,7 +128,8 @@
     "options": "Mga launch options",
     "sessionStarting": "Sinisimulan ang session — buksan ito kapag handa na.",
     "sessionReady": "Handa na ang session.",
-    "sessionReadyOpenFromList": "Handa na ang session — buksan ito sa listahan ng sessions."
+    "sessionReadyOpenFromList": "Handa na ang session — buksan ito sa listahan ng sessions.",
+    "popupBlocked": "Nag-start ang session — binlok ng browser ang bagong tab. Buksan ito mula sa pinapahayag na linya sa listahan ng session."
   },
   "password": {
     "title": "Baguhin ang password",
@@ -707,7 +709,9 @@
     "failedToStartDetail": "Hindi nakapagsimula: {error}",
     "launchFailedToast": "Hindi nakapagsimula ang session: {error}",
     "goneWhileStarting": "Tapos na ang session habang sinisimula.",
-    "stillStarting": "Sinisimula pa rin ang session — ipinapakita ang estado nito sa listahan ng sessions."
+    "stillStarting": "Sinisimula pa rin ang session — ipinapakita ang estado nito sa listahan ng sessions.",
+    "joined": "Sumali sa session",
+    "joinedPopupBlocked": "Sumali na — binlok ng browser ang bagong tab. Pindutin ulit ang «Join» sa pinapahayag na linya upang buksan."
   },
   "backup": {
     "heading": "Backup",

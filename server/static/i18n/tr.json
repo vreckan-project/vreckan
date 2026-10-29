@@ -65,7 +65,8 @@
     "revoke": "Geri al",
     "revokeConfirm": "Bu paylaşım geri alınsın mı?",
     "shareRevoked": "Paylaşım geri alındı",
-    "up": "Yukarı"
+    "up": "Yukarı",
+    "openInAppPopupBlocked": "Oturum başlatıldı — tarayıcı yeni sekmenin açılmasını engelledi. Oturum listesinde vurgulanan satırdan açın."
   },
   "login": {
     "signIn": "Giriş yap",
@@ -127,7 +128,8 @@
     "options": "Başlatma seçenekleri",
     "sessionStarting": "Oturum başlıyor — hazır olunca açılacak.",
     "sessionReady": "Oturum hazır.",
-    "sessionReadyOpenFromList": "Oturum hazır — oturum listesinden açın."
+    "sessionReadyOpenFromList": "Oturum hazır — oturum listesinden açın.",
+    "popupBlocked": "Oturum başlatıldı — tarayıcı yeni sekmenin açılmasını engelledi. Oturum listesinde vurgulanan satırdan açın."
   },
   "password": {
     "title": "Parolayı değiştir",
@@ -707,7 +709,9 @@
     "failedToStartDetail": "Başlatılamadı: {error}",
     "launchFailedToast": "Oturum başlatılamadı: {error}",
     "goneWhileStarting": "Oturum başlarken sona erdi.",
-    "stillStarting": "Oturum hâlâ başlıyor — durumu oturum listesinde gösteriliyor."
+    "stillStarting": "Oturum hâlâ başlıyor — durumu oturum listesinde gösteriliyor.",
+    "joined": "Oturuma katıldınız",
+    "joinedPopupBlocked": "Katıldınız — tarayıcı yeni sekmenin açılmasını engelledi. Açmak için vurgulanan satırdaki «Katıl» düğmesine yeniden tıklayın."
   },
   "backup": {
     "heading": "Yedek",

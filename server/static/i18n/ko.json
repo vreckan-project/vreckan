@@ -65,7 +65,8 @@
     "revoke": "취소",
     "revokeConfirm": "이 공유를 취소하시겠습니까?",
     "shareRevoked": "공유 취소됨",
-    "up": "위로"
+    "up": "위로",
+    "openInAppPopupBlocked": "세션이 시작되었습니다 — 브라우저가 새 탭을 차단했습니다. 세션 목록의 강조된 행에서 여세요."
   },
   "login": {
     "signIn": "로그인",
@@ -127,7 +128,8 @@
     "options": "시작 옵션",
     "sessionStarting": "세션을 시작하는 중입니다 — 준비가 되면 열립니다.",
     "sessionReady": "세션 준비가 완료되었습니다.",
-    "sessionReadyOpenFromList": "세션 준비가 완료되었습니다 — 세션 목록에서 여세요."
+    "sessionReadyOpenFromList": "세션 준비가 완료되었습니다 — 세션 목록에서 여세요.",
+    "popupBlocked": "세션이 시작되었습니다 — 브라우저가 새 탭을 차단했습니다. 세션 목록의 강조된 행에서 여세요."
   },
   "password": {
     "title": "비밀번호 변경",
@@ -707,7 +709,9 @@
     "failedToStartDetail": "시작 실패: {error}",
     "launchFailedToast": "세션 시작 실패: {error}",
     "goneWhileStarting": "세션이 시작되는 중 종료되었습니다.",
-    "stillStarting": "세션이 아직 시작 중입니다 — 상태는 세션 목록에 표시됩니다."
+    "stillStarting": "세션이 아직 시작 중입니다 — 상태는 세션 목록에 표시됩니다.",
+    "joined": "세션에 참가했습니다",
+    "joinedPopupBlocked": "참가했습니다 — 브라우저가 새 탭을 차단했습니다. 열려면 강조된 행의 «참여»를 다시 클릭하세요."
   },
   "backup": {
     "heading": "백업",

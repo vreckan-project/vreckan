@@ -65,7 +65,8 @@
     "revoke": "Revogar",
     "revokeConfirm": "Revogar este compartilhamento?",
     "shareRevoked": "Compartilhamento revogado",
-    "up": "Acima"
+    "up": "Acima",
+    "openInAppPopupBlocked": "Sessão iniciada — o navegador bloqueou a nova aba. Abra-a a partir da linha destacada na lista de sessões."
   },
   "login": {
     "signIn": "Entrar",
@@ -127,7 +128,8 @@
     "options": "Opções de inicialização",
     "sessionStarting": "A sessão está a iniciar — será aberta assim que estiver pronta.",
     "sessionReady": "A sessão está pronta.",
-    "sessionReadyOpenFromList": "A sessão está pronta — abra-a a partir da lista de sessões."
+    "sessionReadyOpenFromList": "A sessão está pronta — abra-a a partir da lista de sessões.",
+    "popupBlocked": "Sessão iniciada — o navegador bloqueou a nova aba. Abra-a a partir da linha destacada na lista de sessões."
   },
   "password": {
     "title": "Alterar senha",
@@ -707,7 +709,9 @@
     "failedToStartDetail": "Falha ao iniciar: {error}",
     "launchFailedToast": "A sessão não pôde ser iniciada: {error}",
     "goneWhileStarting": "A sessão terminou enquanto estava a iniciar.",
-    "stillStarting": "A sessão ainda está a iniciar — o estado está na lista de sessões."
+    "stillStarting": "A sessão ainda está a iniciar — o estado está na lista de sessões.",
+    "joined": "Você entrou na sessão",
+    "joinedPopupBlocked": "Você entrou — o navegador bloqueou a nova aba. Clique novamente em «Participar» na linha destacada para abri-la."
   },
   "backup": {
     "heading": "Backup",

@@ -65,7 +65,8 @@
     "revoke": "Revoke",
     "revokeConfirm": "Revoke this share?",
     "shareRevoked": "Share revoked",
-    "up": "Up"
+    "up": "Up",
+    "openInAppPopupBlocked": "Session started — the browser blocked the new tab. Open it from the highlighted row in the session list."
   },
   "login": {
     "signIn": "Sign in",
@@ -127,7 +128,8 @@
     "options": "Launch options",
     "sessionStarting": "Session is starting — it will open as soon as it’s ready.",
     "sessionReady": "Session is ready.",
-    "sessionReadyOpenFromList": "Session is ready — open it from the session list."
+    "sessionReadyOpenFromList": "Session is ready — open it from the session list.",
+    "popupBlocked": "Session started — the browser blocked the new tab. Open it from the highlighted row in the session list."
   },
   "password": {
     "title": "Change password",
@@ -707,7 +709,9 @@
     "failedToStartDetail": "Failed to start: {error}",
     "launchFailedToast": "Session failed to start: {error}",
     "goneWhileStarting": "The session ended while it was starting.",
-    "stillStarting": "The session is still starting — its state is shown in the session list."
+    "stillStarting": "The session is still starting — its state is shown in the session list.",
+    "joined": "Joined the session",
+    "joinedPopupBlocked": "Joined — the browser blocked the new tab. Click Join again on the highlighted row to open it."
   },
   "backup": {
     "heading": "Backup",

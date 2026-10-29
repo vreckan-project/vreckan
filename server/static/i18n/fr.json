@@ -65,7 +65,8 @@
     "revoke": "Révoquer",
     "revokeConfirm": "Révoquer ce partage ?",
     "shareRevoked": "Partage révoqué",
-    "up": "Haut"
+    "up": "Haut",
+    "openInAppPopupBlocked": "Session démarrée — le navigateur a bloqué le nouvel onglet. Ouvrez-la depuis la ligne surlignée de la liste de sessions."
   },
   "login": {
     "signIn": "Se connecter",
@@ -127,7 +128,8 @@
     "options": "Options de lancement",
     "sessionStarting": "La session démarre — elle s'ouvrira dès qu'elle sera prête.",
     "sessionReady": "La session est prête.",
-    "sessionReadyOpenFromList": "La session est prête — ouvrez-la depuis la liste des sessions."
+    "sessionReadyOpenFromList": "La session est prête — ouvrez-la depuis la liste des sessions.",
+    "popupBlocked": "Session démarrée — le navigateur a bloqué le nouvel onglet. Ouvrez-la depuis la ligne surlignée de la liste de sessions."
   },
   "password": {
     "title": "Changer le mot de passe",
@@ -707,7 +709,9 @@
     "failedToStartDetail": "Échec du démarrage : {error}",
     "launchFailedToast": "La session n'a pas pu démarrer : {error}",
     "goneWhileStarting": "La session s'est terminée pendant son démarrage.",
-    "stillStarting": "La session est toujours en cours de démarrage — son état est affiché dans la liste des sessions."
+    "stillStarting": "La session est toujours en cours de démarrage — son état est affiché dans la liste des sessions.",
+    "joined": "Session rejointe",
+    "joinedPopupBlocked": "Rejoint — le navigateur a bloqué le nouvel onglet. Cliquez à nouveau sur « Rejoindre » dans la ligne surlignée pour l’ouvrir."
   },
   "backup": {
     "heading": "Sauvegarde",

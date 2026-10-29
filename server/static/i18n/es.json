@@ -65,7 +65,8 @@
     "revoke": "Revocar",
     "revokeConfirm": "¿Revocar este compartido?",
     "shareRevoked": "Compartido revocado",
-    "up": "Subir"
+    "up": "Subir",
+    "openInAppPopupBlocked": "Sesión iniciada — el navegador bloqueó la nueva pestaña. Ábrela desde la fila resaltada de la lista de sesiones."
   },
   "login": {
     "signIn": "Iniciar sesión",
@@ -127,7 +128,8 @@
     "options": "Opciones de inicio",
     "sessionStarting": "La sesión se está iniciando; se abrirá en cuanto esté lista.",
     "sessionReady": "La sesión está lista.",
-    "sessionReadyOpenFromList": "La sesión está lista; ábrela desde la lista de sesiones."
+    "sessionReadyOpenFromList": "La sesión está lista; ábrela desde la lista de sesiones.",
+    "popupBlocked": "Sesión iniciada — el navegador bloqueó la nueva pestaña. Ábrela desde la fila resaltada de la lista de sesiones."
   },
   "password": {
     "title": "Cambiar contraseña",
@@ -707,7 +709,9 @@
     "failedToStartDetail": "Error de inicio: {error}",
     "launchFailedToast": "La sesión no pudo iniciarse: {error}",
     "goneWhileStarting": "La sesión terminó mientras se estaba iniciando.",
-    "stillStarting": "La sesión aún se está iniciando; su estado se muestra en la lista de sesiones."
+    "stillStarting": "La sesión aún se está iniciando; su estado se muestra en la lista de sesiones.",
+    "joined": "Te has unido a la sesión",
+    "joinedPopupBlocked": "Te has unido — el navegador bloqueó la nueva pestaña. Vuelve a hacer clic en «Unirse» en la fila resaltada para abrirla."
   },
   "backup": {
     "heading": "Copia De Seguridad",

@@ -65,7 +65,8 @@
     "revoke": "Tilbagekald",
     "revokeConfirm": "Tilbagekald denne deling?",
     "shareRevoked": "Deling tilbagekaldt",
-    "up": "Op"
+    "up": "Op",
+    "openInAppPopupBlocked": "Session startet — browseren blokerede den nye fane. Åbn den fra den fremhævede række i sessionslisten."
   },
   "login": {
     "signIn": "Log ind",
@@ -127,7 +128,8 @@
     "options": "Startindstillinger",
     "sessionStarting": "Sessionen starter — den åbnes, så snart den er klar.",
     "sessionReady": "Sessionen er klar.",
-    "sessionReadyOpenFromList": "Sessionen er klar — åbn den fra sessionsoversigten."
+    "sessionReadyOpenFromList": "Sessionen er klar — åbn den fra sessionsoversigten.",
+    "popupBlocked": "Session startet — browseren blokerede den nye fane. Åbn den fra den fremhævede række i sessionslisten."
   },
   "password": {
     "title": "Skift adgangskode",
@@ -707,7 +709,9 @@
     "failedToStartDetail": "Kunne ikke starte: {error}",
     "launchFailedToast": "Sessionen kunne ikke starte: {error}",
     "goneWhileStarting": "Sessionen afsluttedes, mens den startede.",
-    "stillStarting": "Sessionen starter stadig — dens tilstand ses i sessionsoversigten."
+    "stillStarting": "Sessionen starter stadig — dens tilstand ses i sessionsoversigten.",
+    "joined": "Du deltaget i sessionen",
+    "joinedPopupBlocked": "Deltager — browseren blokerede den nye fane. Klik igen på «Deltag» i den fremhævede række for at åbne den."
   },
   "backup": {
     "heading": "Backup",

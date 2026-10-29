@@ -65,7 +65,8 @@
     "revoke": "Revoca",
     "revokeConfirm": "Revocare questa condivisione?",
     "shareRevoked": "Condivisione revocata",
-    "up": "Su"
+    "up": "Su",
+    "openInAppPopupBlocked": "Sessione avviata — il browser ha bloccato la nuova scheda. Aprila dalla riga evidenziata nell’elenco sessioni."
   },
   "login": {
     "signIn": "Accedi",
@@ -127,7 +128,8 @@
     "options": "Opzioni di avvio",
     "sessionStarting": "La sessione sta partendo: verrà aperta non appena pronta.",
     "sessionReady": "La sessione è pronta.",
-    "sessionReadyOpenFromList": "La sessione è pronta: aprila dall'elenco sessioni."
+    "sessionReadyOpenFromList": "La sessione è pronta: aprila dall'elenco sessioni.",
+    "popupBlocked": "Sessione avviata — il browser ha bloccato la nuova scheda. Aprila dalla riga evidenziata nell’elenco sessioni."
   },
   "password": {
     "title": "Cambia password",
@@ -707,7 +709,9 @@
     "failedToStartDetail": "Avvio non riuscito: {error}",
     "launchFailedToast": "La sessione non è partita: {error}",
     "goneWhileStarting": "La sessione è terminata durante l'avvio.",
-    "stillStarting": "La sessione è ancora in avvio: il suo stato è mostrato nell'elenco sessioni."
+    "stillStarting": "La sessione è ancora in avvio: il suo stato è mostrato nell'elenco sessioni.",
+    "joined": "Sei entrato nella sessione",
+    "joinedPopupBlocked": "Sei entrato — il browser ha bloccato la nuova scheda. Clicca di nuovo su «Unisciti» nella riga evidenziata per aprirla."
   },
   "backup": {
     "heading": "Backup",

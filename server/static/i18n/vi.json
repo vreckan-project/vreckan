@@ -65,7 +65,8 @@
     "revoke": "Thu hồi",
     "revokeConfirm": "Thu hồi chia sẻ này?",
     "shareRevoked": "Đã thu hồi chia sẻ",
-    "up": "Lên"
+    "up": "Lên",
+    "openInAppPopupBlocked": "Phiên đã khởi động — trình duyệt đã chặn tab mới. Mở nó từ dòng được đánh dấu trong danh sách phiên."
   },
   "login": {
     "signIn": "Đăng nhập",
@@ -127,7 +128,8 @@
     "options": "Tùy chọn khởi chạy",
     "sessionStarting": "Đang khởi động phiên — sẽ mở khi sẵn sàng.",
     "sessionReady": "Phiên đã sẵn sàng.",
-    "sessionReadyOpenFromList": "Phiên đã sẵn sàng — mở từ danh sách phiên."
+    "sessionReadyOpenFromList": "Phiên đã sẵn sàng — mở từ danh sách phiên.",
+    "popupBlocked": "Phiên đã khởi động — trình duyệt đã chặn tab mới. Mở nó từ dòng được đánh dấu trong danh sách phiên."
   },
   "password": {
     "title": "Đổi mật khẩu",
@@ -707,7 +709,9 @@
     "failedToStartDetail": "Khởi động không thành công: {error}",
     "launchFailedToast": "Phiên không khởi động được: {error}",
     "goneWhileStarting": "Phiên đã kết thúc trong khi đang khởi động.",
-    "stillStarting": "Phiên vẫn đang khởi động — trạng thái được hiển thị trong danh sách phiên."
+    "stillStarting": "Phiên vẫn đang khởi động — trạng thái được hiển thị trong danh sách phiên.",
+    "joined": "Đã tham gia phiên",
+    "joinedPopupBlocked": "Đã tham gia — trình duyệt đã chặn tab mới. Nhấn «Tham gia» một lần nữa trên dòng được đánh dấu để mở."
   },
   "backup": {
     "heading": "Sao Lưu",
