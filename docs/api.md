@@ -49,8 +49,9 @@ Three layers, the first two orthogonal:
    is a `SettingDef` read from the env layer (`settings.trusted_proxies`), not
    an admin-UI field, and it appears in no admin-settings payload — the
    `values.*` object on `GET /api/admin/certificates` is the ACME config only,
-   and `GET /api/admin/global-settings` is the GPU default. See
-   [ops.md §5](./ops.md) for the deployment guidance.
+    and `GET /api/admin/global-settings` carries the GPU default plus the CORS
+    configuration (ANT-653 — `cors_mode`, `cors_allowed_origins`, and their
+    effective sources). See [ops.md §5](./ops.md) for the deployment guidance.
 
 | Mark | Meaning |
 |---|---|

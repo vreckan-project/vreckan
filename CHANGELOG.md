@@ -9,6 +9,41 @@ is committed normally in `vreckan`. The changelog is the authoritative
 record of what shipped in each release — see
 [`docs/release.md`](./docs/release.md) for the conventions.
 
+## 2026-10-28 — v0.9.5 (in progress): out-of-the-box loose CORS — login finally works when you reach the server by a different name (ANT-653)
+
+- **Loose CORS is now the default, so a page on a different origin can use
+  your login (ANT-653).** Before this release the server sent no
+  `Access-Control-Allow-Origin` headers at all and the login cookie was
+  `SameSite=Lax` — both right for a same-origin client, but the moment you
+  reach the same server under a different name (the LAN IP instead of the
+  hostname, a second DNS name, or a different port), the browser treats it
+  as a different site, drops the cookie, and login "doesn't work". Now the
+  `cors_mode` setting (admin UI → Settings → CORS, or
+  `VRECKAN_CORS_MODE`) selects the behaviour: `loose` (the new default)
+  echoes the requesting `Origin` with `Access-Control-Allow-Credentials:
+  true`, answers OPTIONS preflights directly (methods plus headers including
+  `X-Session-ID` and `Content-Type`), issues the login cookie
+  `SameSite=None; Secure`, and relaxes the three cross-origin-relevant
+  security headers (the CSP's `connect-src`, `Cross-Origin-Opener-Policy`,
+  `Cross-Origin-Resource-Policy`). `strict` reproduces the pre-v0.9.5
+  header set exactly. The effective mode is re-read on every request, so a
+  change saved on the admin page applies to the next request — no restart.
+- **Optional origin allowlist (`VRECKAN_CORS_ALLOWED_ORIGINS`).** CORS with
+  credentials is the classic footgun — with fully-open loose mode any site
+  open in the admin's browser can make credentialed calls. The trade-off is
+  bounded by the E2EE request body, which remains the CSRF gate on every
+  state-mutating route (the same gate that protects `join_my_session`), and
+  by this optional comma-separated origin list: in loose mode only listed
+  origins (compared case-insensitively) get the CORS headers; everything
+  else is treated as in strict mode. Empty (the default) accepts every
+  origin.
+- **Admin UI: CORS card on the Settings page.** The effective mode and
+  allowlist are shown with the usual source badges (database / environment
+  / default) and are editable like the rest of the page.
+- **Docs.** `docs/ops.md` gains a CORS section (§2.1) with the deployment
+  trade-off, and the README's configuration table documents the two new
+  environment variables.
+
 ## 2026-10-28 — v0.9.4: base-image bump, no source changes since v0.9.3 (ANT-638)
 
 Nightly base-bump cut. `main` has no commits past the `v0.9.3` tag (`git log

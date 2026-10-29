@@ -415,11 +415,11 @@ function fmtDuration(seconds) {
 function autoUpdateStatusText(status, totalApps, optedCount) {
   const parts = [];
   if (status && status.next_check_at) {
-    const ms = new Date(status.next_check_at).getTime() - Date.now();
+    const ms = new Date(status.next_check_at * 1000).getTime() - Date.now();
     parts.push(t("apps.nextCheckIn", { time: ms > 0 ? fmtDuration(ms / 1000) : `0 ${t("apps.unitMinutes")}` }));
   }
   if (status && status.last_check_at) {
-    const d = new Date(status.last_check_at);
+    const d = new Date(status.last_check_at * 1000);
     const hh = String(d.getHours()).padStart(2, "0");
     const mm = String(d.getMinutes()).padStart(2, "0");
     parts.push(t("apps.lastCheckedAt", { time: `${hh}:${mm}` }));

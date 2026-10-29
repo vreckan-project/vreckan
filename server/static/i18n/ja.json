@@ -366,6 +366,13 @@
     "gpuTitle": "グローバル既定の GPU",
     "gpuHelp": "ユーザーが GPU を選択しない場合のフォールバック用 GPU です。GPU タイプに対応していないアプリには影響しません。",
     "gpuNone": "なし（グローバル既定なし）",
+    "corsTitle": "",
+    "corsHelp": "",
+    "modeLabel": "",
+    "modeLoose": "",
+    "modeStrict": "",
+    "allowedOriginsLabel": "",
+    "allowedOriginsHelp": "",
     "save": "グローバル設定を保存",
     "saved": "グローバル設定を保存しました。",
     "saveFailed": "保存に失敗しました"

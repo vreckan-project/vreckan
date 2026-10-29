@@ -442,7 +442,10 @@ async fn setting_source(state: &AppState, name: &str) -> String {
     if state.db.get_app_setting(&env_var).await.ok().flatten().is_some() {
         return "db".to_string();
     }
-    if state.settings.raw_value(name).is_some() {
+    // `raw_value` returns the code default as well as a real environment
+    // value, so the "env" source only applies when the variable is actually
+    // set in the process environment.
+    if state.settings.raw_value(name).is_some() && std::env::var(&env_var).is_ok() {
         return "env".to_string();
     }
     "default".to_string()
@@ -508,7 +511,8 @@ async fn get_management_data(
     e2ee::encrypt_response(&state, &headers, StatusCode::OK, value).await
 }
 
-/// `GET /api/admin/global-settings` — the global default GPU + available GPUs.
+/// `GET /api/admin/global-settings` — the global default GPU, the available
+/// GPUs, and the effective CORS configuration (ANT-653).
 async fn get_global_settings(
     State(state): State<AppState>,
     headers: HeaderMap,
@@ -538,14 +542,26 @@ async fn get_global_settings(
         .await;
     }
     let gpus = state.available_gpus.read().await.clone();
+    // The effective CORS values are resolved DB-over-env-over-default, so a
+    // value saved on this page is echoed back here rather than the raw
+    // environment value.
+    let cors = state.settings.cors_config(&state.db).await;
     let value = serde_json::json!({
         "global_default_gpu": state.global_default_gpu.read().await.clone(),
         "gpus": gpus,
+        "cors_mode": match cors.mode {
+            crate::settings::CorsMode::Loose => "loose",
+            crate::settings::CorsMode::Strict => "strict",
+        },
+        "cors_allowed_origins": cors.allowed_origins.join(", "),
+        "cors_mode_source": setting_source(&state, "cors_mode").await,
+        "cors_allowed_origins_source": setting_source(&state, "cors_allowed_origins").await,
     });
     e2ee::encrypt_response(&state, &headers, StatusCode::OK, value).await
 }
 
-/// `POST /api/admin/global-settings` — save the global default GPU.
+/// `POST /api/admin/global-settings` — save the global default GPU and the
+/// CORS configuration.
 async fn save_global_settings(
     State(state): State<AppState>,
     headers: HeaderMap,
@@ -632,6 +648,108 @@ async fn save_global_settings(
             format!("set to {device}")
         };
         info!("Global default GPU {gpu_msg}.");
+    }
+    // CORS (ANT-653): same absent=unchanged / empty=clear semantics. The
+    // effective mode is recomputed from the `app_settings` rows on every
+    // request, so no restart is needed for a change to take effect.
+    if let Some(mode_value) = body.get("cors_mode") {
+        let mode = mode_value.as_str().unwrap_or("").trim().to_ascii_lowercase();
+        if !mode.is_empty() && mode != "loose" && mode != "strict" {
+            return e2ee::encrypt_response(
+                &state,
+                &headers,
+                StatusCode::BAD_REQUEST,
+                serde_json::json!({ "detail": "cors_mode must be 'loose' or 'strict'." }),
+            )
+            .await;
+        }
+        if mode.is_empty()
+            && (db_fails_writes(&state)
+                || entities::app_setting::Entity::delete(entities::app_setting::ActiveModel {
+                    key: ActiveValue::Set("VRECKAN_CORS_MODE".to_string()),
+                    value: ActiveValue::NotSet,
+                })
+                .exec(&state.db.conn)
+                .await
+                .is_err())
+        {
+            return e2ee::encrypt_response(
+                &state,
+                &headers,
+                StatusCode::INTERNAL_SERVER_ERROR,
+                serde_json::json!({ "detail": "Failed to save global settings." }),
+            )
+            .await;
+        } else if !mode.is_empty()
+            && state.db.set_app_setting("VRECKAN_CORS_MODE", &mode).await.is_err()
+        {
+            return e2ee::encrypt_response(
+                &state,
+                &headers,
+                StatusCode::INTERNAL_SERVER_ERROR,
+                serde_json::json!({ "detail": "Failed to save global settings." }),
+            )
+            .await;
+        }
+        if !mode.is_empty() {
+            info!("CORS mode set to {mode}.");
+        }
+    }
+    if let Some(origins_value) = body.get("cors_allowed_origins") {
+        let raw = origins_value.as_str().unwrap_or("").trim();
+        let origins: Vec<String> = raw
+            .split(',')
+            .map(|o| o.trim().to_ascii_lowercase())
+            .filter(|o| !o.is_empty())
+            .collect();
+        for o in &origins {
+            if !o.contains("://") {
+                return e2ee::encrypt_response(
+                    &state,
+                    &headers,
+                    StatusCode::BAD_REQUEST,
+                    serde_json::json!({
+                        "detail": format!("Invalid origin '{o}' (expected e.g. 'https://host.example.com').")
+                    }),
+                )
+                .await;
+            }
+        }
+        if origins.is_empty()
+            && (db_fails_writes(&state)
+                || entities::app_setting::Entity::delete(entities::app_setting::ActiveModel {
+                    key: ActiveValue::Set("VRECKAN_CORS_ALLOWED_ORIGINS".to_string()),
+                    value: ActiveValue::NotSet,
+                })
+                .exec(&state.db.conn)
+                .await
+                .is_err())
+        {
+            return e2ee::encrypt_response(
+                &state,
+                &headers,
+                StatusCode::INTERNAL_SERVER_ERROR,
+                serde_json::json!({ "detail": "Failed to save global settings." }),
+            )
+            .await;
+        } else if !origins.is_empty()
+            && state
+                .db
+                .set_app_setting("VRECKAN_CORS_ALLOWED_ORIGINS", &origins.join(","))
+                .await
+                .is_err()
+        {
+            return e2ee::encrypt_response(
+                &state,
+                &headers,
+                StatusCode::INTERNAL_SERVER_ERROR,
+                serde_json::json!({ "detail": "Failed to save global settings." }),
+            )
+            .await;
+        }
+        if !origins.is_empty() {
+            info!("CORS allowed origins set to {}.", origins.join(", "));
+        }
     }
     e2ee::encrypt_response(&state, &headers, StatusCode::OK, serde_json::json!({ "ok": true })).await
 }

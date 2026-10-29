@@ -366,6 +366,13 @@
     "gpuTitle": "GPU Predefinita Globale",
     "gpuHelp": "GPU di riserva per gli avvio in cui l'utente non ne sceglie una. Le app che non supportano il tipo di GPU non sono interessate.",
     "gpuNone": "Nessuna (nessun predefinito globale)",
+    "corsTitle": "",
+    "corsHelp": "",
+    "modeLabel": "",
+    "modeLoose": "",
+    "modeStrict": "",
+    "allowedOriginsLabel": "",
+    "allowedOriginsHelp": "",
     "save": "Salva impostazioni globali",
     "saved": "Impostazioni globali salvate.",
     "saveFailed": "Salvataggio non riuscito"
