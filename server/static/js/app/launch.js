@@ -7,7 +7,7 @@
 import { $, toast, uploadFileChunks } from "../util.js";
 import { secureFetch } from "../api.js";
 import { availableGpus, currentSettings, globalDefaultGpu } from "../app.js";
-import { loadSessions } from "./sessions.js";
+import { loadSessions, pollSessionUntilReady } from "./sessions.js";
 import { applyPreset, pinnedBehaviors } from "./pinned.js";
 import { t } from "../i18n.js";
 
@@ -109,14 +109,13 @@ function currentLaunchPayload(applicationId, extra) {
   };
 }
 
-function openSession(result) {
-  if (result && result.session_url) {
-    window.open(result.session_url, "_blank", "noopener");
-    toast(t("launch.sessionLaunched"));
-  } else {
-    toast(t("launch.noSessionUrl"), "error");
-  }
-  setTimeout(loadSessions, 1500);
+// Re-open the modal and show a launch-request failure (the container was
+// never created, so the user can fix the input and retry).
+function showLaunchError(errEl, submitBtn, e) {
+  errEl.textContent = e.message;
+  errEl.hidden = false;
+  $("launch-upload-status").hidden = true;
+  submitBtn.disabled = false;
 }
 
 // Every app type opens the unified launch modal (ANT-228 decision D2):
@@ -255,8 +254,11 @@ function syncLaunchFileFields() {
 
 // File-backed launch (Feat 12): upload a local file, open a file already in
 // shared storage, or launch with nothing open. Only used for apps with a
-// file section (home_directories).
-async function launchFileApp(app, payload, statusEl) {
+// file section (home_directories). `onPostFired` (ANT-654) is called the
+// instant the launch request is sent — before awaiting it — so the caller
+// can close the launch modal while a local-file upload (the only phase that
+// needs the modal's progress display) has already completed.
+async function launchFileApp(app, payload, statusEl, onPostFired) {
   const fileInput = $("launch-file");
   const serverFileInput = $("launch-server-file");
   const openOnLaunch = $("launch-open-on-launch").checked;
@@ -273,7 +275,7 @@ async function launchFileApp(app, payload, statusEl) {
       statusEl.textContent = t("launch.uploadingProgress", { done, total });
     });
     statusEl.textContent = t("launch.launching");
-    return secureFetch("/api/launch/file", {
+    const pending = secureFetch("/api/launch/file", {
       method: "POST",
       body: {
         ...payload,
@@ -283,16 +285,22 @@ async function launchFileApp(app, payload, statusEl) {
         open_file_on_launch: openOnLaunch,
       },
     });
+    if (onPostFired) onPostFired();
+    return pending;
   }
   if (serverFile) {
-    return secureFetch("/api/launch/file_path", {
+    const pending = secureFetch("/api/launch/file_path", {
       method: "POST",
       body: { ...payload, filename: serverFile },
     });
+    if (onPostFired) onPostFired();
+    return pending;
   }
   // No file chosen — the file is optional, so just launch the app as-is
   // (home dir mounted per the selected mode, nothing opened in it).
-  return secureFetch("/api/launch/simple", { method: "POST", body: payload });
+  const pending = secureFetch("/api/launch/simple", { method: "POST", body: payload });
+  if (onPostFired) onPostFired();
+  return pending;
 }
 
 // Confirm the launch modal. The endpoint follows the app's capabilities:
@@ -301,6 +309,16 @@ async function launchFileApp(app, payload, statusEl) {
 // depending on the file inputs; everything else posts /api/launch/simple
 // (a blank URL on a URL-capable app launches it as-is, with $VRECKAN_URL
 // left unset server-side). The session name is sent on every branch.
+//
+// ANT-654: the launch request returns as soon as the container is created
+// and started — it no longer waits for the health check or the selkies
+// probe, but a first launch still waits inline for the image pull, so the
+// modal can no longer stay open until the response. Instead the modal closes
+// the instant the request is fired (the submit button stays disabled to
+// prevent a double launch), the session list shows "Starting…" from the
+// recorded state, and the session tab opens once polling confirms the app
+// is ready. If the request itself fails (the container was never created),
+// the modal re-opens with the error so the user can retry.
 async function handleLaunchConfirm(app) {
   const errEl = $("launch-error");
   const statusEl = $("launch-upload-status");
@@ -311,44 +329,72 @@ async function handleLaunchConfirm(app) {
 
   errEl.hidden = true;
   submitBtn.disabled = true;
-  try {
-    let result;
-    if (app.url_support) {
-      const url = $("launch-url").value.trim();
-      if (url) {
-        result = await secureFetch("/api/launch/url", {
-          method: "POST",
-          body: { ...payload, url },
-        });
-      } else if (app.home_directories) {
-        // URL-capable app that also has a file section: no URL entered, so
-        // fall back to the file flow (open a file or launch plain).
-        result = await launchFileApp(app, payload, statusEl);
-      } else {
-        // URL-capable app without a file section, no URL entered: launch the
-        // app as-is (mirrors the plain-app branch).
-        result = await secureFetch("/api/launch/simple", {
-          method: "POST",
-          body: payload,
-        });
-      }
+
+  let closed = false;
+  const closeModal = () => {
+    if (closed) return;
+    closed = true;
+    $("modal-launch").hidden = true;
+    statusEl.hidden = true;
+    toast(t("launch.sessionStarting"));
+  };
+
+  let launchRequest;
+  if (app.url_support) {
+    const url = $("launch-url").value.trim();
+    if (url) {
+      launchRequest = secureFetch("/api/launch/url", {
+        method: "POST",
+        body: { ...payload, url },
+      });
+      closeModal();
     } else if (app.home_directories) {
-      result = await launchFileApp(app, payload, statusEl);
+      // URL-capable app that also has a file section: no URL entered, so
+      // fall back to the file flow (open a file or launch plain). The modal
+      // closes when the launch request is fired, after any local-file
+      // upload has finished showing its progress.
+      launchRequest = launchFileApp(app, payload, statusEl, closeModal);
     } else {
-      // Plain app: nothing to pick, just launch with the selected options.
-      result = await secureFetch("/api/launch/simple", {
+      // URL-capable app without a file section, no URL entered: launch the
+      // app as-is (mirrors the plain-app branch).
+      launchRequest = secureFetch("/api/launch/simple", {
         method: "POST",
         body: payload,
       });
+      closeModal();
     }
-    $("modal-launch").hidden = true;
-    openSession(result);
+  } else if (app.home_directories) {
+    launchRequest = launchFileApp(app, payload, statusEl, closeModal);
+  } else {
+    // Plain app: nothing to pick, just launch with the selected options.
+    launchRequest = secureFetch("/api/launch/simple", {
+      method: "POST",
+      body: payload,
+    });
+    closeModal();
+  }
+
+  try {
+    const result = await launchRequest;
+    if (!(result && result.session_url && result.session_id)) {
+      // Contract anomaly (the modal is already closed; the list shows the
+      // recorded state anyway), so surface it as a toast.
+      toast(t("launch.noSessionUrl"), "error");
+      submitBtn.disabled = false;
+      return;
+    }
+    // The session is recorded not-ready until the background launch task
+    // confirms the app is up: refresh the list so the row renders
+    // "Starting…" immediately, then track the background state and open
+    // the tab when the app is up.
+    loadSessions();
+    pollSessionUntilReady(result.session_id, result.session_url);
   } catch (e) {
-    errEl.textContent = e.message;
-    errEl.hidden = false;
-  } finally {
-    submitBtn.disabled = false;
-    statusEl.hidden = true;
+    // The request failed (a failed local-file upload also lands here, with
+    // the modal still open): show the error in the modal so the user can
+    // fix the input and retry.
+    $("modal-launch").hidden = false;
+    showLaunchError(errEl, submitBtn, e);
   }
 }
 
@@ -401,7 +447,6 @@ export {
   populateLanguageDropdown,
   populateGpuDropdown,
   currentLaunchPayload,
-  openSession,
   handleAppSelection,
   openLaunchModal,
   syncLaunchFileFields,

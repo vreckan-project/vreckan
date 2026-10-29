@@ -114,7 +114,6 @@
     "serverFilePlaceholder": "nombre del archivo en el almacenamiento compartido",
     "launch": "Lanzar",
     "gpuAuto": "Auto (sin GPU específica)",
-    "sessionLaunched": "Sesión lanzada",
     "noSessionUrl": "Error al lanzar: no se devolvió URL de sesión",
     "url": "URL",
     "launchApp": "Lanzar {name}",
@@ -125,7 +124,10 @@
     "finalizing": "Finalizando…",
     "fileUploaded": "Archivo '{name}' subido.",
     "urlToOpen": "URL a abrir",
-    "options": "Opciones de inicio"
+    "options": "Opciones de inicio",
+    "sessionStarting": "La sesión se está iniciando; se abrirá en cuanto esté lista.",
+    "sessionReady": "La sesión está lista.",
+    "sessionReadyOpenFromList": "La sesión está lista; ábrela desde la lista de sesiones."
   },
   "password": {
     "title": "Cambiar contraseña",
@@ -667,7 +669,6 @@
     "recreate": "Recrear",
     "recreateTitle": "Recrear esta sesión desde la imagen más reciente (la app se quedará fuera de línea brevemente)",
     "recreating": "Recreando…",
-    "recreated": "Sesión recreada",
     "noActive": "No hay sesiones activas.",
     "noActiveUsers": "No hay sesiones activas entre usuarios.",
     "kill": "Terminar",
@@ -692,7 +693,14 @@
     "ownerBy": "por {owner}",
     "participantCount": "{count} participante",
     "participantCountPlural": "{count} participantes",
-    "participantsBadgeTitle": "{names} — clic para gestionar"
+    "participantsBadgeTitle": "{names} — clic para gestionar",
+    "starting": "Iniciando…",
+    "stopping": "Deteniendo…",
+    "failedToStart": "Error de inicio",
+    "failedToStartDetail": "Error de inicio: {error}",
+    "launchFailedToast": "La sesión no pudo iniciarse: {error}",
+    "goneWhileStarting": "La sesión terminó mientras se estaba iniciando.",
+    "stillStarting": "La sesión aún se está iniciando; su estado se muestra en la lista de sesiones."
   },
   "backup": {
     "heading": "Copia De Seguridad",

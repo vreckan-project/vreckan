@@ -114,7 +114,6 @@
     "serverFilePlaceholder": "साझा स्टोरेज में फ़ाइल का नाम",
     "launch": "शुरू करें",
     "gpuAuto": "ऑटो (कोई विशिष्ट GPU नहिन)",
-    "sessionLaunched": "सेशन लॉन्च हो गय",
     "noSessionUrl": "लॉन्च वीफल: कोई सेशन URL लौटे नहिन",
     "url": "URL",
     "launchApp": "{name} लॉन्च करें",
@@ -125,7 +124,10 @@
     "finalizing": "अंतिम रूप दे रहें…",
     "fileUploaded": "फ़ाइल '{name}' अपलोड हो गयी।",
     "urlToOpen": "खोलने के लिए URL",
-    "options": "लॉन्च विकल्प"
+    "options": "लॉन्च विकल्प",
+    "sessionStarting": "सेशन शुरू हो रहा है — तैयार होते ही खुल जाएगा।",
+    "sessionReady": "सेशन तैयार है।",
+    "sessionReadyOpenFromList": "सेशन तैयार है — सेशन सूची से खोलें।"
   },
   "password": {
     "title": "पासवर्ड बदलें",
@@ -667,7 +669,6 @@
     "recreate": "पुनः सिर्जना करें",
     "recreateTitle": "इस सेशन क नवतम छवि सें पुनः सिर्जना करें (ऐप थोड़ी देर ऑफ़लाइन हो)",
     "recreating": "पुनः सिर्जना हो रह हए…",
-    "recreated": "सेशन पुनः सिर्जना हो गय हए",
     "noActive": "कोई सक्रिय सत्र नहीं।",
     "noActiveUsers": "किसी भी उपयोगकर्ता के लिए कोई सक्रिय सत्र नहीं मिला।",
     "kill": "रोकें",
@@ -692,7 +693,14 @@
     "ownerBy": "द्वारा {owner}",
     "participantCount": "{count} participant",
     "participantCountPlural": "{count} participants",
-    "participantsBadgeTitle": "{names} — प्रबंधित करने के लिए क्लिक करें"
+    "participantsBadgeTitle": "{names} — प्रबंधित करने के लिए क्लिक करें",
+    "starting": "शुरू हो रहा है…",
+    "stopping": "रुक रहा है…",
+    "failedToStart": "शुरुआत विफल",
+    "failedToStartDetail": "शुरुआत विफल: {error}",
+    "launchFailedToast": "सेशन शुरू नहीं हो सका: {error}",
+    "goneWhileStarting": "सेशन शुरू होते ही समाप्त हो गया।",
+    "stillStarting": "सेशन अभी भी शुरू हो रहा है — इसकी स्थिति सेशन सूची में दिखाई गई है।"
   },
   "backup": {
     "heading": "बैकअप",

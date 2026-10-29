@@ -114,7 +114,6 @@
     "serverFilePlaceholder": "имя файла в общем хранилище",
     "launch": "Запустить",
     "gpuAuto": "Авто (без конкретной GPU)",
-    "sessionLaunched": "Сессия запущена",
     "noSessionUrl": "Ошибка запуска: URL сессии не возвращён",
     "url": "URL",
     "launchApp": "Запустить {name}",
@@ -125,7 +124,10 @@
     "finalizing": "Завершение…",
     "fileUploaded": "Файл «{name}» загружен.",
     "urlToOpen": "URL для открытия",
-    "options": "Параметры запуска"
+    "options": "Параметры запуска",
+    "sessionStarting": "Сессия запускается — она откроется, как только будет готова.",
+    "sessionReady": "Сессия готова.",
+    "sessionReadyOpenFromList": "Сессия готова — откройте её из списка сессий."
   },
   "password": {
     "title": "Сменить пароль",
@@ -667,7 +669,6 @@
     "recreate": "Пересоздать",
     "recreateTitle": "Пересоздать эту сессию из последнего образа (приложение ненадолго будет недоступно)",
     "recreating": "Пересоздание…",
-    "recreated": "Сессия пересоздана",
     "noActive": "Нет активных сессий.",
     "noActiveUsers": "Нет активных сессий ни у одного пользователя.",
     "kill": "Остановить",
@@ -692,7 +693,14 @@
     "ownerBy": "от {owner}",
     "participantCount": "{count} участник",
     "participantCountPlural": "{count} участника",
-    "participantsBadgeTitle": "{names} — нажмите, чтобы управлять"
+    "participantsBadgeTitle": "{names} — нажмите, чтобы управлять",
+    "starting": "Запуск…",
+    "stopping": "Остановка…",
+    "failedToStart": "Не удалось запустить",
+    "failedToStartDetail": "Не удалось запустить: {error}",
+    "launchFailedToast": "Сессия не запустилась: {error}",
+    "goneWhileStarting": "Сессия завершилась во время запуска.",
+    "stillStarting": "Сессия всё ещё запускается — её состояние показано в списке сессий."
   },
   "backup": {
     "heading": "Резервная копия",

@@ -114,7 +114,6 @@
     "serverFilePlaceholder": "共有ストレージのファイル名",
     "launch": "起動",
     "gpuAuto": "自動（特定のGPUなし）",
-    "sessionLaunched": "セッションを起動しました",
     "noSessionUrl": "起動に失敗しました: セッションURLが返されませんでした",
     "url": "URL",
     "launchApp": "{name} を起動",
@@ -125,7 +124,10 @@
     "finalizing": "最終処理中…",
     "fileUploaded": "ファイル '{name}' をアップロードしました。",
     "urlToOpen": "開くURL",
-    "options": "起動オプション"
+    "options": "起動オプション",
+    "sessionStarting": "セッションを開始中です — 準備ができたら自動的に開かれます。",
+    "sessionReady": "セッションの準備ができました。",
+    "sessionReadyOpenFromList": "セッションの準備ができました — セッション一覧から開いてください。"
   },
   "password": {
     "title": "パスワードを変更",
@@ -667,7 +669,6 @@
     "recreate": "再作成",
     "recreateTitle": "最新イメージからこのセッションを再作成します（アプリは短時間オフラインになります）",
     "recreating": "再作成中…",
-    "recreated": "セッションを再作成しました",
     "noActive": "アクティブなセッションはありません。",
     "noActiveUsers": "どのユーザーにもアクティブなセッションはありません。",
     "kill": "終了",
@@ -692,7 +693,14 @@
     "ownerBy": "所有者 {owner}",
     "participantCount": "{count} 人の参加者",
     "participantCountPlural": "{count} 人の参加者",
-    "participantsBadgeTitle": "{names} — 管理するにはクリック"
+    "participantsBadgeTitle": "{names} — 管理するにはクリック",
+    "starting": "開始中…",
+    "stopping": "停止中…",
+    "failedToStart": "開始に失敗しました",
+    "failedToStartDetail": "開始に失敗しました: {error}",
+    "launchFailedToast": "セッションの開始に失敗しました: {error}",
+    "goneWhileStarting": "セッションは開始中に終了しました。",
+    "stillStarting": "セッションはまだ開始中です — 状態はセッション一覧に表示されます。"
   },
   "backup": {
     "heading": "バックアップ",

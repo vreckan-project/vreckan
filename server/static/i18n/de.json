@@ -114,7 +114,6 @@
     "serverFilePlaceholder": "Dateiname im gemeinsamen Speicher",
     "launch": "Starten",
     "gpuAuto": "Auto (keine bestimmte GPU)",
-    "sessionLaunched": "Sitzung gestartet",
     "noSessionUrl": "Start fehlgeschlagen: keine Sitzungs-URL zurückgegeben",
     "url": "URL",
     "launchApp": "{name} starten",
@@ -125,7 +124,10 @@
     "finalizing": "Wird abgeschlossen…",
     "fileUploaded": "Datei '{name}' hochgeladen.",
     "urlToOpen": "Zu öffnende URL",
-    "options": "Startoptionen"
+    "options": "Startoptionen",
+    "sessionStarting": "Session wird gestartet — sie öffnet sich, sobald sie bereit ist.",
+    "sessionReady": "Session ist bereit.",
+    "sessionReadyOpenFromList": "Session ist bereit — öffne sie in der Sitzungsliste."
   },
   "password": {
     "title": "Passwort ändern",
@@ -667,7 +669,6 @@
     "recreate": "Neu erstellen",
     "recreateTitle": "Erstelle diese Sitzung aus dem neuesten Image neu (die App ist kurzzeitig offline)",
     "recreating": "Wird neu erstellt…",
-    "recreated": "Sitzung neu erstellt",
     "noActive": "Keine aktiven Sitzungen.",
     "noActiveUsers": "Keine aktiven Sitzungen über alle Benutzer.",
     "kill": "Beenden",
@@ -692,7 +693,14 @@
     "ownerBy": "von {owner}",
     "participantCount": "{count} Teilnehmer",
     "participantCountPlural": "{count} Teilnehmer",
-    "participantsBadgeTitle": "{names} — zum Verwalten klicken"
+    "participantsBadgeTitle": "{names} — zum Verwalten klicken",
+    "starting": "Startet…",
+    "stopping": "Wird beendet…",
+    "failedToStart": "Start fehlgeschlagen",
+    "failedToStartDetail": "Start fehlgeschlagen: {error}",
+    "launchFailedToast": "Session konnte nicht gestartet werden: {error}",
+    "goneWhileStarting": "Die Session wurde während des Startens beendet.",
+    "stillStarting": "Die Session wird noch gestartet — ihr Zustand wird in der Sitzungsliste angezeigt."
   },
   "backup": {
     "heading": "Sicherung",

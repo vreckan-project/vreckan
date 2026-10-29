@@ -114,7 +114,6 @@
     "serverFilePlaceholder": "ชื่อไฟล์ในพื้นที่จัดเก็บร่วม",
     "launch": "เริ่ม",
     "gpuAuto": "อัตโนมัติ (ไม่มี GPU เฉพาะ)",
-    "sessionLaunched": "เริ่มเซสชันแล้้้ว",
     "noSessionUrl": "เริ่มไม่สำเร็จ: ไม่มี URL ของเซสชัน",
     "url": "URL",
     "launchApp": "เริ่ม {name}",
@@ -125,7 +124,10 @@
     "finalizing": "กำลังสร้้าง…",
     "fileUploaded": "อัปโหลดไฟล์ '{name}' แล้้้ว",
     "urlToOpen": "URL ที่่จะเปิ่ด",
-    "options": "ตั่วเลือกการเริ่ม"
+    "options": "ตั่วเลือกการเริ่ม",
+    "sessionStarting": "กำลังเริ่มเซสชัน — จะเปิดเมื่อพร้อม",
+    "sessionReady": "เซสชันพร้อมแล้ว",
+    "sessionReadyOpenFromList": "เซสชันพร้อมแล้ว — เปิดจากรายการเซสชัน"
   },
   "password": {
     "title": "เปลี่ยนรหัสผ่าน",
@@ -667,7 +669,6 @@
     "recreate": "สร้างใหม่",
     "recreateTitle": "สร้างเซสชันนี้ใหม่จากอิมเมจล่าสุด (แอปจะออฟไลน์ชั่วขณะ)",
     "recreating": "กำลังสร้างใหม่…",
-    "recreated": "สร้างเซสชันใหม่แล้ว",
     "noActive": "ไม่มีเซสชันทีกาลังใช้งาน",
     "noActiveUsers": "ไม่มีเซสชันทีกาลังใช้งานในทุกผู้ใช้",
     "kill": "สับ",
@@ -692,7 +693,14 @@
     "ownerBy": "โดย {owner}",
     "participantCount": "ผู้เข้าร่วม {count} คน",
     "participantCountPlural": "ผู้เข้าร่วม {count} คน",
-    "participantsBadgeTitle": "{names} — คลิกเพื่อจัดการ"
+    "participantsBadgeTitle": "{names} — คลิกเพื่อจัดการ",
+    "starting": "กำลังเริ่ม…",
+    "stopping": "กำลังหยุด…",
+    "failedToStart": "เริ่มไม่สำเร็จ",
+    "failedToStartDetail": "เริ่มไม่สำเร็จ: {error}",
+    "launchFailedToast": "เซสชันเริ่มไม่สำเร็จ: {error}",
+    "goneWhileStarting": "เซสชันสิ้นสุดระหว่างกำลังเริ่ม",
+    "stillStarting": "เซสชันยังกำลังเริ่ม — สถานะแสดงในรายการเซสชัน"
   },
   "backup": {
     "heading": "สำรองข้อมูล",

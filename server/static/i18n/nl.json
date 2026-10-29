@@ -114,7 +114,6 @@
     "serverFilePlaceholder": "bestandsnaam in de gedeelde opslag",
     "launch": "Starten",
     "gpuAuto": "Auto (geen specifieke GPU)",
-    "sessionLaunched": "Sessie gestart",
     "noSessionUrl": "Starten mislukt: geen sessie-URL teruggegeven",
     "url": "URL",
     "launchApp": "Start {name}",
@@ -125,7 +124,10 @@
     "finalizing": "Afronden…",
     "fileUploaded": "Bestand '{name}' geüpload.",
     "urlToOpen": "URL om te openen",
-    "options": "Startopties"
+    "options": "Startopties",
+    "sessionStarting": "De sessie start — hij wordt geopend zodra hij klaar is.",
+    "sessionReady": "De sessie is klaar.",
+    "sessionReadyOpenFromList": "De sessie is klaar — open hem uit de sessielijst."
   },
   "password": {
     "title": "Wachtwoord wijzigen",
@@ -667,7 +669,6 @@
     "recreate": "Opnieuw aanmaken",
     "recreateTitle": "Maak deze sessie opnieuw aan vanuit de nieuwste image (de app is kort offline)",
     "recreating": "Opnieuw aanmaken…",
-    "recreated": "Sessie opnieuw aangemaakt",
     "noActive": "Geen actieve sessies.",
     "noActiveUsers": "Geen actieve sessies over gebruikers heen.",
     "kill": "Beëindigen",
@@ -692,7 +693,14 @@
     "ownerBy": "door {owner}",
     "participantCount": "{count} participant",
     "participantCountPlural": "{count} participants",
-    "participantsBadgeTitle": "{names} — klik om te beheren"
+    "participantsBadgeTitle": "{names} — klik om te beheren",
+    "starting": "Starten…",
+    "stopping": "Stoppen…",
+    "failedToStart": "Starten mislukt",
+    "failedToStartDetail": "Starten mislukt: {error}",
+    "launchFailedToast": "Sessie kon niet starten: {error}",
+    "goneWhileStarting": "De sessie eindigde tijdens het starten.",
+    "stillStarting": "De sessie start nog — de staat wordt getoond in de sessielijst."
   },
   "backup": {
     "heading": "Backup",

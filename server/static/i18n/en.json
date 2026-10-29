@@ -114,7 +114,6 @@
     "serverFilePlaceholder": "filename in shared storage",
     "launch": "Launch",
     "gpuAuto": "Auto (no specific GPU)",
-    "sessionLaunched": "Session launched",
     "noSessionUrl": "Launch failed: no session URL returned",
     "url": "URL",
     "launchApp": "Launch {name}",
@@ -125,7 +124,10 @@
     "finalizing": "Finalizing…",
     "fileUploaded": "File '{name}' uploaded.",
     "urlToOpen": "URL to open",
-    "options": "Launch options"
+    "options": "Launch options",
+    "sessionStarting": "Session is starting — it will open as soon as it’s ready.",
+    "sessionReady": "Session is ready.",
+    "sessionReadyOpenFromList": "Session is ready — open it from the session list."
   },
   "password": {
     "title": "Change password",
@@ -667,7 +669,6 @@
     "recreate": "Recreate",
     "recreateTitle": "Recreate this session from the latest image (the app briefly goes offline)",
     "recreating": "Recreating…",
-    "recreated": "Session recreated",
     "noActive": "No active sessions.",
     "noActiveUsers": "No active sessions across users.",
     "kill": "Kill",
@@ -692,7 +693,14 @@
     "ownerBy": "by {owner}",
     "participantCount": "{count} participant",
     "participantCountPlural": "{count} participants",
-    "participantsBadgeTitle": "{names} — click to manage"
+    "participantsBadgeTitle": "{names} — click to manage",
+    "starting": "Starting…",
+    "stopping": "Stopping…",
+    "failedToStart": "Failed to start",
+    "failedToStartDetail": "Failed to start: {error}",
+    "launchFailedToast": "Session failed to start: {error}",
+    "goneWhileStarting": "The session ended while it was starting.",
+    "stillStarting": "The session is still starting — its state is shown in the session list."
   },
   "backup": {
     "heading": "Backup",

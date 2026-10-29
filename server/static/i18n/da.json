@@ -114,7 +114,6 @@
     "serverFilePlaceholder": "filnavn i fælles lager",
     "launch": "Start",
     "gpuAuto": "Auto (ingen bestemt GPU)",
-    "sessionLaunched": "Session startet",
     "noSessionUrl": "Start fejlede: ingen session-URL returneret",
     "url": "URL",
     "launchApp": "Start {name}",
@@ -125,7 +124,10 @@
     "finalizing": "Afslutter…",
     "fileUploaded": "Fil '{name}' uploadet.",
     "urlToOpen": "URL der skal åbnes",
-    "options": "Startindstillinger"
+    "options": "Startindstillinger",
+    "sessionStarting": "Sessionen starter — den åbnes, så snart den er klar.",
+    "sessionReady": "Sessionen er klar.",
+    "sessionReadyOpenFromList": "Sessionen er klar — åbn den fra sessionsoversigten."
   },
   "password": {
     "title": "Skift adgangskode",
@@ -667,7 +669,6 @@
     "recreate": "Opret igen",
     "recreateTitle": "Opret denne session igen fra det nyeste image (appen er kort offline)",
     "recreating": "Opretter igen…",
-    "recreated": "Session oprettet igen",
     "noActive": "Ingen aktive sessioner.",
     "noActiveUsers": "Ingen aktive sessioner tværgående brugere.",
     "kill": "Dræb",
@@ -692,7 +693,14 @@
     "ownerBy": "af {owner}",
     "participantCount": "{count} deltager",
     "participantCountPlural": "{count} deltagere",
-    "participantsBadgeTitle": "{names} — klik for at administrere"
+    "participantsBadgeTitle": "{names} — klik for at administrere",
+    "starting": "Starter…",
+    "stopping": "Stops…",
+    "failedToStart": "Kunne ikke starte",
+    "failedToStartDetail": "Kunne ikke starte: {error}",
+    "launchFailedToast": "Sessionen kunne ikke starte: {error}",
+    "goneWhileStarting": "Sessionen afsluttedes, mens den startede.",
+    "stillStarting": "Sessionen starter stadig — dens tilstand ses i sessionsoversigten."
   },
   "backup": {
     "heading": "Backup",
