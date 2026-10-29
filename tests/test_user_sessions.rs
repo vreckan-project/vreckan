@@ -1233,6 +1233,57 @@ async fn test_session_status_recorded_not_ready_still_probes() {
 }
 
 #[tokio::test]
+async fn test_session_root_not_ready_serves_csp_safe_waiting_screen() {
+    // ANT-671: the pre-ready waiting screen ships inline script and style
+    // (the 4 s auto-reload timer). It must carry a CSP that admits
+    // 'unsafe-inline', or the strict default headers silently block the
+    // reload and the page never flips to the app.
+    let _root = TempDir::new();
+    let mut sc = SecureClient::new(build_state(_root.path()).await);
+    sc.http.login("admin", "admin1234").await;
+    sc.handshake().await;
+    let sid = seed_session(
+        &sc,
+        "admin",
+        json!({ "ready": false, "ip": "127.0.0.1", "port": 9 }),
+    )
+    .await;
+    let tok = sc
+        .state
+        .sessions
+        .read()
+        .await
+        .get(&sid)
+        .unwrap()
+        .get("access_token")
+        .and_then(|v| v.as_str())
+        .unwrap()
+        .to_string();
+    let mut headers = std::collections::HashMap::new();
+    headers.insert("host".to_string(), "127.0.0.1".to_string());
+    let hop = sc
+        .http
+        .get_with(&format!("/api/apps/session/{sid}/?access_token={tok}"), &headers)
+        .await;
+    assert_eq!(hop.status, StatusCode::SEE_OTHER, "body: {:?}", hop.body);
+    // The browser follows the redirect carrying the session cookie the hop
+    // just set; mirror that (TestClient has no cookie jar).
+    let set_cookie = hop.header("set-cookie").unwrap_or_default();
+    let cookie = set_cookie.split(';').next().unwrap_or_default().to_string();
+    headers.insert("cookie".to_string(), cookie);
+    let loc = hop.header("location").unwrap();
+    let wait = sc.http.get_with(&loc, &headers).await;
+    assert_eq!(wait.status, StatusCode::ACCEPTED, "body: {:?}", wait.body);
+    let csp = wait.header("content-security-policy").unwrap_or_default();
+    assert!(
+        csp.contains("'unsafe-inline'"),
+        "the waiting-screen CSP must admit inline script/style: {csp}"
+    );
+    let html = String::from_utf8_lossy(&wait.body);
+    assert!(html.contains("location.reload()"), "body: {html}");
+}
+
+#[tokio::test]
 async fn test_session_status_unreachable() {
     let _root = TempDir::new();
     let mut sc = SecureClient::new(build_state(_root.path()).await);

@@ -266,7 +266,7 @@ fn waiting_screen(failed_detail: Option<String>) -> String {
              <p>This session was just launched. The page refreshes \
              automatically once the app is ready.</p></div>"
                 .to_string(),
-            "<script>setTimeout(function(){{location.reload();}},4000);</script>",
+            "<script>setTimeout(function(){location.reload();},4000);</script>",
         ),
     };
     format!(
@@ -396,6 +396,12 @@ async fn proxy_session_request(
         headers.insert(
             header::CONTENT_TYPE,
             "text/html; charset=utf-8".parse().unwrap(),
+        );
+        // The waiting screen carries inline script and style; without its own
+        // CSP the strict default headers would block the auto-reload timer.
+        headers.insert(
+            header::CONTENT_SECURITY_POLICY,
+            HeaderValue::from_static(crate::security::SESSION_CSP),
         );
         return (StatusCode::ACCEPTED, headers, waiting_screen(error)).into_response();
     }
