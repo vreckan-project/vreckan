@@ -366,6 +366,13 @@
     "gpuTitle": "Global Default GPU",
     "gpuHelp": "Fallback GPU for launches where the user doesn't pick one. Apps that don't support the GPU type are unaffected.",
     "gpuNone": "None (no global default)",
+    "corsTitle": "CORS",
+    "corsHelp": "Controls whether a page on a different origin — e.g. the same server reached by a different hostname, IP address, or port — can call the API with the login cookie. <strong>Loose</strong> (default): the server echoes the requesting origin and issues the login cookie with <code>SameSite=None; Secure</code>, so cross-origin, credentialed requests work. <strong>Strict</strong>: no CORS headers at all — only same-origin requests are accepted (the pre-0.9.5 behavior). Changes apply to the next request; no restart needed.",
+    "modeLabel": "CORS mode",
+    "modeLoose": "Loose — cross-origin clients allowed (default)",
+    "modeStrict": "Strict — same-origin only",
+    "allowedOriginsLabel": "Allowed origins",
+    "allowedOriginsHelp": "Comma-separated list of origins accepted in loose mode, e.g. <code>https://a.example.com, https://b.example.com</code>. Empty = every origin is accepted.",
     "save": "Save global settings",
     "saved": "Global settings saved.",
     "saveFailed": "Failed to save"

@@ -3928,14 +3928,16 @@ async fn join_my_session(
         }
     };
     // F4 (ANT-444 / ANT-469): the web client authenticates with the HttpOnly
-    // SameSite=Lax login cookie and the app has no CORS layer, so a cross-site
-    // top-level form POST reaches this route fully authenticated and would
-    // otherwise mint the victim a participant token. A form cannot set the
-    // X-Session-ID header or carry an AES-256-GCM body, so requiring the E2EE
-    // request body is the CSRF gate: the normal client flow (secureFetch with
-    // an encrypted body) passes, a cross-site form POST / XHR is rejected 400
-    // before any token is minted. The decrypted body is unused (the client
-    // sends an empty object).
+    // login cookie. Since ANT-653 the CORS layer exists and defaults to
+    // loose, so a cross-site page can reach this route fully authenticated
+    // (credentialed XHR) and would otherwise mint the victim a participant
+    // token — the E2EE request body is the CSRF gate, not the absence of a
+    // CORS layer: a cross-site form POST (and a XHR that never completed the
+    // E2EE handshake) cannot set the X-Session-ID header or carry an
+    // AES-256-GCM body, so requiring the body rejects it 400 before any
+    // token is minted, while the normal client flow (secureFetch with an
+    // encrypted body) passes. The decrypted body is unused (the client sends
+    // an empty object).
     let _ = match e2ee::decrypt_request_body(&state, &headers, body).await {
         Ok(v) => v,
         Err((s, d)) => {

@@ -366,6 +366,13 @@
     "gpuTitle": "GPU Mặc định Toàn Cục",
     "gpuHelp": "GPU dự phòng cho các lần khởi chạy mà người dùng không chọn GPU. Các ứng dụng không hỗ trợ loại GPU sẽ không bị ảnh hưởng.",
     "gpuNone": "Không có (không có mặc định toàn cục)",
+    "corsTitle": "",
+    "corsHelp": "",
+    "modeLabel": "",
+    "modeLoose": "",
+    "modeStrict": "",
+    "allowedOriginsLabel": "",
+    "allowedOriginsHelp": "",
     "save": "Lưu cài đặt toàn cục",
     "saved": "Đã lưu cài đặt toàn cục.",
     "saveFailed": "Lưu không thành công"
