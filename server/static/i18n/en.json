@@ -588,6 +588,7 @@
     "interval12h": "12 hours",
     "interval24h": "24 hours",
     "intervalCustom": "Custom ({seconds} s)",
+    "pullConcurrency": "Concurrent pulls",
     "auto": "Auto",
     "nextCheckIn": "Next check in {time}",
     "lastCheckedAt": "Last checked {time}",

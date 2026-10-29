@@ -588,6 +588,7 @@
     "interval12h": "12 giờ",
     "interval24h": "24 giờ",
     "intervalCustom": "Tùy chỉnh ({seconds} s)",
+    "pullConcurrency": "Kéo đồng thời",
     "auto": "Tự động",
     "nextCheckIn": "Kiểm tra tiếp theo sau {time}",
     "lastCheckedAt": "Kiểm tra lần cuối lúc {time}",

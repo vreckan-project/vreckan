@@ -588,6 +588,7 @@
     "interval12h": "12 uur",
     "interval24h": "24 uur",
     "intervalCustom": "Aangepast ({seconds} s)",
+    "pullConcurrency": "Gelijktijdige pulls",
     "auto": "Auto",
     "nextCheckIn": "Volgende controle over {time}",
     "lastCheckedAt": "Laatst gecontroleerd {time}",

@@ -21,6 +21,7 @@ use std::collections::HashMap;
 use std::sync::Arc;
 use std::time::Duration;
 
+use bollard::errors::Error as DockerError;
 use bollard::models::{
     ContainerCreateBody, DeviceMapping, DeviceRequest, HostConfig, Mount, MountType,
     NetworkingConfig, RestartPolicy, RestartPolicyNameEnum, ResourcesUlimits,
@@ -63,15 +64,30 @@ pub struct LaunchResult {
 }
 
 /// A launch failure carrying the HTTP status to surface to the client.
+///
+/// `detail` is the clean, human-readable message for the UI; `raw` keeps
+/// the original daemon error string for server logs and the admin
+/// `pull_failed` detail (ANT-668).
 #[derive(Debug)]
 pub struct LaunchError {
     pub status: u16,
     pub detail: String,
+    pub raw: Option<String>,
 }
 
 impl LaunchError {
     fn new(status: u16, detail: impl Into<String>) -> Self {
-        Self { status, detail: detail.into() }
+        Self {
+            status,
+            detail: detail.into(),
+            raw: None,
+        }
+    }
+
+    /// Attach the raw daemon error string (kept out of the UI message).
+    fn with_raw(mut self, raw: impl Into<String>) -> Self {
+        self.raw = Some(raw.into());
+        self
     }
 }
 
@@ -79,6 +95,100 @@ impl LaunchError {
 pub struct DockerProvider {
     client: Docker,
     app_config: Value,
+    /// The process-wide pull-concurrency cap (ANT-668); `None` pulls
+    /// uncapped (unit tests, and anything that never pulls).
+    pull_sem: Option<Arc<tokio::sync::Semaphore>>,
+    /// True when the caller already holds the `pull_sem` permit (e.g.
+    /// `do_pull_and_cache_image` claims it before flipping the image to
+    /// "pulling"), so [`DockerProvider::pull_with_sem`] skips re-acquiring.
+    pull_sem_held: bool,
+}
+
+/// The one human message surfaced when a pull is rate-limited by the
+/// registry (ANT-668): no raw `toomanyrequests: retry-after: …` blob in the
+/// UI; the raw stream string stays in the server logs and in the admin
+/// `pull_failed` detail.
+pub const PULL_RATE_LIMITED: &str =
+    "Image pull rate-limited by the registry — try again in a few minutes";
+/// The deferred-mirror message (ANT-658 §3.4): unused until the mirror
+/// sidecar lands.
+pub const PULL_MIRROR_UNAVAILABLE: &str =
+    "Registry mirror unavailable — retrying directly";
+
+/// How to react to a Docker pull stream error (ANT-668, design in ANT-658
+/// §3.4). `bollard` exposes the daemon's stream error only as an opaque
+/// string (`Error::DockerStreamError { error }`), so classification is a
+/// substring match on it:
+///
+/// * `"rate_limited"` — `toomanyrequests` / `429`: the registry's per-IP
+///   pull budget (lscr.io) is exhausted; retry up to 3× with exponential
+///   backoff + jitter.
+/// * `"transport"` — `connect` / `refused` / `timeout` / `no such host`:
+///   one backoff retry, then fail (plus the mirror→direct fallback once the
+///   mirror is configured).
+/// * `"other"` — anything else: one backoff retry, then fail.
+pub fn classify_pull_stream_error(error: &str) -> &'static str {
+    let lower = error.to_ascii_lowercase();
+    if lower.contains("toomanyrequests") || lower.contains("429") {
+        "rate_limited"
+    } else if lower.contains("connect")
+        || lower.contains("refused")
+        || lower.contains("timeout")
+        || lower.contains("timed out")
+        || lower.contains("no such host")
+    {
+        "transport"
+    } else {
+        "other"
+    }
+}
+
+/// Backoff wait in seconds for retry `attempt` (0-based) of a
+/// `classified` pull, given the raw daemon `error` string: 5 s base × 2
+/// per previous attempt, capped at 120 s, plus uniform jitter in [0, 5 s).
+/// For rate-limited errors the daemon's `retry-after` hint — when present
+/// and parseable out of `error` — is applied as a cap on the *initial* wait
+/// (the observed lscr.io hint is sub-millisecond, so the first retry then
+/// starts immediately instead of waiting 5 s); later attempts keep
+/// growing.
+pub fn pull_backoff_secs(attempt: u32, classified: &str, error: &str) -> f64 {
+    const BASE_SECS: u64 = 5;
+    let exp = attempt.min(6);
+    let backoff = (BASE_SECS.saturating_mul(1u64 << exp)).min(120) as f64;
+    let jitter = (rand::random::<u64>() % (BASE_SECS + 1)) as f64;
+    let wait = backoff + jitter;
+    if classified == "rate_limited" && attempt == 0 {
+        if let Some(retry_after) = parse_retry_after_secs(error) {
+            return wait.min(retry_after);
+        }
+    }
+    wait
+}
+
+/// Best-effort parse of the daemon's `retry-after: <value>` hint out of the
+/// opaque stream-error string (e.g. `… retry-after: 206.589µs, allowed:
+/// 44000/minute`). `s`/`ms`/`µs` units are normalised to seconds; an
+/// unparseable or missing hint yields `None`.
+pub fn parse_retry_after_secs(error: &str) -> Option<f64> {
+    let lower = error.to_ascii_lowercase();
+    let start = lower.find("retry-after:")? + "retry-after:".len();
+    let rest = error[start..].trim_start();
+    let unit_start = rest
+        .find(|c: char| c.is_alphabetic() || c == 'µ')
+        .unwrap_or(rest.len());
+    let num: f64 = rest[..unit_start].trim().parse().ok()?;
+    // Only the unit token ("s" / "ms" / "µs"), not the rest of the hint
+    // ("…, allowed: 44000/minute").
+    let unit = rest[unit_start..]
+        .split(|c: char| !c.is_alphabetic() && c != 'µ')
+        .next()
+        .unwrap_or("s");
+    let scale = match unit {
+        "us" | "µs" => 1e-6,
+        "ms" => 1e-3,
+        _ => 1.0,
+    };
+    Some(num * scale)
 }
 
 /// Consecutive (subfolder 404, root 200 HTML) polls required before the
@@ -109,7 +219,26 @@ impl DockerProvider {
     pub fn new(app_config: Value) -> Result<Self, LaunchError> {
         let client = Docker::connect_with_local_defaults()
             .map_err(|e| LaunchError::new(500, format!("Failed to connect to Docker daemon: {e}")))?;
-        Ok(Self { client, app_config })
+        Ok(Self {
+            client,
+            app_config,
+            pull_sem: None,
+            pull_sem_held: false,
+        })
+    }
+
+    /// Attach the process-wide pull-concurrency semaphore (ANT-668): this
+    /// provider's `pull_image` acquires a permit for the whole pull.
+    pub fn with_pull_sem(mut self, sem: Arc<tokio::sync::Semaphore>) -> Self {
+        self.pull_sem = Some(sem);
+        self
+    }
+
+    /// Mark the `with_pull_sem` permit as already held by the caller (the
+    /// caller then owns releasing it).
+    pub fn pull_sem_held(mut self, held: bool) -> Self {
+        self.pull_sem_held = held;
+        self
     }
 
     fn provider_config(&self) -> &Value {
@@ -171,15 +300,122 @@ impl DockerProvider {
         }
     }
 
-    /// Pull an image from the registry. When `progress_cb` is provided it is
-    /// invoked for every progress event the daemon streams, so callers can
-    /// surface live download progress. Mirrors `pull_image`.
+    /// Pull an image from the registry, honouring the process-wide pull
+    /// concurrency cap (`ANT-668`). When a semaphore is configured via
+    /// [`DockerProvider::with_pull_sem`] a permit is acquired for the whole
+    /// pull unless the caller already holds one ([`DockerProvider::pull_sem_held`]).
+    ///
+    /// Registry stream errors are retried with exponential backoff + jitter
+    /// ([`classify_pull_stream_error`]): rate-limit (`toomanyrequests`/429)
+    /// errors retry up to 3× (5 s base, ×2 per attempt, + up to 5 s
+    /// jitter, with the daemon's `retry-after` hint applied as a cap on the
+    /// initial wait); any other stream error gets one backoff retry, then
+    /// fails. The error carried out of a failed pull is one clean,
+    /// human-readable message ([`PULL_RATE_LIMITED`] / the raw-detail
+    /// fallback); the raw daemon string stays in the logs and in the
+    /// caller's `pull_failed` detail.
+    ///
+    /// When `progress_cb` is provided it is invoked for every progress
+    /// event the daemon streams, so callers can surface live download
+    /// progress. Mirrors `pull_image`.
     pub async fn pull_image(
         &self,
         image_name: &str,
         progress_cb: Option<Arc<dyn Fn(Value) + Send + Sync>>,
     ) -> Result<(), LaunchError> {
+        // Option D (ANT-658 §3.4): the pull goes to the canonical reference;
+        // the mirror sidecar is deferred, so `mirror_used` is always false
+        // and the mirror-fallback branch below is currently dead code.
+        self.pull_with_sem(image_name, progress_cb, false)
+            .await
+    }
+
+    async fn pull_with_sem(
+        &self,
+        image_name: &str,
+        progress_cb: Option<Arc<dyn Fn(Value) + Send + Sync>>,
+        mirror_used: bool,
+    ) -> Result<(), LaunchError> {
+        let _permit = match &self.pull_sem {
+            // `acquire_owned` consumes an `Arc` (tokio 1.53), so hand it a
+            // clone; the provider keeps its own handle.
+            Some(sem) if !self.pull_sem_held => match sem.clone().acquire_owned().await {
+                Ok(p) => Some(p),
+                Err(_) => {
+                    return Err(LaunchError::new(
+                        500,
+                        "Image pull aborted (pull concurrency semaphore closed)",
+                    ))
+                }
+            },
+            _ => None,
+        };
+        self.pull_with_retry(image_name, progress_cb, mirror_used)
+            .await
+    }
+
+    async fn pull_with_retry(
+        &self,
+        image_name: &str,
+        progress_cb: Option<Arc<dyn Fn(Value) + Send + Sync>>,
+        mirror_used: bool,
+    ) -> Result<(), LaunchError> {
         info!("Pulling latest image for '{image_name}'...");
+        let mut attempts = 0;
+        loop {
+            match self.pull_once(image_name, &progress_cb).await {
+                Ok(()) => {
+                    info!("Successfully pulled '{image_name}'.");
+                    return Ok(());
+                }
+                Err((classified, raw)) => {
+                    // mirror-fallback: ANT-658 §3.4 — when the mirror is
+                    // configured and a transport-class error hit it, fall
+                    // back once to the canonical reference (direct), after
+                    // which the rate-limit retry policy applies. While the
+                    // mirror is deferred the canonical reference is the one
+                    // already in flight, so this is a no-op retry seam.
+                    if classified == "transport" && mirror_used && attempts == 0 {
+                        warn!(
+                            "Pull via mirror failed for '{image_name}', retrying directly: {raw}"
+                        );
+                        attempts += 1;
+                        continue;
+                    }
+                    let max_attempts = match classified {
+                        "rate_limited" => 3,
+                        _ => 1,
+                    };
+                    if attempts >= max_attempts {
+                        let message = if classified == "rate_limited" {
+                            PULL_RATE_LIMITED
+                        } else {
+                            "Image pull failed — check the server logs for details"
+                        };
+                        return Err(LaunchError::new(500, message).with_raw(raw));
+                    }
+                    let wait = pull_backoff_secs(attempts, classified, &raw);
+                    warn!(
+                        "Pull of '{image_name}' hit a {classified} stream error; retrying in {wait:.1} s (attempt {}/{max_attempts})",
+                        attempts + 1
+                    );
+                    tokio::time::sleep(std::time::Duration::from_secs_f64(wait)).await;
+                    attempts += 1;
+                }
+            }
+        }
+    }
+
+    /// One pull attempt. Returns `Ok(())` on success or `(classification,
+    /// raw daemon string)`; non-stream errors (e.g. the daemon being
+    /// unreachable) also map to a classification so the retry policy treats
+    /// them like transport errors. The raw daemon string is logged here and
+    /// kept for the caller's admin `detail`.
+    async fn pull_once(
+        &self,
+        image_name: &str,
+        progress_cb: &Option<Arc<dyn Fn(Value) + Send + Sync>>,
+    ) -> Result<(), (&'static str, String)> {
         let options = CreateImageOptions {
             from_image: Some(image_name.to_string()),
             ..Default::default()
@@ -189,19 +425,25 @@ impl DockerProvider {
         while let Some(event) = stream.next().await {
             match event {
                 Ok(info) => {
-                    if let Some(cb) = &progress_cb {
+                    if let Some(cb) = progress_cb {
                         cb(serde_json::to_value(&info).unwrap_or(Value::Null));
                     }
                 }
                 Err(e) => {
-                    return Err(LaunchError::new(
-                        500,
-                        format!("Failed to pull image '{image_name}': {e}"),
-                    ));
+                    let classified = match &e {
+                        DockerError::DockerStreamError { error } => {
+                            classify_pull_stream_error(error)
+                        }
+                        // Non-stream error (daemon unreachable, HTTP
+                        // failure, ...) — retry it like a transport error.
+                        _ => "transport",
+                    };
+                    let raw = e.to_string();
+                    warn!("Pull of '{image_name}' failed: {raw}");
+                    return Err((classified, raw));
                 }
             }
         }
-        info!("Successfully pulled '{image_name}'.");
         Ok(())
     }
 
@@ -1128,5 +1370,84 @@ mod tests {
         );
         assert_eq!(short_id("ctr1234567890abcdef"), "ctr123456789");
         assert_eq!(short_id("short"), "short");
+    }
+
+    /// The retry-policy classification table (ANT-668, ANT-658 §3.4).
+    #[test]
+    fn classify_pull_stream_error_table() {
+        // Rate limit: the lscr.io per-IP pull-budget error (the real-world
+        // shape) plus a plain 429.
+        assert_eq!(
+            classify_pull_stream_error(
+                "toomanyrequests: retry-after: 206.589µs, allowed: 44000/minute"
+            ),
+            "rate_limited"
+        );
+        assert_eq!(classify_pull_stream_error("429 Too Many Requests"), "rate_limited");
+        assert_eq!(classify_pull_stream_error("TOOMANYREQUESTS: …"), "rate_limited");
+        // Transport markers.
+        assert_eq!(classify_pull_stream_error("connection refused"), "transport");
+        assert_eq!(classify_pull_stream_error("failed to connect to the docker daemon"), "transport");
+        assert_eq!(classify_pull_stream_error("operation timed out after 30s"), "transport");
+        assert_eq!(classify_pull_stream_error("dns error: no such host"), "transport");
+        // Anything else fails after one backoff retry.
+        assert_eq!(classify_pull_stream_error("denied: requested access to the resource is denied"), "other");
+        assert_eq!(classify_pull_stream_error("manifest unknown"), "other");
+        assert_eq!(classify_pull_stream_error("i/o timeout reading response body"), "transport");
+    }
+
+    /// The `retry-after:` hint is parsed best-effort (units normalised to
+    /// seconds) and absent/odd hints yield `None`.
+    #[test]
+    fn parse_retry_after_hint() {
+        fn close(got: Option<f64>, want: f64) {
+            assert!(
+                got.is_some_and(|v| (v - want).abs() < 1e-9),
+                "got {got:?}, want ~{want}"
+            );
+        }
+        // The observed lscr.io shape: a sub-millisecond Rust Duration debug.
+        close(
+            parse_retry_after_secs(
+                "Docker stream error: toomanyrequests: retry-after: 206.589µs, allowed: 44000/minute",
+            ),
+            206.589e-6,
+        );
+        close(parse_retry_after_secs("retry-after: 60s, allowed: 44000/minute"), 60.0);
+        close(parse_retry_after_secs("retry-after: 500ms"), 0.5);
+        close(parse_retry_after_secs("retry-after: 30"), 30.0);
+        assert_eq!(parse_retry_after_secs("toomanyrequests: no hint here"), None);
+        assert_eq!(parse_retry_after_secs("retry-after: …"), None);
+    }
+
+    /// Backoff growth: 5 s base × 2 per previous attempt (+ jitter in
+    /// [0, 5 s)), capped at 120 s; a parseable `retry-after` caps the
+    /// initial rate-limit wait.
+    #[test]
+    fn pull_backoff_grows_and_caps() {
+        for attempt in 0..5u32 {
+            let base = 5.0 * ((1u64 << attempt.min(6)) as f64).min(120.0);
+            let wait = pull_backoff_secs(attempt, "other", "no hint");
+            assert!(
+                wait >= base && wait <= base + 5.0,
+                "attempt {attempt}: {wait} outside [{base}, {base}+5]"
+            );
+        }
+        // Cap: attempt 6+ would be 320 s base, clamped to 120.
+        assert!(pull_backoff_secs(10, "other", "no hint") <= 125.0);
+        // Transport gets the same schedule.
+        assert!(pull_backoff_secs(0, "transport", "connection refused") >= 5.0);
+        // A sub-millisecond hint caps the initial rate-limit wait.
+        let hinted = pull_backoff_secs(
+            0,
+            "rate_limited",
+            "toomanyrequests: retry-after: 206.589µs, allowed: 44000/minute",
+        );
+        assert!(hinted <= 206.589e-6 + 1e-9, "{hinted} not capped by the hint");
+        // A large hint does not stretch the initial wait beyond base+jitter.
+        let large = pull_backoff_secs(0, "rate_limited", "retry-after: 60s");
+        assert!((5.0..=10.0).contains(&large));
+        // The hint only applies to the first rate-limit attempt.
+        assert!(pull_backoff_secs(1, "rate_limited", "retry-after: 206.589µs") >= 10.0);
     }
 }

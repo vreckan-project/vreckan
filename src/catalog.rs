@@ -1421,6 +1421,23 @@ pub async fn do_pull_and_cache_image(
         let _ = app;
         return;
     }
+    // Cap the fan-out (ANT-668): claim a pull-concurrency permit *before*
+    // the image is marked "pulling", so images waiting on the cap stay
+    // "queued" in the UI instead of pretending to download. The permit is
+    // held until the pull + metadata cache completes.
+    let sem = state.pull_semaphore().await;
+    let _permit = match sem.clone().acquire_owned().await {
+        Ok(p) => p,
+        Err(_) => {
+            state
+                .pull_status
+                .write()
+                .await
+                .insert(image_name.to_string(), "pull_failed".to_string());
+            warn!("Pull semaphore closed while queueing '{image_name}'");
+            return;
+        }
+    };
     state.pull_status.write().await.insert(image_name.to_string(), "pulling".to_string());
     state
         .pull_progress
@@ -1431,7 +1448,9 @@ pub async fn do_pull_and_cache_image(
             serde_json::json!({ "status": "pulling", "percentage": null, "current": 0, "total": 0 }),
         );
     let provider = match DockerProvider::new(serde_json::json!({ "provider_config": { "image": image_name } })) {
-        Ok(p) => p,
+        // The caller already holds the permit (ANT-668); the provider
+        // must not re-acquire it.
+        Ok(p) => p.with_pull_sem(sem).pull_sem_held(true),
         Err(e) => {
             state
                 .pull_status
@@ -1501,9 +1520,22 @@ pub async fn do_pull_and_cache_image(
                 .lock()
                 .unwrap_or_else(std::sync::PoisonError::into_inner);
             if let Some(prog) = progress.get_mut(image_name) {
-                prog["status"] = Value::String(format!("failed: {}", e.detail));
+                // One clean message in the UI (no doubled "failed: failed:");
+                // the raw daemon string stays in `detail` for admins
+                // (ANT-668).
+                prog["status"] = Value::String(e.detail.clone());
+                if let Some(raw) = &e.raw {
+                    prog["detail"] = Value::String(raw.clone());
+                }
             }
-            warn!("Background pull for '{image_name}' failed: {}", e.detail);
+            warn!(
+                "Background pull for '{image_name}' failed: {}{}",
+                e.detail,
+                e.raw
+                    .as_ref()
+                    .map(|raw| format!(" (raw: {raw})"))
+                    .unwrap_or_default()
+            );
         }
     }
     let _ = app;
@@ -2433,7 +2465,10 @@ pub async fn launch_common(
             )
         } else {
             let provider = match DockerProvider::new(app_config_dict.clone()) {
-                Ok(p) => p,
+                // Launch-time pulls (image missing locally) join the same
+                // process-wide pull cap (ANT-668); the provider acquires
+                // the permit inside `pull_image`.
+                Ok(p) => p.with_pull_sem(state.pull_semaphore().await),
                 Err(e) => return Err((StatusCode::from_u16(e.status).unwrap_or(StatusCode::INTERNAL_SERVER_ERROR), e.detail)),
             };
             let result = provider

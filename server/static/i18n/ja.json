@@ -588,6 +588,7 @@
     "interval12h": "12時間",
     "interval24h": "24時間",
     "intervalCustom": "カスタム（{seconds} 秒）",
+    "pullConcurrency": "同時プル",
     "auto": "自動",
     "nextCheckIn": "次のチェックまで {time}",
     "lastCheckedAt": "最終チェック {time}",

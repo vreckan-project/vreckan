@@ -588,6 +588,7 @@
     "interval12h": "12 घंटे",
     "interval24h": "24 घंटे",
     "intervalCustom": "कस्टम ({seconds} से)",
+    "pullConcurrency": "समांतर pulls",
     "auto": "ऑटो",
     "nextCheckIn": "अगली जाँच {time} में",
     "lastCheckedAt": "अंतिम जाँच {time}",
