@@ -9,8 +9,28 @@ is committed normally in `vreckan`. The changelog is the authoritative
 record of what shipped in each release — see
 [`docs/release.md`](./docs/release.md) for the conventions.
 
-## 2026-10-28 — v0.9.5 (in progress): out-of-the-box loose CORS — login finally works when you reach the server by a different name (ANT-653)
+## 2026-10-29 — v0.10.0: the external-feedback batch — ten fixes plus the 20261029 build-base bump (ANT-650)
 
+v0.10.0 ships the ten-item external feedback batch (ANT-650) together with
+the build-base re-bake (ANT-673). All items' work landed as a single PR
+against `main`; item 2 (loose CORS) and item 9 (autoupdate card) had already
+merged directly to `main` mid-batch, so the release diff dedupes against
+them. Before merge, QA (ANT-685) ran the full suite — 560 passed / 0 failed
+(12 daemon-dependent tests self-skip in the docker-less build image) — plus
+a real-Docker e2e pass over every behavior-changing item: all PASS.
+
+- **Plain HTTP to the TLS port now redirects to HTTPS (ANT-652).** The
+  container runs one listener — TLS on 443 — so a plain-HTTP connection to
+  that port used to die in the TLS handshake ("wrong version number") before
+  any request was parsed. The server now peeks the first byte of each new
+  connection: a TLS ClientHello is served as before, anything else is
+  answered `301 https://{Host}{uri}` with the external port preserved and
+  HSTS attached — the same one-port technique Caddy and nginx use. New
+  `tls_http_redirect_enabled` setting (admin UI → Settings, or
+  `VRECKAN_TLS_HTTP_REDIRECT_ENABLED`), default **on**; reverse-proxy
+  deployments that terminate TLS themselves should flip it off. Bare
+  `http://host` on port 80 is still refused — a separate port-80 listener
+  remains a documented future option.
 - **Loose CORS is now the default, so a page on a different origin can use
   your login (ANT-653).** Before this release the server sent no
   `Access-Control-Allow-Origin` headers at all and the login cookie was
@@ -25,7 +45,7 @@ record of what shipped in each release — see
   `X-Session-ID` and `Content-Type`), issues the login cookie
   `SameSite=None; Secure`, and relaxes the three cross-origin-relevant
   security headers (the CSP's `connect-src`, `Cross-Origin-Opener-Policy`,
-  `Cross-Origin-Resource-Policy`). `strict` reproduces the pre-v0.9.5
+  `Cross-Origin-Resource-Policy`). `strict` reproduces the pre-v0.10.0
   header set exactly. The effective mode is re-read on every request, so a
   change saved on the admin page applies to the next request — no restart.
 - **Optional origin allowlist (`VRECKAN_CORS_ALLOWED_ORIGINS`).** CORS with
@@ -43,6 +63,70 @@ record of what shipped in each release — see
 - **Docs.** `docs/ops.md` gains a CORS section (§2.1) with the deployment
   trade-off, and the README's configuration table documents the two new
   environment variables.
+- **Launch and kill feel responsive again (ANT-654).** The launch modal
+  closes as soon as the launch is fired instead of holding the window open
+  until the container passes its health check; a "Starting…" status and a
+  waiting screen in the session tab cover the wait, and the tab flips to
+  the app the moment it is ready. Kill responds immediately with a
+  "Stopping…" state, and the row drops only after the container has
+  settled — no more dead-looking kill button.
+- **Blocked session popups get a fallback (ANT-661).** Browsers allow
+  programmatic `window.open` only while the click's user activation is still
+  live, and a launch taking an image pull or up to 60 s of readiness often
+  blew past it — the source of the intermittent "launch with a custom name
+  doesn't open a tab" reports. The session tab is now opened at click time,
+  and if the popup blocker still swallows it, launch, Join, and
+  Open-in-app show a "session started — click to open" toast with a
+  highlighted session row instead of failing silently.
+- **The install modal stops offering a pointless template dropdown
+  (ANT-665).** Templates are now tagged with their provenance (built-in
+  default vs custom) at load time; when you have no custom templates the
+  dropdown disappears and the default template is sent automatically —
+  which also fixes a latent lowercase-`default` client literal that could
+  never match the seeded `Default` row.
+- **App-download progress no longer jumps 0% → 100% (ANT-656).** The pull
+  progress parser looked for fields the Docker daemon never emits, so the
+  percentage stayed `null` for the whole pull and the UI snapped to 100% on
+  completion. It now reads the per-layer counters from the daemon's
+  `progressDetail`, so the install modal and table rows advance smoothly
+  through a real pull; the phase text remains the primary indicator, and
+  daemons that emit no counters get an indeterminate shimmer.
+- **App-store browsing is icon-led (ANT-657).** Available-apps rows and the
+  Installed Apps table now lead with each app's 32 px icon — the catalog's
+  `logo` field, with the existing fallback tile for third-party stores that
+  omit the field or 404 the remote image.
+- **Image pulls survive transient registry errors (ANT-668).** A failed
+  pull — for example LinuxServer.io's per-IP rate limit surfacing as
+  `toomanyrequests` — used to hard-fail on the first stream error; it is now
+  retried with backoff and surfaced as a clean one-line error. A global
+  semaphore also caps concurrent pulls at one, so the auto-update tick stops
+  fanning out a pull per installed app and spiking the registry's per-IP
+  budget. (The registry mirror-cache phase of the design is deferred; a
+  documented no-op seam is in place.)
+- **The autoupdate card shows the right time (ANT-659).** The card fed unix
+  seconds where `Date()` expects milliseconds, so "Last checked" rendered as
+  a 1970 date and "Next check" stuck on "0 min" — the checker itself was
+  running fine. Both values now render the actual times.
+- **The Certificates card knows about the built-in self-signed cert
+  (ANT-660).** With ACME off (the default), the card used to say "No
+  certificate found" even though the server was serving its built-in
+  self-signed certificate. It now reports the certificate as
+  `self-signed` with its expiry; the status is display-only, so the ACME
+  renewal logic is untouched.
+- **The build base advanced to the latest `vreckan-base-build` bake.** The
+  `Dockerfile` build-stage pin and `.base-image-digest` move together
+  (ANT-277) from `sha256:6f0055d3…` (the 2026-10-28 re-bake, since reclaimed
+  by registry GC) to `sha256:97c4f4ce…` (tag `20261029`, the only live
+  bake). The re-bake tracks vreckan `main` at the ANT-669 pin fix
+  (`571b57d`) and vreckan-workflow at `b8d20634` (re-landed test-image cap +
+  BuildKit cache size cap in the `build-test-rust` cleanup job). The Rust
+  toolchain inside is unchanged (1.99), so nothing user-visible changes with
+  the container bump itself. This supersedes the in-flight PR #114 pin
+  sync, whose target bake had already been GC'd.
+
+`VERSION`/`Cargo.toml`/`Cargo.lock` moved 0.9.4 → 0.10.0 via
+`scripts/bump-version.sh minor`. `.base-image-digest`/`Dockerfile` moved
+together to `sha256:97c4f4ce…`.
 
 ## 2026-10-28 — v0.9.4: base-image bump, no source changes since v0.9.3 (ANT-638)
 
