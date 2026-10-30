@@ -26,7 +26,7 @@ Key properties of the default `docker-compose.yml`:
 
 | Setting | Value | Why |
 |---|---|---|
-| `image` | the published `ghcr.io/vreckan-project/vreckan` tag — `:latest` by default; pin a versioned tag (e.g. `:v0.6.0`) and drop `build:` in a real deployment (Rust cutover complete, ANT-40) | `build: .` is the local fallback: `docker compose build` / `up --build` builds the **Rust** image from this repo and tags it under the `image:` name, so a local checkout runs the Rust server even without a registry |
+| `image` | the published `ghcr.io/vreckan-project/vreckan` tag — `:latest` by default; pin a versioned tag (e.g. `:v0.10.1`) and drop `build:` in a real deployment (Rust cutover complete, ANT-40) | `build: .` is the local fallback: `docker compose build` / `up --build` builds the **Rust** image from this repo and tags it under the `image:` name, so a local checkout runs the Rust server even without a registry |
 | `ports` | `443:443` | Single TLS port for API + session proxy + web client |
 | non-root `USER` in the image | UID/GID 1000 | the server process no longer runs as root; the only capability it needs is `cap_net_bind_service` (a file capability on the binary, so the default port 443 binds on any host) because all host-side work (app-container creation, GPU setup) is done by the Docker daemon over the socket (§6) |
 | `ipc: host` | — | shared memory for the streamed apps |

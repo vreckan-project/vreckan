@@ -105,6 +105,7 @@ The Vreckan server is configured entirely through `VRECKAN_*` environment variab
 | `VRECKAN_TEMPLATE_SCHEMA_PATH` | Path to the bundled template-schema YAML (the image baseline for the template editor). | `server/template_schema.yml` |
 | `VRECKAN_AUTO_UPDATE_APPS` | Enable automatic pulling of the latest app images in the background. | `true` |
 | `VRECKAN_AUTO_UPDATE_INTERVAL_SECONDS` | How often to check for app image updates (in seconds). | `3600` |
+| `VRECKAN_REGISTRY_PULL_CONCURRENCY` | Process-wide cap on concurrent image pulls (auto-update tick, "Update all", single-app pulls, and launch-time pulls); values are clamped to 1–128. Lower is gentler on per-IP registry pull-rate budgets (e.g. LinuxServer.io). Can also be set on the admin UI's Settings page (a value set there overrides the environment). | `2` |
 
 ### Database
 
@@ -206,7 +207,8 @@ Certificates page (a value set there overrides the environment).
 | Environment Variable | Description | Default Value |
 | --- | --- | --- |
 | `VRECKAN_ACME_ENABLED` | Issue ACME (Let's Encrypt / ZeroSSL / Google) certificates. When off, the server uses a self-signed certificate. | `False` |
-| `VRECKAN_ACME_CA` | The ACME certificate authority to use: `letsencrypt` (default), `zerossl`, or `google`. Only `letsencrypt` honours `VRECKAN_ACME_STAGING` (staging vs production). | `letsencrypt` |
+| `VRECKAN_ACME_CA` | The ACME certificate authority to use: `letsencrypt` (default), `zerossl`, or `google`, or a full custom ACME directory URL. Only `letsencrypt` honours `VRECKAN_ACME_STAGING` (staging vs production). | `letsencrypt` |
+| `VRECKAN_ACME_ALLOW_HTTP_CA` | Allow a plaintext `http://` custom ACME directory URL (`VRECKAN_ACME_CA`). Off by default: `https` is required so the account-key JWSes and CA responses stay encrypted in transit. | `False` |
 | `VRECKAN_ACME_DOMAINS` | Comma-separated domain(s) to issue certificates for (e.g. `example.com,www.example.com`). | *(empty)* |
 | `VRECKAN_ACME_AUTH` | ACME challenge method: `dns-cloudflare` (Cloudflare DNS-01) or `http-01`. | `dns-cloudflare` |
 | `VRECKAN_ACME_CLOUDFLARE_EMAIL` | Account email for Let's Encrypt (used with Cloudflare DNS auth). | *(empty)* |
