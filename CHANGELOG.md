@@ -9,6 +9,28 @@ is committed normally in `vreckan`. The changelog is the authoritative
 record of what shipped in each release — see
 [`docs/release.md`](./docs/release.md) for the conventions.
 
+## 2026-10-30 — v0.10.1: base-image bump, no source changes since v0.10.0 (ANT-703)
+
+Nightly base-bump cut. `main` has no commits past the `v0.10.0` tag (`git log
+v0.10.0..HEAD` is empty), so this is a build-base-only patch release: the
+shipped image is `v0.10.0`'s source compiled on the refreshed build base.
+
+- **The build base advanced to the latest `vreckan-base-build` image.** The
+  `Dockerfile` build-stage pin and `.base-image-digest` move together (ANT-277)
+  from `sha256:97c4f4ce…` (the 2026-10-29 re-bake) to `sha256:c58ba357…` (the
+  2026-10-30 re-bake). The re-bake fired because vreckan's `main` moved past the
+  commit the current base was baked against: the prior bake tracked the
+  `571b57d` base-pin commit, while the new bake tracks the `v0.10.0` tree
+  (`9877822`), so the warm crates.io/git dependency cache is now baked against
+  the current `Cargo.lock` — which the v0.10.0 batch extended with
+  `hyper-util` and `rustls-pki-types`. The Rust toolchain inside is unchanged
+  (1.99.1) and the upstream `docker-rust` base digest is unchanged
+  (`b8e062b1…`), so nothing user-visible changes with this container bump.
+
+`VERSION`/`Cargo.toml`/`Cargo.lock` moved 0.10.0 → 0.10.1 via
+`scripts/bump-version.sh patch`. `.base-image-digest`/`Dockerfile` moved
+together to the new base digest.
+
 ## 2026-10-29 — v0.10.0: the external-feedback batch — ten fixes plus the 20261029 build-base bump (ANT-650)
 
 v0.10.0 ships the ten-item external feedback batch (ANT-650) together with
