@@ -24,8 +24,8 @@ layout: default
     that verified every route against the Python original (v0.5.0). The audit's full
     per-route matrix is the source of truth for Python↔Rust handler mapping; the
     <a href="https://github.com/vreckan-project/vreckan/blob/main/docs/port-status.md">port status document</a>
-    tracks the residual gaps. Scale: <strong>112 route registrations covering 106 unique paths</strong>
-    (143 method+path routes; several paths serve multiple methods) — all equivalent paths of the Python
+    tracks the residual gaps. Scale: <strong>116 route registrations covering 110 unique paths</strong>
+    (131 method+path routes; several paths serve multiple methods) — all equivalent paths of the Python
     original, plus representation-level differences and additive endpoints (the Rust-only liveness
     probe and the share-session links routes).
     {% else %}
@@ -505,7 +505,7 @@ layout: default
     <h2>Representation differences vs the Python original</h2>
     <p>Verified in the parity audit; none change functionality except where a gap is linked:</p>
     <ul>
-      <li><strong>Multi-method routes collapse.</strong> axum registers <code>get(...).post(...)</code> on one path where Python used separate decorators per method — this is why the raw registration counts differ (119 Python route objects vs 104 Rust <code>.route()</code> calls at audit time; 112 in the current code) while the method+path surface is identical.</li>
+      <li><strong>Multi-method routes collapse.</strong> axum registers <code>get(...).post(...)</code> on one path where Python used separate decorators per method — this is why the raw registration counts differ (119 Python route objects vs 104 Rust <code>.route()</code> calls at audit time; 116 in the current code) while the method+path surface is identical.</li>
       <li><strong>WebSocket handling differs by route.</strong> The session-proxy routes are <code>any()</code> and dispatch on the <code>Upgrade</code> header in-handler; the room WS route (<code>/ws/room/{session_id}</code>) is a plain <code>GET</code> upgrade.</li>
       <li><strong>Trailing slash</strong> on the <code>/api/homedirs</code> / <code>/api/pinned</code> collection roots (gap <strong>G7</strong> in the <a href="https://github.com/vreckan-project/vreckan/blob/main/docs/port-status.md">port status document</a>).</li>
       <li><strong>UUID path params.</strong> Python validated <code>{session_id:uuid}</code> at routing (malformed → 422); Rust matches any string and the handler fails later (gap <strong>G8</strong>).</li>

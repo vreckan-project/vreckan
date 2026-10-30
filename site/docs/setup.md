@@ -19,7 +19,7 @@ description: Prerequisites, server installation, configuration, and getting your
   <h2>1. Get the image</h2>
   <p>Vreckan ships as a container image. Pull the latest release:</p>
   <pre><code>docker pull ghcr.io/vreckan-project/vreckan:latest</code></pre>
-  <p>Versioned tags (for example <code>:v0.8.7</code>) are published alongside <code>latest</code> for every release. The current release is **v0.8.7** — see the <a href="https://github.com/vreckan-project/vreckan/blob/main/CHANGELOG.md">changelog</a> for what changed in each version.</p>
+  <p>Versioned tags (for example <code>:v0.10.1</code>) are published alongside <code>latest</code> for every release. The current release is <strong>v0.10.1</strong> — a build-base-only patch release, so nothing user-visible changed since v0.10.0 — see the <a href="https://github.com/vreckan-project/vreckan/blob/main/CHANGELOG.md">changelog</a> for what changed in each version.</p>
 
   <h2>2. Configure</h2>
   <p>Vreckan is configured entirely through <code>VRECKAN_*</code> environment variables. The repository ships a <code>.env.example</code> you can copy and edit:</p>
@@ -48,6 +48,10 @@ cp .env.example .env</code></pre>
 
   <div class="callout tip">
     <strong>Prefer to build from source?</strong> The bundled <code>docker-compose.yml</code> already carries a <code>build: .</code> fallback (the bundled <code>Dockerfile</code>) — <code>docker compose up --build</code> builds the Rust image from this repo when the image tag is not present, or build manually: <code>docker build -t vreckan .</code>
+  </div>
+
+  <div class="callout">
+    <strong>New in v0.10.0 — two default behavior changes.</strong> Plain-HTTP connections to the TLS port now <em>redirect to HTTPS</em> instead of dying in the TLS handshake (set <code>VRECKAN_TLS_HTTP_REDIRECT_ENABLED=false</code> behind a TLS-terminating reverse proxy that already redirects), and <em>loose CORS is on by default</em>, so the same server reached under a different hostname, IP address, or port shares the login instead of dropping the session cookie (use <code>VRECKAN_CORS_MODE=strict</code>, or restrict origins with <code>VRECKAN_CORS_ALLOWED_ORIGINS</code>, to change it — both are also editable on the admin Settings page). Details in the ops guide (<a href="{{ '/docs/ops/quick-start' | relative_url }}#cors">CORS</a>, <a href="{{ '/docs/ops/tls' | relative_url }}">TLS</a>) and the <a href="https://github.com/vreckan-project/vreckan/blob/main/CHANGELOG.md">v0.10.0 changelog entry</a>.
   </div>
 
   <h2>4. Open the web client</h2>
