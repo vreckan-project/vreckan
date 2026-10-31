@@ -9,6 +9,18 @@ is committed normally in `vreckan`. The changelog is the authoritative
 record of what shipped in each release — see
 [`docs/release.md`](./docs/release.md) for the conventions.
 
+## 2026-10-31 — v0.10.2: base-image bump, no source changes since v0.10.1 (ANT-721)
+
+- **The build base advanced to the latest `vreckan-base-build`** (the
+  2026-10-31 re-bake): `.base-image-digest` and the `Dockerfile` build-stage
+  pin move together (ANT-277) from `sha256:c58ba357…` to `sha256:40e2ecba…`,
+  refreshing the baked dependency cache against the current `Cargo.lock`.
+  The Rust toolchain and upstream base are unchanged — nothing user-visible
+  changes.
+
+`VERSION`/`Cargo.toml`/`Cargo.lock` moved 0.10.1 → 0.10.2 via
+`scripts/bump-version.sh patch`.
+
 ## 2026-10-30 — v0.10.1: base-image bump, no source changes since v0.10.0 (ANT-703)
 
 Nightly base-bump cut. `main` has no commits past the `v0.10.0` tag (`git log
