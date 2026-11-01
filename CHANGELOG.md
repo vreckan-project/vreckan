@@ -9,6 +9,22 @@ is committed normally in `vreckan`. The changelog is the authoritative
 record of what shipped in each release — see
 [`docs/release.md`](./docs/release.md) for the conventions.
 
+## 2026-11-01 — v0.10.3: base-image bump, no source changes since v0.10.2 (ANT-733)
+
+- **The build base advanced to the latest `vreckan-base-build`** (the
+  2026-11-01 re-bake): `.base-image-digest` and the `Dockerfile` build-stage
+  pin move together (ANT-277) from `sha256:40e2ecba…` to `sha256:8ef56842…`,
+  re-baking the warm crates.io/git dependency cache against the current
+  v0.10.2 tree. The re-bake tracked the v0.10.2 commit (`043586f`) where the
+  prior bake tracked the v0.10.1 tree; the dependency set itself is unchanged
+  (`Cargo.lock` is byte-identical apart from the vreckan version line). The
+  Rust toolchain and the upstream `docker-rust` base digest are unchanged
+  (`b8e062b1…`), so nothing user-visible changes.
+
+`VERSION`/`Cargo.toml`/`Cargo.lock` moved 0.10.2 → 0.10.3 via
+`scripts/bump-version.sh patch`. `.base-image-digest`/`Dockerfile` moved
+together to the new base digest.
+
 ## 2026-10-31 — v0.10.2: base-image bump, no source changes since v0.10.1 (ANT-721)
 
 - **The build base advanced to the latest `vreckan-base-build`** (the
