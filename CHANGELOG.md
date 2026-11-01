@@ -9,6 +9,19 @@ is committed normally in `vreckan`. The changelog is the authoritative
 record of what shipped in each release — see
 [`docs/release.md`](./docs/release.md) for the conventions.
 
+## 2026-11-01 — v0.10.4: axum-reverse-proxy 2.2 → 2.3 (ANT-741)
+
+- **The `axum-reverse-proxy` dependency advanced 2.2 → 2.3** (Renovate PR #124,
+  board-approved via [ANT-735](/ANT/issues/ANT-735)). Release 2.3 adds the
+  `proxy_request_on_stream` API — one HTTP/1.1 request over a caller-authorized
+  stream, with streaming bodies and WebSocket upgrades — and WebSockets now use
+  the configured hyper client/connector and its TLS settings. The transitive
+  dep set moves with it: `getrandom` 0.3.4 → 0.4.3. Nothing user-visible
+  changes beyond the dependency update.
+
+`VERSION`/`Cargo.toml`/`Cargo.lock` moved 0.10.3 → 0.10.4 via
+`scripts/bump-version.sh patch`.
+
 ## 2026-11-01 — v0.10.3: base-image bump, no source changes since v0.10.2 (ANT-733)
 
 - **The build base advanced to the latest `vreckan-base-build`** (the
