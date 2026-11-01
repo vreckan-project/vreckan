@@ -8,7 +8,7 @@ audit** (2026-10-12), which verified every route against the Python original
 source of truth for Python↔Rust handler mapping; the [port status
 document](./port-status.md) tracks the residual gaps.
 
-Scale: **112 route registrations covering 106 unique paths** (143
+Scale: **116 route registrations covering 110 unique paths** (131
 method+path routes; several paths serve multiple methods) — all
 equivalent paths of the Python original, plus representation-level
 differences and additive endpoints (the Rust-only liveness probe and the
@@ -562,7 +562,7 @@ is linked:
 - **Multi-method routes collapse.** axum registers `get(...).post(...)` on one
   path where Python used separate decorators per method — this is why the
   raw registration counts differ (119 Python route objects vs 104 Rust
-  `.route()` calls at audit time; 112 in the current code) while the
+   `.route()` calls at audit time; 116 in the current code) while the
   method+path surface is identical.
 - **WebSocket handling differs by route.** The session-proxy routes are
   `any()` and dispatch on the `Upgrade` header in-handler; the room WS route
