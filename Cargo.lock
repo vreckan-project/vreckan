@@ -1023,9 +1023,9 @@ dependencies = [
 
 [[package]]
 name = "axum-reverse-proxy"
-version = "2.3.0"
+version = "2.4.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "03527b6a45c22a5c2dcef2948e81e6a59038054914df533673aabdd834129fe7"
+checksum = "3fc7d76335475f8fb5312cb38dceceeba6d9ebccfe3c5e06fa871579a5cf4965"
 dependencies = [
  "axum",
  "bytes",
@@ -1041,6 +1041,7 @@ dependencies = [
  "rustls",
  "tokio",
  "tokio-tungstenite 0.28.0",
+ "tokio-util",
  "tower",
  "tracing",
  "url",
@@ -5703,6 +5704,7 @@ dependencies = [
  "bytes",
  "futures-core",
  "futures-sink",
+ "futures-util",
  "libc",
  "pin-project-lite",
  "tokio",
@@ -6166,7 +6168,7 @@ checksum = "0b928f33d975fc6ad9f86c8f283853ad26bdd5b10b7f1542aa2fa15e2289105a"
 
 [[package]]
 name = "vreckan"
-version = "0.10.5"
+version = "0.10.6"
 dependencies = [
  "acmex",
  "aes-gcm",
