@@ -9,6 +9,22 @@ is committed normally in `vreckan`. The changelog is the authoritative
 record of what shipped in each release — see
 [`docs/release.md`](./docs/release.md) for the conventions.
 
+## 2026-11-02 — v0.10.6: axum-reverse-proxy 2.3 → 2.4 (ANT-756)
+
+- **The `axum-reverse-proxy` dependency advanced 2.3 → 2.4** (Renovate PR #126,
+  board-approved via [ANT-752](/ANT/issues/ANT-752)). Release 2.4 adds a
+  `TunnelGuard` request extension — it retains owned permits and metrics
+  through response bodies or actual upgraded-tunnel teardown, with
+  single-consumption clone semantics — and an optional `TunnelCancellation`
+  hook. The no-TLS default connector is also fixed to reject HTTPS targets
+  instead of silently sending plaintext. The dependency graph gains two edges
+  (`tokio-util` for `axum-reverse-proxy`, `futures-util` for `h2`); no new
+  packages and no other version moves. Nothing user-visible changes beyond the
+  dependency update.
+
+`VERSION`/`Cargo.toml`/`Cargo.lock` moved 0.10.5 → 0.10.6 via
+`scripts/bump-version.sh patch`.
+
 ## 2026-11-02 — v0.10.5: base-image bump + weekly docs freshness pass (ANT-745; ANT-708)
 
 - **The build base advanced to the latest `vreckan-base-build`** (the
