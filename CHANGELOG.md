@@ -9,6 +9,38 @@ is committed normally in `vreckan`. The changelog is the authoritative
 record of what shipped in each release — see
 [`docs/release.md`](./docs/release.md) for the conventions.
 
+## 2026-11-02 — v0.10.5: base-image bump + weekly docs freshness pass (ANT-745; ANT-708)
+
+- **The build base advanced to the latest `vreckan-base-build`** (the
+  2026-11-02 re-bake): `.base-image-digest` and the `Dockerfile` build-stage
+  pin move together (ANT-277) from `sha256:8ef56842…` (the 2026-11-01 re-bake,
+  which tracked the v0.10.2-era commit `043586f`) to
+  `sha256:ebc259cd…`, which tracks `main` at the v0.10.4-era tree
+  (`df82564`, the ANT-708 docs pass). The re-bake refreshes the warm
+  crates.io/git dependency cache against the current `Cargo.lock` — the prior
+  bake predated the v0.10.4 dependency moves (`axum-reverse-proxy 2.2 → 2.3`,
+  transitive `getrandom 0.3.4 → 0.4.3`), so local and CI builds now resolve the
+  current lockfile straight from the warm cache. The upstream `docker-rust`
+  base digest (`b8e062b1…`) and the Rust toolchain are unchanged, so nothing
+  user-visible changes with the container bump itself.
+
+- **Weekly docs freshness pass (ANT-708, PR #121).** Docs-only — no runtime
+  behavior changes. The site setup/ops pages and `docs/ops.md` now point at
+  the current release (v0.10.1 → v0.10.4), the site ops page gains the CORS
+  and HTTP→HTTPS redirect sections that `docs/ops.md` §2.1/§5 describe, and
+  `.env.example`/README gain the `VRECKAN_*` settings introduced since the
+  file was last touched — `VRECKAN_CORS_MODE` / `VRECKAN_CORS_ALLOWED_ORIGINS`
+  (v0.10.0), `VRECKAN_TLS_HTTP_REDIRECT_ENABLED` (v0.10.0),
+  `VRECKAN_ALLOW_DEFAULT_DB_CREDS`, and
+  `VRECKAN_REGISTRY_PULL_CONCURRENCY` — with the README configuration table
+  updated to match. The setup page's raw-markdown-in-HTML bold rendering is
+  fixed (kramdown skips block HTML), and the API docs' scale line is
+  refreshed on both the site and `docs/api.md`.
+
+`VERSION`/`Cargo.toml`/`Cargo.lock` moved 0.10.4 → 0.10.5 via
+`scripts/bump-version.sh patch`. `.base-image-digest`/`Dockerfile` moved
+together to the new base digest.
+
 ## 2026-11-01 — v0.10.4: axum-reverse-proxy 2.2 → 2.3 (ANT-741)
 
 - **The `axum-reverse-proxy` dependency advanced 2.2 → 2.3** (Renovate PR #124,
