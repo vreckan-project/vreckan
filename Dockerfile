@@ -1,4 +1,4 @@
-FROM repo.vreckanproject.com/vreckan/vreckan-base-build@sha256:8ef56842c903c2df3ed8b3c021c2ae4a8d25716de1a8a56625efca7ff04a6033 AS build
+FROM repo.vreckanproject.com/vreckan/vreckan-base-build@sha256:ebc259cd5ca8d50f362349f38ad12740f63bed9f4d36c37417ba536b4d209869 AS build
 WORKDIR /app
 ENV RUSTC_WRAPPER=sccache
 ENV SCCACHE_DIR=/sccache
