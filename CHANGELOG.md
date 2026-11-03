@@ -9,6 +9,40 @@ is committed normally in `vreckan`. The changelog is the authoritative
 record of what shipped in each release — see
 [`docs/release.md`](./docs/release.md) for the conventions.
 
+## 2026-11-03 — v0.10.7: base-image bump + mold as the default Rust linker (ANT-772)
+
+- **The build base advanced to the latest `vreckan-base-build`** (the
+  2026-11-02 6:22 PM MST re-bake): `.base-image-digest` and the `Dockerfile`
+  build-stage pin move together (ANT-277) from `sha256:ebc259cd…` (the
+  2026-11-01 10:30 PM MST re-bake, which tracked the v0.10.4-era commit
+  `df82564` and was built on `rust:1.99-slim` `sha256:b8e062b1…`) to
+  `sha256:001a81a8…`, which tracks vreckan `main` at the current HEAD
+  `bb98553` (v0.10.6) and is built on `rust:1.99-slim`
+  `sha256:9daf2b24…` — the upstream `docker-rust` base digest moved between
+  the two bakes.
+
+- **The re-bake adds `mold`, wired as the default Rust linker** (ANT-772,
+  ANT-662 P2): the base sets
+  `RUSTFLAGS="-Clinker=cc -Clink-arg=-fuse-ld=mold"`, so every link — the
+  release binary and all of the integration-test binaries — now runs through
+  `mold` instead of `rust-lld`, with no consumer-side config (a consumer
+  that wants the default linker back overrides `RUSTFLAGS` itself). The
+  `-sys` C builds are unaffected. For operators: faster release builds and
+  test-binary linking through the base image's toolchain, including the
+  vreckan image's own build stage.
+
+- **The warm crates.io/git dependency cache was refreshed against the
+  current `Cargo.lock`**: the prior bake predated the v0.10.6 dependency
+  moves (`axum-reverse-proxy 2.3 → 2.4`, plus the new `tokio-util` /
+  `futures-util` edges), so local and CI builds now resolve the current
+  lockfile straight from the warm cache.
+
+- No other user- or operator-visible changes since v0.10.6 — this cut is
+  the base-image bump itself.
+
+`VERSION`/`Cargo.toml`/`Cargo.lock` moved 0.10.6 → 0.10.7 via
+`scripts/bump-version.sh patch`.
+
 ## 2026-11-02 — v0.10.6: axum-reverse-proxy 2.3 → 2.4 (ANT-756)
 
 - **The `axum-reverse-proxy` dependency advanced 2.3 → 2.4** (Renovate PR #126,
