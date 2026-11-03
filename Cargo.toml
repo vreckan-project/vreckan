@@ -69,12 +69,14 @@ sha2 = "0.11"
 base64 = "0.23"
 rand = "0.10"
 # E2EE handshake: RSA-PSS (server identity) + RSA-OAEP (session-key wrap).
-# `sha2` is not a default feature of `rsa`, so enable it explicitly.
+# As of 0.10.0-rc.20 `sha2` is a required dep of `rsa` (no longer optional),
+# so there is no `sha2` feature to name and `rsa::sha2` is always re-exported
+# — the old `features = ["sha2"]` pin no longer resolves.
 # `rsa 0.10` is the first release built on the pkcs8 0.11 / spki 0.8 /
 # der 0.8 / rand_core 0.10 stack (0.9.x stays on pkcs8 0.10 / spki 0.7 /
 # rand_core 0.6), so it is bumped in lockstep with the pins below, replacing
 # the `pkcs8_010`/`rand_core_06` alias workaround (ANT-183/ANT-191).
-rsa = { version = "0.10.0-rc.19", features = ["sha2"] }
+rsa = "0.10.0-rc.20"
 # E2EE payload: AES-256-GCM with the session id as AAD.
 aes-gcm = "0.11"
 # Key encoding (PKCS#8 private key load, SPKI public-key PEM). Must stay on
