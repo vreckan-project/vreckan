@@ -8,8 +8,8 @@ mod common;
 use common::{build_state, SecureClient, TempDir};
 use sea_orm::{EntityTrait};
 use serde_json::json;
-use vreckan::catalog;
 use vreckan::entities;
+use vreckan_core::shared::AppStore;
 
 /// The Firefox store entry (mirrors the conftest `STORE_APP`).
 const STORE_APP: &str = r#"{
@@ -52,7 +52,7 @@ async fn store_with_firefox(state: &vreckan::state::AppState) {
         .app_stores
         .write()
         .await
-        .push(catalog::AppStore {
+        .push(AppStore {
             name: "Test Store".to_string(),
             url: format!("{}apps.yml", common::DEAD_URL),
         });

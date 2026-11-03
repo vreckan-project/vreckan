@@ -24,127 +24,31 @@ use serde::{Deserialize, Serialize};
 use serde_json::Value;
 use tracing::{debug, error, info, warn};
 
-use crate::auth;
-use crate::docker_provider::{DockerProvider, GpuInfo, LaunchResult, VolumeSpec};
-use crate::e2ee;
-use crate::entities;
+use vreckan_auth::auth;
+use crate::docker_provider::{DockerProvider, LaunchResult, VolumeSpec};
+use vreckan_acme::e2ee;
+use vreckan_core::entities;
 use crate::session_shares;
-use crate::settings::Settings;
-use crate::state::AppState;
-use crate::user_manager;
+use vreckan_core::settings::Settings;
+use vreckan_core::state::AppState;
+use vreckan_auth::user_manager;
+// Re-exported so the pre-split paths (`catalog::InstalledApp`, ...) keep
+// resolving from other crates (ANT-770).
+use vreckan_core::shared::GpuInfo;
+pub use vreckan_core::shared::{
+    AvailableAppProviderConfig, AppStore, EnvVar, InstalledApp, InstalledAppProviderConfig,
+    SelkiesProbe, default_true,
+};
 
 // ---------------------------------------------------------------------------
 // Models
 // ---------------------------------------------------------------------------
 
-/// A single environment variable to pass into an app container.
-#[derive(Clone, Debug, Default, Serialize, Deserialize)]
-pub struct EnvVar {
-    pub name: String,
-    pub value: String,
-}
 
-/// The provider configuration for an *available* (store-listed) app.
-///
-/// Mirrors `models.AvailableAppProviderConfig`. The `docker_overrides` field is
-/// a free-form dict of Docker run-options (privileged, cap_add, devices, ...)
-/// applied when the app is launched.
-#[derive(Clone, Debug, Serialize, Deserialize)]
-pub struct AvailableAppProviderConfig {
-    pub image: String,
-    pub port: i64,
-    #[serde(default)]
-    pub nvidia_support: bool,
-    #[serde(default)]
-    pub dri3_support: bool,
-    #[serde(default)]
-    pub r#type: String,
-    #[serde(default)]
-    pub url_support: bool,
-    #[serde(default)]
-    pub open_support: bool,
-    #[serde(default)]
-    pub extensions: Vec<String>,
-    #[serde(default)]
-    pub autostart: bool,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub custom_autostart_script_b64: Option<String>,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub custom_autostart_wayland_script_b64: Option<String>,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub docker_overrides: Option<Value>,
-    /// The Selkies server version the image runs (e.g. `"2.0.0"`), or `None`
-    /// for images that predate the embedded Selkies stack (the classic
-    /// xrdp/guacd stack has no `selkies` binary and no token API). Read from
-    /// the store catalog's `selkiesVersion` when present; absent from older
-    /// catalogs, so callers must treat `None` as "unknown — probe at deploy
-    /// time" rather than "pre-2.0".
-    #[serde(
-        default,
-        rename = "selkiesVersion",
-        skip_serializing_if = "Option::is_none"
-    )]
-    pub selkies_version: Option<String>,
-}
 
-/// The provider configuration for an *installed* app: the available-app config
-/// plus per-app env overrides and the (optional) CLI env var a URL is passed
-/// through. Mirrors `models.InstalledAppProviderConfig`.
-#[derive(Clone, Debug, Serialize, Deserialize)]
-pub struct InstalledAppProviderConfig {
-    #[serde(flatten)]
-    pub base: AvailableAppProviderConfig,
-    #[serde(default)]
-    pub env: Vec<EnvVar>,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub url_env_var: Option<String>,
-}
 
-/// An installed application (a row in the `installed_apps` table, stored as
-/// JSON). Mirrors `models.InstalledApp`.
-#[derive(Clone, Debug, Serialize, Deserialize)]
-pub struct InstalledApp {
-    pub id: String,
-    pub name: String,
-    pub logo: String,
-    #[serde(default)]
-    pub url: String,
-    #[serde(default)]
-    pub source: String,
-    #[serde(default)]
-    pub source_app_id: String,
-    #[serde(default)]
-    pub provider: String,
-    #[serde(default)]
-    pub home_directories: bool,
-    #[serde(default)]
-    pub users: Vec<String>,
-    #[serde(default)]
-    pub groups: Vec<String>,
-    pub provider_config: InstalledAppProviderConfig,
-    #[serde(default = "default_true")]
-    pub auto_update: bool,
-    #[serde(default)]
-    pub app_template: String,
-    #[serde(default)]
-    pub is_meta_app: bool,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub base_app_id: Option<String>,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub home_template_name: Option<String>,
-}
 
-fn default_true() -> bool {
-    true
-}
 
-/// An app store: a name plus the URL of its catalog (a YAML file of available
-/// apps). Mirrors `models.AppStore`.
-#[derive(Clone, Debug, Serialize, Deserialize)]
-pub struct AppStore {
-    pub name: String,
-    pub url: String,
-}
 
 /// The public (E2EE) view of an app, returned by `POST /api/applications`.
 /// Mirrors `models.Application`. `type` is the store-config app type
@@ -1876,24 +1780,7 @@ pub async fn background_auto_update_job(state: AppState) {
 // Launch-time selkies capability probe (ANT-438)
 // ---------------------------------------------------------------------------
 
-/// The outcome of the launch-time selkies capability probe. Plain sessions
-/// enter selkies secure mode at launch (master token + owner controller
-/// entry in the token table); containers that lack the selkies 2.x token API
-/// (pre-2.0 xrdp/guacd stacks) degrade to the documented legacy path.
-#[derive(Clone, Debug, PartialEq, Eq)]
-pub enum SelkiesProbe {
-    /// The container runs a selkies 2.x with a working token API.
-    Secure { version: Option<String> },
-    /// The container predates the selkies token API (or rejected the
-    /// initial token table): the session stays on the legacy path.
-    Legacy { version: Option<String> },
-}
 
-impl SelkiesProbe {
-    pub fn is_secure(&self) -> bool {
-        matches!(self, SelkiesProbe::Secure { .. })
-    }
-}
 
 /// Parse `selkies --version` output (`selkies 2.0.0`) into
 /// `(major_version, version_string)`.

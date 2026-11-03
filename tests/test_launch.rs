@@ -14,6 +14,7 @@ use serde_json::{json, Value};
 use std::collections::HashMap;
 use vreckan::catalog;
 use vreckan::user_manager;
+use vreckan_core::shared::InstalledApp;
 
 /// The default provider config used by the launch tests (mirrors
 /// `DEFAULT_PROVIDER_CONFIG`).
@@ -55,7 +56,7 @@ async fn make_app(sc: &SecureClient, overrides: Option<&Value>) -> Value {
             }
         }
     }
-    let app: catalog::InstalledApp = serde_json::from_value(data.clone()).unwrap();
+    let app: InstalledApp = serde_json::from_value(data.clone()).unwrap();
     sc.state.installed_apps.write().await.insert(app.id.clone(), app);
     data
 }
@@ -285,7 +286,7 @@ async fn test_launch_english_language_leaves_lc_all_unset() {
 async fn test_launch_selected_dri3_gpu_applied() {
     let _root = TempDir::new();
     let mut sc = SecureClient::new(build_state(_root.path()).await);
-    sc.state.available_gpus.write().await.push(vreckan::docker_provider::GpuInfo {
+    sc.state.available_gpus.write().await.push(vreckan_core::shared::GpuInfo {
         device: "/dev/dri/renderD128".into(),
         driver: "amdgpu".into(),
         r#type: Some("dri3".into()),
@@ -313,7 +314,7 @@ async fn test_launch_nvidia_gpu_with_wayland_sets_dri_node() {
     let mut pc = serde_json::from_str::<Value>(DEFAULT_PROVIDER_CONFIG).unwrap();
     pc["nvidia_support"] = json!(true);
     let app_overrides = json!({ "provider_config": pc });
-    sc.state.available_gpus.write().await.push(vreckan::docker_provider::GpuInfo {
+    sc.state.available_gpus.write().await.push(vreckan_core::shared::GpuInfo {
         device: "/dev/dri/renderD129".into(),
         driver: "nvidia".into(),
         r#type: Some("nvidia".into()),
@@ -341,7 +342,7 @@ async fn test_launch_unknown_gpu_rejected() {
     make_app(&sc, None).await;
     user_manager::create_home_dir(&sc.state.settings, "admin", "default").unwrap();
     let settings = user_manager::get_effective_settings(&sc.state.db, "admin").await.unwrap();
-    sc.state.available_gpus.write().await.push(vreckan::docker_provider::GpuInfo {
+    sc.state.available_gpus.write().await.push(vreckan_core::shared::GpuInfo {
         device: "/dev/dri/renderD128".into(),
         driver: "amdgpu".into(),
         r#type: Some("dri3".into()),
@@ -378,7 +379,7 @@ async fn test_launch_nvidia_gpu_rejected_when_unsupported() {
     make_app(&sc, None).await;
     user_manager::create_home_dir(&sc.state.settings, "admin", "default").unwrap();
     let settings = user_manager::get_effective_settings(&sc.state.db, "admin").await.unwrap();
-    sc.state.available_gpus.write().await.push(vreckan::docker_provider::GpuInfo {
+    sc.state.available_gpus.write().await.push(vreckan_core::shared::GpuInfo {
         device: "/dev/dri/renderD129".into(),
         driver: "nvidia".into(),
         r#type: Some("nvidia".into()),
@@ -413,7 +414,7 @@ async fn test_launch_nvidia_gpu_rejected_when_unsupported() {
 async fn test_launch_global_default_gpu_fallback() {
     let _root = TempDir::new();
     let mut sc = SecureClient::new(build_state(_root.path()).await);
-    sc.state.available_gpus.write().await.push(vreckan::docker_provider::GpuInfo {
+    sc.state.available_gpus.write().await.push(vreckan_core::shared::GpuInfo {
         device: "/dev/dri/renderD128".into(),
         driver: "amdgpu".into(),
         r#type: Some("dri3".into()),

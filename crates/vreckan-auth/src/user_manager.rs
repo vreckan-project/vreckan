@@ -34,10 +34,10 @@ use tracing::{info, warn};
 
 use hex;
 
-use crate::db::Db;
-use crate::entities;
-use crate::permissions;
-use crate::settings::Settings;
+use vreckan_core::db::Db;
+use vreckan_core::entities;
+use vreckan_core::permissions;
+use vreckan_core::settings::Settings;
 
 // ---------------------------------------------------------------------------
 // Error type

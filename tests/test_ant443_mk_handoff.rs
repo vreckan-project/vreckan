@@ -201,10 +201,10 @@ async fn seed_plain_session(state: &vreckan::state::AppState, upstream: &str) ->
         .await
         .insert(
             "vb-1".to_string(),
-            vreckan::session_shares::SessionShareTokenRecord {
+            vreckan_core::shared::SessionShareTokenRecord {
                 share_id: "join:bob".to_string(),
                 session_id: sid.clone(),
-                caps: vreckan::session_shares::SessionShareCaps {
+                caps: vreckan_core::shared::SessionShareCaps {
                     input: true,
                     file_browse: true,
                     file_download: true,
@@ -315,10 +315,10 @@ async fn test_viewers_do_not_steal_mk() {
             .await
             .insert(
                 "vr-1".to_string(),
-                vreckan::session_shares::SessionShareTokenRecord {
+                vreckan_core::shared::SessionShareTokenRecord {
                     share_id: "share:carol".to_string(),
                     session_id: sid.clone(),
-                    caps: vreckan::session_shares::SessionShareCaps {
+                    caps: vreckan_core::shared::SessionShareCaps {
                         input: false,
                         file_browse: true,
                         file_download: true,

@@ -1,0 +1,39 @@
+[package]
+name = "vreckan-apps"
+version = { workspace = true }
+edition = { workspace = true }
+description = "Vreckan app domains: catalog, Docker provider, files, session shares, session proxy, collaboration, backups"
+license = { workspace = true }
+
+# Explicit target: the Docker build stage copies only the manifests before
+# `cargo fetch`, where `src/lib.rs` does not exist yet — with autodiscovery
+# alone the manifest would fail to parse ("no targets specified").
+[lib]
+path = "src/lib.rs"
+[dependencies]
+vreckan-core = { path = "../vreckan-core" }
+vreckan-acme = { path = "../vreckan-acme" }
+# `auth::verify_token` is the shared authentication gate called from the
+# catalog/files/session_shares route handlers (ANT-770: apps→auth is a DAG
+# edge; moving `verify_token` into core would drag `user_manager` with it).
+vreckan-auth = { path = "../vreckan-auth" }
+
+axum = { workspace = true }
+base64 = { workspace = true }
+bollard = { workspace = true }
+chrono = { workspace = true }
+flate2 = { workspace = true }
+futures-util = { workspace = true }
+hex = { workspace = true }
+http = { workspace = true }
+rand = { workspace = true }
+reqwest = { workspace = true }
+sea-orm = { workspace = true }
+serde = { workspace = true }
+serde_json = { workspace = true }
+serde_yaml = { workspace = true }
+tar = { workspace = true }
+tokio = { workspace = true }
+tokio-tungstenite = { workspace = true }
+tracing = { workspace = true }
+uuid = { workspace = true }

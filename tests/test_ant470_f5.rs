@@ -23,9 +23,8 @@ use std::sync::Arc;
 use tokio::net::TcpListener;
 use tokio::sync::Mutex;
 
-use vreckan::collaboration::{
-    derive_plain_session_token_table, push_plain_session_token_table, PushedTokenTable,
-};
+use vreckan::collaboration::{derive_plain_session_token_table, push_plain_session_token_table};
+use vreckan_core::shared::PushedTokenTable;
 
 /// Records the token-table POST bodies a fake app container receives.
 #[derive(Clone)]

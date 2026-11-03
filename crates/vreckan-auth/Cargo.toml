@@ -1,0 +1,30 @@
+[package]
+name = "vreckan-auth"
+version = { workspace = true }
+edition = { workspace = true }
+description = "Vreckan auth: web-login tokens, OIDC/SSO, users/groups/roles"
+license = { workspace = true }
+
+# Explicit target: the Docker build stage copies only the manifests before
+# `cargo fetch`, where `src/lib.rs` does not exist yet — with autodiscovery
+# alone the manifest would fail to parse ("no targets specified").
+[lib]
+path = "src/lib.rs"
+[dependencies]
+vreckan-core = { path = "../vreckan-core" }
+
+argon2 = { workspace = true }
+axum = { workspace = true }
+base64 = { workspace = true }
+hex = { workspace = true }
+jsonwebtoken = { workspace = true }
+jsonwebtoken_v10 = { workspace = true }
+jwks = { workspace = true }
+rand = { workspace = true }
+reqwest = { workspace = true }
+sea-orm = { workspace = true }
+serde = { workspace = true }
+serde_json = { workspace = true }
+sha2 = { workspace = true }
+tracing = { workspace = true }
+url = { workspace = true }

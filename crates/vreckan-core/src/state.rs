@@ -115,15 +115,15 @@ pub struct AppState {
     /// completed tick + next scheduled tick (unix seconds). In-memory only.
     pub auto_update_job: Arc<RwLock<AutoUpdateJobState>>,
     /// Installed applications, keyed by app id (the application catalog).
-    pub installed_apps: Arc<RwLock<HashMap<String, crate::catalog::InstalledApp>>>,
+    pub installed_apps: Arc<RwLock<HashMap<String, crate::shared::InstalledApp>>>,
     /// The configured app stores (name + catalog URL).
-    pub app_stores: Arc<RwLock<Vec<crate::catalog::AppStore>>>,
+    pub app_stores: Arc<RwLock<Vec<crate::shared::AppStore>>>,
     /// Application templates, keyed by template name (env/docker overrides).
     pub app_templates: Arc<RwLock<HashMap<String, serde_json::Value>>>,
     /// The reconciled template schema (base-layer env + docker overrides).
     pub template_schema: Arc<RwLock<serde_json::Value>>,
     /// GPUs detected on the host.
-    pub available_gpus: Arc<RwLock<Vec<crate::docker_provider::GpuInfo>>>,
+    pub available_gpus: Arc<RwLock<Vec<crate::shared::GpuInfo>>>,
     /// The admin-set global default GPU (a device path), if any.
     pub global_default_gpu: Arc<RwLock<Option<String>>>,
     /// Container-path -> host-path prefix map (for path remapping when the
@@ -137,19 +137,19 @@ pub struct AppState {
     pub deletion_tasks: Arc<RwLock<HashMap<String, serde_json::Value>>>,
     /// Public-share metadata, keyed by share id. Mirrors
     /// `api.PUBLIC_SHARES_METADATA`.
-    pub public_shares: Arc<RwLock<HashMap<String, crate::files::PublicShareMetadata>>>,
+    pub public_shares: Arc<RwLock<HashMap<String, crate::shared::PublicShareMetadata>>>,
     /// Session-share (share-session link) metadata, keyed by share id
     /// (ANT-305).
-    pub session_shares: Arc<RwLock<HashMap<String, crate::session_shares::SessionShareMetadata>>>,
+    pub session_shares: Arc<RwLock<HashMap<String, crate::shared::SessionShareMetadata>>>,
     /// Per-visit session-share tokens, keyed by token (ANT-305). The session
     /// proxy uses this map to admit a visitor whose session was never
     /// promoted to selkies secure mode; WP3 resolves a visitor's
     /// capabilities through it.
     pub session_share_tokens:
-        Arc<RwLock<HashMap<String, crate::session_shares::SessionShareTokenRecord>>>,
+        Arc<RwLock<HashMap<String, crate::shared::SessionShareTokenRecord>>>,
     /// Live collaboration-room WebSocket connections, keyed by session id.
     /// Mirrors `collaboration.ROOM_CONNECTIONS`.
-    pub room_connections: Arc<RwLock<HashMap<String, crate::collaboration::RoomConnections>>>,
+    pub room_connections: Arc<RwLock<HashMap<String, crate::shared::RoomConnections>>>,
     /// Live data-plane WebSocket connections to selkies per session (ANT-443):
     /// session id -> [(token presented to selkies, connect sequence)] in
     /// connect order. The session proxy updates it as bridges come up and go
@@ -165,7 +165,7 @@ pub struct AppState {
     /// derived table is unchanged. Each entry is stamped with the generation
     /// of the derivation that produced the push (ANT-470).
     pub last_pushed_token_tables:
-        Arc<RwLock<HashMap<String, crate::collaboration::PushedTokenTable>>>,
+        Arc<RwLock<HashMap<String, crate::shared::PushedTokenTable>>>,
     /// Per-session token-table refresh generation (ANT-470): a refresh stamps
     /// itself before reading the connection snapshot, so a refresh that sees
     /// a newer snapshot always carries the larger generation; a push from an
@@ -189,7 +189,7 @@ pub struct AppState {
     /// Test hook: the launch-time selkies capability probe result for fake
     /// provider launches (ANT-438). `None` (the default) means the probe
     /// reports the 2.0.0-class happy path (secure).
-    pub fake_selkies_probe: Arc<RwLock<Option<crate::catalog::SelkiesProbe>>>,
+    pub fake_selkies_probe: Arc<RwLock<Option<crate::shared::SelkiesProbe>>>,
     /// The TLS listener's `RustlsConfig` (an `Arc<ArcSwap<ServerConfig>>`). The
     /// ACME issuance/renewal paths reload this in place so a renewed certificate
     /// is served by the running process without a restart or a port rebind.

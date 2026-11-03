@@ -278,7 +278,7 @@ mod tests {
         let dir = test_dir();
         let cert = dir.join("cert.pem");
         let key = dir.join("key.pem");
-        crate::tls::generate_self_signed(&cert, &key, &dir.join("expiry")).unwrap();
+        vreckan_acme::tls::generate_self_signed(&cert, &key, &dir.join("expiry")).unwrap();
         (std::fs::read(&cert).unwrap(), std::fs::read(&key).unwrap())
     }
 

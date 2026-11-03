@@ -8,7 +8,7 @@
 //! now present, else falls back to the self-signed cert.
 
 use crate::acme_orchestrator;
-use crate::state::AppState;
+use vreckan_core::state::AppState;
 use anyhow::Result;
 use std::path::PathBuf;
 use tracing::{info, warn};
@@ -115,7 +115,7 @@ pub(crate) fn dev_cert_needs_generation(
 /// Crate-visible (not just private) so the same-port dispatch tests in
 /// `serve.rs` can generate a throwaway cert/key pair for a real TLS
 /// handshake (ANT-652).
-pub(crate) fn generate_self_signed(
+pub fn generate_self_signed(
     cert_path: &std::path::Path,
     key_path: &std::path::Path,
     expiry_path: &std::path::Path,

@@ -26,39 +26,25 @@ use serde_json::Value;
 use tracing::{info, warn};
 
 use crate::catalog;
-use crate::security;
-use crate::state::AppState;
-use crate::tokens::opt_tokens_equal;
-use crate::tokens::tokens_equal;
+use vreckan_core::state::AppState;
+use vreckan_core::tokens::opt_tokens_equal;
+use vreckan_core::tokens::tokens_equal;
+// Re-exported so the pre-split paths keep resolving from other crates
+// (ANT-770).
+pub use vreckan_core::shared::{ConnectionInfo, PushedTokenTable, RoomConnections};
 
 // ---------------------------------------------------------------------------
 // Room connection state (mirrors `collaboration.ROOM_CONNECTIONS`)
 // ---------------------------------------------------------------------------
 
-/// A single live WebSocket connection in a room.
-#[derive(Clone)]
-pub struct ConnectionInfo {
-    pub username: String,
-    pub token: String,
-    pub public_id: String,
-    pub has_joined: bool,
-    /// Channel used to push broadcast messages to this client's WebSocket.
-    pub sender: tokio::sync::mpsc::Sender<Message>,
-}
 
-/// The live connections for one collaboration room.
-#[derive(Default, Clone)]
-pub struct RoomConnections {
-    pub controller: Option<ConnectionInfo>,
-    pub viewers: HashMap<String, ConnectionInfo>,
-}
 
 // ---------------------------------------------------------------------------
 // Static room assets
 // ---------------------------------------------------------------------------
 
 fn serve_room_asset(filename: &str, mime: &str) -> Response {
-    let path = crate::static_files::static_dir().join("collaboration").join(filename);
+    let path = vreckan_core::static_files::static_dir().join("collaboration").join(filename);
     match std::fs::read(&path) {
         Ok(data) => Response::builder()
             .status(StatusCode::OK)
@@ -189,7 +175,7 @@ async fn collaborative_room(
             .into_response();
     }
 
-    let template_path = crate::static_files::static_dir()
+    let template_path = vreckan_core::static_files::static_dir()
         .join("collaboration")
         .join("room.html");
     let html_template = match std::fs::read_to_string(&template_path) {
@@ -327,7 +313,7 @@ async fn collaborative_room(
     let mut response = Response::builder()
         .status(StatusCode::OK)
         .header(header::CONTENT_TYPE, "text/html; charset=utf-8")
-        .header(header::CONTENT_SECURITY_POLICY, security::strict_csp(&nonce))
+        .header(header::CONTENT_SECURITY_POLICY, vreckan_core::shared::strict_csp(&nonce))
         .body(axum::body::Body::from(html))
         .unwrap_or_else(|e| (StatusCode::INTERNAL_SERVER_ERROR, e.to_string()).into_response());
 
@@ -597,14 +583,6 @@ pub async fn push_token_table(state: &AppState, session_id: &str, session_data: 
     post_token_table(state, session_id, session_data, &table, generation).await
 }
 
-/// The last token table a container accepted for a session (ANT-443),
-/// stamped with the generation of the derivation that produced the push
-/// (ANT-470).
-#[derive(Debug, Clone)]
-pub struct PushedTokenTable {
-    pub generation: u64,
-    pub table: Value,
-}
 
 /// A derived plain-session token table plus the generation stamped when the
 /// derivation started (ANT-470).

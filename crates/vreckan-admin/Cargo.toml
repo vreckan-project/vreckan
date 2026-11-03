@@ -1,0 +1,38 @@
+[package]
+name = "vreckan-admin"
+version = { workspace = true }
+edition = { workspace = true }
+description = "Vreckan server composition: admin API, security headers/CORS, router, TLS serve loop"
+license = { workspace = true }
+
+# Explicit target: the Docker build stage copies only the manifests before
+# `cargo fetch`, where `src/lib.rs` does not exist yet — with autodiscovery
+# alone the manifest would fail to parse ("no targets specified").
+[lib]
+path = "src/lib.rs"
+[dependencies]
+vreckan-core = { path = "../vreckan-core" }
+vreckan-acme = { path = "../vreckan-acme" }
+vreckan-auth = { path = "../vreckan-auth" }
+vreckan-apps = { path = "../vreckan-apps" }
+
+anyhow = { workspace = true }
+axum = { workspace = true }
+axum-server = { workspace = true }
+base64 = { workspace = true }
+hyper = { workspace = true }
+hyper-util = { workspace = true }
+reqwest = { workspace = true }
+rustls = { workspace = true }
+sea-orm = { workspace = true }
+serde = { workspace = true }
+serde_json = { workspace = true }
+serde_yaml = { workspace = true }
+tokio = { workspace = true }
+tokio-rustls = { workspace = true }
+tower = { workspace = true }
+tracing = { workspace = true }
+
+# The same-port dispatch tests in `serve.rs` build a no-verify TLS client.
+[dev-dependencies]
+rustls-pki-types = { workspace = true }

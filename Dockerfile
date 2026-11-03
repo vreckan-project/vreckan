@@ -3,8 +3,14 @@ WORKDIR /app
 ENV RUSTC_WRAPPER=sccache
 ENV SCCACHE_DIR=/sccache
 COPY Cargo.toml Cargo.lock ./
+COPY crates/vreckan-core/Cargo.toml crates/vreckan-core/Cargo.toml
+COPY crates/vreckan-acme/Cargo.toml crates/vreckan-acme/Cargo.toml
+COPY crates/vreckan-auth/Cargo.toml crates/vreckan-auth/Cargo.toml
+COPY crates/vreckan-apps/Cargo.toml crates/vreckan-apps/Cargo.toml
+COPY crates/vreckan-admin/Cargo.toml crates/vreckan-admin/Cargo.toml
 RUN cargo fetch
 COPY src ./src
+COPY crates ./crates
 RUN --mount=type=cache,id=sccache,target=/sccache \
     cargo build --release
 
@@ -15,7 +21,10 @@ RUN --mount=type=cache,id=sccache,target=/sccache \
     CORES=$(nproc); \
     JOBS=$(awk '/^MemAvailable:/{print int($2/1048576/4)}' /proc/meminfo); \
     [ "$JOBS" -lt 1 ] && JOBS=1; [ "$JOBS" -gt "$CORES" ] && JOBS=$CORES; \
-    CARGO_BUILD_JOBS="$JOBS" cargo test --profile test-release --no-run
+    # --workspace: after the Candidate C split (ANT-770) the module unit tests
+    # live in the member crates, and a plain `cargo test` in a non-virtual
+    # workspace only selects the root package.
+    CARGO_BUILD_JOBS="$JOBS" cargo test --workspace --profile test-release --no-run
 
 FROM debian:trixie-slim
 RUN apt-get update -y && \

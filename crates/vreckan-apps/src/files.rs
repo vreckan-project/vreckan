@@ -22,13 +22,15 @@ use serde::{Deserialize, Serialize};
 use serde_json::Value;
 use tracing::{info, warn};
 
-use crate::auth;
+use vreckan_auth::auth;
 use crate::catalog;
-use crate::e2ee;
-use crate::entities;
-use crate::security;
-use crate::state::AppState;
-use crate::user_manager;
+use vreckan_acme::e2ee;
+use vreckan_core::entities;
+use vreckan_core::state::AppState;
+use vreckan_auth::user_manager;
+// Re-exported so the pre-split path (`files::PublicShareMetadata`) keeps
+// resolving from other crates (ANT-770).
+pub use vreckan_core::shared::PublicShareMetadata;
 
 // ---------------------------------------------------------------------------
 // Constants
@@ -105,17 +107,6 @@ pub struct ShareFileRequest {
     pub expiry_hours: Option<i64>,
 }
 
-#[derive(Serialize, Deserialize, Clone)]
-pub struct PublicShareMetadata {
-    pub owner_username: String,
-    pub original_filename: String,
-    pub created_at: f64,
-    pub size_bytes: u64,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub password_hash: Option<String>,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub expiry_timestamp: Option<f64>,
-}
 
 #[derive(Serialize)]
 pub struct PublicShareInfo {
@@ -246,7 +237,7 @@ fn default_manual() -> String {
 /// Validate a sub-path within a user's home directory, preventing directory
 /// traversal. Returns the resolved full path.
 fn get_validated_path(
-    settings: &crate::settings::Settings,
+    settings: &vreckan_core::settings::Settings,
     username: &str,
     home_dir: &str,
     sub_path: &str,
@@ -1391,7 +1382,7 @@ async fn launch_from_storage(
 /// its umask mode, letting other local users on a multi-user host see a
 /// user's in-flight uploads (ANT-345). The chmod is best effort: a
 /// non-writable directory must not fail the upload.
-pub(crate) fn ensure_upload_dir(settings: &crate::settings::Settings, upload_id: &str) -> PathBuf {
+pub(crate) fn ensure_upload_dir(settings: &vreckan_core::settings::Settings, upload_id: &str) -> PathBuf {
     let upload_path = Path::new(&settings.upload_dir).join(upload_id);
     if let Err(e) = std::fs::create_dir_all(&upload_path) {
         warn!("Failed to create upload dir: {e}");
@@ -2225,7 +2216,7 @@ pub fn render_password_page(
     error_message: &str,
     status: StatusCode,
 ) -> Response {
-    let template_path = crate::static_files::static_dir().join("public_password.html");
+    let template_path = vreckan_core::static_files::static_dir().join("public_password.html");
     let nonce = {
         let mut buf = [0u8; 16];
         use rand::Rng;
@@ -2250,7 +2241,7 @@ pub fn render_password_page(
     Response::builder()
         .status(status)
         .header(header::CONTENT_TYPE, "text/html; charset=utf-8")
-        .header(header::CONTENT_SECURITY_POLICY, security::strict_csp(&nonce))
+        .header(header::CONTENT_SECURITY_POLICY, vreckan_core::shared::strict_csp(&nonce))
         .body(axum::body::Body::from(html))
         .unwrap_or_else(|e| (StatusCode::INTERNAL_SERVER_ERROR, e.to_string()).into_response())
 }
@@ -2333,7 +2324,7 @@ async fn access_public_share_post(
             let mut tokens = state.download_tokens.write().await;
             tokens.insert(
                 token.clone(),
-                crate::state::DownloadTokenRecord {
+                vreckan_core::state::DownloadTokenRecord {
                     share_id: share_id.clone(),
                     expires_at: now + 60.0,
                 },
@@ -2417,8 +2408,8 @@ mod tests {
         dir
     }
 
-    fn settings_with_upload_dir(uploads: &std::path::Path) -> crate::settings::Settings {
-        let mut s = crate::settings::Settings::from_env();
+    fn settings_with_upload_dir(uploads: &std::path::Path) -> vreckan_core::settings::Settings {
+        let mut s = vreckan_core::settings::Settings::from_env();
         s.upload_dir = uploads.to_string_lossy().to_string();
         s
     }

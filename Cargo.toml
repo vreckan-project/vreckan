@@ -1,24 +1,32 @@
-[package]
-name = "vreckan"
+[workspace]
+members = [
+    ".",
+    "crates/vreckan-core",
+    "crates/vreckan-acme",
+    "crates/vreckan-auth",
+    "crates/vreckan-apps",
+    "crates/vreckan-admin",
+]
+resolver = "2"
+
+# Candidate C (ANT-662 Phase 2 / ANT-770): the former single lib+bin is split
+# into five domain crates plus this thin `vreckan` package (lib facade + bin).
+# The public `vreckan` package name is preserved: the lib re-exports every
+# former top-level module, so downstream dependents' `Cargo.toml` and
+# `use vreckan::...` paths are unaffected.
+
+[workspace.package]
+# The 0.10.0 -> 0.11.0 bump lands in the version-bump follow-up (ANT-775).
 version = "0.10.7"
 edition = "2021"
-description = "Vreckan server (Rust port of the Python/FastAPI server)"
-# MPL-2.0 to match the upstream SealSkin fork this project derives from (see
-# LICENSE). The Rust source is a net-new implementation; the served web client
-# under `server/static/` carries over SealSkin-licensed files (see the
-# per-file notes in the repo).
 license = "MPL-2.0"
 
-[[bin]]
-name = "vreckan"
-path = "src/main.rs"
-
-[dependencies]
+[workspace.dependencies]
 # HTTP server + routing
 axum = { version = "0.8", features = ["macros", "query", "json", "multipart", "ws", "http2", "form"] }
 axum-extra = { version = "0.12", features = ["cookie"] }
 axum-server = { version = "0.8", features = ["tls-rustls"] }
-axum-reverse-proxy = "2.4"
+axum-reverse-proxy = "2.2"
 tokio = { version = "1", features = ["full"] }
 hyper = { version = "1", features = ["full"] }
 # Per-connection HTTP driver for the manual accept loop in `serve.rs`
@@ -78,10 +86,6 @@ aes-gcm = "0.11"
 pkcs8 = { version = "0.11", features = ["alloc", "pem"] }
 spki = "0.8"
 der = "0.8"
-# RNGs come from `rand 0.10`'s thread-local CSPRNG (`rand::rng()`), which is
-# seeded from the OS CSPRNG and implements `rand_core 0.10`'s `CryptoRng`,
-# so it can be passed to `rsa 0.10` directly (the `rand_core 0.6` `OsRng`
-# from the old stack can't — different trait version).
 
 # OIDC / SSO
 openid = "0.25"
@@ -118,6 +122,7 @@ flate2 = "1"
 # TLS / certs
 rustls = { version = "0.23", features = ["ring"] }
 rustls-pemfile = "2"
+rustls-pki-types = "1"
 x509-cert = "0.3"
 rcgen = "0.14"
 # Native ACME client (replaces the certbot sidecar container for Let's
@@ -148,10 +153,77 @@ hex = "0.4"
 thiserror = "2"
 anyhow = "1"
 
+[package]
+name = "vreckan"
+version = { workspace = true }
+edition = { workspace = true }
+description = "Vreckan server (Rust port of the Python/FastAPI server)"
+# MPL-2.0 to match the upstream SealSkin fork this project derives from (see
+# LICENSE). The Rust source is a net-new implementation; the served web client
+# under `server/static/` carries over SealSkin-licensed files (see the
+# per-file notes in the repo).
+license = { workspace = true }
+
+[[bin]]
+name = "vreckan"
+path = "src/main.rs"
+
+[dependencies]
+vreckan-core = { path = "crates/vreckan-core" }
+vreckan-acme = { path = "crates/vreckan-acme" }
+vreckan-auth = { path = "crates/vreckan-auth" }
+vreckan-apps = { path = "crates/vreckan-apps" }
+vreckan-admin = { path = "crates/vreckan-admin" }
+anyhow = { workspace = true }
+axum-server = { workspace = true }
+rustls = { workspace = true }
+tokio = { workspace = true }
+tracing = { workspace = true }
+tracing-subscriber = { workspace = true }
+# Carried over from the pre-split root manifest to keep the dependency tree
+# unchanged (ANT-662 Phase 3 crypto unification sorts out the dead ones):
+# `ring` survives via rustls/rcgen/openid, `openid` via jwks, and
+# `axum-reverse-proxy` / `axum-extra` / `http-body-util` were already
+# unreferenced by code.
+ring = { workspace = true }
+openid = { workspace = true }
+axum-reverse-proxy = { workspace = true }
+axum-extra = { workspace = true }
+http-body-util = { workspace = true }
+
+# Integration test suite (tests/): builds against the `vreckan` facade lib
+# plus the crates directly.
 [dev-dependencies]
-# The same-port dispatch tests in `serve.rs` build a no-verify TLS client
-# (already in the tree via rustls/axum-server).
-rustls-pki-types = "1"
+aes-gcm = { workspace = true }
+async-trait = { workspace = true }
+axum = { workspace = true }
+axum-server = { workspace = true }
+base64 = { workspace = true }
+bollard = { workspace = true }
+flate2 = { workspace = true }
+futures-util = { workspace = true }
+http = { workspace = true }
+http-body-util = { workspace = true }
+jsonwebtoken = { workspace = true }
+pkcs8 = { workspace = true }
+rand = { workspace = true }
+rcgen = { workspace = true }
+reqwest = { workspace = true }
+rsa = { workspace = true }
+rustls = { workspace = true }
+rustls-pemfile = { workspace = true }
+sea-orm = { workspace = true }
+serde_json = { workspace = true }
+serde_yaml = { workspace = true }
+sha2 = { workspace = true }
+tar = { workspace = true }
+time = { workspace = true }
+tokio = { workspace = true }
+tokio-rustls = { workspace = true }
+tokio-tungstenite = { workspace = true }
+tower = { workspace = true }
+url = { workspace = true }
+uuid = { workspace = true }
 
 # The published `acmex` 0.8.0 hard-codes the ACME account key as Ed25519 and
 # signs every JWS with `alg: EdDSA`, but Let's Encrypt production no longer

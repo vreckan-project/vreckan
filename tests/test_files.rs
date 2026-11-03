@@ -19,9 +19,9 @@ use common::{build_state, SecureClient, TempDir};
 use http::StatusCode;
 use sea_orm::{ActiveModelTrait, EntityTrait, IntoActiveModel};
 use serde_json::{json, Value};
-use vreckan::catalog;
-use vreckan::files::PublicShareMetadata;
+use vreckan_core::shared::PublicShareMetadata;
 use vreckan::user_manager;
+use vreckan_core::shared::InstalledApp;
 
 /// Mirrors `api_module.CHUNK_SIZE`.
 const CHUNK_SIZE: usize = 2 * 1024 * 1024;
@@ -1114,7 +1114,7 @@ async fn test_launch_from_storage_app_not_accessible() {
     let sc = admin_client(build_state(_root.path()).await).await;
     home(&sc);
     // An app restricted to another user denies even admins (no bypass).
-    let app: catalog::InstalledApp = serde_json::from_value(json!({
+    let app: InstalledApp = serde_json::from_value(json!({
         "id": "app-restricted",
         "name": "Restricted",
         "logo": "https://example.invalid/restricted.png",

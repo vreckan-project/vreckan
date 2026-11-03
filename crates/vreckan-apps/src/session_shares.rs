@@ -37,78 +37,26 @@ use serde::{Deserialize, Serialize};
 use serde_json::Value;
 use tracing::{info, warn};
 
-use crate::auth;
+use vreckan_auth::auth;
 use crate::catalog;
 use crate::collaboration;
-use crate::e2ee;
-use crate::entities;
+use vreckan_acme::e2ee;
+use vreckan_core::entities;
 use crate::files;
-use crate::state::AppState;
-use crate::user_manager;
+use vreckan_core::state::AppState;
+use vreckan_auth::user_manager;
+// Re-exported so the pre-split paths keep resolving from other crates
+// (ANT-770).
+pub use vreckan_core::shared::{
+    SessionShareCaps, SessionShareMetadata, SessionShareTokenRecord,
+};
 
 // ---------------------------------------------------------------------------
 // Types
 // ---------------------------------------------------------------------------
 
-/// The per-link capability toggles for a session share. Enforced server-side
-/// in the session proxy (WP3); the room UI reflects them for room sessions.
-#[derive(Serialize, Deserialize, Clone, Debug, PartialEq, Eq)]
-pub struct SessionShareCaps {
-    pub input: bool,
-    pub file_browse: bool,
-    pub file_download: bool,
-    pub file_upload: bool,
-}
 
-/// The durable record for one share-session link (stored as the
-/// `session_shares.data` JSON payload, mirroring `PublicShareMetadata`).
-#[derive(Serialize, Deserialize, Clone, Debug)]
-pub struct SessionShareMetadata {
-    pub session_id: String,
-    pub owner_username: String,
-    /// "full" (input + all file caps) or "view_only" (no input; browse and
-    /// download on by default).
-    pub role: String,
-    pub caps: SessionShareCaps,
-    pub created_at: f64,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub password_hash: Option<String>,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub expiry_timestamp: Option<f64>,
-    /// True once the owner revoked the link (a revoked link keeps its row so
-    /// the public entry can answer 410 and the owner's list can show it).
-    #[serde(default)]
-    pub revoked: bool,
-    /// The user the owner expressly invited on this link (ANT-472): a named
-    /// invite lets that user see the session on the apps page and join it,
-    /// where a generic (unnamed) link only admits its holder through the link
-    /// itself. Existing rows deserialize to `None`.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub invited_username: Option<String>,
-}
 
-/// A per-visit token for a session share (in-memory only, mirroring the
-/// `download_tokens` pattern). The session proxy (WP3) looks a visitor's
-/// token up here to find the share that granted it and enforces the
-/// capability set against the in-container file API.
-///
-/// `caps` is a *snapshot* of the share's caps taken when the visit was
-/// minted: a mid-visit edit to the share's caps therefore applies on the
-/// visitor's next open, not live (the cheap semantics chosen in ANT-306).
-/// Revocation is the exception — it removes the record, so a revoked link
-/// cuts its visits immediately.
-#[derive(Clone, Debug)]
-pub struct SessionShareTokenRecord {
-    pub share_id: String,
-    pub session_id: String,
-    pub caps: SessionShareCaps,
-    /// When the visit was minted (unix seconds).
-    pub created_at: f64,
-    /// When the grant expires (unix seconds), if it has a TTL: share visits
-    /// inherit the share link's expiry, joins carry the join TTL (ANT-467).
-    /// `None` means "no expiry".
-    pub expiry: Option<f64>,
-}
 
 /// The wire representation of a share for the owner management API.
 #[derive(Serialize)]
