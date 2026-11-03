@@ -16,8 +16,10 @@ resolver = "2"
 # `use vreckan::...` paths are unaffected.
 
 [workspace.package]
-# The 0.10.0 -> 0.11.0 bump lands in the version-bump follow-up (ANT-775).
-version = "0.10.7"
+# Single version shared by all six workspace crates via
+# `version = { workspace = true }` (Candidate C split, ANT-770). Bumped
+# 0.10.7 -> 0.11.0 for the v0.11.0 cut that ships the split (ANT-775).
+version = "0.11.0"
 edition = "2021"
 license = "MPL-2.0"
 
