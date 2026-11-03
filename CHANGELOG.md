@@ -9,6 +9,36 @@ is committed normally in `vreckan`. The changelog is the authoritative
 record of what shipped in each release — see
 [`docs/release.md`](./docs/release.md) for the conventions.
 
+## 2026-11-03 — v0.11.0: Candidate C Cargo workspace split (ANT-662 P2)
+
+- **The monolith is now a Cargo workspace of six crates** (Candidate C,
+  ANT-662 Phase 2 / ANT-770): the former single lib+bin is split into five
+  domain crates — `vreckan-core`, `vreckan-acme`, `vreckan-auth`,
+  `vreckan-apps`, `vreckan-admin` — plus a thin `vreckan` package that holds
+  the binary and re-exports every former top-level module as the public lib
+  facade. Downstream dependents' `Cargo.toml` and `use vreckan::...` paths are
+  unaffected. The bounded 7-type data-model extraction into `vreckan-core`
+  (ANT-773) landed with the split.
+
+- **Version bump 0.10.7 → 0.11.0** (ANT-775): a minor bump shipped with the
+  split, per the board ask that the version bump ships alongside it (ANT-662
+  P2). All six crates inherit the single `workspace.package.version` via
+  `version = { workspace = true }`, so `VERSION`, the root `Cargo.toml`, and
+  every crate's `Cargo.lock` entry move together to 0.11.0.
+
+- **`rsa` 0.10.0-rc.19 → 0.10.0-rc.20** (Renovate, PR #129 / ANT-801): the
+  held RustCrypto `rsa` pin advanced to rc.20 and lands immediately before the
+  bump so the rc.20 pin ships in v0.11.0. rc.20 makes `rsa`'s `sha2`
+  dependency required, so the manifest's `features = ["sha2"]` is dropped
+  (no code change — every `rsa::…` call site uses the unchanged root-level
+  re-exports). The `cargo update -p rsa` subgraph floats to current:
+  `crypto-bigint 0.7.6 → 0.7.10`, `ctutils 0.4.5 → 0.4.8`, `pkcs1
+  0.8.0-rc.5 → 0.8.0` (no new packages enter the tree).
+
+`VERSION`/`Cargo.toml`/`Cargo.lock` moved 0.10.7 → 0.11.0 via
+`scripts/bump-version.sh minor` (with the five non-root crate `Cargo.lock`
+entries re-pointed alongside the root).
+
 ## 2026-11-03 — v0.10.7: base-image bump + mold as the default Rust linker (ANT-772)
 
 - **The build base advanced to the latest `vreckan-base-build`** (the
