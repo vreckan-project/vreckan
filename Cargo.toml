@@ -153,6 +153,18 @@ hex = "0.4"
 thiserror = "2"
 anyhow = "1"
 
+# In-repo clippy baseline (ANT-791): makes lint behavior reproducible
+# independent of the build image — the weekly clippy scan and any ad-hoc
+# `cargo clippy` run pick this up from the workspace instead of relying on
+# the image's toolchain defaults. `clippy::all` at `warn` is exactly what a
+# plain `cargo clippy` run enforces by default, so the baseline changes
+# nothing at the current state (the existing `if_same_then_else` pair in
+# vreckan-admin stays a warning, not an error — CI cannot flip red).
+# Tighten individual lints here (deny, or add categories) as follow-up work;
+# `priority = -100` keeps explicit per-lint entries above the category entry.
+[workspace.lints.clippy]
+all = { level = "warn", priority = -100 }
+
 [package]
 name = "vreckan"
 version = { workspace = true }
@@ -163,6 +175,10 @@ description = "Vreckan server (Rust port of the Python/FastAPI server)"
 # under `server/static/` carries over SealSkin-licensed files (see the
 # per-file notes in the repo).
 license = { workspace = true }
+
+# Opt the root package into the workspace lint table (ANT-791).
+[lints]
+workspace = true
 
 [[bin]]
 name = "vreckan"

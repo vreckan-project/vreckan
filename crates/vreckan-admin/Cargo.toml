@@ -36,3 +36,8 @@ tracing = { workspace = true }
 # The same-port dispatch tests in `serve.rs` build a no-verify TLS client.
 [dev-dependencies]
 rustls-pki-types = { workspace = true }
+
+# Opt into the workspace lint table: the clippy baseline is defined once in
+# the root Cargo.toml ([workspace.lints.clippy], ANT-791).
+[lints]
+workspace = true
