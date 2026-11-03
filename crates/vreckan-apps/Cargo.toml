@@ -37,3 +37,8 @@ tokio = { workspace = true }
 tokio-tungstenite = { workspace = true }
 tracing = { workspace = true }
 uuid = { workspace = true }
+
+# Opt into the workspace lint table: the clippy baseline is defined once in
+# the root Cargo.toml ([workspace.lints.clippy], ANT-791).
+[lints]
+workspace = true
