@@ -1,0 +1,20 @@
+# Pinned Rust toolchain for vreckan (ANT-791, from the monthly tooling audit
+# ANT-788). This file is the single source of truth for the toolchain:
+#
+#   - The `vreckan-base-build` image bakes exactly this toolchain — the
+#     vreckan-workflow `build-base-build` workflow reads `channel` from here
+#     and sets the `rust:<channel>-slim` base tag it builds on (and its
+#     change-check gate watches the pinned base digest), so the image and
+#     the repo cannot drift apart on the toolchain.
+#   - A dev session on the image resolves this pin through rustup: any
+#     `cargo`/`rustc`/`clippy`/`fmt` invocation in a checkout that carries
+#     this file selects the pinned toolchain, independent of whatever the
+#     image's default happens to be.
+#
+# The pin matches the toolchain the CI baseline was measured on (rustc
+# 1.99.1, ANT-766) and the current `vreckan-base-build:latest` bake
+# (verified 2026-11-03). Bump the channel here and re-bake the image
+# (dispatch `build-base-build`); everything downstream follows the pin.
+[toolchain]
+channel = "1.99.1"
+components = ["clippy", "rustfmt"]
