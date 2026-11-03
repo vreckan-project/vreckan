@@ -10,6 +10,10 @@
 //! The DB-backed durable stores (users, groups, apps, sessions, tokens,
 //! shares, mounts, stores, templates) are loaded into these maps at startup
 //! and persisted back on change, exactly as the Python managers do.
+//!
+//! The value types this hub stores across crate boundaries live in
+//! [`crate::shared`]; the ANT-773 guard test in that module pins their
+//! presence and `pub` visibility in this crate.
 
 use std::collections::HashMap;
 use std::sync::{Arc, Mutex};

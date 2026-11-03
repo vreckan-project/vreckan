@@ -5,9 +5,14 @@
 //! These types moved into `vreckan-core` because [`crate::state::AppState`]
 //! stores them (and the two CSP helpers are called from domain-crate
 //! handlers): keeping them here is what gives the workspace its acyclic
-//! crate graph. All are plain data — the bounded 7-type extraction
-//! (ANT-773) re-verifies that property and the no-`core -> apps`/`core ->
-//! admin` invariant on the landed tree.
+//! crate graph. All are plain data — structs and enums holding only other
+//! types in this module, other core types, or external-crate types (std,
+//! tokio, axum, serde, serde_json). The bounded 7-type extraction
+//! (ANT-773) verified that property and the no-`core -> apps`/`core ->
+//! admin` edge invariant on the landed tree (2026-11-03): the core
+//! manifest depends only on external crates, and the
+//! [`ant773_invariant`] test below pins the 7 types' presence and `pub`
+//! visibility here.
 //!
 //! Provenance (pre-split location):
 //! - `EnvVar`, `AvailableAppProviderConfig`, `InstalledAppProviderConfig`,
@@ -21,9 +26,15 @@
 //!   `collaboration` (now `vreckan_apps::collaboration`)
 //! - `SESSION_CSP`, `strict_csp` — `security` (now `vreckan_admin::security`)
 //!
-//! Note: `SessionShareTokenRecord` and `PushedTokenTable` are held by
-//! `AppState` but were not in the original 7-type list; they are part of
-//! the compile closure of the move.
+//! Additional items the move pulled in (the compile closure, beyond the
+//! 7 types named in the ANT-773 issue): `EnvVar`,
+//! `AvailableAppProviderConfig`, `InstalledAppProviderConfig`,
+//! `default_true` (catalog), `SessionShareCaps`,
+//! `SessionShareTokenRecord` (session_shares), `ConnectionInfo`,
+//! `PushedTokenTable` (collaboration) — each is a field type of one of
+//! the 7 and is itself plain data. `SESSION_CSP`/`strict_csp` moved the
+//! other way (admin -> core, not part of the 7-type closure) so the apps
+//! handlers keep one CSP source without an `apps -> admin` edge.
 
 use std::collections::HashMap;
 
@@ -294,4 +305,41 @@ pub fn strict_csp(nonce: &str) -> String {
          base-uri 'self'; \
          form-action 'self'"
     )
+}
+
+/// Pins the bounded 7-type extraction (ANT-773): every type the issue
+/// names must be `pub` in `vreckan-core` (not just reachable through a
+/// `pub use` re-export somewhere), so the no-`core -> apps`/`core ->
+/// admin` edge stays provable from this crate alone. Referencing a type
+/// through a re-export would compile even if the definition left core;
+/// naming it as `crate::shared::...` / `crate::state::...` does not.
+#[cfg(test)]
+mod ant773_invariant {
+    use super::*;
+    use crate::state::AppState;
+
+    #[test]
+    fn the_seven_types_are_pub_in_core() {
+        // Name resolution against this crate's own paths: if any of the 7
+        // is moved back into a domain crate (or renamed), this stops
+        // compiling.
+        let _ = std::mem::size_of::<InstalledApp>();
+        let _ = std::mem::size_of::<AppStore>();
+        let _ = std::mem::size_of::<GpuInfo>();
+        let _ = std::mem::size_of::<PublicShareMetadata>();
+        let _ = std::mem::size_of::<SessionShareMetadata>();
+        let _ = std::mem::size_of::<RoomConnections>();
+        let _ = std::mem::size_of::<AppState>();
+
+        // `SelkiesProbe` is an enum: pin the variant shape too (the
+        // secure/legacy split is part of the public contract).
+        assert!(SelkiesProbe::Secure { version: None }.is_secure());
+        assert!(!SelkiesProbe::Legacy { version: None }.is_secure());
+
+        // `RoomConnections` is plain data: default-constructible with
+        // `pub` fields (no behavior to exercise here).
+        let room = RoomConnections::default();
+        assert!(room.controller.is_none());
+        assert!(room.viewers.is_empty());
+    }
 }
