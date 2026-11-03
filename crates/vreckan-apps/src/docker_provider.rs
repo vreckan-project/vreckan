@@ -33,19 +33,10 @@ use futures_util::StreamExt;
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
 use tracing::{debug, error, info, warn};
+// Re-exported so the pre-split path (`docker_provider::GpuInfo`) keeps
+// resolving from other crates (ANT-770).
+pub use vreckan_core::shared::GpuInfo;
 
-/// A GPU device detected on the host (mirrors an entry of `api.AVAILABLE_GPUS`).
-#[derive(Clone, Debug, Serialize, Deserialize)]
-pub struct GpuInfo {
-    pub device: String,
-    pub driver: String,
-    /// "nvidia" or "dri3".
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub r#type: Option<String>,
-    /// Index for nvidia GPUs (0-based).
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub index: Option<i64>,
-}
 
 /// A single bind mount: host path (the map key) -> container path + mode.
 #[derive(Clone, Debug, Serialize, Deserialize)]
@@ -251,7 +242,7 @@ impl DockerProvider {
     /// digests) into `state.image_metadata` so the installed-apps table is
     /// accurate without admin action (ANT-269). Mirrors `initialize()` (called
     /// on-demand at launch when the image is missing locally).
-    pub async fn initialize(&self, state: &crate::state::AppState) -> Result<(), LaunchError> {
+    pub async fn initialize(&self, state: &vreckan_core::state::AppState) -> Result<(), LaunchError> {
         let image = self
             .provider_config()
             .get("image")

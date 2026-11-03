@@ -50,7 +50,7 @@ async fn gpu_device(sc: &SecureClient) -> String {
     if let Some(first) = gpus.first() {
         return first.device.clone();
     }
-    let fake = vreckan::docker_provider::GpuInfo {
+    let fake = vreckan_core::shared::GpuInfo {
         device: "/dev/dri/renderD128".to_string(),
         driver: "amdgpu".to_string(),
         r#type: Some("dri3".to_string()),
@@ -501,7 +501,7 @@ async fn test_pull_latest_idle_app() {
     let mut body: serde_json::Value = serde_json::from_str(INSTALL_BODY).unwrap();
     body["id"] = json!("app-2");
     body["provider_config"]["image"] = json!(image);
-    let app: vreckan::catalog::InstalledApp = serde_json::from_value(body).unwrap();
+    let app: vreckan_core::shared::InstalledApp = serde_json::from_value(body).unwrap();
     sc.state.installed_apps.write().await.insert(app.id.clone(), app);
     assert!(!sc.state.pull_status.read().await.contains_key(image));
     let (status, data) = sc

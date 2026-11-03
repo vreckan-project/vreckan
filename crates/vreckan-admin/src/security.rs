@@ -24,8 +24,12 @@ use axum::http::{Method, StatusCode};
 use axum::middleware::Next;
 use axum::response::{IntoResponse, Response};
 
-use crate::settings::CorsMode;
-use crate::state::AppState;
+use vreckan_core::settings::CorsMode;
+use vreckan_core::state::AppState;
+
+// Re-exported so the pre-split paths (`security::SESSION_CSP`,
+// `security::strict_csp`) keep resolving from other crates (ANT-770).
+pub use vreckan_core::shared::{SESSION_CSP, strict_csp};
 
 /// The default (strict) security headers applied to every response.
 pub const SECURITY_HEADERS: [(&str, &str); 8] = [
@@ -83,41 +87,7 @@ const LOOSE_SECURITY_HEADERS: [(&str, &str); 3] = [
     ("Cross-Origin-Resource-Policy", "cross-origin"),
 ];
 
-/// The looser CSP used for the reverse-proxied session page (noVNC and other
-/// third-party app-container HTML that may rely on inline script/style).
-/// Mirrors `_SESSION_CSP` in `server/api`.
-///
-/// `data:` is allowed in `script-src`/`worker-src` because the selkies
-/// app-container loads its Playback AudioWorklet from a `data:text/javascript`
-/// URL (ANT-537); without it the browser blocks the worklet and in-container
-/// audio dies. The page already allows `'unsafe-inline'`, so a `data:` script
-/// adds no real capability.
-pub const SESSION_CSP: &str = "default-src 'self'; \
-     script-src 'self' 'unsafe-inline' blob: data:; \
-     worker-src 'self' blob: data:; \
-     style-src 'self' 'unsafe-inline'; \
-     img-src 'self' data: blob: https://raw.githubusercontent.com https://github.com; \
-     frame-src 'self'; \
-     connect-src 'self'; \
-     frame-ancestors 'self'; \
-     base-uri 'self'; \
-     form-action 'self'";
 
-/// A strict, per-response CSP with a nonce, for the collaboration room and
-/// the public password page.
-pub fn strict_csp(nonce: &str) -> String {
-    format!(
-        "default-src 'self'; \
-         script-src 'self' 'nonce-{nonce}' blob:; \
-         worker-src 'self' 'nonce-{nonce}' blob:; \
-         style-src 'self' 'nonce-{nonce}'; \
-         img-src 'self' data: blob:; \
-         connect-src 'self' ws: wss:; \
-         frame-ancestors 'self'; \
-         base-uri 'self'; \
-         form-action 'self'"
-    )
-}
 
 /// Methods and request headers advertised on preflight responses.
 const ALLOWED_METHODS: &str = "GET, POST, PUT, PATCH, DELETE, OPTIONS";
@@ -171,7 +141,7 @@ pub async fn add_security_headers(State(state): State<AppState>, req: Request, n
 /// the request origin as-is when no allowlist is set, or the allowlist
 /// entry's canonical form when one matches (comparison is
 /// case-insensitive). `None` means the origin is not allowed.
-fn allowed_origin(cors: &crate::settings::CorsConfig, origin: &str) -> Option<String> {
+fn allowed_origin(cors: &vreckan_core::settings::CorsConfig, origin: &str) -> Option<String> {
     if cors.allowed_origins.is_empty() {
         return Some(origin.to_string());
     }

@@ -24,9 +24,9 @@ use http::request::Parts;
 use tokio_tungstenite::connect_async;
 use tracing::{debug, info, warn};
 
-use crate::session_shares::SessionShareCaps;
-use crate::state::AppState;
-use crate::tokens::tokens_equal;
+use vreckan_core::shared::SessionShareCaps;
+use vreckan_core::state::AppState;
+use vreckan_core::tokens::tokens_equal;
 
 /// The public path prefix this router is mounted under (see `app.rs`). The
 /// nested router strips this prefix from `parts.uri.path()`, so handlers that
@@ -51,7 +51,7 @@ const PROXY_DROP_HEADERS: &[&str] = &[
 ];
 
 /// The per-session cookie name. Mirrors `_session_cookie_name`.
-fn session_cookie_name(settings: &crate::settings::Settings, session_id: &str) -> String {
+fn session_cookie_name(settings: &vreckan_core::settings::Settings, session_id: &str) -> String {
     format!("{}_{}", settings.session_cookie_name, session_id)
 }
 
@@ -401,7 +401,7 @@ async fn proxy_session_request(
         // CSP the strict default headers would block the auto-reload timer.
         headers.insert(
             header::CONTENT_SECURITY_POLICY,
-            HeaderValue::from_static(crate::security::SESSION_CSP),
+            HeaderValue::from_static(vreckan_core::shared::SESSION_CSP),
         );
         return (StatusCode::ACCEPTED, headers, waiting_screen(error)).into_response();
     }
@@ -598,7 +598,7 @@ async fn proxy_session_request(
         .headers_mut()
         .insert(
             header::CONTENT_SECURITY_POLICY,
-            HeaderValue::from_static(crate::security::SESSION_CSP),
+            HeaderValue::from_static(vreckan_core::shared::SESSION_CSP),
         );
     response
 }
@@ -889,7 +889,7 @@ async fn initial_session_auth(
     // here we take the public host from the request. Under HTTP/2 the host
     // arrives in the `:authority` pseudo-header (stored in the URI), not a
     // `Host` header, so we resolve it via the shared `public_host` helper.
-    let host = crate::auth::public_host(&parts.headers, &parts.uri);
+    let host = vreckan_auth::auth::public_host(&parts.headers, &parts.uri);
     // This router is nested under `/api/apps/session` (see `app.rs`), so
     // `parts.uri.path()` is the path *after* that prefix is stripped
     // (e.g. `/{session_id}/`). Re-prepend the prefix to rebuild the full

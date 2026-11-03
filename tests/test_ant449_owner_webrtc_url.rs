@@ -17,6 +17,7 @@ use serde_json::{json, Value};
 use std::collections::HashMap;
 use vreckan::catalog;
 use vreckan::user_manager;
+use vreckan_core::shared::InstalledApp;
 
 const DEFAULT_PROVIDER_CONFIG: &str = r#"{
     "image": "img:latest",
@@ -46,7 +47,7 @@ async fn make_app(sc: &SecureClient) {
         "app_template": "Default",
         "provider_config": serde_json::from_str::<Value>(DEFAULT_PROVIDER_CONFIG).unwrap(),
     });
-    let app: catalog::InstalledApp = serde_json::from_value(data.clone()).unwrap();
+    let app: InstalledApp = serde_json::from_value(data.clone()).unwrap();
     sc.state.installed_apps.write().await.insert(app.id.clone(), app);
 }
 

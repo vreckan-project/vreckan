@@ -25,6 +25,7 @@ use http::StatusCode;
 use serde_json::json;
 use std::sync::{Arc, Mutex};
 use vreckan::catalog;
+use vreckan_core::shared::InstalledApp;
 
 const APP_ID: &str = "app-docker-probe";
 
@@ -54,7 +55,7 @@ async fn docker_available() -> bool {
 /// Register a no-GPU probe app backed by `python:3.12-slim`. Mirrors
 /// `_seed_probe_app`.
 async fn seed_probe_app(sc: &SecureClient) -> String {
-    let app: catalog::InstalledApp = serde_json::from_value(json!({
+    let app: InstalledApp = serde_json::from_value(json!({
         "id": APP_ID,
         "name": "Docker Probe",
         "logo": "x",

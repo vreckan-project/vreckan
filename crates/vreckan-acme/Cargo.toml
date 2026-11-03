@@ -1,0 +1,39 @@
+[package]
+name = "vreckan-acme"
+version = { workspace = true }
+edition = { workspace = true }
+description = "Vreckan ACME/TLS: native Let's Encrypt issuance, orchestrator, TLS cert selection, E2EE handshake"
+license = { workspace = true }
+
+# Explicit target: the Docker build stage copies only the manifests before
+# `cargo fetch`, where `src/lib.rs` does not exist yet — with autodiscovery
+# alone the manifest would fail to parse ("no targets specified").
+[lib]
+path = "src/lib.rs"
+[dependencies]
+vreckan-core = { path = "../vreckan-core" }
+
+acmex = { workspace = true }
+aes-gcm = { workspace = true }
+anyhow = { workspace = true }
+async-trait = { workspace = true }
+axum = { workspace = true }
+axum-server = { workspace = true }
+base64 = { workspace = true }
+chrono = { workspace = true }
+der = { workspace = true }
+pkcs8 = { workspace = true }
+rand = { workspace = true }
+rcgen = { workspace = true }
+reqwest = { workspace = true }
+rsa = { workspace = true }
+rustls-pemfile = { workspace = true }
+serde = { workspace = true }
+serde_json = { workspace = true }
+sha2 = { workspace = true }
+spki = { workspace = true }
+time = { workspace = true }
+tokio = { workspace = true }
+tracing = { workspace = true }
+uuid = { workspace = true }
+x509-cert = { workspace = true }

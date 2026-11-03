@@ -6170,10 +6170,8 @@ checksum = "0b928f33d975fc6ad9f86c8f283853ad26bdd5b10b7f1542aa2fa15e2289105a"
 name = "vreckan"
 version = "0.10.7"
 dependencies = [
- "acmex",
  "aes-gcm",
  "anyhow",
- "argon2",
  "async-trait",
  "axum",
  "axum-extra",
@@ -6181,20 +6179,11 @@ dependencies = [
  "axum-server",
  "base64 0.23.1",
  "bollard",
- "chrono",
- "der 0.8.2",
  "flate2",
  "futures-util",
- "hex",
  "http",
  "http-body-util",
- "hyper",
- "hyper-util",
- "jsonwebtoken 10.4.0",
  "jsonwebtoken 11.1.0",
- "jwks",
- "log",
- "mime_guess",
  "openid",
  "pkcs8 0.11.0",
  "rand 0.10.3",
@@ -6204,15 +6193,11 @@ dependencies = [
  "rsa 0.10.0-rc.19",
  "rustls",
  "rustls-pemfile",
- "rustls-pki-types",
  "sea-orm",
- "serde",
  "serde_json",
  "serde_yaml",
  "sha2 0.11.1",
- "spki 0.8.1",
  "tar",
- "thiserror 2.0.21",
  "time",
  "tokio",
  "tokio-rustls",
@@ -6222,7 +6207,137 @@ dependencies = [
  "tracing-subscriber",
  "url",
  "uuid",
+ "vreckan-acme",
+ "vreckan-admin",
+ "vreckan-apps",
+ "vreckan-auth",
+ "vreckan-core",
+]
+
+[[package]]
+name = "vreckan-acme"
+version = "0.10.7"
+dependencies = [
+ "acmex",
+ "aes-gcm",
+ "anyhow",
+ "async-trait",
+ "axum",
+ "axum-server",
+ "base64 0.23.1",
+ "chrono",
+ "der 0.8.2",
+ "pkcs8 0.11.0",
+ "rand 0.10.3",
+ "rcgen",
+ "reqwest",
+ "rsa 0.10.0-rc.19",
+ "rustls-pemfile",
+ "serde",
+ "serde_json",
+ "sha2 0.11.1",
+ "spki 0.8.1",
+ "time",
+ "tokio",
+ "tracing",
+ "uuid",
+ "vreckan-core",
  "x509-cert",
+]
+
+[[package]]
+name = "vreckan-admin"
+version = "0.10.7"
+dependencies = [
+ "anyhow",
+ "axum",
+ "axum-server",
+ "base64 0.23.1",
+ "hyper",
+ "hyper-util",
+ "reqwest",
+ "rustls",
+ "rustls-pki-types",
+ "sea-orm",
+ "serde",
+ "serde_json",
+ "serde_yaml",
+ "tokio",
+ "tokio-rustls",
+ "tower",
+ "tracing",
+ "vreckan-acme",
+ "vreckan-apps",
+ "vreckan-auth",
+ "vreckan-core",
+]
+
+[[package]]
+name = "vreckan-apps"
+version = "0.10.7"
+dependencies = [
+ "axum",
+ "base64 0.23.1",
+ "bollard",
+ "chrono",
+ "flate2",
+ "futures-util",
+ "hex",
+ "http",
+ "rand 0.10.3",
+ "reqwest",
+ "sea-orm",
+ "serde",
+ "serde_json",
+ "serde_yaml",
+ "tar",
+ "tokio",
+ "tokio-tungstenite 0.30.0",
+ "tracing",
+ "uuid",
+ "vreckan-acme",
+ "vreckan-auth",
+ "vreckan-core",
+]
+
+[[package]]
+name = "vreckan-auth"
+version = "0.10.7"
+dependencies = [
+ "argon2",
+ "axum",
+ "base64 0.23.1",
+ "hex",
+ "jsonwebtoken 10.4.0",
+ "jsonwebtoken 11.1.0",
+ "jwks",
+ "rand 0.10.3",
+ "reqwest",
+ "sea-orm",
+ "serde",
+ "serde_json",
+ "sha2 0.11.1",
+ "tracing",
+ "url",
+ "vreckan-core",
+]
+
+[[package]]
+name = "vreckan-core"
+version = "0.10.7"
+dependencies = [
+ "async-trait",
+ "axum",
+ "axum-server",
+ "hex",
+ "log",
+ "mime_guess",
+ "sea-orm",
+ "serde",
+ "serde_json",
+ "sha2 0.11.1",
+ "tokio",
+ "tracing",
 ]
 
 [[package]]

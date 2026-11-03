@@ -28,8 +28,8 @@ use tracing::{info, warn};
 use crate::catalog;
 use crate::files;
 use crate::session_shares;
-use crate::state::AppState;
-use crate::user_manager;
+use vreckan_core::state::AppState;
+use vreckan_auth::user_manager;
 
 /// Must match the client-side chunk size (app/static/js/admin.js).
 const CHUNK_SIZE: usize = 2 * 1024 * 1024; // 2 MiB
@@ -83,13 +83,13 @@ fn is_valid_backup_name(name: &str) -> bool {
 }
 
 /// The backups directory (created if missing). Mirrors `get_backup_dir`.
-pub fn get_backup_dir(settings: &crate::settings::Settings) -> PathBuf {
+pub fn get_backup_dir(settings: &vreckan_core::settings::Settings) -> PathBuf {
     let path = PathBuf::from(&settings.backups_path);
     std::fs::create_dir_all(&path).ok();
     path
 }
 
-fn data_root(settings: &crate::settings::Settings) -> PathBuf {
+fn data_root(settings: &vreckan_core::settings::Settings) -> PathBuf {
     PathBuf::from(&settings.data_root)
 }
 
@@ -104,7 +104,7 @@ fn is_under(path: &Path, base: &Path) -> bool {
 /// `arcname` is the path relative to `data_root` (POSIX separators). Mirrors
 /// `_collect_entries`.
 fn collect_entries(
-    settings: &crate::settings::Settings,
+    settings: &vreckan_core::settings::Settings,
     include_user_data: bool,
 ) -> Vec<(PathBuf, String)> {
     let root = data_root(settings);
@@ -160,7 +160,7 @@ fn iso_mtime(path: &Path) -> String {
 
 /// If retention is enabled (N > 0), delete backups beyond the N newest.
 /// Mirrors `_apply_retention`.
-fn apply_retention(settings: &crate::settings::Settings) {
+fn apply_retention(settings: &vreckan_core::settings::Settings) {
     let keep = settings.backup_retention;
     if keep <= 0 {
         return; // 0 / unset => keep all
@@ -270,7 +270,7 @@ pub async fn create_backup(
 }
 
 /// List the backup archives, newest first. Mirrors `list_backups`.
-pub fn list_backups(settings: &crate::settings::Settings) -> Vec<Value> {
+pub fn list_backups(settings: &vreckan_core::settings::Settings) -> Vec<Value> {
     let backup_dir = get_backup_dir(settings);
     let mut out: Vec<Value> = Vec::new();
     let Ok(files) = std::fs::read_dir(&backup_dir) else {
@@ -300,7 +300,7 @@ pub fn list_backups(settings: &crate::settings::Settings) -> Vec<Value> {
 
 /// Resolve a backup name to its on-disk path, validating it. Mirrors
 /// `_resolve_backup`.
-pub fn resolve_backup(settings: &crate::settings::Settings, name: &str) -> Result<PathBuf, BackupError> {
+pub fn resolve_backup(settings: &vreckan_core::settings::Settings, name: &str) -> Result<PathBuf, BackupError> {
     if name.is_empty() || !is_valid_backup_name(name) {
         return Err(BackupError("Invalid backup name.".into()));
     }
@@ -315,7 +315,7 @@ pub fn resolve_backup(settings: &crate::settings::Settings, name: &str) -> Resul
 /// Return (raw_chunk_bytes, is_last) for the given backup and chunk index.
 /// Mirrors `get_backup_chunk`.
 pub fn get_backup_chunk(
-    settings: &crate::settings::Settings,
+    settings: &vreckan_core::settings::Settings,
     name: &str,
     chunk_index: i64,
 ) -> Result<(Vec<u8>, bool), BackupError> {
@@ -343,7 +343,7 @@ pub fn get_backup_chunk(
 }
 
 /// Delete a backup archive. Mirrors `delete_backup`.
-pub fn delete_backup(settings: &crate::settings::Settings, name: &str) -> Result<(), BackupError> {
+pub fn delete_backup(settings: &vreckan_core::settings::Settings, name: &str) -> Result<(), BackupError> {
     let path = resolve_backup(settings, name)?;
     std::fs::remove_file(&path).map_err(|e| BackupError(format!("Could not delete: {e}")))?;
     info!("Deleted backup {name}");

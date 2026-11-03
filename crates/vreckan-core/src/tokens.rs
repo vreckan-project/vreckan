@@ -14,7 +14,7 @@
 /// D1, ANT-310) timing is an accepted-risk class, but every collab and
 /// session-proxy comparison now goes through this one helper so the premise
 /// is documented in exactly one place.
-pub(crate) fn tokens_equal(a: &str, b: &str) -> bool {
+pub fn tokens_equal(a: &str, b: &str) -> bool {
     let a = a.as_bytes();
     let b = b.as_bytes();
     let mut diff: u8 = (a.len() ^ b.len()) as u8;
@@ -27,7 +27,7 @@ pub(crate) fn tokens_equal(a: &str, b: &str) -> bool {
 /// `Option`-shaped constant-time token equality, preserving the exact
 /// semantics of the `Option<&str> == Option<&str>` compares it replaces
 /// (including `None == None`) — ANT-344, item 3.
-pub(crate) fn opt_tokens_equal(a: Option<&str>, b: Option<&str>) -> bool {
+pub fn opt_tokens_equal(a: Option<&str>, b: Option<&str>) -> bool {
     match (a, b) {
         (Some(a), Some(b)) => tokens_equal(a, b),
         (None, None) => true,

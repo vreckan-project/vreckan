@@ -43,8 +43,8 @@ use serde::{Deserialize, Serialize};
 use spki::EncodePublicKey;
 use tracing::{info, warn};
 
-use crate::settings::Settings;
-use crate::state::AppState;
+use vreckan_core::settings::Settings;
+use vreckan_core::state::AppState;
 
 /// The `X-Session-ID` header name (carries the crypto session id).
 const X_SESSION_ID: &str = "x-session-id";

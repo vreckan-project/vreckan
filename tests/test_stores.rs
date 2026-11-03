@@ -342,7 +342,7 @@ async fn seed_cached_firefox_store(state: &vreckan::state::AppState) {
         .app_stores
         .write()
         .await
-        .push(vreckan::catalog::AppStore {
+        .push(vreckan_core::shared::AppStore {
             name: "Test Store".to_string(),
             url: STORE_URL.to_string(),
         });
@@ -1117,7 +1117,7 @@ async fn test_launch_caches_image_metadata() {
     let sc = admin_client(state).await;
     sc.state.fake_provider.store(true, std::sync::atomic::Ordering::Relaxed);
     sc.state.pull_noop.store(true, std::sync::atomic::Ordering::Relaxed);
-    let app: vreckan::catalog::InstalledApp = serde_json::from_value(json!({
+    let app: vreckan_core::shared::InstalledApp = serde_json::from_value(json!({
         "id": "app-1",
         "name": "Firefox",
         "logo": "x",

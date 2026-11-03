@@ -1,0 +1,29 @@
+[package]
+name = "vreckan-core"
+version = { workspace = true }
+edition = { workspace = true }
+description = "Vreckan core: DB layer, entities, settings, permissions, tokens, static files, process-wide state"
+license = { workspace = true }
+
+# The shared data types referenced across crate boundaries (the `state` hub's
+# value types + a few small security primitives) live in the `shared` module
+# so that core has no edge back into the domain crates (ANT-770; the bounded
+# 7-type extraction is formalized in ANT-773).
+# Explicit target: the Docker build stage copies only the manifests before
+# `cargo fetch`, where `src/lib.rs` does not exist yet — with autodiscovery
+# alone the manifest would fail to parse ("no targets specified").
+[lib]
+path = "src/lib.rs"
+[dependencies]
+async-trait = { workspace = true }
+axum = { workspace = true }
+axum-server = { workspace = true }
+hex = { workspace = true }
+log = { workspace = true }
+mime_guess = { workspace = true }
+sea-orm = { workspace = true }
+serde = { workspace = true }
+serde_json = { workspace = true }
+sha2 = { workspace = true }
+tokio = { workspace = true }
+tracing = { workspace = true }

@@ -336,7 +336,7 @@ async fn seed_app(sc: &SecureClient, id: &str, users: &[&str]) -> String {
         "app_template": "Default",
         "provider_config": { "image": "img:latest", "port": 3000 },
     });
-    let app: vreckan::catalog::InstalledApp = serde_json::from_value(data).unwrap();
+    let app: vreckan_core::shared::InstalledApp = serde_json::from_value(data).unwrap();
     let app_id = app.id.clone();
     sc.state
         .installed_apps

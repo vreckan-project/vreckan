@@ -264,14 +264,25 @@ async fn persist_until_visible(
 /// while the next read still lands on a pooled connection carrying a
 /// pre-write WAL snapshot, in which case `cert_status` falls through to the
 /// disk path and reports `source: null`. A short settle between attempts
-/// lets stale pooled connections drain out of the pool (ANT-328).
+/// lets stale pooled connections drain out of the pool (ANT-328). The record
+/// is stored as five independent settings and each `acme_cert_record` read
+/// may land on a different pooled connection with a different snapshot, so
+/// the visibility gate also requires the expiry and key fields, not just
+/// the source label (ANT-770: `valid` was intermittently computed from a
+/// stale pre-write read of `VRECKAN_ACME_CERT_EXPIRES`).
 async fn cert_status_until_db(
     state: &vreckan::state::AppState,
     domains: &[String],
 ) -> serde_json::Value {
     let mut status = acme_orchestrator::cert_status(state, domains).await;
     for _ in 0..10 {
-        if status.get("source").and_then(|v| v.as_str()) == Some("acme_db") {
+        let db_sourced = status.get("source").and_then(|v| v.as_str()) == Some("acme_db");
+        let expiry_visible = status.get("days_remaining").is_some_and(|v| v.is_i64());
+        let key_visible = status
+            .get("key")
+            .and_then(|v| v.as_str())
+            .is_some_and(|s| !s.is_empty());
+        if db_sourced && expiry_visible && key_visible {
             break;
         }
         tokio::time::sleep(std::time::Duration::from_millis(250)).await;

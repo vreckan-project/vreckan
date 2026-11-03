@@ -21,7 +21,7 @@ use der::Decode;
 use serde_json::Value;
 use tracing::{info, warn};
 
-use crate::state::AppState;
+use vreckan_core::state::AppState;
 
 /// Where the app reads issued certificates from. A `static` (not a plain
 /// `const`) so tests can point it at a temp tree — mirroring the Python test's

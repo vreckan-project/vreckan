@@ -31,10 +31,10 @@ use sea_orm::{ActiveModelTrait, ActiveValue, ConnectionTrait, DbErr, EntityTrait
 use serde::{Deserialize, Serialize};
 use tracing::{debug, info, warn};
 
-use crate::entities;
-use crate::permissions;
-use crate::settings::{CorsMode, DefaultDbCredsPolicy, Settings};
-use crate::state::AppState;
+use vreckan_core::entities;
+use vreckan_core::permissions;
+use vreckan_core::settings::{CorsMode, DefaultDbCredsPolicy, Settings};
+use vreckan_core::state::AppState;
 use crate::user_manager::{
     self, db_save_group, db_save_user_row, get_group_row, UserError, UserRecord,
 };
@@ -68,7 +68,7 @@ pub async fn issue_auth_token(state: &AppState, username: &str) -> Result<String
         .auth_tokens
         .write()
         .await
-        .insert(token.clone(), crate::state::AuthTokenRecord {
+        .insert(token.clone(), vreckan_core::state::AuthTokenRecord {
             username: username.to_string(),
             expires_at,
         });
@@ -138,7 +138,7 @@ pub async fn load_auth_tokens(state: &AppState) -> Result<(), DbErr> {
         if r.expires_at > now {
             map.insert(
                 r.token,
-                crate::state::AuthTokenRecord {
+                vreckan_core::state::AuthTokenRecord {
                     username: r.username,
                     expires_at: r.expires_at,
                 },
@@ -651,7 +651,7 @@ async fn login(
         let w = match map.get_mut(&key) {
             Some(w) => w,
             None => {
-                map.insert(key.clone(), crate::state::LoginAttemptWindow { window_start: now, ..Default::default() });
+                map.insert(key.clone(), vreckan_core::state::LoginAttemptWindow { window_start: now, ..Default::default() });
                 map.get_mut(&key).unwrap()
             }
         };
@@ -1478,7 +1478,7 @@ async fn oidc_authorize(
         }
         states.insert(
             state_str.clone(),
-            crate::state::OidcStateRecord {
+            vreckan_core::state::OidcStateRecord {
                 expires_at: now + ttl as f64,
             },
         );

@@ -16,16 +16,16 @@ use axum::routing::{any, get};
 use axum::Router;
 
 use crate::admin;
-use crate::auth;
-use crate::catalog;
-use crate::collaboration;
-use crate::e2ee;
-use crate::files;
+use vreckan_auth::auth;
+use vreckan_apps::catalog;
+use vreckan_apps::collaboration;
+use vreckan_acme::e2ee;
+use vreckan_apps::files;
 use crate::security;
-use crate::session_proxy;
-use crate::session_shares;
-use crate::state::AppState;
-use crate::static_files;
+use vreckan_apps::session_proxy;
+use vreckan_apps::session_shares;
+use vreckan_core::state::AppState;
+use vreckan_core::static_files;
 
 /// Build the application router.
 pub fn router(state: AppState) -> Router {

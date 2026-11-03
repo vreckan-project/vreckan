@@ -730,7 +730,7 @@ async fn test_session_proxy_gets_loose_csp() {
         .await;
     assert_eq!(resp.status, StatusCode::OK);
     let csp = resp.header("content-security-policy").unwrap();
-    assert_eq!(csp, security::SESSION_CSP);
+    assert_eq!(csp, vreckan_core::shared::SESSION_CSP);
     assert!(csp.contains("'unsafe-inline'"));
 
     // The selkies audio pipeline loads its Playback AudioWorklet from a
