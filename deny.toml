@@ -70,12 +70,11 @@ allow = [
   "MIT",
   "MIT-0",
   "MPL-2.0",
-  # OpenSSL License — pulled in by aws-lc-fips-sys (via acmex's aws-lc-rs/fips),
-  # which is dual/triple-licensed "ISC AND (Apache-2.0 OR ISC) AND OpenSSL".
-  # The OpenSSL clause is the only non-allowed component; it is a permissive
-  # attribution license, so allowing it satisfies the whole AND-expression
-  # without admitting copyleft.
-  "OpenSSL",
+  # (The OpenSSL license allow dropped in ANT-811: its only source was
+  # aws-lc-fips-sys — "ISC AND (Apache-2.0 OR ISC) AND OpenSSL" — pulled in
+  # by acmex's aws-lc-rs `fips` feature, now removed. The plain `openssl`
+  # crate that remains via native-tls is declared Apache-2.0/MIT. Re-add the
+  # entry if a future dep reintroduces the OpenSSL clause.)
   "Unlicense",
   "Unicode-3.0",
   "Zlib",
