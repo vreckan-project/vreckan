@@ -29,6 +29,26 @@ sha2 = { workspace = true }
 tracing = { workspace = true }
 url = { workspace = true }
 
+# Integration test suite (tests/): re-homed from the root package in
+# ANT-810 so each test binary links only the crates it exercises — this
+# crate plus its upstream core/acme (via the test harness's state seeding
+# and E2EE handshake), never the app-domain crates or the admin
+# composition. The dev-deps are the external crates the tests + the shared
+# harness use, trimmed from the old root [dev-dependencies].
+[dev-dependencies]
+# The test harness seeds the E2EE server key (the `SecureClient` handshake
+# is part of the auth test flow), so the tests need the acme crate as a
+# dev-edge — the production DAG stays auth -> core only.
+vreckan-acme = { path = "../vreckan-acme" }
+aes-gcm = { workspace = true }
+http = { workspace = true }
+http-body-util = { workspace = true }
+pkcs8 = { workspace = true }
+rsa = { workspace = true }
+tokio = { workspace = true }
+tower = { workspace = true }
+uuid = { workspace = true }
+
 # Opt into the workspace lint table: the clippy baseline is defined once in
 # the root Cargo.toml ([workspace.lints.clippy], ANT-791).
 [lints]

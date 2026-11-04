@@ -11,6 +11,7 @@
 pub mod db;
 pub mod entities;
 pub mod permissions;
+pub mod security;
 pub mod settings;
 pub mod shared;
 pub mod state;

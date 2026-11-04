@@ -168,11 +168,13 @@ The `Dockerfile` is multi-stage:
   base image) and `sccache`, which wraps `rustc` (`RUSTC_WRAPPER=sccache`)
   and persists the compile cache across builds via a BuildKit `type=cache`
   mount. See the per-package justifications in the `Dockerfile`.
-- **Test stage** — the build stage plus the `tests/` and `server/` trees: CI
-  builds `--target test` and pre-compiles `cargo test --profile test-release`
-  (thin-LTO, codegen-units=16) so the Gitea test job only executes the tests.
-  sccache serves unchanged dependency crates from its persistent cache, and the
-  job count scales with the runner's core count and a per-rustc memory budget.
+ - **Test stage** — the build stage plus the `server/` tree (the integration
+   suite lives in the per-crate `tests/` directories after ANT-810, and those
+   arrive with the build stage's `COPY crates`): CI builds `--target test` and
+   pre-compiles `cargo test --workspace --profile test-release` (thin-LTO,
+   codegen-units=16) so the Gitea test job only executes the tests.
+   sccache serves unchanged dependency crates from its persistent cache, and the
+   job count scales with the runner's core count and a per-rustc memory budget.
 - **Runtime stage** — `debian:trixie-slim`: the compiled `vreckan` binary,
   the web client (`server/static/`), and the bundled template schema
   (`server/template_schema.yml`). No Python, no pip. TLS, SQLite, and the
@@ -190,14 +192,17 @@ ANT-128/ANT-152). A hand-installed local `gcc`/`cmake` setup drifts from it.
 # binaries (test stage) in the standard container:
 docker build --target test -f Dockerfile -t vreckan:local .
 
-# Run the full suite in it, the same way the Gitea CI test job does:
+# Run the full suite in it, the same way the Gitea CI test job does.
+# `--workspace` is required: after the test-suite split (ANT-810) the
+# integration tests live in the member crates, so a plain `cargo test`
+# selects only the (test-less) root package.
 HOST_TMP=$(mktemp -d /tmp/vreckan-tests.XXXXXX)
 docker run --rm \
   --shm-size=2gb \
   -v /var/run/docker.sock:/var/run/docker.sock \
   -v "$HOST_TMP:/tmp/vreckan-tests" \
   -e VRECKAN_TEST_TMPDIR=/tmp/vreckan-tests \
-  --entrypoint cargo vreckan:local test --profile test-release
+  --entrypoint cargo vreckan:local test --workspace --profile test-release
 rm -rf "$HOST_TMP"
 ```
 

@@ -15,7 +15,6 @@
 
 pub use vreckan_admin::admin;
 pub use vreckan_admin::app;
-pub use vreckan_admin::security;
 pub use vreckan_admin::serve;
 pub use vreckan_acme::acme;
 pub use vreckan_acme::acme_orchestrator;
@@ -33,6 +32,7 @@ pub use vreckan_auth::user_manager;
 pub use vreckan_core::db;
 pub use vreckan_core::entities;
 pub use vreckan_core::permissions;
+pub use vreckan_core::security;
 pub use vreckan_core::settings;
 pub use vreckan_core::state;
 pub use vreckan_core::static_files;
