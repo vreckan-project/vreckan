@@ -4,16 +4,23 @@ members = [
     "crates/vreckan-core",
     "crates/vreckan-acme",
     "crates/vreckan-auth",
-    "crates/vreckan-apps",
+    "crates/vreckan-collab",
+    "crates/vreckan-sessions",
+    "crates/vreckan-catalog",
+    "crates/vreckan-files",
     "crates/vreckan-admin",
 ]
 resolver = "2"
 
-# Candidate C (ANT-662 Phase 2 / ANT-770): the former single lib+bin is split
-# into five domain crates plus this thin `vreckan` package (lib facade + bin).
-# The public `vreckan` package name is preserved: the lib re-exports every
-# former top-level module, so downstream dependents' `Cargo.toml` and
-# `use vreckan::...` paths are unaffected.
+# Candidate C (ANT-662 Phase 2 / ANT-770) split the former single lib+bin
+# into domain crates plus this thin `vreckan` package (lib facade + bin);
+# the Candidate B central-cluster split (Phase 3 / ANT-812) then dissolved
+# `vreckan-apps` into `vreckan-collab`, `vreckan-sessions`,
+# `vreckan-catalog` (catalog + docker provider), and `vreckan-files`, with
+# `backup_manager` moving to `vreckan-admin`. The public `vreckan` package
+# name is preserved: the lib re-exports every former top-level module, so
+# downstream dependents' `Cargo.toml` and `use vreckan::...` paths are
+# unaffected.
 
 [workspace.package]
 # Single version shared by all six workspace crates via
@@ -192,7 +199,10 @@ path = "src/main.rs"
 vreckan-core = { path = "crates/vreckan-core" }
 vreckan-acme = { path = "crates/vreckan-acme" }
 vreckan-auth = { path = "crates/vreckan-auth" }
-vreckan-apps = { path = "crates/vreckan-apps" }
+vreckan-collab = { path = "crates/vreckan-collab" }
+vreckan-sessions = { path = "crates/vreckan-sessions" }
+vreckan-catalog = { path = "crates/vreckan-catalog" }
+vreckan-files = { path = "crates/vreckan-files" }
 vreckan-admin = { path = "crates/vreckan-admin" }
 anyhow = { workspace = true }
 axum-server = { workspace = true }

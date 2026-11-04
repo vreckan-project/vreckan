@@ -6,12 +6,15 @@
 //! Python layout where `tests/` imports `server.*`.
 //!
 //! Since the Candidate C split (ANT-662 Phase 2, ANT-770) the modules live in
-//! five domain crates (`vreckan-core`, `vreckan-acme`, `vreckan-auth`,
-//! `vreckan-apps`, `vreckan-admin`). This library re-exports every former
-//! top-level module under its original name, so the public `vreckan` package
-//! stays source-compatible for dependents: `use vreckan::catalog::...` and
-//! friends resolve exactly as before. Types that moved into
-//! `vreckan_core::shared` are referenced at their new paths.
+//! domain crates, and since the Candidate B central-cluster split (ANT-662
+//! Phase 3, ANT-812) the former `vreckan-apps` crate is dissolved into
+//! `vreckan-collab`, `vreckan-sessions`, `vreckan-catalog` (catalog + Docker
+//! provider), and `vreckan-files`, with `backup_manager` in
+//! `vreckan-admin`. This library re-exports every former top-level module
+//! under its original name, so the public `vreckan` package stays
+//! source-compatible for dependents: `use vreckan::catalog::...` and friends
+//! resolve exactly as before. Types that moved into `vreckan_core::shared`
+//! are referenced at their new paths.
 
 pub use vreckan_admin::admin;
 pub use vreckan_admin::app;
@@ -21,13 +24,13 @@ pub use vreckan_acme::acme;
 pub use vreckan_acme::acme_orchestrator;
 pub use vreckan_acme::e2ee;
 pub use vreckan_acme::tls;
-pub use vreckan_apps::backup_manager;
-pub use vreckan_apps::catalog;
-pub use vreckan_apps::collaboration;
-pub use vreckan_apps::docker_provider;
-pub use vreckan_apps::files;
-pub use vreckan_apps::session_proxy;
-pub use vreckan_apps::session_shares;
+pub use vreckan_admin::backup_manager;
+pub use vreckan_catalog::catalog;
+pub use vreckan_collab::collaboration;
+pub use vreckan_catalog::docker_provider;
+pub use vreckan_files::files;
+pub use vreckan_sessions::session_proxy;
+pub use vreckan_sessions::session_shares;
 pub use vreckan_auth::auth;
 pub use vreckan_auth::user_manager;
 pub use vreckan_core::db;

@@ -23,7 +23,11 @@ use serde_json::Value;
 use tracing::{info, warn};
 
 use vreckan_auth::auth;
-use crate::catalog;
+// Re-exported from core after the ANT-812 split: the session-share handlers
+// rendered the password page through this module, which kept `files` and
+// `session_shares` cyclic; the public `vreckan::files::render_password_page`
+// path keeps resolving via this re-export.
+pub use vreckan_core::static_files::render_password_page;
 use vreckan_acme::e2ee;
 use vreckan_core::entities;
 use vreckan_core::state::AppState;
@@ -423,7 +427,7 @@ pub async fn background_share_cleanup_job(state: AppState) {
             .unwrap_or(600)
             .max(30) as u64;
         cleanup_expired_shares(&state).await;
-        crate::session_shares::cleanup_expired_session_shares(&state).await;
+        vreckan_sessions::session_shares::cleanup_expired_session_shares(&state).await;
         tokio::time::sleep(std::time::Duration::from_secs(interval)).await;
     }
 }
@@ -653,7 +657,7 @@ async fn initiate_deletion(
             .await
         }
     };
-    let task_id = catalog::random_uuid();
+    let task_id = vreckan_catalog::catalog::random_uuid();
     {
         let mut tasks = state.deletion_tasks.write().await;
         tasks.insert(task_id.clone(), serde_json::json!({ "status": "pending" }));
@@ -971,14 +975,14 @@ async fn finalize_upload_to_dir(
         )
         .await;
     }
-    let reassembled = match catalog::reassemble_file(&state.settings, &req.upload_id, req.total_chunks) {
+    let reassembled = match vreckan_catalog::catalog::reassemble_file(&state.settings, &req.upload_id, req.total_chunks) {
         Ok(p) => p,
         Err((s, d)) => {
             return e2ee::encrypt_response(&state, &headers, s, serde_json::json!({ "detail": d })).await
         }
     };
     let safe_filename = Path::new(&req.filename).file_name().and_then(|f| f.to_str()).unwrap_or(&req.filename);
-    let actual_filename = catalog::get_unique_filename(&dest_dir.to_string_lossy(), safe_filename);
+    let actual_filename = vreckan_catalog::catalog::get_unique_filename(&dest_dir.to_string_lossy(), safe_filename);
     let final_location = dest_dir.join(&actual_filename);
     match std::fs::rename(&reassembled, &final_location) {
         Ok(()) => {
@@ -1079,7 +1083,7 @@ async fn create_public_share(
         )
         .await;
     }
-    let share_id = catalog::random_uuid();
+    let share_id = vreckan_catalog::catalog::random_uuid();
     let dest_path = Path::new(&state.settings.public_storage_path).join(&share_id);
     if let Err(e) = std::fs::copy(&source_path, &dest_path) {
         warn!("Failed to create share for user '{username}': {e}");
@@ -1340,7 +1344,7 @@ async fn launch_from_storage(
         .file_name()
         .map(|f| f.to_string_lossy().into_owned())
         .unwrap_or_default();
-    match catalog::launch_common(
+    match vreckan_catalog::catalog::launch_common(
         &state,
         &req.application_id,
         &user.record.username,
@@ -1434,7 +1438,7 @@ async fn upload_initiate(
             .await
         }
     };
-    let upload_id = catalog::random_uuid();
+    let upload_id = vreckan_catalog::catalog::random_uuid();
     let upload_path = ensure_upload_dir(&state.settings, &upload_id);
     let now = std::time::SystemTime::now()
         .duration_since(std::time::UNIX_EPOCH)
@@ -1498,7 +1502,7 @@ async fn upload_chunk(
             .await
         }
     };
-    let upload_path = match catalog::validated_upload_path(&state.settings, &req.upload_id) {
+    let upload_path = match vreckan_catalog::catalog::validated_upload_path(&state.settings, &req.upload_id) {
         Ok(p) => p,
         Err((s, d)) => {
             return e2ee::encrypt_response(&state, &headers, s, serde_json::json!({ "detail": d })).await
@@ -1600,7 +1604,7 @@ async fn upload_to_storage(
         )
         .await;
     }
-    let reassembled = match catalog::reassemble_file(&state.settings, &req.upload_id, req.total_chunks) {
+    let reassembled = match vreckan_catalog::catalog::reassemble_file(&state.settings, &req.upload_id, req.total_chunks) {
         Ok(p) => p,
         Err((s, d)) => {
             return e2ee::encrypt_response(&state, &headers, s, serde_json::json!({ "detail": d })).await
@@ -1612,7 +1616,7 @@ async fn upload_to_storage(
         .join("_vreckan_shared_files");
     let _ = std::fs::create_dir_all(&file_dest_dir);
     let _ = std::fs::set_permissions(&file_dest_dir, std::os::unix::fs::PermissionsExt::from_mode(0o755));
-    let actual_filename = catalog::get_unique_filename(&file_dest_dir.to_string_lossy(), safe_filename);
+    let actual_filename = vreckan_catalog::catalog::get_unique_filename(&file_dest_dir.to_string_lossy(), safe_filename);
     let file_location = file_dest_dir.join(&actual_filename);
     match std::fs::rename(&reassembled, &file_location) {
         Ok(()) => {
@@ -1935,7 +1939,7 @@ async fn create_pinned_behavior(
         )
         .await;
     }
-    let new_id = catalog::random_uuid();
+    let new_id = vreckan_catalog::catalog::random_uuid();
     let now = std::time::SystemTime::now()
         .duration_since(std::time::UNIX_EPOCH)
         .map(|d| d.as_secs_f64())
@@ -2204,47 +2208,6 @@ async fn download_shared_file(
         .unwrap_or_else(|e| (StatusCode::INTERNAL_SERVER_ERROR, e.to_string()).into_response())
 }
 
-/// Render the public password page with template substitution + strict CSP.
-/// `action_url` is where the form POSTs (the share's public entry point —
-/// `/public/{share_id}` for file shares, `/share/{share_id}` for session
-/// shares). `status` is the HTTP status to return: 200 when the page is
-/// presented on a GET (the share is password-protected), 401 when a POST
-/// submitted a wrong password (mirrors the Python `access_public_share_post`).
-pub fn render_password_page(
-    action_url: &str,
-    share_id: &str,
-    error_message: &str,
-    status: StatusCode,
-) -> Response {
-    let template_path = vreckan_core::static_files::static_dir().join("public_password.html");
-    let nonce = {
-        let mut buf = [0u8; 16];
-        use rand::Rng;
-        rand::rng().fill_bytes(&mut buf);
-        base64::engine::general_purpose::STANDARD.encode(buf)
-    };
-    let error_html = if error_message.is_empty() {
-        String::new()
-    } else {
-        format!(
-            r#"<div class="error-message" role="alert" style="margin-top:1rem;font-size:0.9rem;color:var(--color-danger);text-align:center;">{error_message}</div>"#
-        )
-    };
-    let html = match std::fs::read_to_string(&template_path) {
-        Ok(t) => t
-            .replace("{{ACTION_URL}}", action_url)
-            .replace("{{SHARE_ID}}", share_id)
-            .replace("{{ERROR_MESSAGE}}", &error_html)
-            .replace("{{CSP_NONCE}}", &nonce),
-        Err(_) => "<h1>Password protected</h1>".to_string(),
-    };
-    Response::builder()
-        .status(status)
-        .header(header::CONTENT_TYPE, "text/html; charset=utf-8")
-        .header(header::CONTENT_SECURITY_POLICY, vreckan_core::shared::strict_csp(&nonce))
-        .body(axum::body::Body::from(html))
-        .unwrap_or_else(|e| (StatusCode::INTERNAL_SERVER_ERROR, e.to_string()).into_response())
-}
 
 /// `GET /public/{share_id}` — present the share (file, password page, or 410).
 async fn access_public_share_get(
@@ -2319,7 +2282,7 @@ async fn access_public_share_post(
             .into_response();
     };
     if user_manager::verify_share_password(hash, &form.password) {
-        let token = catalog::random_token(32);
+        let token = vreckan_catalog::catalog::random_token(32);
         {
             let mut tokens = state.download_tokens.write().await;
             tokens.insert(

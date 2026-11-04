@@ -25,9 +25,9 @@ use serde_json::Value;
 use tar::{Archive, Builder};
 use tracing::{info, warn};
 
-use crate::catalog;
-use crate::files;
-use crate::session_shares;
+use vreckan_catalog::catalog;
+use vreckan_files::files;
+use vreckan_sessions::session_shares;
 use vreckan_core::state::AppState;
 use vreckan_auth::user_manager;
 
@@ -440,7 +440,7 @@ pub async fn restore_from_bytes(state: &AppState, data: &[u8]) -> Result<Value, 
         return Err(BackupError("Empty archive.".into()));
     }
     let backup_dir = get_backup_dir(&state.settings);
-    let tmp = backup_dir.join(format!(".restore_tmp_{}.tar.gz", crate::catalog::random_uuid()));
+    let tmp = backup_dir.join(format!(".restore_tmp_{}.tar.gz", vreckan_core::shared::random_uuid()));
     std::fs::write(&tmp, data).map_err(|e| BackupError(format!("Could not write temp: {e}")))?;
     let result = (|| -> Result<Value, BackupError> {
         let root = data_root(&state.settings);

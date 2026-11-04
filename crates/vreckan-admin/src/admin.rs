@@ -25,8 +25,8 @@ use serde_json::Value;
 use tracing::{info, warn};
 
 use vreckan_auth::auth::{self, AuthenticatedUser};
-use vreckan_apps::catalog;
-use vreckan_apps::docker_provider::DockerProvider;
+use vreckan_catalog::catalog;
+use vreckan_catalog::docker_provider::DockerProvider;
 use vreckan_acme::e2ee;
 use vreckan_core::entities;
 use vreckan_core::permissions;
@@ -1982,7 +1982,7 @@ async fn install_app(
         let state_clone = state.clone();
         let app_clone = app.clone();
         tokio::spawn(async move {
-            vreckan_apps::catalog::do_pull_and_cache_image(&state_clone, &image, Some(app_clone)).await;
+            vreckan_catalog::catalog::do_pull_and_cache_image(&state_clone, &image, Some(app_clone)).await;
         });
     }
     let value = serde_json::to_value(&app).unwrap_or_default();
@@ -2098,7 +2098,7 @@ async fn update_installed_app(
             let state_clone = state.clone();
             let app_clone = app_update.clone();
             tokio::spawn(async move {
-                vreckan_apps::catalog::do_pull_and_cache_image(&state_clone, &new_image, Some(app_clone)).await;
+                vreckan_catalog::catalog::do_pull_and_cache_image(&state_clone, &new_image, Some(app_clone)).await;
             });
         }
     }
@@ -2244,7 +2244,7 @@ async fn check_app_update(
     let Some(remote_digest) = remote_digest else {
         // The registry lookup failed, but a successful local daemon query
         // still refreshes the table's sha/digests (ANT-269).
-        vreckan_apps::catalog::persist_image_metadata(&state, &image_name, local_info.as_ref(), None).await;
+        vreckan_catalog::catalog::persist_image_metadata(&state, &image_name, local_info.as_ref(), None).await;
         return e2ee::encrypt_response(
             &state,
             &headers,
@@ -2262,7 +2262,7 @@ async fn check_app_update(
     // Persist the refreshed metadata (sha/digests) plus the update-check
     // state, so the installed-apps table reflects the Check result
     // (ANT-269).
-    vreckan_apps::catalog::persist_image_metadata(
+    vreckan_catalog::catalog::persist_image_metadata(
         &state,
         &image_name,
         local_info.as_ref(),
@@ -2357,7 +2357,7 @@ async fn check_all_app_updates(
         // Persist the refreshed metadata (sha/digests) plus the update-check
         // state (only when the registry comparison succeeded), so the
         // installed-apps table reflects the Check result (ANT-269).
-        vreckan_apps::catalog::persist_image_metadata(
+        vreckan_catalog::catalog::persist_image_metadata(
             &state,
             &image_name,
             local_info.as_ref(),
@@ -2427,7 +2427,7 @@ async fn pull_all_app_images(
             let app_clone = app.clone();
             let image_clone = image_name.clone();
             tokio::spawn(async move {
-                vreckan_apps::catalog::do_pull_and_cache_image(&state_clone, &image_clone, Some(app_clone)).await;
+                vreckan_catalog::catalog::do_pull_and_cache_image(&state_clone, &image_clone, Some(app_clone)).await;
             });
         }
         results.push(serde_json::json!({
@@ -2503,7 +2503,7 @@ async fn pull_latest_app_image(
     let state_clone = state.clone();
     let app_clone = app.clone();
     tokio::spawn(async move {
-        vreckan_apps::catalog::do_pull_and_cache_image(&state_clone, &image_name, Some(app_clone)).await;
+        vreckan_catalog::catalog::do_pull_and_cache_image(&state_clone, &image_name, Some(app_clone)).await;
     });
     e2ee::encrypt_response(
         &state,
@@ -5041,7 +5041,7 @@ async fn create_backup(
             .await
         }
     };
-    match vreckan_apps::backup_manager::create_backup(&state, req.include_user_data).await {
+    match crate::backup_manager::create_backup(&state, req.include_user_data).await {
         Ok(value) => e2ee::encrypt_response(&state, &headers, StatusCode::CREATED, value).await,
         Err(e) => e2ee::encrypt_response(&state, &headers, StatusCode::BAD_REQUEST, serde_json::json!({ "detail": e.to_string() })).await,
     }
@@ -5076,7 +5076,7 @@ async fn list_backups(
         )
         .await;
     }
-    let value = vreckan_apps::backup_manager::list_backups(&state.settings);
+    let value = crate::backup_manager::list_backups(&state.settings);
     // Python returns the bare list (no wrapper object).
     e2ee::encrypt_response(&state, &headers, StatusCode::OK, serde_json::Value::Array(value)).await
 }
@@ -5112,7 +5112,7 @@ async fn download_backup(
         )
         .await;
     }
-    match vreckan_apps::backup_manager::get_backup_chunk(&state.settings, &name, q.chunk_index) {
+    match crate::backup_manager::get_backup_chunk(&state.settings, &name, q.chunk_index) {
         Ok((data, is_last)) => {
             let b64 = base64::engine::general_purpose::STANDARD.encode(&data);
             e2ee::encrypt_response(
@@ -5174,7 +5174,7 @@ async fn restore_backup(
         )
         .await
     };
-    match vreckan_apps::backup_manager::restore_from_stored(&state, name).await {
+    match crate::backup_manager::restore_from_stored(&state, name).await {
         Ok(value) => e2ee::encrypt_response(&state, &headers, StatusCode::OK, value).await,
         Err(e) => e2ee::encrypt_response(&state, &headers, StatusCode::BAD_REQUEST, serde_json::json!({ "detail": e.to_string() })).await,
     }
@@ -5209,8 +5209,8 @@ async fn backup_restore_initiate(
         )
         .await;
     }
-    let upload_id = vreckan_apps::catalog::random_uuid();
-    let upload_path = vreckan_apps::backup_manager::get_backup_dir(&state.settings).join(format!("restore_{upload_id}"));
+    let upload_id = vreckan_core::shared::random_uuid();
+    let upload_path = crate::backup_manager::get_backup_dir(&state.settings).join(format!("restore_{upload_id}"));
     std::fs::create_dir_all(&upload_path).ok();
     e2ee::encrypt_response(&state, &headers, StatusCode::OK, serde_json::json!({ "upload_id": upload_id })).await
 }
@@ -5261,7 +5261,7 @@ async fn backup_restore_chunk(
             .await
         }
     };
-    let upload_path = vreckan_apps::backup_manager::get_backup_dir(&state.settings).join(format!("restore_{}", req.upload_id));
+    let upload_path = crate::backup_manager::get_backup_dir(&state.settings).join(format!("restore_{}", req.upload_id));
     if !upload_path.is_dir() {
         return e2ee::encrypt_response(&state, &headers, StatusCode::NOT_FOUND, serde_json::json!({ "detail": "Restore session not found." })).await;
     }
@@ -5330,7 +5330,7 @@ async fn backup_restore_finalize(
             .await
         }
     };
-    let upload_path = vreckan_apps::backup_manager::get_backup_dir(&state.settings).join(format!("restore_{}", req.upload_id));
+    let upload_path = crate::backup_manager::get_backup_dir(&state.settings).join(format!("restore_{}", req.upload_id));
     if !upload_path.is_dir() {
         return e2ee::encrypt_response(&state, &headers, StatusCode::NOT_FOUND, serde_json::json!({ "detail": "Restore session not found." })).await;
     }
@@ -5354,7 +5354,7 @@ async fn backup_restore_finalize(
     if let Some((s, d)) = assemble_err {
         return e2ee::encrypt_response(&state, &headers, s, serde_json::json!({ "detail": d })).await;
     }
-    match vreckan_apps::backup_manager::restore_from_bytes(&state, &assembled).await {
+    match crate::backup_manager::restore_from_bytes(&state, &assembled).await {
         Ok(value) => e2ee::encrypt_response(&state, &headers, StatusCode::OK, value).await,
         Err(e) => e2ee::encrypt_response(&state, &headers, StatusCode::BAD_REQUEST, serde_json::json!({ "detail": e.to_string() })).await,
     }
@@ -5390,7 +5390,7 @@ async fn delete_backup(
         )
         .await;
     }
-    match vreckan_apps::backup_manager::delete_backup(&state.settings, &name) {
+    match crate::backup_manager::delete_backup(&state.settings, &name) {
         Ok(()) => e2ee::encrypt_response(&state, &headers, StatusCode::NO_CONTENT, serde_json::json!({})).await,
         Err(e) => e2ee::encrypt_response(&state, &headers, StatusCode::NOT_FOUND, serde_json::json!({ "detail": e.to_string() })).await,
     }

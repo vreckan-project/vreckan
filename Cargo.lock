@@ -6214,9 +6214,12 @@ dependencies = [
  "uuid",
  "vreckan-acme",
  "vreckan-admin",
- "vreckan-apps",
  "vreckan-auth",
+ "vreckan-catalog",
+ "vreckan-collab",
  "vreckan-core",
+ "vreckan-files",
+ "vreckan-sessions",
 ]
 
 [[package]]
@@ -6258,6 +6261,8 @@ dependencies = [
  "axum",
  "axum-server",
  "base64 0.23.1",
+ "chrono",
+ "flate2",
  "hyper",
  "hyper-util",
  "reqwest",
@@ -6267,42 +6272,20 @@ dependencies = [
  "serde",
  "serde_json",
  "serde_yaml",
+ "tar",
  "tokio",
  "tokio-rustls",
  "tower",
  "tracing",
  "vreckan-acme",
- "vreckan-apps",
- "vreckan-auth",
- "vreckan-core",
-]
+======
 
-[[package]]
-name = "vreckan-apps"
-version = "0.11.1"
-dependencies = [
- "axum",
- "base64 0.23.1",
- "bollard",
- "chrono",
- "flate2",
- "futures-util",
- "hex",
- "http",
- "rand 0.10.3",
- "reqwest",
- "sea-orm",
- "serde",
- "serde_json",
- "serde_yaml",
- "tar",
- "tokio",
- "tokio-tungstenite 0.30.0",
- "tracing",
- "uuid",
- "vreckan-acme",
  "vreckan-auth",
+ "vreckan-catalog",
+ "vreckan-collab",
  "vreckan-core",
+ "vreckan-files",
+ "vreckan-sessions",
 ]
 
 [[package]]
@@ -6328,21 +6311,106 @@ dependencies = [
 ]
 
 [[package]]
+name = "vreckan-catalog"
+version = "0.11.1"
+dependencies = [
+ "axum",
+ "base64 0.23.1",
+ "bollard",
+ "futures-util",
+ "rand 0.10.3",
+ "reqwest",
+ "sea-orm",
+ "serde",
+ "serde_json",
+ "serde_yaml",
+ "tokio",
+ "tracing",
+ "uuid",
+ "vreckan-acme",
+ "vreckan-auth",
+ "vreckan-collab",
+ "vreckan-core",
+ "vreckan-sessions",
+]
+
+[[package]]
+name = "vreckan-collab"
+version = "0.11.1"
+dependencies = [
+ "axum",
+ "base64 0.23.1",
+ "futures-util",
+ "hex",
+ "rand 0.10.3",
+ "reqwest",
+ "serde",
+ "serde_json",
+ "tokio",
+ "tracing",
+ "vreckan-core",
+]
+
+[[package]]
 name = "vreckan-core"
 version = "0.11.1"
 dependencies = [
  "async-trait",
  "axum",
  "axum-server",
+ "base64 0.23.1",
  "hex",
  "log",
  "mime_guess",
+ "rand 0.10.3",
  "sea-orm",
  "serde",
  "serde_json",
  "sha2 0.11.1",
  "tokio",
  "tracing",
+ "uuid",
+]
+
+[[package]]
+name = "vreckan-files"
+version = "0.11.1"
+dependencies = [
+ "axum",
+ "base64 0.23.1",
+ "rand 0.10.3",
+ "sea-orm",
+ "serde",
+ "serde_json",
+ "tokio",
+ "tracing",
+ "vreckan-acme",
+ "vreckan-auth",
+ "vreckan-catalog",
+ "vreckan-core",
+ "vreckan-sessions",
+]
+
+[[package]]
+name = "vreckan-sessions"
+version = "0.11.1"
+dependencies = [
+ "axum",
+ "base64 0.23.1",
+ "futures-util",
+ "http",
+ "rand 0.10.3",
+ "reqwest",
+ "sea-orm",
+ "serde",
+ "serde_json",
+ "tokio",
+ "tokio-tungstenite 0.30.0",
+ "tracing",
+ "vreckan-acme",
+ "vreckan-auth",
+ "vreckan-collab",
+ "vreckan-core",
 ]
 
 [[package]]

@@ -38,11 +38,9 @@ use serde_json::Value;
 use tracing::{info, warn};
 
 use vreckan_auth::auth;
-use crate::catalog;
-use crate::collaboration;
+use vreckan_collab::collaboration;
 use vreckan_acme::e2ee;
 use vreckan_core::entities;
-use crate::files;
 use vreckan_core::state::AppState;
 use vreckan_auth::user_manager;
 // Re-exported so the pre-split paths keep resolving from other crates
@@ -417,7 +415,7 @@ async fn create_session_share(
         .expiry_hours
         .filter(|h| *h > 0)
         .map(|h| now + (h as f64) * 3600.0);
-    let share_id = catalog::random_uuid();
+    let share_id = vreckan_core::shared::random_uuid();
     let meta = SessionShareMetadata {
         session_id: session_id.clone(),
         owner_username: user.record.username.clone(),
@@ -880,7 +878,7 @@ async fn access_session_share_get(
         Err((s, d)) => return (s, Html(format!("<h1>{d}</h1>"))).into_response(),
     };
     if meta.password_hash.is_some() {
-        return files::render_password_page(&format!("/share/{share_id}"), &share_id, "", StatusCode::OK);
+        return vreckan_core::static_files::render_password_page(&format!("/share/{share_id}"), &share_id, "", StatusCode::OK);
     }
     match grant_session_share_access(&state, &share_id, &meta).await {
         Some(redirect) => see_other(redirect),
@@ -919,7 +917,7 @@ async fn access_session_share_post(
                 .into_response(),
         }
     } else {
-        files::render_password_page(
+        vreckan_core::static_files::render_password_page(
             &format!("/share/{share_id}"),
             &share_id,
             "Incorrect password. Please try again.",
@@ -1105,7 +1103,7 @@ async fn apply_visit_to_session(
             .map(|m| !m.is_empty())
             .unwrap_or(false);
         if !had_master {
-            session["master_token"] = Value::String(catalog::random_token(16));
+            session["master_token"] = Value::String(vreckan_core::shared::random_token(16));
         }
         if collaboration::push_token_table(state, session_id, session).await {
             promoted = true;
@@ -1128,7 +1126,7 @@ async fn apply_visit_to_session(
     *state.sessions.write().await.entry(session_id.to_string()).or_insert(Value::Object(
         serde_json::Map::new(),
     )) = session.clone();
-    catalog::save_sessions(state).await;
+    vreckan_core::state::save_sessions(state).await;
     promoted
 }
 
@@ -1148,7 +1146,7 @@ pub async fn grant_session_share_access(
         .get("is_collaboration")
         .and_then(|v| v.as_bool())
         .unwrap_or(false);
-    let visit_token = catalog::random_token(16);
+    let visit_token = vreckan_core::shared::random_token(16);
     let permission = if share.caps.input {
         "participant"
     } else {
@@ -1303,7 +1301,7 @@ pub async fn grant_session_join_access(
                 .await
                 .entry(session_id.to_string())
                 .or_insert(Value::Object(serde_json::Map::new())) = session.clone();
-            catalog::save_sessions(state).await;
+            vreckan_core::state::save_sessions(state).await;
         }
         if !is_collab {
             let _ = collaboration::push_token_table(state, session_id, &session).await;
@@ -1311,7 +1309,7 @@ pub async fn grant_session_join_access(
         return Some(join_hop_url(session_id, username));
     }
 
-    let visit_token = catalog::random_token(16);
+    let visit_token = vreckan_core::shared::random_token(16);
     // A synthetic share id (real share ids are UUIDs) so the vreckan-side
     // token map admits the joiner for legacy (non-secure) sessions. The
     // grant carries the join TTL (ANT-467).
@@ -1397,7 +1395,7 @@ pub async fn strip_share_tokens_for_session(state: &AppState, session_id: &str, 
         *state.sessions.write().await.entry(session_id.to_string()).or_insert(Value::Object(
             serde_json::Map::new(),
         )) = session;
-        catalog::save_sessions(state).await;
+        vreckan_core::state::save_sessions(state).await;
     }
     if !tokens.is_empty() {
         let mut map = state.session_share_tokens.write().await;

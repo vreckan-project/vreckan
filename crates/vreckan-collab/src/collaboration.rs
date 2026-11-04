@@ -25,7 +25,6 @@ use serde::Deserialize;
 use serde_json::Value;
 use tracing::{info, warn};
 
-use crate::catalog;
 use vreckan_core::state::AppState;
 use vreckan_core::tokens::opt_tokens_equal;
 use vreckan_core::tokens::tokens_equal;
@@ -113,7 +112,7 @@ async fn collaborative_room(
         }
     }
     if session_data.get("readonly_invite_token").is_none() {
-        session_data["readonly_invite_token"] = Value::String(catalog::random_token(16));
+        session_data["readonly_invite_token"] = Value::String(vreckan_core::shared::random_token(16));
     }
 
     let cookie_name = &state.settings.session_cookie_name;
@@ -221,7 +220,7 @@ async fn collaborative_room(
         } else {
             "readonly"
         };
-        let new_viewer_token = catalog::random_token(16);
+        let new_viewer_token = vreckan_core::shared::random_token(16);
         let new_username = format!("User-{}", rand::rng().random_range(100..999));
         if let Some(viewers) = session_data.get_mut("viewers").and_then(|v| v.as_array_mut()) {
             viewers.push(serde_json::json!({
@@ -236,7 +235,7 @@ async fn collaborative_room(
         *state.sessions.write().await.entry(session_id.clone()).or_insert(Value::Object(
             serde_json::Map::new(),
         )) = session_data.clone();
-        catalog::save_sessions(&state).await;
+        vreckan_core::state::save_sessions(&state).await;
         // Redirect with the new viewer token. The Location carries the
         // visitor's per-visit token, so keep it out of any caching proxy's
         // store, as the share redirect does (ANT-322 F5; ANT-344, item 2).
@@ -954,7 +953,7 @@ async fn handle_assign_slot(
 
     push_token_table(state, session_id, &session_data).await;
     state.sessions.write().await.insert(session_id.to_string(), session_data);
-    catalog::save_sessions(state).await;
+    vreckan_core::state::save_sessions(state).await;
 
     for msg in notifications {
         let now_ms = (std::time::SystemTime::now()
@@ -1008,7 +1007,7 @@ async fn handle_assign_mk(state: &AppState, session_id: &str, target_token: Opti
     }
     push_token_table(state, session_id, &session_data).await;
     state.sessions.write().await.insert(session_id.to_string(), session_data);
-    catalog::save_sessions(state).await;
+    vreckan_core::state::save_sessions(state).await;
     let now_ms = (std::time::SystemTime::now()
         .duration_since(std::time::UNIX_EPOCH)
         .map(|d| d.as_millis())
@@ -1305,7 +1304,7 @@ async fn route_message(
                 s["designated_speaker"] = speaker.map(Value::from).unwrap_or(Value::Null);
             }
             drop(sessions);
-            catalog::save_sessions(state).await;
+            vreckan_core::state::save_sessions(state).await;
             broadcast_state(state, session_id).await;
         }
         "set_username" if !is_controller => {
@@ -1330,7 +1329,7 @@ async fn route_message(
                 }
             }
             drop(sessions);
-            catalog::save_sessions(state).await;
+            vreckan_core::state::save_sessions(state).await;
             broadcast_to_room(
                 state,
                 session_id,
@@ -1622,7 +1621,7 @@ async fn cleanup_disconnect(
             }
         }
         if state_changed {
-            catalog::save_sessions(state).await;
+            vreckan_core::state::save_sessions(state).await;
         }
         if input_released {
             let sd = state.sessions.read().await.get(session_id).cloned();

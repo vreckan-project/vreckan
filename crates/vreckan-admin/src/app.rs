@@ -17,13 +17,13 @@ use axum::Router;
 
 use crate::admin;
 use vreckan_auth::auth;
-use vreckan_apps::catalog;
-use vreckan_apps::collaboration;
+use vreckan_catalog::catalog;
+use vreckan_collab::collaboration;
 use vreckan_acme::e2ee;
-use vreckan_apps::files;
+use vreckan_files::files;
 use crate::security;
-use vreckan_apps::session_proxy;
-use vreckan_apps::session_shares;
+use vreckan_sessions::session_proxy;
+use vreckan_sessions::session_shares;
 use vreckan_core::state::AppState;
 use vreckan_core::static_files;
 

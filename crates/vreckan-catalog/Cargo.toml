@@ -1,8 +1,8 @@
 [package]
-name = "vreckan-apps"
+name = "vreckan-catalog"
 version = { workspace = true }
 edition = { workspace = true }
-description = "Vreckan app domains: catalog, Docker provider, files, session shares, session proxy, collaboration, backups"
+description = "Vreckan app domain: the app catalog/store, image pulls, launches, and the Docker provider"
 license = { workspace = true }
 
 # Explicit target: the Docker build stage copies only the manifests before
@@ -14,28 +14,29 @@ path = "src/lib.rs"
 vreckan-core = { path = "../vreckan-core" }
 vreckan-acme = { path = "../vreckan-acme" }
 # `auth::verify_token` is the shared authentication gate called from the
-# catalog/files/session_shares route handlers (ANT-770: apps→auth is a DAG
-# edge; moving `verify_token` into core would drag `user_manager` with it).
+# catalog route handlers (ANT-770: apps→auth is a DAG edge; moving
+# `verify_token` into core would drag `user_manager` with it).
 vreckan-auth = { path = "../vreckan-auth" }
+# Session launches push to the collaboration room's token table and notify
+# it when a session ends (ANT-812: catalog→collab is a DAG edge).
+vreckan-collab = { path = "../vreckan-collab" }
+# The launch/join access checks call the session-share grant helpers
+# (ANT-812: catalog→sessions is a DAG edge).
+vreckan-sessions = { path = "../vreckan-sessions" }
 
 axum = { workspace = true }
 base64 = { workspace = true }
 bollard = { workspace = true }
-chrono = { workspace = true }
-flate2 = { workspace = true }
 futures-util = { workspace = true }
-hex = { workspace = true }
-http = { workspace = true }
 rand = { workspace = true }
 reqwest = { workspace = true }
 sea-orm = { workspace = true }
 serde = { workspace = true }
 serde_json = { workspace = true }
 serde_yaml = { workspace = true }
-tar = { workspace = true }
 tokio = { workspace = true }
-tokio-tungstenite = { workspace = true }
 tracing = { workspace = true }
+# Ephemeral-volume path names in the launch path.
 uuid = { workspace = true }
 
 # Opt into the workspace lint table: the clippy baseline is defined once in

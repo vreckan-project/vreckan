@@ -1157,7 +1157,7 @@ async fn session_proxy_websocket(
             list.push((token.clone(), seq));
         }
         if track_conns {
-            crate::collaboration::refresh_plain_session_token_table(&state, &session_id).await;
+            vreckan_collab::collaboration::refresh_plain_session_token_table(&state, &session_id).await;
         }
         // split() returns (SplitSink [write half], SplitStream [read half]).
         let (mut client_tx, mut client_rx) = client_ws.split();
@@ -1223,7 +1223,7 @@ async fn session_proxy_websocket(
                     }
                 }
             }
-            crate::collaboration::refresh_plain_session_token_table(&state, &session_id).await;
+            vreckan_collab::collaboration::refresh_plain_session_token_table(&state, &session_id).await;
         }
     })
 }
