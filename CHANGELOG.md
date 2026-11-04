@@ -9,6 +9,12 @@ is committed normally in `vreckan`. The changelog is the authoritative
 record of what shipped in each release — see
 [`docs/release.md`](./docs/release.md) for the conventions.
 
+## Unreleased — pending footnote for the next release cut (ANT-826)
+
+- Dependency footnote for the next release entry: the deliberate `ctutils 0.4.5` pin (ANT-513, the RUSTSEC-2026-0385 fix) was superseded by the v0.11.0 `rsa` rc.20 subgraph float, which moved `ctutils` to 0.4.8 — the ANT-818 audit confirms 0.4.8 carries the fix, so the security baseline is unchanged.
+
+_Fold this line into the next release's entry at the cut (changelog: Will; release: Roberta); this section exists only so the footnote is not lost between cuts._
+
 ## 2026-11-04 — v0.11.1: base-image bump + workspace-crate lockfile-sync fix (ANT-805)
 
 - **The build base advanced to the latest `vreckan-base-build`** (the
