@@ -14,12 +14,23 @@ path = "src/lib.rs"
 vreckan-core = { path = "../vreckan-core" }
 vreckan-acme = { path = "../vreckan-acme" }
 vreckan-auth = { path = "../vreckan-auth" }
-vreckan-apps = { path = "../vreckan-apps" }
+# The central cluster (ANT-812): the admin API drives the app catalog, the
+# session domains, and the collaboration room, and hosts the backup/restore
+# routines (moved out of the old `vreckan-apps` crate, which they dissolved).
+vreckan-collab = { path = "../vreckan-collab" }
+vreckan-catalog = { path = "../vreckan-catalog" }
+vreckan-files = { path = "../vreckan-files" }
+vreckan-sessions = { path = "../vreckan-sessions" }
 
 anyhow = { workspace = true }
 axum = { workspace = true }
 axum-server = { workspace = true }
 base64 = { workspace = true }
+# Backup/restore archives (the `backup_manager` module moved into this
+# crate in ANT-812).
+chrono = { workspace = true }
+flate2 = { workspace = true }
+tar = { workspace = true }
 hyper = { workspace = true }
 hyper-util = { workspace = true }
 reqwest = { workspace = true }

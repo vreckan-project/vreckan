@@ -18,7 +18,6 @@ use axum::routing::{delete, get, post};
 use axum::{Json, Router};
 use base64::Engine;
 use bollard::Docker;
-use rand::Rng;
 use sea_orm::{ActiveValue, EntityTrait};
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
@@ -26,9 +25,16 @@ use tracing::{debug, error, info, warn};
 
 use vreckan_auth::auth;
 use crate::docker_provider::{DockerProvider, LaunchResult, VolumeSpec};
+// Re-exported from core after the ANT-812 split: these helpers moved there
+// to break the central-cluster cycles, but the public
+// `vreckan::catalog::{random_token,random_uuid,save_sessions,load_sessions}`
+// paths (the `vreckan` facade, `main.rs`, the test suite) must keep
+// resolving.
+pub use vreckan_core::shared::{random_token, random_uuid};
+pub use vreckan_core::state::{load_sessions, save_sessions};
 use vreckan_acme::e2ee;
 use vreckan_core::entities;
-use crate::session_shares;
+use vreckan_sessions::session_shares;
 use vreckan_core::settings::Settings;
 use vreckan_core::state::AppState;
 use vreckan_auth::user_manager;
@@ -1195,19 +1201,6 @@ pub fn get_unique_filename(directory: &str, filename: &str) -> String {
     }
 }
 
-/// Generate a random URL-safe token of `n` bytes. Mirrors `secrets.token_urlsafe`.
-pub fn random_token(n: usize) -> String {
-    let mut buf = vec![0u8; n];
-    rand::rng().fill_bytes(&mut buf);
-    base64::engine::general_purpose::URL_SAFE_NO_PAD.encode(&buf)
-}
-
-/// Generate a random UUID v4 string.
-pub fn random_uuid() -> String {
-    let mut bytes = [0u8; 16];
-    rand::rng().fill_bytes(&mut bytes);
-    uuid::Uuid::from_bytes(bytes).to_string()
-}
 
 /// The owner's session URL. Carries the session's `access_token` (the
 /// first-hit `initial_session_auth` validates it and sets the session cookie;
@@ -1222,56 +1215,6 @@ pub fn owner_session_url(session_id: &str, access_token: &str) -> String {
     format!("/api/apps/session/{session_id}/?access_token={access_token}&token={access_token}")
 }
 
-/// Persist the in-memory session map to the database (full replace). Mirrors
-/// `save_sessions_to_disk`.
-pub async fn save_sessions(state: &AppState) {
-    let sessions = state.sessions.read().await.clone();
-    let conn = &state.db.conn;
-    let all = match entities::session_record::Entity::find().all(conn).await {
-        Ok(rows) => rows,
-        Err(e) => {
-            warn!("Failed to save sessions (delete): {e}");
-            return;
-        }
-    };
-    for row in all {
-        let am = entities::session_record::ActiveModel {
-            session_id: ActiveValue::Set(row.session_id),
-            data: ActiveValue::NotSet,
-        };
-        if let Err(e) = entities::session_record::Entity::delete(am).exec(conn).await {
-            warn!("Failed to delete session row: {e}");
-        }
-    }
-    for (id, data) in sessions.iter() {
-        let am = entities::session_record::ActiveModel {
-            session_id: ActiveValue::Set(id.clone()),
-            data: ActiveValue::Set(data.clone()),
-        };
-        if let Err(e) = entities::session_record::Entity::insert(am).exec(conn).await {
-            warn!("Failed to insert session row: {e}");
-        }
-    }
-}
-
-/// Load sessions from the database into `state.sessions`. Mirrors
-/// `load_sessions_from_disk`.
-pub async fn load_sessions(state: &AppState) {
-    let rows = match entities::session_record::Entity::find().all(&state.db.conn).await {
-        Ok(rows) => rows,
-        Err(e) => {
-            warn!("Error loading sessions from the database: {e}");
-            return;
-        }
-    };
-    let mut sessions = HashMap::new();
-    for row in rows {
-        sessions.insert(row.session_id, row.data);
-    }
-    let count = sessions.len();
-    *state.sessions.write().await = sessions;
-    info!("Loaded {count} session(s) from the database.");
-}
 
 // ---------------------------------------------------------------------------
 // Background image pull
@@ -1901,7 +1844,7 @@ pub async fn probe_selkies_capability(
     }
 
     // Step 3: the token-table push is the arbiter (ANT-305 fallback).
-    if crate::collaboration::push_token_table(state, session_id, session).await {
+    if vreckan_collab::collaboration::push_token_table(state, session_id, session).await {
         SelkiesProbe::Secure { version: None }
     } else {
         SelkiesProbe::Legacy { version: None }
@@ -2672,7 +2615,7 @@ async fn apply_selkies_probe(
             // re-pushed on the next share visit (ANT-305).
             let mut pushed = false;
             for _ in 0..5 {
-                if crate::collaboration::push_token_table(state, session_id, session).await {
+                if vreckan_collab::collaboration::push_token_table(state, session_id, session).await {
                     pushed = true;
                     break;
                 }
@@ -3391,7 +3334,7 @@ pub async fn stop_session(state: &AppState, session_id: &str) {
     // Tell any collaboration-room viewers the session has ended so their room
     // UI shows "session ended" instead of a dead iframe. A no-op for
     // non-collaboration sessions (they have no room connections).
-    crate::collaboration::notify_session_ended(state, session_id).await;
+    vreckan_collab::collaboration::notify_session_ended(state, session_id).await;
     save_sessions(state).await;
     info!(
         "[{session_id}] Session stopped; containers are torn down in the background."

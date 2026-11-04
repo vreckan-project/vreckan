@@ -5,6 +5,7 @@
 //! axum router ([`app`]), and the TLS serve loop ([`serve`]).
 
 pub mod admin;
+pub mod backup_manager;
 pub mod app;
 pub mod security;
 pub mod serve;

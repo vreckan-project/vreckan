@@ -18,8 +18,10 @@
 use std::collections::HashMap;
 use std::sync::{Arc, Mutex};
 use tokio::sync::{RwLock, Semaphore};
+use tracing::{info, warn};
 
 use axum_server::tls_rustls::RustlsConfig;
+use sea_orm::{ActiveValue, EntityTrait};
 
 use crate::db::Db;
 use crate::settings::Settings;
@@ -270,6 +272,64 @@ impl AppState {
         }
         slot.clone()
     }
+}
+
+// ---------------------------------------------------------------------------
+// Session persistence (moved out of `catalog` in the ANT-812 central-cluster
+// split: `collaboration` and `session_shares` both persisted the session map
+// through these, which kept the crate DAG cyclic; they only touch
+// `AppState` + `session_record`, both core types, so core is their home).
+// ---------------------------------------------------------------------------
+
+/// Persist the in-memory session map to the database (full replace). Mirrors
+/// `save_sessions_to_disk`.
+pub async fn save_sessions(state: &AppState) {
+    let sessions = state.sessions.read().await.clone();
+    let conn = &state.db.conn;
+    let all = match crate::entities::session_record::Entity::find().all(conn).await {
+        Ok(rows) => rows,
+        Err(e) => {
+            warn!("Failed to save sessions (delete): {e}");
+            return;
+        }
+    };
+    for row in all {
+        let am = crate::entities::session_record::ActiveModel {
+            session_id: ActiveValue::Set(row.session_id),
+            data: ActiveValue::NotSet,
+        };
+        if let Err(e) = crate::entities::session_record::Entity::delete(am).exec(conn).await {
+            warn!("Failed to delete session row: {e}");
+        }
+    }
+    for (id, data) in sessions.iter() {
+        let am = crate::entities::session_record::ActiveModel {
+            session_id: ActiveValue::Set(id.clone()),
+            data: ActiveValue::Set(data.clone()),
+        };
+        if let Err(e) = crate::entities::session_record::Entity::insert(am).exec(conn).await {
+            warn!("Failed to insert session row: {e}");
+        }
+    }
+}
+
+/// Load sessions from the database into `state.sessions`. Mirrors
+/// `load_sessions_from_disk`.
+pub async fn load_sessions(state: &AppState) {
+    let rows = match crate::entities::session_record::Entity::find().all(&state.db.conn).await {
+        Ok(rows) => rows,
+        Err(e) => {
+            warn!("Error loading sessions from the database: {e}");
+            return;
+        }
+    };
+    let mut sessions = HashMap::new();
+    for row in rows {
+        sessions.insert(row.session_id, row.data);
+    }
+    let count = sessions.len();
+    *state.sessions.write().await = sessions;
+    info!("Loaded {count} session(s) from the database.");
 }
 
 #[cfg(test)]

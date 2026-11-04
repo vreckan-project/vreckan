@@ -6,7 +6,10 @@ COPY Cargo.toml Cargo.lock ./
 COPY crates/vreckan-core/Cargo.toml crates/vreckan-core/Cargo.toml
 COPY crates/vreckan-acme/Cargo.toml crates/vreckan-acme/Cargo.toml
 COPY crates/vreckan-auth/Cargo.toml crates/vreckan-auth/Cargo.toml
-COPY crates/vreckan-apps/Cargo.toml crates/vreckan-apps/Cargo.toml
+COPY crates/vreckan-collab/Cargo.toml crates/vreckan-collab/Cargo.toml
+COPY crates/vreckan-sessions/Cargo.toml crates/vreckan-sessions/Cargo.toml
+COPY crates/vreckan-catalog/Cargo.toml crates/vreckan-catalog/Cargo.toml
+COPY crates/vreckan-files/Cargo.toml crates/vreckan-files/Cargo.toml
 COPY crates/vreckan-admin/Cargo.toml crates/vreckan-admin/Cargo.toml
 RUN cargo fetch
 COPY src ./src

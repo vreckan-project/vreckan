@@ -18,6 +18,9 @@ path = "src/lib.rs"
 async-trait = { workspace = true }
 axum = { workspace = true }
 axum-server = { workspace = true }
+# `shared::random_token` encodes its bytes URL-safe; the password page's
+# per-response CSP nonce uses the standard variant (ANT-812).
+base64 = { workspace = true }
 hex = { workspace = true }
 log = { workspace = true }
 mime_guess = { workspace = true }
@@ -25,8 +28,11 @@ sea-orm = { workspace = true }
 serde = { workspace = true }
 serde_json = { workspace = true }
 sha2 = { workspace = true }
+# Random token/uuid helpers (ANT-812).
+rand = { workspace = true }
 tokio = { workspace = true }
 tracing = { workspace = true }
+uuid = { workspace = true }
 
 # Opt into the workspace lint table: the clippy baseline is defined once in
 # the root Cargo.toml ([workspace.lints.clippy], ANT-791).
