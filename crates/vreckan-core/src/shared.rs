@@ -17,13 +17,13 @@
 //! Provenance (pre-split location):
 //! - `EnvVar`, `AvailableAppProviderConfig`, `InstalledAppProviderConfig`,
 //!   `InstalledApp`, `AppStore`, `SelkiesProbe`, `default_true` — `catalog`
-//!   (now `vreckan_apps::catalog`)
-//! - `GpuInfo` — `docker_provider` (now `vreckan_apps::docker_provider`)
-//! - `PublicShareMetadata` — `files` (now `vreckan_apps::files`)
+//!   (now `vreckan_catalog::catalog`)
+//! - `GpuInfo` — `docker_provider` (now `vreckan_catalog::docker_provider`)
+//! - `PublicShareMetadata` — `files` (now `vreckan_files::files`)
 //! - `SessionShareCaps`, `SessionShareMetadata`, `SessionShareTokenRecord` —
-//!   `session_shares` (now `vreckan_apps::session_shares`)
+//!   `session_shares` (now `vreckan_sessions::session_shares`)
 //! - `ConnectionInfo`, `RoomConnections`, `PushedTokenTable` —
-//!   `collaboration` (now `vreckan_apps::collaboration`)
+//!   `collaboration` (now `vreckan_collab::collaboration`)
 //! - `SESSION_CSP`, `strict_csp` — `security` (now `vreckan_admin::security`)
 //!
 //! Additional items the move pulled in (the compile closure, beyond the
@@ -35,14 +35,21 @@
 //! the 7 and is itself plain data. `SESSION_CSP`/`strict_csp` moved the
 //! other way (admin -> core, not part of the 7-type closure) so the apps
 //! handlers keep one CSP source without an `apps -> admin` edge.
+//!
+//! The ANT-812 central-cluster split (Phase 3) added the small cross-domain
+//! helpers the former `vreckan-apps` cycles hinged on: `random_token` /
+//! `random_uuid` (formerly in `catalog`), which are plain `rand`-based
+//! functions with no core->domain edge of their own.
 
 use std::collections::HashMap;
 
 use axum::extract::ws::Message;
+use base64::Engine;
+use rand::Rng;
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
 
-// From `catalog` (vreckan_apps::catalog)
+// From `catalog` (vreckan_catalog::catalog)
 /// A single environment variable to pass into an app container.
 #[derive(Clone, Debug, Default, Serialize, Deserialize)]
 pub struct EnvVar {
@@ -163,7 +170,7 @@ impl SelkiesProbe {
         matches!(self, SelkiesProbe::Secure { .. })
     }
 }
-// From `docker_provider` (vreckan_apps::docker_provider)
+// From `docker_provider` (vreckan_catalog::docker_provider)
 /// A GPU device detected on the host (mirrors an entry of `api.AVAILABLE_GPUS`).
 #[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct GpuInfo {
@@ -176,7 +183,7 @@ pub struct GpuInfo {
     #[serde(skip_serializing_if = "Option::is_none")]
     pub index: Option<i64>,
 }
-// From `files` (vreckan_apps::files)
+// From `files` (vreckan_files::files)
 #[derive(Serialize, Deserialize, Clone)]
 pub struct PublicShareMetadata {
     pub owner_username: String,
@@ -188,7 +195,7 @@ pub struct PublicShareMetadata {
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub expiry_timestamp: Option<f64>,
 }
-// From `session_shares` (vreckan_apps::session_shares)
+// From `session_shares` (vreckan_sessions::session_shares)
 /// The per-link capability toggles for a session share. Enforced server-side
 /// in the session proxy (WP3); the room UI reflects them for room sessions.
 #[derive(Serialize, Deserialize, Clone, Debug, PartialEq, Eq)]
@@ -246,7 +253,7 @@ pub struct SessionShareTokenRecord {
     /// `None` means "no expiry".
     pub expiry: Option<f64>,
 }
-// From `collaboration` (vreckan_apps::collaboration)
+// From `collaboration` (vreckan_collab::collaboration)
 /// A single live WebSocket connection in a room.
 #[derive(Clone)]
 pub struct ConnectionInfo {
@@ -305,6 +312,27 @@ pub fn strict_csp(nonce: &str) -> String {
          base-uri 'self'; \
          form-action 'self'"
     )
+}
+
+// ---------------------------------------------------------------------------
+// Random helpers (moved out of `catalog` in the ANT-812 central-cluster
+// split: `files`, `session_shares`, `collaboration`, and `backup_manager`
+// all generated tokens/uuids through them, which kept the crate DAG cyclic.
+// They are dependency-free apart from `rand`/`base64`/`uuid`.
+// ---------------------------------------------------------------------------
+
+/// Generate a random URL-safe token of `n` bytes. Mirrors `secrets.token_urlsafe`.
+pub fn random_token(n: usize) -> String {
+    let mut buf = vec![0u8; n];
+    rand::rng().fill_bytes(&mut buf);
+    base64::engine::general_purpose::URL_SAFE_NO_PAD.encode(&buf)
+}
+
+/// Generate a random UUID v4 string.
+pub fn random_uuid() -> String {
+    let mut bytes = [0u8; 16];
+    rand::rng().fill_bytes(&mut bytes);
+    uuid::Uuid::from_bytes(bytes).to_string()
 }
 
 /// Pins the bounded 7-type extraction (ANT-773): every type the issue

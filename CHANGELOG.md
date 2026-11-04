@@ -9,11 +9,115 @@ is committed normally in `vreckan`. The changelog is the authoritative
 record of what shipped in each release — see
 [`docs/release.md`](./docs/release.md) for the conventions.
 
-## Unreleased — pending footnote for the next release cut (ANT-826)
+## 2026-11-04 — v0.11.2: Phase 3 — apps-cluster dissolution, crypto unification, per-crate test suite (ANT-662 P3)
 
-- Dependency footnote for the next release entry: the deliberate `ctutils 0.4.5` pin (ANT-513, the RUSTSEC-2026-0385 fix) was superseded by the v0.11.0 `rsa` rc.20 subgraph float, which moved `ctutils` to 0.4.8 — the ANT-818 audit confirms 0.4.8 carries the fix, so the security baseline is unchanged.
+The single consolidated Phase 3 PR, per the board's single-PR direction
+(ANT-807, following the single-PR preference recorded for v0.10.0 at
+ANT-650 rev 5): the three board-approved track branches are folded onto
+`main` in the order **812 → 811 → 810** with each track's commit
+attribution preserved (per-item commits, as the v0.10.0 fold), followed
+by the one-line pin from PR #137 (ANT-820). The workspace ends the phase
+as nine crates; the crate DAG is acyclic:
+`core <- collab <- sessions <- catalog <- files <- admin <- vreckan-bin`.
 
-_Fold this line into the next release's entry at the cut (changelog: Will; release: Roberta); this section exists only so the footnote is not lost between cuts._
+- **`vreckan-apps` is dissolved into four domain crates** (ANT-812):
+  `vreckan-collab` (collaboration rooms: token tables, WebSocket fan-out),
+  `vreckan-sessions` (session shares + Selkies session proxy),
+  `vreckan-catalog` (app catalog/store, image pulls, launches + the
+  Docker provider — their mutual type usage keeps them in one crate), and
+  `vreckan-files` (uploads, storage, public shares); `backup_manager`
+  moves to `vreckan-admin` (the one module fanning out to
+  catalog+files+sessions). The cycle-breaking moves into `vreckan-core`
+  are plain data/functions (`shared::random_token` / `random_uuid`,
+  `state::save_sessions` / `load_sessions`,
+  `static_files::render_password_page`), so the no-core→domain-edge
+  property holds. The public API is preserved: the `vreckan` facade
+  re-exports every module under its original name, and the moved helpers
+  re-export at their old paths, so downstream `Cargo.toml` and
+  `use vreckan::…` are unaffected.
+
+- **The crypto provider stack unifies on aws-lc-rs** (ANT-811): `rustls`
+  moves from `features = ["ring"]` to `["aws_lc_rs"]` (the old spec plus
+  rustls 0.23's default features compiled both provider backends into
+  one rustls unit); `rcgen` is pinned to the same spec as the acmex fork
+  so one rcgen unit with one provider is built. The dead direct deps —
+  the root package's `ring` and `openid` — had no references (OIDC is
+  hand-rolled; `jwks` does not depend on the `openid` crate), so the
+  whole `openid → biscuit → ring` chain, and with it reqwest's
+  `__native-tls`/openssl path, leaves the tree; `cargo tree -i ring` is
+  now empty for the host target. The acmex fork drops `fips` from its
+  aws-lc-rs dep (new tag `vreckan-2026-11-03`, commit 771333e), removing
+  the second full C build of the aws-lc source (aws-lc-fips-sys, ~64.7 s
+  in the ANT-766 cold measurement) with no runtime path exercising FIPS
+  mode; `deny.toml`'s OpenSSL license allow entry drops with it. No
+  behavior change for shipped TLS/ACME — the provider shim already
+  preferred aws-lc-rs.
+
+- **The test suite splits into per-crate `tests/` trees** (ANT-810):
+  each integration test lives in, and dev-depends only on, the crate(s)
+  it exercises, instead of all 30 binaries linking the whole program
+  through the root facade. `vreckan-admin` keeps the 16 full-router
+  tests plus the new `test_admin_gate` (split out of `test_auth` so the
+  rest of the auth suite stops linking admin); the 13 former
+  `vreckan-apps` tests are re-homed to the crates whose routes they
+  exercise — `vreckan-catalog` (7), `vreckan-sessions` (3),
+  `vreckan-files` (3) — each with a per-crate `tests/common` harness
+  mirroring the app router minus the `/api/admin` nest in production
+  nest/merge order, so route precedence is unchanged for every route a
+  test hits and the admin/root-bin link-closure exclusion the split was
+  about is preserved; the single auth test moves to `vreckan-auth` with
+  a minimal harness. The security-headers/CORS module moves from
+  `vreckan-admin` to `vreckan-core` (it only uses core types) so the
+  per-crate harnesses apply the same middleware without linking admin
+  (admin re-exports it; the facade keeps the pre-split path).
+  Dev-dependencies are trimmed per crate, the root package (no test
+  targets left) drops its dev-deps, and the Dockerfile test stage + the
+  Gitea CI test job move from `cargo test` to `cargo test --workspace`
+  (a plain `cargo test` would now select only the test-less root
+  package). The test set is equivalent: 30 files moved, 1 test re-homed,
+  no assertions changed. The re-homed sessions tests additionally link
+  `vreckan-catalog` as a **dev-dependency** (the shared harness composes
+  the catalog routes the session flows hit — join, my-sessions — and
+  persists session state through `catalog::save_sessions`); the
+  production DAG edge stays catalog→sessions, so no runtime impact.
+
+- **`axum-reverse-proxy` pinned 2.2 → 2.4** (PR #137 / ANT-820): a
+  one-line pin in the root `Cargo.toml` closing the regression the
+  Phase 2 split left on `main` against the v0.10.6 release; the
+  lockfile already resolved 2.4.0, so the pin removes the drift rather
+  than moving the graph.
+
+- **Measurement marker (no code)** (ANT-808): the pre-split tree's
+  typical-change build measured 46m0.6s under ~7× host-load contention —
+  recorded here for the report; the post-Phase-3 numbers under the same
+  methodology are in the consolidated ANT-821 report and the bullet
+  below.
+
+- **Consolidated Phase 3 measurement** (ANT-821): BEFORE
+  (`main` @ `a24a1df`, v0.11.1) vs AFTER (this release) on paperclip01,
+  `vreckan-base-build:latest`, `CARGO_BUILD_JOBS=8`, dedicated empty
+  sccache + fresh `target/` per tree — full cold pipeline
+  **2640s → 2505s (−135s, −5.1%)**: release build 437s → 453s, cold
+  test build 1775s → 1663s (−112s, −6.3%), full suite 428s → 389s
+  (−39s, −9.1%). Suite results are identical — **614 passed / 0
+  failed** on both trees (43 test targets before, 50 after the
+  per-crate split). Both trees ran back-to-back on the same host under
+  the same protocol (load average ~2–8 across the pair window), so the
+  comparison is like-for-like. sccache: the BEFORE tree recorded zero
+  cache activity (the same anomaly seen in the first measurement pair),
+  while the AFTER tree served 263 of 1426 executed compile requests
+  (18.6%) from cache — 50% for C/C++ units (within-run reuse, e.g.
+  aws-lc-sys) and 0.22% for Rust.
+
+- **Dependency footnote** (folded from the pending note at this cut,
+  ANT-826): the deliberate `ctutils 0.4.5` pin (ANT-513, the
+  RUSTSEC-2026-0385 fix) was superseded by the v0.11.0 `rsa` rc.20
+  subgraph float, which moved `ctutils` to 0.4.8 — the ANT-818 audit
+  confirms 0.4.8 carries the fix, so the security baseline is unchanged.
+
+`VERSION`/`Cargo.toml`/`Cargo.lock` moved 0.11.1 → 0.11.2 via
+`scripts/bump-version.sh patch` (with every workspace member's
+`Cargo.lock` entry re-pointed in the same run).
 
 ## 2026-11-04 — v0.11.1: base-image bump + workspace-crate lockfile-sync fix (ANT-805)
 

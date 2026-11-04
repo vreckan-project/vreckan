@@ -4,22 +4,29 @@ members = [
     "crates/vreckan-core",
     "crates/vreckan-acme",
     "crates/vreckan-auth",
-    "crates/vreckan-apps",
+    "crates/vreckan-collab",
+    "crates/vreckan-sessions",
+    "crates/vreckan-catalog",
+    "crates/vreckan-files",
     "crates/vreckan-admin",
 ]
 resolver = "2"
 
-# Candidate C (ANT-662 Phase 2 / ANT-770): the former single lib+bin is split
-# into five domain crates plus this thin `vreckan` package (lib facade + bin).
-# The public `vreckan` package name is preserved: the lib re-exports every
-# former top-level module, so downstream dependents' `Cargo.toml` and
-# `use vreckan::...` paths are unaffected.
+# Candidate C (ANT-662 Phase 2 / ANT-770) split the former single lib+bin
+# into domain crates plus this thin `vreckan` package (lib facade + bin);
+# the Candidate B central-cluster split (Phase 3 / ANT-812) then dissolved
+# `vreckan-apps` into `vreckan-collab`, `vreckan-sessions`,
+# `vreckan-catalog` (catalog + docker provider), and `vreckan-files`, with
+# `backup_manager` moving to `vreckan-admin`. The public `vreckan` package
+# name is preserved: the lib re-exports every former top-level module, so
+# downstream dependents' `Cargo.toml` and `use vreckan::...` paths are
+# unaffected.
 
 [workspace.package]
 # Single version shared by all six workspace crates via
 # `version = { workspace = true }` (Candidate C split, ANT-770). Bumped
 # 0.10.7 -> 0.11.0 for the v0.11.0 cut that ships the split (ANT-775).
-version = "0.11.1"
+version = "0.11.2"
 edition = "2021"
 license = "MPL-2.0"
 
@@ -28,7 +35,7 @@ license = "MPL-2.0"
 axum = { version = "0.8", features = ["macros", "query", "json", "multipart", "ws", "http2", "form"] }
 axum-extra = { version = "0.12", features = ["cookie"] }
 axum-server = { version = "0.8", features = ["tls-rustls"] }
-axum-reverse-proxy = "2.2"
+axum-reverse-proxy = "2.4"
 tokio = { version = "1", features = ["full"] }
 hyper = { version = "1", features = ["full"] }
 # Per-connection HTTP driver for the manual accept loop in `serve.rs`
@@ -62,7 +69,6 @@ serde_json = "1"
 serde_yaml = "0.9"
 
 # Crypto (E2EE + password hashing)
-ring = "0.17"
 argon2 = "0.6"
 # `sha2` 0.11 (digest 0.11) matches the version `rsa 0.10` is built against
 # and re-exports, so the `Sha256`/`Digest` types used for the PSS/OAEP
@@ -92,7 +98,6 @@ spki = "0.8"
 der = "0.8"
 
 # OIDC / SSO
-openid = "0.25"
 jwks = "0.5"
 # JWT (id_token) decode + RS256 signature verification. v11 is a breaking
 # bump (non_exhaustive types, removed `Validation::insecure_disable_
@@ -124,11 +129,21 @@ tar = "0.4"
 flate2 = "1"
 
 # TLS / certs
-rustls = { version = "0.23", features = ["ring"] }
+# Provider pinned to `aws_lc_rs` (ANT-811): the old `ring` feature compiled
+# the ring backend into rustls + rustls-webpki while rcgen/acmex already ran
+# on aws-lc-rs — two crypto C builds (ring + aws-lc-sys) in one process.
+# Default features (std/logging/tls12) are unchanged; the runtime provider
+# install sites moved to `rustls::crypto::aws_lc_rs::default_provider()`.
+rustls = { version = "0.23", features = ["aws_lc_rs"] }
 rustls-pemfile = "2"
 rustls-pki-types = "1"
 x509-cert = "0.3"
-rcgen = "0.14"
+# Provider pinned to aws-lc-rs instead of the default `ring` (ANT-811):
+# identical spec to the acmex fork's rcgen dep, so one rcgen unit with one
+# provider is compiled. `crypto` + `pem` are rcgen's default feature set
+# minus `ring`; rcgen's provider shim selects aws_lc_rs whenever it is
+# present, so this also changes nothing at runtime.
+rcgen = { version = "0.14", default-features = false, features = ["aws_lc_rs", "crypto", "pem"] }
 # Native ACME client (replaces the certbot sidecar container for Let's
 # Encrypt issuance; see `src/acme.rs` and `src/le_certbot.rs`). Default crypto
 # is aws-lc-rs (already in the tree via rcgen). DNS-01 providers are feature
@@ -192,7 +207,10 @@ path = "src/main.rs"
 vreckan-core = { path = "crates/vreckan-core" }
 vreckan-acme = { path = "crates/vreckan-acme" }
 vreckan-auth = { path = "crates/vreckan-auth" }
-vreckan-apps = { path = "crates/vreckan-apps" }
+vreckan-collab = { path = "crates/vreckan-collab" }
+vreckan-sessions = { path = "crates/vreckan-sessions" }
+vreckan-catalog = { path = "crates/vreckan-catalog" }
+vreckan-files = { path = "crates/vreckan-files" }
 vreckan-admin = { path = "crates/vreckan-admin" }
 anyhow = { workspace = true }
 axum-server = { workspace = true }
@@ -201,49 +219,22 @@ tokio = { workspace = true }
 tracing = { workspace = true }
 tracing-subscriber = { workspace = true }
 # Carried over from the pre-split root manifest to keep the dependency tree
-# unchanged (ANT-662 Phase 3 crypto unification sorts out the dead ones):
-# `ring` survives via rustls/rcgen/openid, `openid` via jwks, and
-# `axum-reverse-proxy` / `axum-extra` / `http-body-util` were already
-# unreferenced by code.
-ring = { workspace = true }
-openid = { workspace = true }
+# unchanged; Phase 3 crypto unification (ANT-811) sorted out the dead crypto
+# ones: the direct `ring` dep had no `ring::` references anywhere (only the
+# rustls provider install sites, which use rustls's own re-exports), and the
+# direct `openid` dep had no `openid::` references either — OIDC is
+# hand-rolled on reqwest + jwks + jsonwebtoken, and jwks 0.5 itself does not
+# depend on the openid crate — so both, and with them the `openid → biscuit
+# 0.7 → ring` chain, left the tree. `axum-reverse-proxy` / `axum-extra` /
+# `http-body-util` remain as a follow-up cleanup (non-crypto).
 axum-reverse-proxy = { workspace = true }
 axum-extra = { workspace = true }
 http-body-util = { workspace = true }
 
-# Integration test suite (tests/): builds against the `vreckan` facade lib
-# plus the crates directly.
-[dev-dependencies]
-aes-gcm = { workspace = true }
-async-trait = { workspace = true }
-axum = { workspace = true }
-axum-server = { workspace = true }
-base64 = { workspace = true }
-bollard = { workspace = true }
-flate2 = { workspace = true }
-futures-util = { workspace = true }
-http = { workspace = true }
-http-body-util = { workspace = true }
-jsonwebtoken = { workspace = true }
-pkcs8 = { workspace = true }
-rand = { workspace = true }
-rcgen = { workspace = true }
-reqwest = { workspace = true }
-rsa = { workspace = true }
-rustls = { workspace = true }
-rustls-pemfile = { workspace = true }
-sea-orm = { workspace = true }
-serde_json = { workspace = true }
-serde_yaml = { workspace = true }
-sha2 = { workspace = true }
-tar = { workspace = true }
-time = { workspace = true }
-tokio = { workspace = true }
-tokio-rustls = { workspace = true }
-tokio-tungstenite = { workspace = true }
-tower = { workspace = true }
-url = { workspace = true }
-uuid = { workspace = true }
+# The integration test suite moved out of the root `tests/` into the
+# per-crate `tests/` directories in ANT-810 (each test binary now links
+# only the crates it exercises), so the root package carries no
+# dev-dependencies of its own.
 
 # The published `acmex` 0.8.0 hard-codes the ACME account key as Ed25519 and
 # signs every JWS with `alg: EdDSA`, but Let's Encrypt production no longer
@@ -252,7 +243,7 @@ uuid = { workspace = true }
 # derives the JWS `alg` and JWK from the actual key (`Jwk::for_key_pair`,
 # `JwsSigner::jwa_algorithm`) and adds `KeyPairGenerator`, so we pin an
 # `vreckan-project/acmex` fork (of houseme/acmex @ f7b06c2; relocated out of
-# the maintainer's personal `antitux/acmex` repo, ANT-284) with six fixes:
+# the maintainer's personal `antitux/acmex` repo, ANT-284) with seven fixes:
 #   1. the `contact` field in account responses is defaulted — Boulder
 #      omits it when the account has no contacts, which broke parsing;
 #   2. POST-as-GET reads (order/authz/cert lookup, account lookup) use
@@ -272,17 +263,22 @@ uuid = { workspace = true }
 #      81058 ("An identical record already exists") fires when a CA
 #      reuses a still-valid authorization (same token, same digest) and
 #      a previous run left the record in place; the fork reuses the
-#      existing record instead of failing the issuance.
+#      existing record instead of failing the issuance;
+#   7. the optional `aws-lc-rs` backend no longer forces the `fips` feature
+#      (ANT-811) — it had compiled a second full C build of the aws-lc
+#      source (`aws-lc-fips-sys`) on top of the default `aws-lc-sys` while
+#      no runtime path exercised FIPS mode.
 # We generate ECDSA P-256 account keys (ES256), accepted by all three
 # supported CAs. Revert to the crates.io release once the fixes ship in a
-# published version. The pin is the `vreckan-2026-10-16` tag (ANT-275) on the
-# company-owned fork — a force-push of the branch no longer changes what we
-# build, and Cargo.lock additionally records the resolved commit sha, so a
-# moved tag shows up as a lockfile diff until the next `cargo update`.
+# published version. The pin is the `vreckan-2026-11-03` tag on the
+# company-owned fork (fixes 1–6 landed as `vreckan-2026-10-16`, ANT-275) — a
+# force-push of the branch no longer changes what we build, and Cargo.lock
+# additionally records the resolved commit sha, so a moved tag shows up as a
+# lockfile diff until the next `cargo update`.
 # The fork lives in the project org (vreckan-project/acmex, ANT-284),
 # mirrored out of the maintainer's personal account (antitux/acmex).
 [patch.crates-io]
-acmex = { git = "https://github.com/vreckan-project/acmex", tag = "vreckan-2026-10-16" }
+acmex = { git = "https://github.com/vreckan-project/acmex", tag = "vreckan-2026-11-03" }
 
 [profile.release]
 opt-level = 3

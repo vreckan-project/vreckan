@@ -8,6 +8,7 @@
 //! do not clear); other assets revalidate (`no-cache`).
 
 use axum::http::header;
+use base64::Engine;
 use axum::http::StatusCode;
 use axum::response::{IntoResponse, Response};
 use sha2::{Digest, Sha256};
@@ -94,5 +95,53 @@ pub fn serve(path: &str) -> Response {
         .header(header::CONTENT_TYPE, mime)
         .header(header::CACHE_CONTROL, cache_control)
         .body(axum::body::Body::from(data))
+        .unwrap_or_else(|e| (StatusCode::INTERNAL_SERVER_ERROR, e.to_string()).into_response())
+}
+
+/// Render the public password page with template substitution + strict CSP.
+/// `action_url` is where the form POSTs (the share's public entry point —
+/// `/public/{share_id}` for file shares, `/share/{share_id}` for session
+/// shares). `status` is the HTTP status to return: 200 when the page is
+/// presented on a GET (the share is password-protected), 401 when a POST
+/// submitted a wrong password (mirrors the Python `access_public_share_post`).
+///
+/// Moved here from `files` in the ANT-812 central-cluster split: the session
+/// share handlers rendered it and the files routes consumed a function from
+/// the session-share module in return, which kept `files` and
+/// `session_shares` cyclic; this page only needs the static template and the
+/// shared CSP helper, both core.
+pub fn render_password_page(
+    action_url: &str,
+    share_id: &str,
+    error_message: &str,
+    status: StatusCode,
+) -> Response {
+    let template_path = static_dir().join("public_password.html");
+    let nonce = {
+        let mut buf = [0u8; 16];
+        use rand::Rng;
+        rand::rng().fill_bytes(&mut buf);
+        base64::engine::general_purpose::STANDARD.encode(buf)
+    };
+    let error_html = if error_message.is_empty() {
+        String::new()
+    } else {
+        format!(
+            r#"<div class="error-message" role="alert" style="margin-top:1rem;font-size:0.9rem;color:var(--color-danger);text-align:center;">{error_message}</div>"#
+        )
+    };
+    let html = match std::fs::read_to_string(&template_path) {
+        Ok(t) => t
+            .replace("{{ACTION_URL}}", action_url)
+            .replace("{{SHARE_ID}}", share_id)
+            .replace("{{ERROR_MESSAGE}}", &error_html)
+            .replace("{{CSP_NONCE}}", &nonce),
+        Err(_) => "<h1>Password protected</h1>".to_string(),
+    };
+    Response::builder()
+        .status(status)
+        .header(header::CONTENT_TYPE, "text/html; charset=utf-8")
+        .header(header::CONTENT_SECURITY_POLICY, crate::shared::strict_csp(&nonce))
+        .body(axum::body::Body::from(html))
         .unwrap_or_else(|e| (StatusCode::INTERNAL_SERVER_ERROR, e.to_string()).into_response())
 }

@@ -61,8 +61,10 @@ async fn main() -> anyhow::Result<()> {
     // `api` import-time key load; it must exist before any handshake.
     e2ee::init_server_key(&settings)?;
 
-    // Select the rustls crypto provider (ring) before any TLS config is built.
-    let _ = rustls::crypto::ring::default_provider().install_default();
+    // Select the rustls crypto provider (aws-lc-rs) before any TLS config is
+    // built. Converged off ring in ANT-811: rcgen and acmex already run on
+    // aws-lc-rs, so one provider now serves the whole TLS/ACME stack.
+    let _ = rustls::crypto::aws_lc_rs::default_provider().install_default();
 
     // Initialise the configuration database (creates tables on first run) and
     // apply any idempotent column migrations.
