@@ -9,6 +9,43 @@ is committed normally in `vreckan`. The changelog is the authoritative
 record of what shipped in each release — see
 [`docs/release.md`](./docs/release.md) for the conventions.
 
+## 2026-11-04 — v0.11.1: base-image bump + workspace-crate lockfile-sync fix (ANT-805)
+
+- **The build base advanced to the latest `vreckan-base-build`** (the
+  2026-11-03 8:32 AM MST re-bake, tagged `20261103`): `.base-image-digest`
+  and the `Dockerfile` build-stage pin move together (ANT-277) from
+  `sha256:001a81a8…` (the 2026-11-02 6:22 PM MST re-bake, which tracked
+  pre-split v0.10.6-era `main` at `bb98553`) to
+  `sha256:f33243e8…`, which tracks vreckan `main` at `aeb2074` — the
+  six-crate Candidate C workspace with the ANT-791 `rust-toolchain.toml`
+  pin (the parent of the v0.11.0 tag). The bake keeps the same
+  `rust:1.99-slim` `sha256:9daf2b24…` base (Rust 1.99.1), the sccache
+  wrapper, and the previous bake's `mold`-as-default-linker
+  `RUSTFLAGS`; what moved is the warm crates.io/git dependency cache,
+  which now matches the post-split six-crate `Cargo.lock` — local and CI
+  builds resolve the current lockfile straight from the warm cache
+  instead of fetching the split-era deltas. For operators: the old bake
+  is no longer tagged in the Gitea registry — the `cleanup_packages` cron
+  reclaimed its blobs after the 11-03 re-bake re-tagged `latest` — so
+  `Dockerfile` builds on the previous pin fail at the base-image pull
+  until this re-point lands.
+
+- **`scripts/bump-version.sh` now re-points all six workspace crates'
+  `Cargo.lock` entries** (ANT-805): after the Candidate C split (v0.11.0)
+  every workspace member carries its own version entry in `Cargo.lock`,
+  and each bump drifted the five non-root members until something else
+  forced a lockfile rewrite. The script now parses the `[workspace]`
+  members list, reads each member's package name from its own manifest,
+  and re-points every member's `Cargo.lock` entry alongside `VERSION` and
+  the root `Cargo.toml`, with a read-back self-verify on each. No
+  user-visible behavior change — versioning hygiene so the three files
+  never drift again (the 0.8.5/ANT-450 and post-split/ANT-805 drifts were
+  the counter-examples).
+
+`VERSION`/`Cargo.toml`/`Cargo.lock` moved 0.11.0 → 0.11.1 via
+`scripts/bump-version.sh patch` (with the six workspace crates'
+`Cargo.lock` entries re-pointed in the same run).
+
 ## 2026-11-03 — v0.11.0: Candidate C Cargo workspace split (ANT-662 P2)
 
 - **The monolith is now a Cargo workspace of six crates** (Candidate C,
