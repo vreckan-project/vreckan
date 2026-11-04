@@ -248,13 +248,13 @@ mod tests {
     use std::time::Duration;
     use tokio_rustls::TlsConnector;
 
-    /// Install the rustls crypto provider (ring) once per process; required
-    /// before any `ServerConfig`/`ClientConfig` is built. Mirrors the install
-    /// at the top of `main`.
+    /// Install the rustls crypto provider (aws-lc-rs) once per process;
+    /// required before any `ServerConfig`/`ClientConfig` is built. Mirrors the
+    /// install at the top of `main`.
     fn install_provider() {
         static ONCE: Once = Once::new();
         ONCE.call_once(|| {
-            let _ = rustls::crypto::ring::default_provider().install_default();
+            let _ = rustls::crypto::aws_lc_rs::default_provider().install_default();
         });
     }
 

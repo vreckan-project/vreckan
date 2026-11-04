@@ -1009,7 +1009,7 @@ async fn test_renewal_hot_reloads_served_cert_without_restart() {
     let _serial = lock_le();
     // rustls needs a process-default crypto provider for both the server
     // `ServerConfig` and the test's client; install once (ignore "already set").
-    let _ = rustls::crypto::ring::default_provider().install_default();
+    let _ = rustls::crypto::aws_lc_rs::default_provider().install_default();
 
     // A fresh per-test state with a throwaway SQLite config DB (source of truth
     // for the issued bundle). It still holds the process-wide lock (above)
