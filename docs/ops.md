@@ -26,7 +26,7 @@ Key properties of the default `docker-compose.yml`:
 
 | Setting | Value | Why |
 |---|---|---|
-| `image` | the published `ghcr.io/vreckan-project/vreckan` tag — `:latest` by default; pin a versioned tag (e.g. `:v0.10.4`) and drop `build:` in a real deployment (Rust cutover complete, ANT-40) | `build: .` is the local fallback: `docker compose build` / `up --build` builds the **Rust** image from this repo and tags it under the `image:` name, so a local checkout runs the Rust server even without a registry |
+| `image` | the published `ghcr.io/vreckan-project/vreckan` tag — `:latest` by default; pin a versioned tag (e.g. `:v0.11.2`) and drop `build:` in a real deployment (Rust cutover complete, ANT-40) | `build: .` is the local fallback: `docker compose build` / `up --build` builds the **Rust** image from this repo and tags it under the `image:` name, so a local checkout runs the Rust server even without a registry |
 | `ports` | `443:443` | Single TLS port for API + session proxy + web client |
 | non-root `USER` in the image | UID/GID 1000 | the server process no longer runs as root; the only capability it needs is `cap_net_bind_service` (a file capability on the binary, so the default port 443 binds on any host) because all host-side work (app-container creation, GPU setup) is done by the Docker daemon over the socket (§6) |
 | `ipc: host` | — | shared memory for the streamed apps |
@@ -43,8 +43,9 @@ on loopback only (`127.0.0.1:5432`) instead of every interface (ANT-90,
 P2-6).
 
 The server binds `0.0.0.0:$VRECKAN_API_PORT` (default **443**) with TLS
-(rustls/ring) and serves the API, web client, and session proxy on that
-single listener.
+(rustls, on the aws-lc-rs crypto provider since v0.11.2 — the tree no longer
+builds the old ring backend, ANT-811) and serves the API, web client, and
+session proxy on that single listener.
 
 ## 2. Quick start
 
@@ -159,15 +160,21 @@ The `Dockerfile` is multi-stage:
   image (built on `rust:1.99-slim`, Debian trixie; see §3.5 — it bakes the
   toolchain, the `-sys` build deps, sccache, and a warm dependency cache):
   `cargo build --release` with BuildKit cargo-cache mounts.
-- **System deps in the base image** — `linux-libc-dev`,
-  `pkg-config`, `libssl-dev` (needed by the `-sys` crates and the native-tls
-  stack) plus `cmake`, `make`, and `golang` (needed by the FIPS variant of
-  aws-lc, `aws-lc-fips-sys`, which acmex pulls in via `aws-lc-rs/fips` and
-  builds from source through its CMake project — its FIPS build requires Go
-  for the FIPSTools integrity utilities and Perl, which ships with the rust
-  base image) and `sccache`, which wraps `rustc` (`RUSTC_WRAPPER=sccache`)
-  and persists the compile cache across builds via a BuildKit `type=cache`
-  mount. See the per-package justifications in the `Dockerfile`.
+- **System deps in the base image** — `linux-libc-dev` (kernel UAPI headers
+  for the C code bundled with `libsqlite3-sys` and `aws-lc-sys`),
+  `pkg-config` + `libssl-dev` (system OpenSSL: `rustls-native-certs` — which
+  `reqwest`/`acmex` use for the system CA bundle — locates it through the
+  `openssl-probe` build probe; the older native-tls stack that made it
+  mandatory left the tree with the v0.11.2 crypto unification), `cmake` +
+  `make` (the `-sys` C projects, including aws-lc, build from source through
+  CMake), and `golang` (a leftover of the aws-lc **FIPS** variant build,
+  which compiled the FIPSTools integrity utilities with Go — the v0.11.2
+  crypto unification dropped the `fips` feature, so the FIPS build no longer
+  runs; the package stays in the base image until the next re-bake trims it).
+  `sccache` wraps `rustc` (`RUSTC_WRAPPER=sccache`) and persists the compile
+  cache across builds via a BuildKit `type=cache` mount, and `mold` is the
+  default Rust linker. See the per-package justifications in the base image's
+  `Dockerfile` (vreckan-workflow, `images/vreckan-base-build/`).
  - **Test stage** — the build stage plus the `server/` tree (the integration
    suite lives in the per-crate `tests/` directories after ANT-810, and those
    arrive with the build stage's `COPY crates`): CI builds `--target test` and
@@ -338,7 +345,7 @@ The Gitea runner that executes `build-test-rust.yml` / Release needs:
 ## 4. Database
 
 All durable configuration (users, groups, roles, apps, templates, sessions,
-tokens, shares, settings) lives in one of **13 tables**; tables are created
+tokens, shares, settings) lives in one of **14 tables**; tables are created
 and missing columns migrated idempotently on every start (SeaORM
 schema-sync, mirroring the Python `init_db` + `migrate_db` pair).
 
