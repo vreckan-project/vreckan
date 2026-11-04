@@ -34,6 +34,28 @@ tokio = { workspace = true }
 tokio-tungstenite = { workspace = true }
 tracing = { workspace = true }
 
+# Integration test suite (tests/): the former root-package suite was
+# re-homed per crate in ANT-810 so each test binary links only the crates
+# it exercises, and the dissolved `vreckan-apps` session-share and
+# participant tests landed here in ANT-821 (including the real-Docker
+# session-share e2e, which needs `bollard`). The dev-deps are the external
+# crates the tests + the shared harness use, trimmed from the old root
+# [dev-dependencies].
+[dev-dependencies]
+aes-gcm = { workspace = true }
+bollard = { workspace = true }
+http-body-util = { workspace = true }
+pkcs8 = { workspace = true }
+rsa = { workspace = true }
+tower = { workspace = true }
+uuid = { workspace = true }
+# The shared test harness composes the catalog routes the session flows
+# depend on (join, my-sessions) and persists session state through
+# `catalog::save_sessions`, so the test binaries link vreckan-catalog
+# although the lib does not depend on it (a dev-dep cycle is fine; no
+# production DAG edge is added).
+vreckan-catalog = { path = "../vreckan-catalog" }
+
 # Opt into the workspace lint table: the clippy baseline is defined once in
 # the root Cargo.toml ([workspace.lints.clippy], ANT-791).
 [lints]

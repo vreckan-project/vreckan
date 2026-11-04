@@ -39,6 +39,21 @@ tracing = { workspace = true }
 # Ephemeral-volume path names in the launch path.
 uuid = { workspace = true }
 
+# Integration test suite (tests/): the former root-package suite was
+# re-homed per crate in ANT-810 so each test binary links only the crates
+# it exercises, and the dissolved `vreckan-apps` tests landed here in
+# ANT-821 (launch, docker-launch, user-sessions, auto-update, the ANT-443/
+# ANT-470 token-table tests, the Postgres DB tests). The dev-deps are the
+# external crates the tests + the shared harness use, trimmed from the old
+# root [dev-dependencies].
+[dev-dependencies]
+aes-gcm = { workspace = true }
+http = { workspace = true }
+http-body-util = { workspace = true }
+pkcs8 = { workspace = true }
+rsa = { workspace = true }
+tower = { workspace = true }
+
 # Opt into the workspace lint table: the clippy baseline is defined once in
 # the root Cargo.toml ([workspace.lints.clippy], ANT-791).
 [lints]

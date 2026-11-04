@@ -45,7 +45,32 @@ tower = { workspace = true }
 tracing = { workspace = true }
 
 # The same-port dispatch tests in `serve.rs` build a no-verify TLS client.
+# Integration test suite (tests/): re-homed from the root package in
+# ANT-810 so each test binary links only the crates it exercises. These
+# tests drive the full app router, so the link closure is the whole
+# workspace (admin is the composition crate); the dev-deps below are the
+# external crates the tests + the shared harness use, trimmed from the old
+# root [dev-dependencies] to what this suite references.
 [dev-dependencies]
+aes-gcm = { workspace = true }
+async-trait = { workspace = true }
+bollard = { workspace = true }
+flate2 = { workspace = true }
+futures-util = { workspace = true }
+http = { workspace = true }
+http-body-util = { workspace = true }
+jsonwebtoken = { workspace = true }
+pkcs8 = { workspace = true }
+rand = { workspace = true }
+rcgen = { workspace = true }
+rsa = { workspace = true }
+rustls-pemfile = { workspace = true }
+tar = { workspace = true }
+time = { workspace = true }
+tokio-tungstenite = { workspace = true }
+url = { workspace = true }
+uuid = { workspace = true }
+# The same-port dispatch tests in `serve.rs` build a no-verify TLS client.
 rustls-pki-types = { workspace = true }
 
 # Opt into the workspace lint table: the clippy baseline is defined once in
