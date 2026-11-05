@@ -252,6 +252,7 @@ a:focus-visible, button:focus-visible, input:focus-visible { outline: 2px solid 
   border-bottom: 1px solid var(--border);
 }
 .doc h3 { font-size: 1.1rem; font-weight: 700; margin: 24px 0 8px; }
+.doc h4 { font-size: 1.05rem; font-weight: 700; margin: 20px 0 8px; }
 .doc p { margin: 0 0 16px; }
 .doc ul, .doc ol { margin: 0 0 16px; padding-left: 22px; }
 .doc li { margin: 6px 0; }
