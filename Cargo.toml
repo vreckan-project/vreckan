@@ -95,26 +95,19 @@ pkcs8 = { version = "0.11", features = ["alloc", "pem"] }
 spki = "0.8"
 der = "0.8"
 
-# OIDC / SSO
-jwks = "0.5"
-# JWT (id_token) decode + RS256 signature verification. v11 is a breaking
-# bump (non_exhaustive types, removed `Validation::insecure_disable_
-# signature_validation`, reworked feature gates); vreckan's call sites in
-# src/auth.rs and the test suites were audited against it (ANT-246).
+# OIDC / SSO — JWT (id_token) decode + RS256 signature verification. The
+# JWKS fetch is hand-rolled on reqwest in src/auth.rs (ANT-855), so the
+# `jwks` crate and its `jsonwebtoken` v10 companion are gone. v11 is a
+# breaking bump (non_exhaustive types, removed `Validation::insecure_
+# disable_signature_validation`, reworked feature gates); vreckan's call
+# sites in src/auth.rs and the test suites were audited against it (ANT-246).
 # `rust_crypto` must be enabled explicitly: v11 selects its process-level
 # CryptoProvider from this feature (exactly one of rust_crypto/aws_lc_rs),
-# and in the v10 era it only reached jsonwebtoken through feature
-# unification via jwks' default features — nothing else names v11, so
-# without it RS256 verification panics at runtime. The feature pulls the
-# same rsa/p256/p384/ed25519-dalek/sha2/hmac/rand versions jwks' v10 dep
-# already puts in the tree.
+# and nothing else names v11, so without it RS256 verification panics at
+# runtime. The feature keeps the v10-era crypto family (rsa/p256/p384/
+# ed25519-dalek/sha2/hmac/rand) in the tree — it survives until the
+# crypto-bigint 0.5.5 removal lands under ANT-546.
 jsonwebtoken = { version = "11", features = ["rust_crypto"] }
-# `jwks 0.5.x` still compiles against `jsonwebtoken` v10, so the
-# `DecodingKey` on its `Jwk` is a v10 type. Named explicitly so src/auth.rs
-# can convert it into the v11 key `jsonwebtoken::decode` consumes. This
-# companion dep drops out when jwks ships a v11-based release (0.5.3 is
-# the latest as of 2026-10).
-jsonwebtoken_v10 = { package = "jsonwebtoken", version = "10" }
 
 # Docker Engine API
 bollard = "0.21"
@@ -221,10 +214,11 @@ tracing-subscriber = { workspace = true }
 # ones: the direct `ring` dep had no `ring::` references anywhere (only the
 # rustls provider install sites, which use rustls's own re-exports), and the
 # direct `openid` dep had no `openid::` references either — OIDC is
-# hand-rolled on reqwest + jwks + jsonwebtoken, and jwks 0.5 itself does not
-# depend on the openid crate — so both, and with them the `openid → biscuit
-# 0.7 → ring` chain, left the tree; the dead non-crypto `axum-reverse-proxy`
-# and `axum-extra` direct deps (zero source references) left the manifest in
+# hand-rolled on reqwest + jsonwebtoken (the JWKS fetch likewise, ANT-855),
+# and none of them depend on the openid crate — so both, and with them the
+# `openid → biscuit 0.7 → ring` chain, left the tree; the dead non-crypto
+# `axum-reverse-proxy` and `axum-extra` direct deps (zero source references)
+# left the manifest in
 # ANT-852, dropping their transitive `cookie` 0.18 / `tokio-tungstenite` +
 # `tungstenite` 0.28 copies with them. `http-body-util` remains as a test-only
 # dep (used only by the per-crate `tests/common` harness) until the
