@@ -34,33 +34,52 @@ the fix ships, and append new gaps here as they are discovered (next audit
 supersedes this list). Gap tracking for the core dev is coordinated through
 ANT-1.
 
+**2026-11-04 (v0.11.2, Phase 3):** no gaps closed. The Phase 3 work
+(ANT-662 P3: crate dissolution ANT-812, crypto unification ANT-811,
+per-crate test-suite split ANT-810, plus the `axum-reverse-proxy` 2.4 pin,
+ANT-820) is structural — Rob's ANT-829 release-readiness verdict confirms
+the production tree is **byte-identical** to the pre-fold baseline (all
+`src/` files: 0 lines of diff; only test-file moves, dev-dep list trims,
+and the `Cargo.lock` dev-dep entries differ), so G1–G11 carry over as-is
+with no behavior change. The `Where` cells below now name the post-split
+crate paths.
+
 ### P1 — user-visible on a regular deployment
 
 | ID | Gap | Where (Rust) | Impact | Status |
 |---|---|---|---|---|
-| **G1** | **Volume-mount application at launch is a no-op.** `apply_external_mounts()` is an explicit `TODO(port admin)` placeholder on the launch path. The admin CRUD side is fully ported (routes, table, 6-field schema), so mounts can be defined but are never attached to containers | `catalog.rs` (`apply_external_mounts`, called from launch) | User/group-scoped mounts created in the admin UI persist but are silently ignored when containers launch | Open (2026-10-12) |
-| **G2** | **Crypto-session sweeper still missing; the auto-update job covers only part of Python's job 1.** Python's lifespan spawns app-store/autostart cache refresh + auto-update pulls + dangling-image prune, a share-cleanup sweeper, a crypto-session sweeper, and the LE renewal job; Rust spawns the LE renewal job, the auto-update job (v0.7.0, ANT-269 — re-warms image metadata, compares registry digests, auto-pulls opted-in apps), and the session-share cleanup sweeper (ANT-305) | `main.rs` startup | The Rust crypto-session map is unbounded and stale keys stay valid indefinitely (Python: 24 h idle TTL); the auto-update job does not do the app-store/autostart cache refresh (G9) or the dangling-image prune; `share_cleanup_interval_seconds` drives the session-share sweeper | Open (2026-10-12; share sweeper landed 2026-10-17; auto-update job landed 2026-10-16, v0.7.0) |
-| **G3** | **Stale-session relaunch at startup missing.** Python scans persisted sessions for missing containers and relaunches them so sessions survive a host reboot; Rust only restores session records | `main.rs` (after `load_sessions`; the `launch_kwargs` needed for relaunch are already stored) | After a reboot, restored sessions look active until a user manually recreates them | Open (2026-10-12) |
+| **G1** | **Volume-mount application at launch is a no-op.** `apply_external_mounts()` is an explicit `TODO(port admin)` placeholder on the launch path. The admin CRUD side is fully ported (routes, table, 6-field schema), so mounts can be defined but are never attached to containers | `crates/vreckan-catalog/src/catalog.rs` (`apply_external_mounts`, called from launch) | User/group-scoped mounts created in the admin UI persist but are silently ignored when containers launch | Open (2026-10-12) |
+| **G2** | **Crypto-session sweeper still missing; the auto-update job covers only part of Python's job 1.** Python's lifespan spawns app-store/autostart cache refresh + auto-update pulls + dangling-image prune, a share-cleanup sweeper, a crypto-session sweeper, and the LE renewal job; Rust spawns the LE renewal job, the auto-update job (v0.7.0, ANT-269 — re-warms image metadata, compares registry digests, auto-pulls opted-in apps), and the session-share cleanup sweeper (ANT-305) | `src/main.rs` startup (vreckan-bin) | The Rust crypto-session map is unbounded and stale keys stay valid indefinitely (Python: 24 h idle TTL); the auto-update job does not do the app-store/autostart cache refresh (G9) or the dangling-image prune; `share_cleanup_interval_seconds` drives the session-share sweeper | Open (2026-10-12; share sweeper landed 2026-10-17; auto-update job landed 2026-10-16, v0.7.0) |
+| **G3** | **Stale-session relaunch at startup missing.** Python scans persisted sessions for missing containers and relaunches them so sessions survive a host reboot; Rust only restores session records | `src/main.rs` (after `catalog::load_sessions`; the `launch_kwargs` needed for relaunch are already stored; the `load_sessions`/`save_sessions` pair now lives in `crates/vreckan-core/src/state.rs`) | After a reboot, restored sessions look active until a user manually recreates them | Open (2026-10-12) |
 
 ### P2 — divergence with operational consequences
 
 | ID | Gap | Where (Rust) | Impact | Status |
 |---|---|---|---|---|
-| **G4** | **Template-schema startup reconciliation missing.** Python re-baselines the schema table on every start (adds YAML-defined settings missing from the table, resets drifted built-in `default` values from the YAML baseline, clears redundant `current == default`); Rust only seeds when the table is empty | `catalog.rs` (`load_template_schema`) | On a DB that predates the split, or whose baseline drifted after an image upgrade, Rust keeps serving the stale value until an admin re-saves the schema via POST | Open (2026-10-12) |
-| **G5** | **No automatic env → `app_settings` mirror at startup.** Python writes every live `VRECKAN_*` env value into the `app_settings` table on start (making the DB a recovery source for the container's configuration, including the OIDC client secret); Rust only writes rows when an admin explicitly saves global settings/SSO | `main.rs` startup | Settings resolution order (DB → env → default) is preserved, but the DB no longer mirrors the env; recovery from a lost `.env` and the "UI value wins over env" audit trail are lost | Open (2026-10-12) |
-| **G6** | **Collaboration-room strict CSP differs.** Rust `strict_csp` drops `style-src 'unsafe-inline'` and the `https://cdnjs.cloudflare.com` (Font Awesome) origin from style-src, drops the GitHub img-src entries, and drops `frame-src`; it adds `connect-src ws: wss:` (arguably a fix — Python's room WebSocket connected cross-scheme under a `connect-src 'self'`-only policy) | `security.rs` (used by the room page and the public password page) | Icon font resolved (ANT-570): Font Awesome 6.4.0 is vendored under `server/static/collaboration/font-awesome/` and `room.html` links the local copy, so no CSP change was needed; inline-style / GitHub img-src / `frame-src` differences remain | Partially resolved (2026-10-26, icon font via ANT-570) |
+| **G4** | **Template-schema startup reconciliation missing.** Python re-baselines the schema table on every start (adds YAML-defined settings missing from the table, resets drifted built-in `default` values from the YAML baseline, clears redundant `current == default`); Rust only seeds when the table is empty | `crates/vreckan-catalog/src/catalog.rs` (`load_template_schema`) | On a DB that predates the split, or whose baseline drifted after an image upgrade, Rust keeps serving the stale value until an admin re-saves the schema via POST | Open (2026-10-12) |
+| **G5** | **No automatic env → `app_settings` mirror at startup.** Python writes every live `VRECKAN_*` env value into the `app_settings` table on start (making the DB a recovery source for the container's configuration, including the OIDC client secret); Rust only writes rows when an admin explicitly saves global settings/SSO | `src/main.rs` startup (vreckan-bin) | Settings resolution order (DB → env → default) is preserved, but the DB no longer mirrors the env; recovery from a lost `.env` and the "UI value wins over env" audit trail are lost | Open (2026-10-12) |
+| **G6** | **Collaboration-room strict CSP differs.** Rust `strict_csp` drops `style-src 'unsafe-inline'` and the `https://cdnjs.cloudflare.com` (Font Awesome) origin from style-src, drops the GitHub img-src entries, and drops `frame-src`; it adds `connect-src ws: wss:` (arguably a fix — Python's room WebSocket connected cross-scheme under a `connect-src 'self'`-only policy) | `crates/vreckan-core/src/shared.rs` (`strict_csp`, re-exported as `security::strict_csp`; used by the room page and the public password page) | Icon font resolved (ANT-570): Font Awesome 6.4.0 is vendored under `server/static/collaboration/font-awesome/` and `room.html` links the local copy, so no CSP change was needed; inline-style / GitHub img-src / `frame-src` differences remain | Partially resolved (2026-10-26, icon font via ANT-570) |
 
 ### P3 — nits, cold-start behavior, cosmetic
 
 | ID | Gap | Where | Impact | Status |
 |---|---|---|---|---|
-| **G7** | Trailing-slash direction on the `/api/homedirs` and `/api/pinned` collection roots — as of the 2026-10-16 re-check (ANT-242), axum 0.8 collapses the nested `"/"` route onto the prefix, so **Rust serves the no-slash forms, the same as Python**; only the trailing-slash forms 404 (the original audit had the direction inverted) | `files.rs` route registration | Only strict clients that call the trailing-slash forms get 404; the shipped web client and the test suite both use the no-slash forms | Open (2026-10-12; direction corrected 2026-10-16) |
-| **G8** | UUID path-param validation dropped on session/room paths — Python 422'd malformed ids at routing; Rust matches any string and the handler fails later (404/500) | `catalog.rs`, `session_proxy.rs`, `collaboration.rs` | Different error class/status for malformed ids | Open (2026-10-12) |
+| **G7** | Trailing-slash direction on the `/api/homedirs` and `/api/pinned` collection roots — as of the 2026-10-16 re-check (ANT-242), axum 0.8 collapses the nested `"/"` route onto the prefix, so **Rust serves the no-slash forms, the same as Python**; only the trailing-slash forms 404 (the original audit had the direction inverted) | `crates/vreckan-files/src/files.rs` route registration | Only strict clients that call the trailing-slash forms get 404; the shipped web client and the test suite both use the no-slash forms | Open (2026-10-12; direction corrected 2026-10-16) |
+| **G8** | UUID path-param validation dropped on session/room paths — Python 422'd malformed ids at routing; Rust matches any string and the handler fails later (404/500) | `vreckan-catalog` (`catalog.rs`), `vreckan-sessions` (`session_proxy.rs`), `vreckan-collab` (`collaboration.rs`) | Different error class/status for malformed ids | Open (2026-10-12) |
 | **G9** | **Startup cache warm-up missing** — initial population of the app-store YAML caches, autostart-script caches, and image-metadata caches (Python does this in lifespan before serving) | consequence of G2 | First client requests on a cold Rust boot pay the fetch latency | Open (2026-10-12) |
-| **G10** | Rust-only `GET /api/health` liveness endpoint (no Python counterpart) | `app.rs` | Additive, non-breaking; strictly an addition, listed for completeness | Additive (2026-10-12) |
-| **G11** | Several Python response models (e.g. management-data, backup info, restore result, update-check responses) are inline JSON values rather than first-class Rust structs; request models are all properly typed | `admin.rs` and related handlers | Cosmetic; no behavior impact found | Open (2026-10-12) |
+| **G10** | Rust-only `GET /api/health` liveness endpoint (no Python counterpart) | `crates/vreckan-admin/src/app.rs` | Additive, non-breaking; strictly an addition, listed for completeness | Additive (2026-10-12) |
+| **G11** | Several Python response models (e.g. management-data, backup info, restore result, update-check responses) are inline JSON values rather than first-class Rust structs; request models are all properly typed | `crates/vreckan-admin/src/admin.rs` and related handlers | Cosmetic; no behavior impact found | Open (2026-10-12) |
 
 ## Test-suite parity notes
+
+**2026-11-04 (v0.11.2, Phase 3 / ANT-810):** the root-level `tests/` tree
+is dissolved — each integration test now lives in the `tests/` tree of the
+crate(s) it exercises (31 test files: `vreckan-admin` 17, `vreckan-catalog`
+7, `vreckan-files` 3, `vreckan-sessions` 3, `vreckan-auth` 1), each with a
+per-crate `tests/common` harness. The split moved files and trimmed
+dev-deps only — no assertions changed — so the module mapping below
+carries over by name; `cargo test` now requires `--workspace` (a plain
+`cargo test` selects only the test-less root package).
 
 Verified against the Python baseline (`e7b2de6`, v0.5.0) on 2026-10-16
 (ANT-256): **21 Python test modules** against **21 Rust test modules**. All
