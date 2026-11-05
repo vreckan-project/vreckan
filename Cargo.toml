@@ -33,9 +33,7 @@ license = "MPL-2.0"
 [workspace.dependencies]
 # HTTP server + routing
 axum = { version = "0.8", features = ["macros", "query", "json", "multipart", "ws", "http2", "form"] }
-axum-extra = { version = "0.12", features = ["cookie"] }
 axum-server = { version = "0.8", features = ["tls-rustls"] }
-axum-reverse-proxy = "2.4"
 tokio = { version = "1", features = ["full"] }
 hyper = { version = "1", features = ["full"] }
 # Per-connection HTTP driver for the manual accept loop in `serve.rs`
@@ -225,10 +223,12 @@ tracing-subscriber = { workspace = true }
 # direct `openid` dep had no `openid::` references either — OIDC is
 # hand-rolled on reqwest + jwks + jsonwebtoken, and jwks 0.5 itself does not
 # depend on the openid crate — so both, and with them the `openid → biscuit
-# 0.7 → ring` chain, left the tree. `axum-reverse-proxy` / `axum-extra` /
-# `http-body-util` remain as a follow-up cleanup (non-crypto).
-axum-reverse-proxy = { workspace = true }
-axum-extra = { workspace = true }
+# 0.7 → ring` chain, left the tree; the dead non-crypto `axum-reverse-proxy`
+# and `axum-extra` direct deps (zero source references) left the manifest in
+# ANT-852, dropping their transitive `cookie` 0.18 / `tokio-tungstenite` +
+# `tungstenite` 0.28 copies with them. `http-body-util` remains as a test-only
+# dep (used only by the per-crate `tests/common` harness) until the
+# test-harness extraction (ANT-849 #4, sibling task) moves it.
 http-body-util = { workspace = true }
 
 # The integration test suite moved out of the root `tests/` into the
