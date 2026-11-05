@@ -68,7 +68,7 @@ layout: default
       <tbody>
         <tr>
           <td><code>image</code></td>
-          <td>the published <code>ghcr.io/vreckan-project/vreckan</code> tag — <code>:latest</code> by default; pin a versioned tag (e.g. <code>:v0.10.4</code>) and drop <code>build:</code> in a real deployment (Rust cutover complete)</td>
+          <td>the published <code>ghcr.io/vreckan-project/vreckan</code> tag — <code>:latest</code> by default; pin a versioned tag (e.g. <code>:v0.11.2</code>) and drop <code>build:</code> in a real deployment (Rust cutover complete)</td>
           <td><code>build: .</code> is the local fallback: <code>docker compose build</code> / <code>up --build</code> builds the <strong>Rust</strong> image from this repo and tags it under the <code>image:</code> name, so a local checkout runs the Rust server even without a registry</td>
         </tr>
         <tr><td><code>ports</code></td><td><code>443:443</code></td><td>Single TLS port for API + session proxy + web client</td></tr>
@@ -83,7 +83,7 @@ layout: default
       </tbody>
     </table>
     <p>The <strong><code>postgres:16</code></strong> service is included in the compose file and is the v0.6.0 default database (see <a href="{% if page.section == nil %}#database{% else %}{{ '/docs/ops/database' | relative_url }}{% endif %}">§4</a>); since v0.6.1 its host port is published on loopback only (<code>127.0.0.1:5432</code>) instead of every interface.</p>
-    <p>The server binds <code>0.0.0.0:$VRECKAN_API_PORT</code> (default <strong>443</strong>) with TLS (rustls/ring) and serves the API, web client, and session proxy on that single listener.</p>
+    <p>The server binds <code>0.0.0.0:$VRECKAN_API_PORT</code> (default <strong>443</strong>) with TLS (rustls, on the aws-lc-rs crypto provider since v0.11.2 — the tree no longer builds the old ring backend) and serves the API, web client, and session proxy on that single listener.</p>
   </section>
   {% endif %}
 
@@ -122,8 +122,8 @@ docker compose up -d</code></pre>
     <p>The <code>Dockerfile</code> is multi-stage:</p>
     <ul>
       <li><strong>Build stage</strong> — the pinned <code>repo.vreckanproject.com/vreckan/vreckan-base-build</code> image (built on <code>rust:1.99-slim</code>, Debian trixie; see §3.5 — it bakes the toolchain, the <code>-sys</code> build deps, sccache, and a warm dependency cache): <code>cargo build --release</code> with BuildKit cargo-cache mounts.</li>
-      <li><strong>System deps in the base image</strong> — <code>linux-libc-dev</code>, <code>pkg-config</code>, <code>libssl-dev</code> (needed by the <code>-sys</code> crates and the native-tls stack) plus <code>cmake</code>, <code>make</code>, and <code>golang</code> (needed by the FIPS variant of aws-lc, <code>aws-lc-fips-sys</code>, which acmex pulls in via <code>aws-lc-rs/fips</code> and builds from source through its CMake project — its FIPS build requires Go for the FIPSTools integrity utilities and Perl, which ships with the rust base image) and <code>sccache</code>, which wraps <code>rustc</code> (<code>RUSTC_WRAPPER=sccache</code>) and persists the compile cache across builds via a BuildKit <code>type=cache</code> mount. See the per-package justifications in the <code>Dockerfile</code>.</li>
-      <li><strong>Test stage</strong> — the build stage plus the <code>tests/</code> and <code>server/</code> trees: CI builds <code>--target test</code> and pre-compiles <code>cargo test --profile test-release</code> (thin-LTO, codegen-units=16) so the Gitea test job only executes the tests. sccache serves unchanged dependency crates from its persistent cache, and the job count scales with the runner's core count and a per-rustc memory budget.</li>
+      <li><strong>System deps in the base image</strong> — <code>linux-libc-dev</code> (kernel UAPI headers for the C code bundled with <code>libsqlite3-sys</code> and <code>aws-lc-sys</code>), <code>pkg-config</code> + <code>libssl-dev</code> (system OpenSSL: <code>rustls-native-certs</code> — which <code>reqwest</code>/<code>acmex</code> use for the system CA bundle — locates it through the <code>openssl-probe</code> build probe; the older native-tls stack that made it mandatory left the tree with the v0.11.2 crypto unification), <code>cmake</code> + <code>make</code> (the <code>-sys</code> C projects, including aws-lc, build from source through CMake), and <code>golang</code> (a leftover of the aws-lc <strong>FIPS</strong> variant build, which compiled the FIPSTools integrity utilities with Go — the v0.11.2 crypto unification dropped the <code>fips</code> feature, so the FIPS build no longer runs; the package stays in the base image until the next re-bake trims it). <code>sccache</code> wraps <code>rustc</code> (<code>RUSTC_WRAPPER=sccache</code>) and persists the compile cache across builds via a BuildKit <code>type=cache</code> mount, and <code>mold</code> is the default Rust linker. See the per-package justifications in the base image's <code>Dockerfile</code> (vreckan-workflow, <a href="https://repo.vreckanproject.com/vreckan/vreckan-workflow/src/branch/main/images/vreckan-base-build">images/vreckan-base-build/</a>).</li>
+      <li><strong>Test stage</strong> — the build stage plus the <code>server/</code> tree (the integration suite lives in the per-crate <code>tests/</code> directories, which arrive with the build stage's <code>COPY crates</code>): CI builds <code>--target test</code> and pre-compiles <code>cargo test --workspace --profile test-release</code> (thin-LTO, codegen-units=16) so the Gitea test job only executes the tests. sccache serves unchanged dependency crates from its persistent cache, and the job count scales with the runner's core count and a per-rustc memory budget.</li>
       <li><strong>Runtime stage</strong> — <code>debian:trixie-slim</code>: the compiled <code>vreckan</code> binary, the web client (<code>server/static/</code>), and the bundled template schema (<code>server/template_schema.yml</code>). No Python, no pip. TLS, SQLite, and the client are all self-contained.</li>
     </ul>
 
@@ -133,14 +133,16 @@ docker compose up -d</code></pre>
 # binaries (test stage) in the standard container:
 docker build --target test -f Dockerfile -t vreckan:local .
 
-# Run the full suite in it, the same way the Gitea CI test job does:
+# Run the full suite in it, the same way the Gitea CI test job does.
+# `--workspace` is required: the integration tests live in the member
+# crates, so a plain `cargo test` selects only the (test-less) root package.
 HOST_TMP=$(mktemp -d /tmp/vreckan-tests.XXXXXX)
 docker run --rm \
   --shm-size=2gb \
   -v /var/run/docker.sock:/var/run/docker.sock \
   -v "$HOST_TMP:/tmp/vreckan-tests" \
   -e VRECKAN_TEST_TMPDIR=/tmp/vreckan-tests \
-  --entrypoint cargo vreckan:local test --profile test-release
+  --entrypoint cargo vreckan:local test --workspace --profile test-release
 rm -rf "$HOST_TMP"</code></pre>
     <p>The three run flags mirror the CI test job: the docker socket lets the daemon-dependent tests (Tier 5 docker launch, the postgres fixture) reach a real daemon; <code>VRECKAN_TEST_TMPDIR</code> must point at a directory <strong>visible to that daemon</strong> — the server bind-mounts the test's throwaway data dirs into the app containers it launches, and the daemon resolves the source on its own host (the test container's own <code>/tmp</code> is not one); <code>--shm-size=2gb</code> keeps the LTO compile and the postgres fixture off the 64MB default <code>/dev/shm</code>.</p>
     <p>For fast source iteration without the test tree, build only the build stage and run it with your <code>src/</code> mounted in:</p>
@@ -195,7 +197,7 @@ docker run --rm -it -v "$PWD/src:/app/src" vreckan:build \
   {% if page.section == 'database' or page.section == nil %}
   <section id="database">
     <h2>4. Database</h2>
-    <p>All durable configuration (users, groups, roles, apps, templates, sessions, tokens, shares, settings) lives in one of <strong>13 tables</strong>; tables are created and missing columns migrated idempotently on every start (SeaORM schema-sync, mirroring the Python <code>init_db</code> + <code>migrate_db</code> pair).</p>
+    <p>All durable configuration (users, groups, roles, apps, templates, sessions, tokens, shares, settings) lives in one of <strong>14 tables</strong>; tables are created and missing columns migrated idempotently on every start (SeaORM schema-sync, mirroring the Python <code>init_db</code> + <code>migrate_db</code> pair).</p>
     <p>Backends are selected with <code>VRECKAN_DB_BACKEND</code>:</p>
     <table>
       <thead>
