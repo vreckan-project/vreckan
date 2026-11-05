@@ -5746,7 +5746,6 @@ version = "0.11.4"
 dependencies = [
  "anyhow",
  "axum-server",
- "http-body-util",
  "rustls",
  "tokio",
  "tracing",
@@ -5807,7 +5806,6 @@ dependencies = [
  "flate2",
  "futures-util",
  "http",
- "http-body-util",
  "hyper",
  "hyper-util",
  "jsonwebtoken 11.1.0",
@@ -5839,6 +5837,7 @@ dependencies = [
  "vreckan-core",
  "vreckan-files",
  "vreckan-sessions",
+ "vreckan-test-support",
 ]
 
 [[package]]
@@ -5851,7 +5850,6 @@ dependencies = [
  "base64 0.23.1",
  "hex",
  "http",
- "http-body-util",
  "jsonwebtoken 10.4.0",
  "jsonwebtoken 11.1.0",
  "jwks",
@@ -5871,6 +5869,7 @@ dependencies = [
  "uuid",
  "vreckan-acme",
  "vreckan-core",
+ "vreckan-test-support",
 ]
 
 [[package]]
@@ -5883,7 +5882,6 @@ dependencies = [
  "bollard",
  "futures-util",
  "http",
- "http-body-util",
  "pkcs8 0.11.0",
  "rand 0.10.3",
  "reqwest",
@@ -5901,6 +5899,7 @@ dependencies = [
  "vreckan-collab",
  "vreckan-core",
  "vreckan-sessions",
+ "vreckan-test-support",
 ]
 
 [[package]]
@@ -5952,7 +5951,6 @@ dependencies = [
  "base64 0.23.1",
  "futures-util",
  "http",
- "http-body-util",
  "pkcs8 0.11.0",
  "rand 0.10.3",
  "rsa 0.10.0-rc.20",
@@ -5968,6 +5966,7 @@ dependencies = [
  "vreckan-catalog",
  "vreckan-core",
  "vreckan-sessions",
+ "vreckan-test-support",
 ]
 
 [[package]]
@@ -5980,7 +5979,6 @@ dependencies = [
  "bollard",
  "futures-util",
  "http",
- "http-body-util",
  "pkcs8 0.11.0",
  "rand 0.10.3",
  "reqwest",
@@ -5997,6 +5995,27 @@ dependencies = [
  "vreckan-auth",
  "vreckan-catalog",
  "vreckan-collab",
+ "vreckan-core",
+ "vreckan-test-support",
+]
+
+[[package]]
+name = "vreckan-test-support"
+version = "0.11.2"
+dependencies = [
+ "aes-gcm",
+ "axum",
+ "base64 0.23.1",
+ "http",
+ "http-body-util",
+ "pkcs8 0.11.0",
+ "rand 0.10.3",
+ "rsa 0.10.0-rc.20",
+ "serde_json",
+ "tower",
+ "uuid",
+ "vreckan-acme",
+ "vreckan-auth",
  "vreckan-core",
 ]
 

@@ -9,6 +9,7 @@ members = [
     "crates/vreckan-catalog",
     "crates/vreckan-files",
     "crates/vreckan-admin",
+    "crates/vreckan-test-support",
 ]
 resolver = "2"
 
@@ -226,10 +227,9 @@ tracing-subscriber = { workspace = true }
 # 0.7 → ring` chain, left the tree; the dead non-crypto `axum-reverse-proxy`
 # and `axum-extra` direct deps (zero source references) left the manifest in
 # ANT-852, dropping their transitive `cookie` 0.18 / `tokio-tungstenite` +
-# `tungstenite` 0.28 copies with them. `http-body-util` remains as a test-only
-# dep (used only by the per-crate `tests/common` harness) until the
-# test-harness extraction (ANT-849 #4, sibling task) moves it.
-http-body-util = { workspace = true }
+# `tungstenite` 0.28 copies with them; the test-only `http-body-util` dep
+# (used only by the per-crate test harnesses) moved to
+# `vreckan-test-support` in ANT-853 (ANT-849 #4).
 
 # The integration test suite moved out of the root `tests/` into the
 # per-crate `tests/` directories in ANT-810 (each test binary now links

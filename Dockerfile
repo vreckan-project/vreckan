@@ -11,6 +11,7 @@ COPY crates/vreckan-sessions/Cargo.toml crates/vreckan-sessions/Cargo.toml
 COPY crates/vreckan-catalog/Cargo.toml crates/vreckan-catalog/Cargo.toml
 COPY crates/vreckan-files/Cargo.toml crates/vreckan-files/Cargo.toml
 COPY crates/vreckan-admin/Cargo.toml crates/vreckan-admin/Cargo.toml
+COPY crates/vreckan-test-support/Cargo.toml crates/vreckan-test-support/Cargo.toml
 RUN cargo fetch
 COPY src ./src
 COPY crates ./crates

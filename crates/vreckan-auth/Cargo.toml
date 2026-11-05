@@ -33,16 +33,21 @@ url = { workspace = true }
 # ANT-810 so each test binary links only the crates it exercises — this
 # crate plus its upstream core/acme (via the test harness's state seeding
 # and E2EE handshake), never the app-domain crates or the admin
-# composition. The dev-deps are the external crates the tests + the shared
-# harness use, trimmed from the old root [dev-dependencies].
+# composition. The shared harness lives in `vreckan-test-support`
+# (ANT-853); the dev-deps below are the external crates the test files
+# themselves reference, trimmed from the old root [dev-dependencies].
 [dev-dependencies]
 # The test harness seeds the E2EE server key (the `SecureClient` handshake
 # is part of the auth test flow), so the tests need the acme crate as a
 # dev-edge — the production DAG stays auth -> core only.
 vreckan-acme = { path = "../vreckan-acme" }
+# The shared test harness (ANT-853). Its `compose_router` references
+# `auth::auth_router`, so this is a dev-dep cycle (auth → test-support →
+# auth) — fine for test binaries, no production DAG edge is added (same
+# pattern as the vreckan-catalog dev-edge in vreckan-sessions).
+vreckan-test-support = { path = "../vreckan-test-support" }
 aes-gcm = { workspace = true }
 http = { workspace = true }
-http-body-util = { workspace = true }
 pkcs8 = { workspace = true }
 rsa = { workspace = true }
 tokio = { workspace = true }
