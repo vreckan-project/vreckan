@@ -24,6 +24,13 @@ serde_json = { workspace = true }
 tokio = { workspace = true }
 tracing = { workspace = true }
 
+[dev-dependencies]
+# Unit tests drive the room router through `tower::ServiceExt::oneshot` and
+# name their throwaway SQLite trees (ANT-887, audit finding 16 regression
+# tests); both are already pinned at the workspace root.
+tower = { workspace = true }
+uuid = { workspace = true }
+
 # Opt into the workspace lint table: the clippy baseline is defined once in
 # the root Cargo.toml ([workspace.lints.clippy], ANT-791).
 [lints]

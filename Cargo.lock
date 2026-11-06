@@ -6026,7 +6026,9 @@ dependencies = [
  "serde",
  "serde_json",
  "tokio",
+ "tower",
  "tracing",
+ "uuid",
  "vreckan-core",
 ]
 
