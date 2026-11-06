@@ -523,7 +523,8 @@ against the bundled Postgres, and the rollback path — is in the
 [cutover runbook](./cutover.md). Its two helpers,
 `scripts/snapshot-sqlite.py` (a stdlib-only online backup of the SQLite
 database) and `scripts/verify-cutover.py` (independent per-table row-count
-comparison plus an `/api/health` check), are covered there step by step.
+comparison, a JSON content spot-check, and an `/api/health` check), are
+covered there step by step.
 
 ## 5. TLS
 
