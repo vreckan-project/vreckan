@@ -1179,6 +1179,11 @@ async fn save_certificates(
             .await
         }
     };
+    // Clamp before the write so a typo (0, negative, or absurdly large) is
+    // stored in a sane state; the helper warns when it applies (audit
+    // finding 7, ANT-878).
+    let renew_check_hours =
+        vreckan_acme::acme_orchestrator::clamp_acme_renew_check_hours(req.acme_renew_check_hours);
     let payload: HashMap<&str, String> = HashMap::from([
         ("acme_enabled", if req.acme_enabled { "true" } else { "false" }.to_string()),
         ("acme_ca", if req.acme_ca.trim().is_empty() { "letsencrypt".to_string() } else { req.acme_ca.trim().to_string() }),
@@ -1189,7 +1194,7 @@ async fn save_certificates(
         ("acme_cloudflare_token", req.acme_cloudflare_token.clone()),
         ("acme_staging", if req.acme_staging { "true" } else { "false" }.to_string()),
         ("acme_auto_renew", if req.acme_auto_renew { "true" } else { "false" }.to_string()),
-        ("acme_renew_check_hours", req.acme_renew_check_hours.to_string()),
+        ("acme_renew_check_hours", renew_check_hours.to_string()),
         ("acme_renew_before_days", req.acme_renew_before_days.to_string()),
         ("acme_dns_provider", if req.acme_dns_provider.trim().is_empty() { "cloudflare".to_string() } else { req.acme_dns_provider.trim().to_string() }),
         ("acme_cloudflare_zone_id", req.acme_cloudflare_zone_id.trim().to_string()),

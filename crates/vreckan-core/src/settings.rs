@@ -96,7 +96,7 @@ pub const SETTING_DEFINITIONS: &[SettingDef] = &[
     SettingDef { name: "acme_cloudflare_token", type_: "str", default: "", help: "Cloudflare API token with Zone.DNS edit permission for the domain's zone." },
     SettingDef { name: "acme_staging", type_: "bool", default: "false", help: "Use the Let's Encrypt staging server (test certificates, no production rate limits)." },
     SettingDef { name: "acme_auto_renew", type_: "bool", default: "true", help: "Automatically renew ACME certificates in the background." },
-    SettingDef { name: "acme_renew_check_hours", type_: "int", default: "6", help: "How often to check for certificate renewal (in hours)." },
+    SettingDef { name: "acme_renew_check_hours", type_: "int", default: "6", help: "How often to check for certificate renewal (in hours). Values are clamped to 1-24 (ANT-878)." },
     SettingDef { name: "acme_renew_before_days", type_: "int", default: "30", help: "Renew the certificate when it expires within this many days." },
     SettingDef { name: "acme_dns_provider", type_: "str", default: "cloudflare", help: "DNS-01 provider used for validation when acme_auth is not 'http-01': cloudflare, route53, digitalocean, linode, azure, google, alibaba, godaddy, tencent, huawei, cloudns." },
     SettingDef { name: "acme_cloudflare_zone_id", type_: "str", default: "", help: "Cloudflare zone ID for the domain's zone. Leave blank to auto-discover it from the API token." },
