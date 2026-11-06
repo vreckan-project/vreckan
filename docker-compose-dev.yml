@@ -26,7 +26,7 @@ services:
     group_add:
       - "990"
       - "44"
-      - "${VRECKAN_DOCKER_GROUP:-973}"
+      - "${VRECKAN_DOCKER_GROUP:-docker}"
     volumes:
       - ${VRECKAN_DATA_PATH:-./vreckan-data}:${VRECKAN_DATA_ROOT:-/data}
       - /var/run/docker.sock:/var/run/docker.sock
