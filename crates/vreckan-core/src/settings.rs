@@ -339,6 +339,7 @@ impl Settings {
             "default_password_policy" => self.default_password_policy.clone(),
             "login_max_attempts" => self.login_max_attempts.to_string(),
             "login_lockout_seconds" => self.login_lockout_seconds.to_string(),
+            "trusted_proxies" => self.trusted_proxies.clone(),
             "cors_mode" => self.cors_mode.clone(),
             "cors_allowed_origins" => self.cors_allowed_origins.clone(),
             "acme_enabled" => self.acme_enabled.to_string(),
@@ -416,6 +417,19 @@ impl Settings {
         CorsConfig {
             mode,
             allowed_origins,
+        }
+    }
+
+    /// The effective `trusted_proxies` list (DB-over-env-over-default),
+    /// re-resolved on every call so a value saved on the admin SSO page takes
+    /// effect on the next request without a restart (mirrors
+    /// [`Self::cors_config`]; ANT-879). The trusted-proxy gate
+    /// (`vreckan_auth::auth::peer_is_trusted_proxy`) used to read only the
+    /// startup env snapshot, so an admin-UI override was a silent no-op.
+    pub async fn effective_trusted_proxies(&self, db: &crate::db::Db) -> String {
+        match db.get_app_setting("VRECKAN_TRUSTED_PROXIES").await {
+            Ok(Some(v)) => v,
+            _ => self.trusted_proxies.clone(),
         }
     }
 
@@ -600,5 +614,37 @@ pub fn default_db_creds_policy() -> DefaultDbCredsPolicy {
         Some("1" | "true" | "yes" | "on" | "silent" | "allow") => DefaultDbCredsPolicy::Silent,
         Some("refuse" | "strict" | "fail") => DefaultDbCredsPolicy::Refuse,
         _ => DefaultDbCredsPolicy::Warn,
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// `raw_value` must expose `trusted_proxies` (ANT-879 finding 8b). Before
+    /// the fix this arm was missing, so `setting_source` reported "default"
+    /// even when `VRECKAN_TRUSTED_PROXIES` was set in the environment.
+    #[test]
+    fn raw_value_exposes_trusted_proxies() {
+        let mut s = Settings::from_env();
+        s.trusted_proxies = "10.0.0.0/8, 192.168.1.5".to_string();
+        assert_eq!(
+            s.raw_value("trusted_proxies"),
+            Some("10.0.0.0/8, 192.168.1.5".to_string())
+        );
+    }
+
+    #[test]
+    fn raw_value_neighbors_and_unknown() {
+        let mut s = Settings::from_env();
+        s.cors_mode = "strict".to_string();
+        s.cors_allowed_origins = "https://a.example".to_string();
+        assert_eq!(s.raw_value("cors_mode"), Some("strict".to_string()));
+        assert_eq!(
+            s.raw_value("cors_allowed_origins"),
+            Some("https://a.example".to_string())
+        );
+        // Unknown settings still resolve to None (not a default string).
+        assert_eq!(s.raw_value("no_such_setting"), None);
     }
 }
