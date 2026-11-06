@@ -1,8 +1,10 @@
 # Vreckan (Rust) — API & Endpoint Reference
 
 Endpoint reference for the Rust port. Extracted from the actual route
-registrations in `src/` (this file is the live record — if a route is not here,
-it is not served), and cross-checked against the **ANT-5 functionality parity
+registrations across the workspace crates (v0.11.x Candidate C split; the root
+`src/` is a re-export facade, and the handler names in the tables below resolve
+through it). This file is the live record — if a route is not here, it is not
+served — and it was cross-checked against the **ANT-5 functionality parity
 audit** (2026-10-12), which verified every route against the Python original
 (Gitea baseline `e7b2de6`, v0.5.0). The audit's full per-route matrix is the
 source of truth for Python↔Rust handler mapping; the [port status
@@ -35,7 +37,7 @@ Three layers, the first two orthogonal:
      the handshake (`/api/handshake/*`) to establish the per-session crypto
      key (RSA-PSS-signed nonce → RSA-OAEP key wrap → AES-GCM; the AAD binds
      the key to the session id, and `X-Session-ID` carries it).
-   - **Admin routes** additionally enforce per-permission RBAC (18-permission
+   - **Admin routes** additionally enforce per-permission RBAC (19-permission
      catalog; the `admin` super-permission implies all). Auth-failure
      responses are deliberately plaintext in both ports (401 bypasses the
      E2EE wrapper).
@@ -336,11 +338,11 @@ crypto-session sweeper).
 **v0.8.1 hardening (F5/F6).** The 303 answers from both public-entry
 routes carry `Cache-Control: private, no-store`, so a caching proxy
 cannot serve one visitor's per-visit token to another (F5,
-`src/session_shares.rs`). And the no-slash `api/files` root — which the
-container 301s to the slash-terminated listing — is on the browse side
-of the file-cap gate: a share visitor without the file-browse cap gets
-the browse 403 there instead of the previously un-gated 301 (F6,
-`src/session_proxy.rs`).
+`crates/vreckan-sessions/src/session_shares.rs`). And the no-slash `api/files`
+root — which the container 301s to the slash-terminated listing — is on the
+browse side of the file-cap gate: a share visitor without the file-browse cap
+gets the browse 403 there instead of the previously un-gated 301 (F6,
+`crates/vreckan-sessions/src/session_proxy.rs`).
 
 ### File management — `files.rs` (E2EE)
 

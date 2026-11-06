@@ -19,7 +19,8 @@ layout: default
   <p class="doc-sub">
     {% if page.section == nil %}
     Endpoint reference for the Vreckan Rust server. Extracted from the actual route
-    registrations in <code>src/</code> — this page is the live record: if a route is not here,
+    registrations across the workspace crates (the v0.11.x Candidate C split; the root
+    <code>src/</code> is the re-export facade) — this page is the live record: if a route is not here,
     it is not served — and cross-checked against a functionality-parity audit (2026-10-12)
     that verified every route against the Python original (v0.5.0). The audit's full
     per-route matrix is the source of truth for Python↔Rust handler mapping; the
@@ -59,11 +60,11 @@ layout: default
         <ul>
           <li><strong>Auth routes</strong> (<code>/api/auth/*</code>, handshake, public shares, the session-share public entry, room, session proxy, static) use <strong>plaintext</strong> bodies. The web-login credential is the <code>vreckan_auth</code> cookie (opaque server-issued token, 8 h TTL by default).</li>
           <li><strong>E2EE routes</strong> (catalog, launch, sessions, files, upload, homedirs, pinned, and all of <code>/api/admin/*</code>) require the same token and <strong>AES-256-GCM-encrypted request/response bodies</strong>. The client first runs the handshake (<code>/api/handshake/*</code>) to establish the per-session crypto key (RSA-PSS-signed nonce → RSA-OAEP key wrap → AES-GCM; the AAD binds the key to the session id, and <code>X-Session-ID</code> carries it).</li>
-          <li><strong>Admin routes</strong> additionally enforce per-permission RBAC (18-permission catalog; the <code>admin</code> super-permission implies all). Auth-failure responses are deliberately plaintext in both ports (401 bypasses the E2EE wrapper).</li>
+          <li><strong>Admin routes</strong> additionally enforce per-permission RBAC (19-permission catalog; the <code>admin</code> super-permission implies all). Auth-failure responses are deliberately plaintext in both ports (401 bypasses the E2EE wrapper).</li>
         </ul>
       </li>
       <li>
-        <strong>Client identity and scheme (trusted proxies).</strong> <code>X-Forwarded-For</code> (the client IP the login limiter keys on) and <code>X-Forwarded-Proto</code> (the session cookie's <code>Secure</code> flag, and the scheme of a derived OIDC <code>redirect_uri</code>) are honoured <strong>only when the direct TCP peer matches <code>VRECKAN_TRUSTED_PROXIES</code></strong> (ANT-346/ANT-276); otherwise the peer address and the real connection scheme — always <code>https</code>, the server terminates TLS itself — are used, and malformed list entries never match. The setting is <strong>environment-only</strong>: it is a <code>SettingDef</code> read from the env layer (<code>settings.trusted_proxies</code>), not an admin-UI field, and it appears in no admin-settings payload — the <code>values.*</code> object on <code>GET /api/admin/certificates</code> is the ACME config only, and <code>GET /api/admin/global-settings</code> is the GPU default. See <a href="{{ '/docs/ops/tls' | relative_url }}">the ops guide §5</a> for the deployment guidance.
+        <strong>Client identity and scheme (trusted proxies).</strong> <code>X-Forwarded-For</code> (the client IP the login limiter keys on) and <code>X-Forwarded-Proto</code> (the session cookie's <code>Secure</code> flag, and the scheme of a derived OIDC <code>redirect_uri</code>) are honoured <strong>only when the direct TCP peer matches <code>VRECKAN_TRUSTED_PROXIES</code></strong>; otherwise the peer address and the real connection scheme — always <code>https</code>, the server terminates TLS itself — are used, and malformed list entries never match. The setting is <strong>environment-only</strong>: it is a <code>SettingDef</code> read from the env layer (<code>settings.trusted_proxies</code>), not an admin-UI field, and it appears in no admin-settings payload — the <code>values.*</code> object on <code>GET /api/admin/certificates</code> is the ACME config only, and <code>GET /api/admin/global-settings</code> carries the GPU default plus the CORS configuration (<code>cors_mode</code>, <code>cors_allowed_origins</code>, and their effective sources). See <a href="{{ '/docs/ops/tls' | relative_url }}">the ops guide §5</a> for the deployment guidance.
       </li>
     </ol>
     <table>
@@ -147,7 +148,7 @@ layout: default
         <tr><td>POST</td><td><code>/api/sessions/{session_id}/send_file</code></td><td><code>send_file_to_session</code></td><td>E2EE (own session)</td></tr>
       </tbody>
     </table>
-    <p><strong>Session list and the owner-grant join gate (v0.8.5, ANT-472).</strong> <code>GET /api/sessions</code> returns the caller's own sessions plus other users'; each row's <code>joinable</code> flag drives the UI's Join affordance, the row's visibility, and (with the F3 nulling) whether <code>launch_context</code> and the custom <code>name</code> are revealed:</p>
+    <p><strong>Session list and the owner-grant join gate (v0.8.5).</strong> <code>GET /api/sessions</code> returns the caller's own sessions plus other users'; each row's <code>joinable</code> flag drives the UI's Join affordance, the row's visibility, and (with the F3 nulling) whether <code>launch_context</code> and the custom <code>name</code> are revealed:</p>
     <table>
       <thead>
         <tr><th scope="col">Row</th><th scope="col"><code>joinable</code></th></tr>
@@ -196,7 +197,7 @@ layout: default
       <tbody>
         <tr><td>GET</td><td><code>/share/{share_id}</code></td><td><code>access_session_share_get</code></td><td>— (303 entry redirect, or the password page)</td></tr>
         <tr><td>POST</td><td><code>/share/{share_id}</code></td><td><code>access_session_share_post</code></td><td>— (password submission)</td></tr>
-        <tr><td>GET</td><td><code>/join/{session_id}/{username}</code></td><td><code>access_session_join_hop</code></td><td>— (granted join hop, ANT-466 F1: 303 <code>private, no-store</code> to the session URL with the token stripped; the caller's participant token is handed over via the <code>collab_token_{session_id}</code> cookie, which admits the redirect target)</td></tr>
+        <tr><td>GET</td><td><code>/join/{session_id}/{username}</code></td><td><code>access_session_join_hop</code></td><td>— (granted join hop: 303 <code>private, no-store</code> to the session URL with the token stripped; the caller's participant token is handed over via the <code>collab_token_{session_id}</code> cookie, which admits the redirect target)</td></tr>
       </tbody>
     </table>
     <p>The share's wire shape (every owner route takes and returns it, E2EE-encrypted):</p>
@@ -214,7 +215,7 @@ layout: default
         <tr><td><code>has_password</code></td><td>bool</td><td>indicator only — the hash never leaves the server</td></tr>
         <tr><td><code>revoked</code></td><td>bool</td><td>revoked links stay listed; the public entry answers 410</td></tr>
         <tr><td><code>url</code></td><td>string</td><td><code>/share/{share_id}</code></td></tr>
-        <tr><td><code>invited_username</code></td><td>string | null</td><td>the user the owner expressly invited on this link (v0.8.5, ANT-472); <code>null</code> = a generic link</td></tr>
+        <tr><td><code>invited_username</code></td><td>string | null</td><td>the user the owner expressly invited on this link (v0.8.5); <code>null</code> = a generic link</td></tr>
       </tbody>
     </table>
     <p><strong><code>POST /api/sessions/{session_id}/shares</code></strong> — create. Request body:</p>
@@ -247,7 +248,7 @@ layout: default
     </table>
     <p>Response 200: the updated share. Errors: 404 unknown share (or a share belonging to a different session); 422 invalid role or invite username.</p>
     <p><strong><code>DELETE /api/sessions/{session_id}/shares/{share_id}</code></strong> — revoke. Response 200: the revoked link's info (including <code>invited_username</code>), so the client can name who just lost access. Revocation marks the link dead (the public entry answers 410) and strips <strong>every per-visit token the link has ever minted</strong> — from the session's viewers list, the container's selkies token table, and the vreckan-side token map — without stopping the session. Since v0.8.5 the strip proceeds when the durable share row is missing, which is how the synthetic join grant (<code>join:{username}</code>, never a row in <code>session_shares</code>) reaches the same cleanup path. Revoking or expiring a <strong>named</strong> invite additionally strips the invitee's participant entry (the session-scoped strip of the synthetic <code>join:{invitee}</code> grant) — the invitee's apps-page row and join go dark at once.</p>
-    <p><strong>Participants (v0.8.5, ANT-467).</strong> Every admitted visitor is recorded in the session's viewers list with how it got in; the two participant routes expose that to the owner.</p>
+    <p><strong>Participants (v0.8.5).</strong> Every admitted visitor is recorded in the session's viewers list with how it got in; the two participant routes expose that to the owner.</p>
     <p><strong><code>GET /api/sessions/{session_id}/participants</code></strong> — response 200: a JSON array, one entry per recorded visit (granted joins and share-link visits alike, in viewers order):</p>
     <table>
       <thead>
@@ -423,6 +424,9 @@ layout: default
         <tr><td>DELETE</td><td><code>/api/admin/backup/{name}</code></td><td><code>delete_backup</code></td></tr>
       </tbody>
     </table>
+
+    <h3>App store <code>logo</code> key — apps routes</h3>
+    <p>Each entry returned by <code>GET /api/admin/apps/available</code> (and each app in <code>GET /api/admin/apps/installed</code>) may carry a <code>logo</code> field: an <code>http(s)</code> URL or a custom icon path (<code>/api/app_icon/{app_id}</code>). The admin UI renders it as a fixed 32×32 icon in the store list and the installed-apps table; entries without a resolvable logo fall back to the built-in placeholder (<code>/img/icon128.png</code>). Third-party store YAML may therefore include a <code>logo:</code> key per entry.</p>
 
     <h3>Certificate fields — <code>admin.rs</code></h3>
     <p>The three certificate endpoints exchange the following fields (all <code>acme_*</code>; the legacy <code>le_*</code> names are retired).</p>

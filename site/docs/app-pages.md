@@ -67,9 +67,10 @@ description: A page-by-page walkthrough of the Vreckan web app — what each pag
   </ul>
 
   <h3>Active sessions</h3>
-  <p>The list of sessions you have running, newest activity included. Each row shows the app, the session name, when it started, a <em>Room mode</em> marker for shared rooms, an <em>Out of date</em> marker when a newer image is available for the app, and a badge with the count of active share links (clicking it opens the share-link manager for that session).</p>
+  <p>The list of sessions you have running, newest activity included. Other users' sessions also appear here when you can join them (the backend marks a session joinable when you have access to its app and it is a plain running session); those rows are marked with the owner's username, while collaboration rooms you cannot join stay hidden. Each row shows the app, the session name, when it started, a <em>Room mode</em> marker for shared rooms, an <em>Out of date</em> marker when a newer image is available for the app, a badge with the count of active share links (clicking it opens the share-link manager for that session), and — on your own sessions that other users have joined — a badge with the participant count (clicking it opens the same manager, where each joiner can be revoked).</p>
   <p>Actions on each session:</p>
   <ul>
+    <li><strong>Join</strong> — appears on other users' joinable sessions: a confirm dialog states that you will enter the session as a participant, then your own participant token is minted (no share link involved) and the session opens in a new tab.</li>
     <li><strong>Open</strong> — reopen the session in a new tab.</li>
     <li><strong>Share</strong> — create public links to the session without giving the recipient a Vreckan account: <em>Full access</em> (they can use the app) or <em>View-only</em> (they watch, no input), with file permissions (browse / download / upload), presets, an optional password, and an expiry (1 h, 24 h, 7 d, or custom). Multiple links can coexist; each can be copied, edited, or revoked.</li>
     <li><strong>Recreate</strong> — appears when the session is out of date; rebuilds it from the latest image (the app briefly goes offline).</li>
@@ -129,7 +130,7 @@ description: A page-by-page walkthrough of the Vreckan web app — what each pag
   </ul>
   <p>The Add Account form takes a username, an optional <em>Admin</em> checkbox, and the same settings form, so a new account can be fully configured at creation.</p>
 
-  <h3>Groups</h3>
+  <h3 id="groups">Groups</h3>
   <p>Groups bundle settings, roles, and permissions and apply them to every member. One card per group, with an <strong>Add Group</strong> form above.</p>
   <ul>
     <li>Each card shows the group's status badges (active, storage, GPU), the <strong>roles granted to every member</strong>, and the <strong>direct permissions granted to every member</strong>, plus its storage limit. Groups that were observed from SSO are badged; groups in the admin SSO list are highlighted.</li>
