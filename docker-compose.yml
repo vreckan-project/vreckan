@@ -1,6 +1,21 @@
 name: vreckan
 
 services:
+  # One-shot ownership fix for the ./vreckan-data bind mount (ANT-81, P1-1).
+  # The server now runs as UID/GID 1000 (non-root), but Docker creates a
+  # missing bind-mount directory as root:root, so a first boot on a fresh
+  # host (or an upgrade from the old root-running v0.5.x image) would find a
+  # /data it cannot write. This service chowns the tree to 1000:1000 once
+  # per `docker compose up`; vreckan-http waits for it to complete. It is a
+  # no-op (fast walk) on hosts where the tree is already owned by 1000.
+  data-perms:
+    image: alpine:3.21
+    container_name: vreckan-data-perms
+    restart: "no"
+    command: sh -c "chown -R 1000:1000 /data"
+    volumes:
+      - ./vreckan-data:/data
+
   vreckan-http:
     build:
       context: .
