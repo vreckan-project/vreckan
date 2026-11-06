@@ -1,4 +1,4 @@
-FROM repo.vreckanproject.com/vreckan/vreckan-base-build@sha256:f33243e8e60c55866527475d090987b52e487abc316d60c41d29b831fc9b3ae0 AS build
+FROM repo.vreckanproject.com/vreckan/vreckan-base-build@sha256:32264d2a0ec2fff95b463e0767d9c6166fca31f1a8199966f3b6a1ad0d9ae3be AS build
 WORKDIR /app
 ENV RUSTC_WRAPPER=sccache
 ENV SCCACHE_DIR=/sccache
@@ -32,7 +32,13 @@ RUN --mount=type=cache,id=sccache,target=/sccache \
     # workspace only selects the root package (which has no test targets).
     CARGO_BUILD_JOBS="$JOBS" cargo test --workspace --profile test-release --no-run
 
-FROM debian:trixie-slim
+# The runtime base is digest-pinned (ANT-277 convention): the bare
+# trixie-slim tag sat on the 2026-10-27 manifest (apt 3.0.3) through the
+# 2026-11-05 nightly, so Trivy's fixed CVE-2026-109518 (apt, HIGH) held
+# the nightly push (run 727) until Debian flipped the tag; pinning the
+# 2026-11-04 manifest (apt 3.0.4) makes the rebuild reproducible and
+# clears the trip.
+FROM debian:trixie-slim@sha256:a72b4433de1cf7d6bae0c4cee74d0547f58601a643b3375f070c51600d63b6b2
 RUN apt-get update -y && \
     DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends \
       ca-certificates \

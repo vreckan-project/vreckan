@@ -9,6 +9,38 @@ is committed normally in `vreckan`. The changelog is the authoritative
 record of what shipped in each release — see
 [`docs/release.md`](./docs/release.md) for the conventions.
 
+## 2026-11-06 — v0.11.3: base-image bump + docs/site sync to the v0.11.2 release
+
+- **The build base advanced to the 2026-11-05 re-bake** (`vreckan-base-build`
+  `sha256:f33243e8e60c…` → `sha256:32264d2a0ec2…`; `.base-image-digest` and the
+  `Dockerfile` build-stage `FROM` re-pointed together, ANT-277). The re-bake
+  moved the upstream `rust` base digest (`sha256:9daf2b24…` →
+  `sha256:4195a351…`) and refreshed the warm crates.io/git dependency cache
+  against the v0.11.2 nine-crate Phase-3 tree; the pinned Rust toolchain stays
+  at 1.99.1. It was built from the ANT-841 workflow fix (change-check syntax +
+  the workspace-following sparse checkout), so the daily re-bake cron is
+  healthy again after failing on that syntax error since 2026-11-03.
+
+- **The runtime stage's `debian:trixie-slim` is now digest-pinned** (it had
+  been a bare tag since the multi-stage Dockerfile landed in ANT-3). The pin
+  takes the 2026-11-04 manifest (`sha256:a72b4433de1c…`, `apt` 3.0.4), which
+  clears **CVE-2026-109518** (HIGH, on-path attack via `apt`/`libapt-pkg`,
+  fixed in 3.0.4): the 2026-11-05 nightly had still resolved the 2026-10-27
+  manifest (`apt` 3.0.3) before Debian flipped the tag, and the finding held
+  that nightly's push. The pin makes the runtime base reproducible going
+  forward, matching the digest convention the site image base has followed
+  since ANT-317/ANT-358.
+
+- **No code changes since v0.11.2** — this release carries the docs/site
+  sync batch only:
+  - The site ops page gained the previously missing
+    "Pull concurrency & rate-limit retries" section (ops §3.4, the ANT-668
+    drift; ANT-834).
+  - Docs and site were synced to v0.11.2: the nine-crate workspace layout,
+    the aws-lc-rs crypto unification, and stale ops fixes (ANT-832).
+  - `port-status.md` gained the v0.11.2 (Phase 3) status entry with the
+    post-split crate paths (ANT-831).
+
 ## 2026-11-04 — v0.11.2: Phase 3 — apps-cluster dissolution, crypto unification, per-crate test suite (ANT-662 P3)
 
 The single consolidated Phase 3 PR, per the board's single-PR direction
