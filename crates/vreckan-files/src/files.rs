@@ -43,6 +43,14 @@ pub use vreckan_core::shared::PublicShareMetadata;
 /// 2 MiB chunk size for file downloads and backup chunks.
 const CHUNK_SIZE: usize = 2 * 1024 * 1024;
 
+/// Maximum size of a file that can be shared publicly, enforced at creation
+/// (audit finding 15). Shares are anonymous and remote-reachable, and their
+/// download routes read the file from disk — capping the size at creation
+/// bounds how much of the instance a leaked share link can pin. The cap
+/// matches the session proxy's request-body limit, so a shared file can fit
+/// in a single proxied upload of the same size.
+pub const MAX_PUBLIC_SHARE_BYTES: u64 = 1024 * 1024 * 1024;
+
 // ---------------------------------------------------------------------------
 // Request / response models (mirror server/models)
 // ---------------------------------------------------------------------------
@@ -1083,6 +1091,24 @@ async fn create_public_share(
         )
         .await;
     }
+    let stat_info = source_path.metadata().ok();
+    let size_bytes = stat_info.map(|s| s.len()).unwrap_or(0);
+    // Cap the share size at creation (audit finding 15): the share link is
+    // anonymous and remote-reachable, so an oversized file is rejected here
+    // rather than buffered in memory on download.
+    if size_bytes > MAX_PUBLIC_SHARE_BYTES {
+        return e2ee::encrypt_response(
+            &state,
+            &headers,
+            StatusCode::PAYLOAD_TOO_LARGE,
+            serde_json::json!({
+                "detail": format!(
+                    "File is {size_bytes} bytes; public shares are limited to {MAX_PUBLIC_SHARE_BYTES} bytes."
+                ),
+            }),
+        )
+        .await;
+    }
     let share_id = vreckan_catalog::catalog::random_uuid();
     let dest_path = Path::new(&state.settings.public_storage_path).join(&share_id);
     if let Err(e) = std::fs::copy(&source_path, &dest_path) {
@@ -1095,7 +1121,6 @@ async fn create_public_share(
         )
         .await;
     }
-    let stat_info = source_path.metadata().ok();
     let password_hash = req
         .password
         .as_deref()
@@ -1116,7 +1141,7 @@ async fn create_public_share(
             .map(|f| f.to_string_lossy().into_owned())
             .unwrap_or_default(),
         created_at: now,
-        size_bytes: stat_info.map(|s| s.len()).unwrap_or(0),
+        size_bytes,
         password_hash,
         expiry_timestamp,
     };
@@ -1328,18 +1353,19 @@ async fn launch_from_storage(
         )
         .await;
     }
-    let file_bytes = match std::fs::read(&validated) {
-        Ok(b) => b,
-        Err(e) => {
-            return e2ee::encrypt_response(
-                &state,
-                &headers,
-                StatusCode::INTERNAL_SERVER_ERROR,
-                serde_json::json!({ "detail": format!("Failed to read file: {e}") }),
-            )
-            .await
-        }
-    };
+    // Probe openability up front so an unreadable file still fails loudly
+    // (same 500 as before); the file itself is then copied disk-to-disk with
+    // a bounded buffer inside `launch_common` and never sits in memory
+    // (audit finding 15).
+    if let Err(e) = std::fs::File::open(&validated) {
+        return e2ee::encrypt_response(
+            &state,
+            &headers,
+            StatusCode::INTERNAL_SERVER_ERROR,
+            serde_json::json!({ "detail": format!("Failed to read file: {e}") }),
+        )
+        .await;
+    }
     let filename = validated
         .file_name()
         .map(|f| f.to_string_lossy().into_owned())
@@ -1353,7 +1379,7 @@ async fn launch_from_storage(
         HashMap::new(),
         req.language.as_deref(),
         req.selected_gpu.as_deref(),
-        Some(file_bytes),
+        Some(vreckan_catalog::catalog::LaunchFileSource::Path(validated)),
         Some(&filename),
         req.open_file_on_launch,
         None,
@@ -2158,6 +2184,53 @@ async fn delete_pinned_behavior(
 // /public/... routes (plaintext — accessed by anonymous downloaders)
 // ---------------------------------------------------------------------------
 
+/// Serve `path` as an octet-stream download, reading it in bounded
+/// `CHUNK_SIZE` chunks from a tokio file handle (audit finding 15): the
+/// file's bytes no longer sit in memory whole. A missing or unreadable file
+/// answers 404; a readable file carries its on-disk size as `Content-Length`.
+fn stream_download_response(path: &Path, filename: &str) -> Response {
+    let stream = futures_util::stream::unfold(
+        (None::<tokio::fs::File>, path.to_path_buf()),
+        |(state, path): (Option<tokio::fs::File>, PathBuf)| async move {
+            let mut file = match state {
+                Some(f) => f,
+                None => match tokio::fs::File::open(&path).await {
+                    Ok(f) => f,
+                    Err(_) => {
+                        return Some((
+                            Err(std::io::Error::new(
+                                std::io::ErrorKind::NotFound,
+                                "file disappeared",
+                            )),
+                            (None, path),
+                        ))
+                    }
+                },
+            };
+            let mut buf = vec![0u8; CHUNK_SIZE];
+            match tokio::io::AsyncReadExt::read(&mut file, &mut buf).await {
+                Ok(0) => None,
+                Ok(n) => Some((Ok(Bytes::copy_from_slice(&buf[..n])), (Some(file), path))),
+                Err(e) => Some((Err(e), (None, path))),
+            }
+        },
+    );
+    let len = std::fs::metadata(path).ok().map(|m| m.len());
+    let mut builder = Response::builder()
+        .status(StatusCode::OK)
+        .header(header::CONTENT_TYPE, "application/octet-stream")
+        .header(header::CONTENT_DISPOSITION, format!("attachment; filename=\"{filename}\""));
+    if let Some(len) = len {
+        builder = builder.header(header::CONTENT_LENGTH, len);
+    }
+    // `std::io::Error` satisfies `Into<Box<dyn Error + Send + Sync>>` (the
+    // bound `Body::from_stream` requires), so the io stream is forwarded as-is
+    // and the file's bytes never sit in memory whole (audit finding 15).
+    builder
+        .body(axum::body::Body::from_stream(stream))
+        .unwrap_or_else(|e| (StatusCode::INTERNAL_SERVER_ERROR, e.to_string()).into_response())
+}
+
 /// `GET /public/download/{token}` — stream the shared file.
 async fn download_shared_file(
     State(state): State<AppState>,
@@ -2192,20 +2265,10 @@ async fn download_shared_file(
         return (StatusCode::NOT_FOUND, "Shared file not found.").into_response();
     };
     let file_path = Path::new(&state.settings.public_storage_path).join(&token_data.share_id);
-    if !file_path.exists() {
+    if !file_path.is_file() {
         return (StatusCode::NOT_FOUND, "Shared file not found on disk.").into_response();
     }
-    let data = match std::fs::read(&file_path) {
-        Ok(d) => d,
-        Err(_) => return (StatusCode::NOT_FOUND, "Shared file not found on disk.").into_response(),
-    };
-    let disposition = format!("attachment; filename=\"{}\"", metadata.original_filename);
-    Response::builder()
-        .status(StatusCode::OK)
-        .header(header::CONTENT_TYPE, "application/octet-stream")
-        .header(header::CONTENT_DISPOSITION, disposition)
-        .body(axum::body::Body::from(data))
-        .unwrap_or_else(|e| (StatusCode::INTERNAL_SERVER_ERROR, e.to_string()).into_response())
+    stream_download_response(&file_path, &metadata.original_filename)
 }
 
 
@@ -2235,20 +2298,10 @@ async fn access_public_share_get(
         return render_password_page(&format!("/public/{share_id}"), &share_id, "", StatusCode::OK);
     }
     let file_path = Path::new(&state.settings.public_storage_path).join(&share_id);
-    if !file_path.exists() {
+    if !file_path.is_file() {
         return (StatusCode::NOT_FOUND, "Shared file not found on disk.").into_response();
     }
-    let data = match std::fs::read(&file_path) {
-        Ok(d) => d,
-        Err(_) => return (StatusCode::NOT_FOUND, "Shared file not found on disk.").into_response(),
-    };
-    let disposition = format!("attachment; filename=\"{}\"", metadata.original_filename);
-    Response::builder()
-        .status(StatusCode::OK)
-        .header(header::CONTENT_TYPE, "application/octet-stream")
-        .header(header::CONTENT_DISPOSITION, disposition)
-        .body(axum::body::Body::from(data))
-        .unwrap_or_else(|e| (StatusCode::INTERNAL_SERVER_ERROR, e.to_string()).into_response())
+    stream_download_response(&file_path, &metadata.original_filename)
 }
 
 /// `POST /public/{share_id}` — submit the share password.
