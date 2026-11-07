@@ -94,7 +94,13 @@ async fn main() -> anyhow::Result<()> {
     // editable template schema, persisted sessions, the self-container
     // inspection (path-prefix map + network discovery), the installed apps and
     // app stores, the app templates, and GPU detection.
-    catalog::load_template_schema(&state).await;
+    //
+    // The template schema is a core store (the admin template editor serves
+    // it verbatim): a failed load/seed fails startup instead of leaving the
+    // editor silently empty (ANT-914).
+    catalog::load_template_schema(&state)
+        .await
+        .map_err(anyhow::Error::msg)?;
     catalog::load_sessions(&state).await;
     // Sweep ephemeral (cleanroom) sessions: a previous run that was hard-
     // killed (kill -9) left its containers running with the `no` restart
