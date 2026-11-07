@@ -9,6 +9,34 @@ is committed normally in `vreckan`. The changelog is the authoritative
 record of what shipped in each release — see
 [`docs/release.md`](./docs/release.md) for the conventions.
 
+## 2026-11-07 — v0.11.5: base-image bump — zlib1g security refresh clears the PR scan gate (ANT-932)
+
+- **The build base advanced to the 2026-11-07 8:16 AM MST re-bake**
+  (`vreckan-base-build` `sha256:1c676e219b49…` → `sha256:a38d1cd2258e…`;
+  `.base-image-digest` and the `Dockerfile` build-stage `FROM` re-pointed
+  together, ANT-277). This is the first bake built with the `apt-get upgrade`
+  layer added to `vreckan-base-build` (vreckan-workflow PR #47, ANT-932),
+  which refreshes the pre-existing `rust:1.99.1-slim` parent packages against
+  the Debian trixie security repo on every bake — most importantly `zlib1g`
+  `1:1.3.dfsg+really1.3.1-1+b1` → `1:1.3.dfsg+really1.3.1-1+deb13u1`,
+  fixing CVE-2026-76844 (path traversal) and CVE-2026-85091 (heap overflow in
+  `gz_vacate`), both HIGH. Docker had not yet re-cut the
+  `rust:1.99.1-slim` tag with the trixie zlib fix as of 2026-11-07 (the tag
+  still sat at `sha256:7eab7ce1…`), so the upgrade layer was the only path to
+  the fix without waiting on upstream. Verified in the new image: `zlib1g` at
+  `deb13u1`, the pinned Rust toolchain unchanged at 1.99.1, and the bake's
+  rustup-component and mold end-to-end smoke checks green.
+
+- **Operator-visible effect:** since ~5:05 AM MST on 2026-11-07, the Trivy
+  step of the `VRECKAN: Scan (Rust)` check was red on every vreckan PR (and on
+  the main-branch CI dispatches) because of those two HIGH `zlib1g`
+  advisories, and the `main-protection` ruleset made every open PR
+  unmergeable. This base advance clears the gate: any PR branch synced onto
+  this commit rebuilds on the fixed base and the check goes green again.
+
+- No source changes since v0.11.4 — a base-bump-only release in the
+  established pattern (v0.10.1, v0.10.2, v0.10.5, v0.10.7, v0.11.1, v0.11.3).
+
 ## 2026-11-07 — v0.11.4: base-image bump + bounded memory on the anonymous/proxy paths (audit findings 15 & 18)
 
 - **The build base advanced to the 2026-11-06 10:47 PM MST re-bake** (`vreckan-base-build`
