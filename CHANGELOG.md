@@ -9,6 +9,40 @@ is committed normally in `vreckan`. The changelog is the authoritative
 record of what shipped in each release — see
 [`docs/release.md`](./docs/release.md) for the conventions.
 
+## 2026-11-07 — v0.11.4: base-image bump + bounded memory on the anonymous/proxy paths (audit findings 15 & 18)
+
+- **The build base advanced to the 2026-11-06 10:47 PM MST re-bake** (`vreckan-base-build`
+  `sha256:32264d2a0ec2…` → `sha256:1c676e219b49…`; `.base-image-digest` and the
+  `Dockerfile` build-stage `FROM` re-pointed together, ANT-277). The re-bake
+  moved the upstream `rust` base digest (`sha256:4195a351…` →
+  `sha256:7eab7ce1…`) and refreshed the warm crates.io/git dependency cache
+  against the current nine-crate lockfile; the pinned Rust toolchain stays at
+  1.99.1. Built on gitea-worker02 by the daily re-bake cron, which has been
+  healthy since the ANT-841 workflow fix.
+
+- **Memory is now bounded on the anonymous and proxy request paths**
+  (ANT-886, audit finding 15): public shares are capped at 1 GiB, share
+  downloads stream instead of fully buffering, the app-launch copy runs
+  disk-to-disk rather than through process memory, and the Selkies proxy
+  streams request bodies. An operator moving large files through the app
+  catalog or session proxy no longer has to keep them resident in RAM.
+
+- **`recreate_session` no longer holds the catalog write lock across its
+  container work** (audit finding 18): the lock is dropped while the
+  recreate path waits on Docker, so one slow container recreate can no
+  longer serialize other catalog operations.
+
+- **Loose CORS stays the default, now recorded as accepted risk**
+  (ANT-880, audit finding 9): the empty-allowlist behavior is documented as
+  a known, accepted trade-off; the allowlist remains optional for operators
+  who want strict mode.
+
+- **Docs/site freshness pass** (ANT-870, plus the v0.11.3 sync from
+  ANT-886): table counts, app-pages Join/badge and `#groups` anchor,
+  api.html sync (CORS payload, logo section, crate layout, 19 permissions),
+  site.css contrast, compose-knob env rows, setup current-release →
+  v0.11.3, and the pin examples + public-share 1 GiB cap docs.
+
 ## 2026-11-06 — v0.11.3: base-image bump + docs/site sync to the v0.11.2 release
 
 - **The build base advanced to the 2026-11-05 re-bake** (`vreckan-base-build`
