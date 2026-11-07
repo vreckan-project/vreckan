@@ -141,10 +141,10 @@ import {
   WORKSPACE_WORKTREE_REQUIRES_PROJECT_MESSAGE,
   WORKSPACE_WORKTREE_REQUIRES_PROJECT_REMEDIATION,
 } from "../execution-workspace-policy.js";
- import { readContinuationAttempt } from "../recovery/index.js";
- import { allowsIssueInteractionWake } from "../../modules/run-dispatch/index.js";
- import { withAgentStartLock } from "../agent-start-lock.js";
- import { schedulingGate } from "./scheduling-gate.js";
+import { readContinuationAttempt } from "../recovery/index.js";
+import { allowsIssueInteractionWake } from "../../modules/run-dispatch/index.js";
+import { withAgentStartLock } from "../agent-start-lock.js";
+import { schedulingGate } from "./scheduling-gate.js";
 import {
   evaluateAgentInvokability,
   shouldCancelRunsForNonInvokableAgent,
@@ -1906,12 +1906,14 @@ export function createHeartbeatQueue(db: Db, dependencies: HeartbeatQueueDepende
     const deferredPostCommitEffects: WakeQueuePostCommitEffect[] = [];
     let cancellationReason: string | undefined;
     // Scheduling gate reservation bookkeeping, shared with the finally below
-    // so reserved slots are settled (released, converted, or handed to the
-    // executor) on every exit path of this pass.
+    // so the reservation remainder is settled on every exit path of this
+    // pass. Claimed runs settle their own reservations in the
+    // execution.finally hook below: the pass finally is a microtask that
+    // lands before those fire-and-forget executions reach their start
+    // sites, so it must not release their slots here.
     let gateCompanyId: string | null = null;
     let gateReserved = 0;
     let gateReachedExecute = 0;
-    const gateClaimedRunIds: string[] = [];
 
     return withAgentStartLock(agentId, async () => {
       const agent = await getAgent(agentId);
@@ -1938,6 +1940,7 @@ export function createHeartbeatQueue(db: Db, dependencies: HeartbeatQueueDepende
       const availableSlots = Math.min(perAgentSlots, gateSlotsRemaining);
       if (availableSlots <= 0) {
         schedulingGate.recordDecision({
+          companyId: agent.companyId,
           agentId,
           runId: null,
           perAgentSlots,
@@ -2072,6 +2075,7 @@ export function createHeartbeatQueue(db: Db, dependencies: HeartbeatQueueDepende
       let effectiveSlots = availableSlots;
       if (pluginGrant.defer) {
         schedulingGate.recordDecision({
+          companyId: agent.companyId,
           agentId,
           runId: topRun.id,
           perAgentSlots,
@@ -2087,6 +2091,7 @@ export function createHeartbeatQueue(db: Db, dependencies: HeartbeatQueueDepende
       }
       if (effectiveSlots <= 0) {
         schedulingGate.recordDecision({
+          companyId: agent.companyId,
           agentId,
           runId: topRun.id,
           perAgentSlots,
@@ -2103,6 +2108,7 @@ export function createHeartbeatQueue(db: Db, dependencies: HeartbeatQueueDepende
         schedulingGate.release(agent.companyId, gateReserved);
         gateReserved = 0;
         schedulingGate.recordDecision({
+          companyId: agent.companyId,
           agentId,
           runId: topRun.id,
           perAgentSlots,
@@ -2134,15 +2140,16 @@ export function createHeartbeatQueue(db: Db, dependencies: HeartbeatQueueDepende
         }
         if (claimed) {
           claimedRuns.push(claimed);
-          gateClaimedRunIds.push(claimed.id);
           // This claim holds one of the pass's reserved slots until the
-          // execution starts (conversion) or dies without starting (release).
+          // execution starts (conversion) or dies without starting (release
+          // in the execution.finally hook below).
           schedulingGate.markClaimedRun(claimed.id, agent.companyId);
         }
       }
       if (claimedRuns.length === 0) return [];
       gateReachedExecute = claimedRuns.length;
       schedulingGate.recordDecision({
+        companyId: agent.companyId,
         agentId,
         runId: claimedRuns[0].id,
         perAgentSlots,
@@ -2154,10 +2161,6 @@ export function createHeartbeatQueue(db: Db, dependencies: HeartbeatQueueDepende
 
       for (const claimedRun of claimedRuns) {
         const execution = executeRun(claimedRun.id).catch((err) => {
-          // A claimed run that dies before reaching the execution-start site
-          // gives its reserved slot back; idempotent with the finally below
-          // and with the start-time conversion in the gate.
-          schedulingGate.releaseClaimedRun(claimedRun.id);
           logger.error(
             { err, runId: claimedRun.id },
             "queued heartbeat execution failed",
@@ -2172,18 +2175,31 @@ export function createHeartbeatQueue(db: Db, dependencies: HeartbeatQueueDepende
           // drainActiveRunExecutions loops on activeRunExecutionPromises.size,
           // so an entry that never clears here would hang it forever.
           activeRunExecutionPromises.delete(execution);
+          // Settle this claim's reserved slot when the execution promise
+          // settles. executeRun suspends at getSchedulingSuppression (and
+          // further awaits) before its start site, so the pass finally above
+          // always runs first and must not release claimed runs itself; this
+          // hook is the release point for a run that settles without having
+          // reached the start site (rejection, suppression release, missing
+          // run, status mismatch, pre-try throw). For a run that did start,
+          // onExecutionFinished already removed the gate entry, so the
+          // release is a no-op; it is idempotent with the start-time
+          // conversion either way.
+          schedulingGate.releaseClaimedRun(claimedRun.id);
         });
       }
       return claimedRuns;
     }).finally(async () => {
-      // Settle this pass's gate reservation on every exit path. Runs that
-      // were claimed but never handed to the executor give their slots back
-      // (no-op once the start-site conversion already consumed them); the
-      // remainder of the reservation that was never claimed is released
-      // outright. Runs that did reach the executor settle through the gate's
-      // start/finish mirrors instead.
+      // Settle this pass's gate reservation on every exit path. Release only
+      // the reservation remainder that was never claimed. Claimed runs keep
+      // their reserved slots here: this finally is a microtask that lands
+      // before those fire-and-forget executions reach their start sites, so
+      // releasing the claims now would free slots the pending starts are
+      // about to consume (staggered-reentry double-booking). Each claimed
+      // run settles its own slot in the execution.finally hook above —
+      // released if it never reaches the start site, converted to in-flight
+      // by the start-site mirror if it does.
       if (gateCompanyId) {
-        for (const runId of gateClaimedRunIds) schedulingGate.releaseClaimedRun(runId);
         schedulingGate.release(gateCompanyId, Math.max(0, gateReserved - gateReachedExecute));
       }
       // Dispatch promoted inputs after the agent start lock is released.

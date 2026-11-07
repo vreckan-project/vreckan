@@ -107,6 +107,7 @@ interface TrackedRun {
 
 interface GateDecisionRecord {
   at: Date;
+  companyId: string;
   agentId: string;
   runId: string | null;
   perAgentSlots: number;
@@ -175,7 +176,9 @@ export class SchedulingGate {
   private reservedByCompany = new Map<string, number>();
   private trackedRuns = new Map<string, TrackedRun>();
   private configCache = new Map<string, ResolvedSchedulingConfig>();
-  private lastDecision: GateDecisionRecord | null = null;
+  // Per-company so a multi-company host never shows company A the last gate
+  // decision of company B.
+  private lastDecisionByCompany = new Map<string, GateDecisionRecord>();
   private seeded = false;
   private seededCount = 0;
 
@@ -197,7 +200,7 @@ export class SchedulingGate {
     this.reservedByCompany.clear();
     this.trackedRuns.clear();
     this.configCache.clear();
-    this.lastDecision = null;
+    this.lastDecisionByCompany.clear();
     this.seeded = false;
     this.seededCount = 0;
   }
@@ -238,33 +241,32 @@ export class SchedulingGate {
 
   /**
    * Resolved per-company config (defaults applied to absent keys). Cached
-   * after the first read; setConfig refreshes it live. A read failure falls
-   * back to the defaults so the claim path never breaks because of the gate.
+   * after the first successful read; setConfig refreshes it live. A read
+   * failure falls back to the defaults for this call only — the defaults are
+   * not cached, so a transient DB error cannot shadow the persisted config
+   * until the next PATCH or restart — and the claim path never breaks
+   * because of the gate.
    */
   async configFor(companyId: string): Promise<ResolvedSchedulingConfig> {
     const cached = this.configCache.get(companyId);
     if (cached) return cached;
     const db = this.db;
-    let resolved: ResolvedSchedulingConfig;
-    if (!db) {
-      resolved = { ...COMPANY_SCHEDULING_DEFAULTS };
-    } else {
-      try {
-        const [row] = await db
-          .select({ scheduling: companies.scheduling })
-          .from(companies)
-          .where(eq(companies.id, companyId));
-        resolved = normalizeSchedulingConfig(row?.scheduling);
-      } catch (err) {
-        log.warn(
-          { err, companyId },
-          "scheduling gate config read failed; falling back to defaults",
-        );
-        resolved = { ...COMPANY_SCHEDULING_DEFAULTS };
-      }
+    if (!db) return { ...COMPANY_SCHEDULING_DEFAULTS };
+    try {
+      const [row] = await db
+        .select({ scheduling: companies.scheduling })
+        .from(companies)
+        .where(eq(companies.id, companyId));
+      const resolved = normalizeSchedulingConfig(row?.scheduling);
+      this.configCache.set(companyId, resolved);
+      return resolved;
+    } catch (err) {
+      log.warn(
+        { err, companyId },
+        "scheduling gate config read failed; falling back to defaults for this read",
+      );
+      return { ...COMPANY_SCHEDULING_DEFAULTS };
     }
-    this.configCache.set(companyId, resolved);
-    return resolved;
   }
 
   /** Persist a config patch; the change applies live, no restart. */
@@ -414,19 +416,20 @@ export class SchedulingGate {
 
   /** Record the last gate decision for the board status view. */
   recordDecision(record: Omit<GateDecisionRecord, "at" | "hostSlotsRemaining"> & {
+    companyId: string;
     at?: Date;
     hostSlotsRemaining: number | null;
   }): void {
     // A disabled gate reports Infinity remaining; store null so the status
     // JSON stays finite.
-    this.lastDecision = {
+    this.lastDecisionByCompany.set(record.companyId, {
       at: record.at ?? new Date(),
       ...record,
       hostSlotsRemaining:
         record.hostSlotsRemaining === null || Number.isFinite(record.hostSlotsRemaining)
           ? record.hostSlotsRemaining
           : null,
-    };
+    });
   }
 
   async status(companyId: string): Promise<SchedulingGateStatus> {
@@ -465,18 +468,21 @@ export class SchedulingGate {
       maxInFlight: config.maxInFlight,
       slotsRemaining: config.enabled ? Math.max(0, config.maxInFlight - inFlight - reserved) : null,
       queuedByAgent,
-      lastDecision: this.lastDecision
-        ? {
-            at: this.lastDecision.at.toISOString(),
-            agentId: this.lastDecision.agentId,
-            runId: this.lastDecision.runId,
-            perAgentSlots: this.lastDecision.perAgentSlots,
-            hostSlotsRemaining: this.lastDecision.hostSlotsRemaining,
-            granted: this.lastDecision.granted,
-            plugin: this.lastDecision.plugin,
-            outcome: this.lastDecision.outcome,
-          }
-        : null,
+      lastDecision: (() => {
+        const decision = this.lastDecisionByCompany.get(companyId);
+        return decision
+          ? {
+              at: decision.at.toISOString(),
+              agentId: decision.agentId,
+              runId: decision.runId,
+              perAgentSlots: decision.perAgentSlots,
+              hostSlotsRemaining: decision.hostSlotsRemaining,
+              granted: decision.granted,
+              plugin: decision.plugin,
+              outcome: decision.outcome,
+            }
+          : null;
+      })(),
     };
   }
 

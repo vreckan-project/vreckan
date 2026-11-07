@@ -668,7 +668,8 @@ Parameters:
     "triggerDetail": "…" | null,
     "createdAt": "ISO-8601"
   },
-  "hostSlotsRemaining": 3     // host-computed remainder under the cap
+  "hostSlotsRemaining": 3     // host-computed remainder under the cap;
+                              // null when the gate is disabled (no host cap)
 }
 ```
 
@@ -690,6 +691,11 @@ Semantics:
   gate — zero behavior change, zero added latency beyond the worker snapshot.
 - **Monotone.** `slots` may only reduce the host remainder; values above it
   are clamped, never raised. Any `defer` defers the whole claim pass.
+- **`null` means no host cap.** The wire transport is JSON and
+  `JSON.stringify(Infinity)` is `null`, so a disabled gate arrives as
+  `hostSlotsRemaining: null`. Treat `null` as unlimited — do not derive
+  `slots` arithmetically from it (e.g. `Math.floor(null / 2) === 0` would
+  defer every claim while the gate is off).
 - **Capability.** Declaring the `schedulingGate` manifest feature (or
   implementing the hook) requires the `scheduling.gate` capability.
 - The cap itself is host-enforced and never degrades because of a plugin:

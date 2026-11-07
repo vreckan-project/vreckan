@@ -1344,9 +1344,14 @@ export interface PluginSchedulingGateParams {
   /**
    * Host-computed slots remaining under the company's in-flight cap for this
    * company at this moment. A `slots` result may only decrease this number.
-   * Finite when the gate is enabled, `Number.POSITIVE_INFINITY` when disabled.
+   * Finite when the gate is enabled. When the gate is disabled the host has
+   * no cap and this arrives as `null` on the JSON wire (the in-process value
+   * is `Number.POSITIVE_INFINITY`, which `JSON.stringify` encodes as
+   * `null`): treat `null` as "no host cap" — do not derive `slots` from it
+   * (e.g. `Math.floor(null / 2) === 0` would defer every claim while the
+   * gate is off).
    */
-  hostSlotsRemaining: number;
+  hostSlotsRemaining: number | null;
 }
 
 /** The `schedulingGate` consultation result. */

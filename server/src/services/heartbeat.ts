@@ -2081,9 +2081,7 @@ export function heartbeatService(
     }
 
     if (run.runtimeMode === "legacy" && run.controllerBootId &&
-        run.controllerBootId !== legacyControllerBootId) return;
-    activeRunExecutions.add(run.id);
-    schedulingGate.onExecutionStarted(run.id, run.companyId);
+         run.controllerBootId !== legacyControllerBootId) return;
     const executionControl = createAdapterExecutionControl();
     // This coarse scope also covers host finalization after the adapter returns.
     // Nested scopes refine the label without making any termination claim.
@@ -2123,6 +2121,14 @@ export function heartbeatService(
     let identityRedactor = createAgentIdentityRedactor();
 
     try {
+      // The start-site mirrors live inside the try: the pre-try setup above
+      // (control creation, lease watch, redactor) can throw synchronously,
+      // and the try's finally below is the only place that settles
+      // activeRunExecutions and the scheduling gate. Mirrors before the try
+      // would leak one in-flight slot and a tracked entry until restart.
+      // The setup is synchronous, so no await can interleave in the window.
+      activeRunExecutions.add(run.id);
+      schedulingGate.onExecutionStarted(run.id, run.companyId);
       let agent = await getAgent(run.agentId);
       if (!agent) {
         await setRunStatus(runId, "failed", {
