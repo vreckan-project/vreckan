@@ -40,10 +40,17 @@ RUN --mount=type=cache,id=sccache,target=/sccache \
 # 2026-11-04 manifest (apt 3.0.4) makes the rebuild reproducible and
 # clears the trip.
 FROM debian:trixie-slim@sha256:a72b4433de1cf7d6bae0c4cee74d0547f58601a643b3375f070c51600d63b6b2
+# zlib1g is installed explicitly (not left as a transitive dep) so the
+# runtime tracks the Debian security fix for CVE-2026-76844 + CVE-2026-85091
+# (zlib heap-buffer overflow, published 2026-11-07), fixed in
+# 1:1.3.dfsg+really1.3.1-1+deb13u1. The digest-pinned trixie-slim base above
+# predates that update, so apt resolves the patch from trixie-security at
+# build time (ANT-849 unblock; base-image security track).
 RUN apt-get update -y && \
     DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends \
       ca-certificates \
-      libssl3t64 && \
+      libssl3t64 \
+      zlib1g && \
     apt-get clean && \
     rm -rf /var/lib/apt/lists/*
 
