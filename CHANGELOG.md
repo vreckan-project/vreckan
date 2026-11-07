@@ -9,6 +9,36 @@ is committed normally in `vreckan`. The changelog is the authoritative
 record of what shipped in each release — see
 [`docs/release.md`](./docs/release.md) for the conventions.
 
+## 2026-11-07 — v0.11.5: dependency consolidation — lock 592 → 581, websocket stack compiles once, shared test-support crate
+
+- **The lockfile drops 12 packages and gains 1 (592 → 581)** (ANT-849).
+  The dead direct deps `axum-reverse-proxy` and `axum-extra` (zero source
+  references) are removed along with the `cookie` 0.18 and
+  `tungstenite`/`tokio-tungstenite` 0.28 copies they pulled (ANT-852), the
+  0.30 tungstenite pair is gone with the websocket stack collapsed 3→1 onto
+  axum's 0.29 (ANT-854), and the duplicate `jsonwebtoken` 10.4.0 copy plus
+  the `jwks` crate are removed (ANT-855). The single addition is the new
+  `vreckan-test-support` dev crate (ANT-853). Operator-visible effect: the
+  websocket stack compiles once instead of three times and one copy of
+  jsonwebtoken is gone, so expect the compile-time and binary-size savings
+  from those.
+
+- **JWT verification no longer depends on the `jwks` crate** (ANT-855).
+  `vreckan-auth` hand-rolls the JWKS fetch on reqwest against jsonwebtoken
+  11: RS256 pinned (not header-trusted), per-`kid` fail-closed, same
+  aud/exp/iss semantics as before. The crypto-equivalence review (ANT-863)
+  passed clean. Note for operators tracking advisories: the v10-era crypto
+  family (including `crypto-bigint` 0.5.5) remains in the tree via
+  jsonwebtoken 11's `rust_crypto` feature until upstream adopts p256/p384
+  0.14, so the RUSTSEC-2026-0387 allowances stand (ANT-546).
+
+- **The test harness de-duplicates**: the five drifted
+  `tests/common/mod.rs` copies (~2,900 lines across admin, auth, catalog,
+  files, sessions) now share one `vreckan-test-support` dev crate
+  (~2,500 duplicated lines removed) (ANT-853). Test behavior is unchanged;
+  the full workspace suite is green, and the websocket 0.29 regression
+  (ANT-862) passed.
+
 ## 2026-11-07 — v0.11.4: base-image bump + bounded memory on the anonymous/proxy paths (audit findings 15 & 18)
 
 - **The build base advanced to the 2026-11-06 10:47 PM MST re-bake** (`vreckan-base-build`
