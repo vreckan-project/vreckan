@@ -1,0 +1,41 @@
+{
+  "name": "@paperclipai/global-wip-gate",
+  "version": "1.0.0",
+  "type": "module",
+  "private": true,
+  "description": "At-gate run-ranking policy plugin: routines last, blocking-impact first, with a status/config dashboard. Rides the host schedulingGate hook and only ever decreases slots or defers — it can never break the host cap.",
+  "files": [
+    "dist",
+    "README.md"
+  ],
+  "scripts": {
+    "prebuild": "pnpm --filter @paperclipai/plugin-sdk ensure-build-deps",
+    "build": "node ./esbuild.config.mjs",
+    "dev": "node ./esbuild.config.mjs --watch",
+    "test": "vitest run --config ./vitest.config.ts",
+    "typecheck": "pnpm --filter @paperclipai/plugin-sdk ensure-build-deps && tsc --noEmit"
+  },
+  "paperclipPlugin": {
+    "manifest": "./dist/manifest.js",
+    "worker": "./dist/worker.js"
+  },
+  "keywords": [
+    "paperclip",
+    "plugin",
+    "scheduling",
+    "queue",
+    "ranking"
+  ],
+  "author": "Vreckan",
+  "license": "MIT",
+  "devDependencies": {
+    "@paperclipai/plugin-sdk": "workspace:*",
+    "@types/node": "^24.0.0",
+    "esbuild": "^0.28.2",
+    "typescript": "^7.0.2",
+    "vitest": "^5.0.3"
+  },
+  "engines": {
+    "node": ">=24.11.0"
+  }
+}
