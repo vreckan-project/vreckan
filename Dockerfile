@@ -39,7 +39,19 @@ RUN --mount=type=cache,id=sccache,target=/sccache \
 # 2026-11-04 manifest (apt 3.0.4) makes the rebuild reproducible and
 # clears the trip.
 FROM debian:trixie-slim@sha256:a72b4433de1cf7d6bae0c4cee74d0547f58601a643b3375f070c51600d63b6b2
+# The pinned manifest's base layer (2026-11-04 re-cut) still INSTALLS
+# zlib1g 1:1.3.dfsg+really1.3.1-1+b1 even though Debian fixed both CVEs in
+# trixie-security deb13u1 (DSA-6613-1: CVE-2026-76844 + CVE-2026-85091) —
+# `apt-get install` satisfies a package, it never upgrades one, and the
+# tag/pin re-cuts on Debian's schedule, not ours. The upgrade (ANT-933)
+# refreshes the base's pre-existing packages against the distro security
+# repo so every build tracks it deterministically instead of repeating
+# the CVE-2026-109518 "wait until Debian flipped the tag" trip — the same
+# fix the vreckan-base-build bake got in ANT-932 (vreckan-workflow #47).
+# The pin above stays: it keeps the base layer reproducible, and the
+# upgrade layer is what clears the gate.
 RUN apt-get update -y && \
+    DEBIAN_FRONTEND=noninteractive apt-get upgrade -y --no-install-recommends && \
     DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends \
       ca-certificates \
       libssl3t64 && \
