@@ -299,6 +299,7 @@ layout: default
         <tr><td>DELETE</td><td><code>/api/files/share/{share_id}</code></td><td><code>delete_public_share</code></td><td>E2EE (owner)</td></tr>
       </tbody>
     </table>
+    <p><code>POST /api/files/share</code> rejects files above 1 GiB with 413 (<code>File is {size} bytes; public shares are limited to 1073741824 bytes.</code>) — the cap is enforced at creation and share downloads stream from disk, so a leaked link cannot pin an oversized file in memory (audit finding 15, ANT-886).</p>
 
     <h3>Uploads — <code>files.rs</code> (E2EE)</h3>
     <table>

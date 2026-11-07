@@ -94,7 +94,7 @@ description: A page-by-page walkthrough of the Vreckan web app — what each pag
       <tr><td><strong>New folder</strong></td><td>Create a folder in the current directory.</td></tr>
       <tr><td><strong>Upload</strong></td><td>Upload one or more files from your computer into the current directory (chunked, with per-file progress).</td></tr>
       <tr><td><strong>Download</strong></td><td>Download the single selected file (streamed over the encrypted channel).</td></tr>
-      <tr><td><strong>Share</strong></td><td>Create a public link to the single selected file. You can set an optional password and an optional expiry in hours; the resulting link can be copied from the dialog and later managed from the Shares panel.</td></tr>
+      <tr><td><strong>Share</strong></td><td>Create a public link to the single selected file. You can set an optional password and an optional expiry in hours; the resulting link can be copied from the dialog and later managed from the Shares panel. Files above 1 GiB are rejected — the cap keeps a leaked link from pinning an oversized file in memory.</td></tr>
       <tr><td><strong>Open in app</strong></td><td>Launch a file-backed installed app with the selected file: pick the app, confirm <em>Open file on launch</em>, and the session opens in a new tab with the file copied into its storage.</td></tr>
       <tr><td><strong>Delete</strong></td><td>Delete the selected entries (irreversible; runs as a background task with status reporting).</td></tr>
       <tr><td><strong>Shares</strong></td><td>Open the <em>Active shares</em> panel: every public file link you created — file, size, created, expiry, password indicator, the link itself — with Copy and Revoke per link.</td></tr>

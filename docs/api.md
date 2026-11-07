@@ -359,6 +359,11 @@ gets the browse 403 there instead of the previously un-gated 301 (F6,
 | GET | `/api/files/shares` | `list_public_shares` | E2EE |
 | DELETE | `/api/files/share/{share_id}` | `delete_public_share` | E2EE (owner) |
 
+`POST /api/files/share` rejects files above 1 GiB with 413 (`File is {size}
+bytes; public shares are limited to 1073741824 bytes.`) — the cap is enforced
+at creation and share downloads stream from disk, so a leaked link cannot pin
+an oversized file in memory (audit finding 15, ANT-886).
+
 ### Uploads — `files.rs` (E2EE)
 
 | Method | Path | Handler | Auth |
