@@ -1855,6 +1855,17 @@ pub async fn probe_selkies_capability(
 // The launch flow
 // ---------------------------------------------------------------------------
 
+/// The file an app launch opens (audit finding 15): either bytes already in
+/// memory, or a path to a file on the server that gets copied disk-to-disk.
+pub enum LaunchFileSource {
+    /// File bytes already in memory (the chunked upload path reassembles them).
+    Bytes(Vec<u8>),
+    /// A file that already exists on the server. It is copied into the
+    /// shared-files area with a bounded buffer, so multi-GB stored files never
+    /// sit in memory (audit finding 15).
+    Path(std::path::PathBuf),
+}
+
 /// The shared launch logic behind every launch endpoint. Mirrors
 /// `api._launch_common`. Builds the env/volume/GPU config, launches the
 /// container via the Docker provider, records the session, and returns the
@@ -1869,7 +1880,7 @@ pub async fn launch_common(
     extra_env: HashMap<String, String>,
     language: Option<&str>,
     selected_gpu: Option<&str>,
-    file_bytes: Option<Vec<u8>>,
+    file_source: Option<LaunchFileSource>,
     filename: Option<&str>,
     open_file_on_launch: bool,
     forced_rw_mount: Option<&str>,
@@ -2248,12 +2259,22 @@ pub async fn launch_common(
             },
         );
         // Write the uploaded file into the shared-files area, optionally open it.
-        if let (Some(bytes), Some(fname)) = (&file_bytes, filename) {
+        if let (Some(src), Some(fname)) = (&file_source, filename) {
             let file_dest_dir = sfp.clone();
             std::fs::create_dir_all(&file_dest_dir).ok();
             let actual_filename = get_unique_filename(&file_dest_dir, fname);
             let file_location = format!("{file_dest_dir}/{actual_filename}");
-            std::fs::write(&file_location, bytes).ok();
+            match src {
+                LaunchFileSource::Bytes(bytes) => {
+                    std::fs::write(&file_location, bytes).ok();
+                }
+                // `std::fs::copy` streams through a bounded internal buffer,
+                // so a multi-GB stored file is moved disk-to-disk without a
+                // full in-memory copy (audit finding 15).
+                LaunchFileSource::Path(source) => {
+                    std::fs::copy(source, &file_location).ok();
+                }
+            }
             if open_file_on_launch {
                 let container_file_path =
                     format!("{}/Desktop/files/{actual_filename}", settings.container_config_path);
@@ -2991,18 +3012,19 @@ async fn launch_file(
             .await
         }
     };
-    // Reassemble the uploaded chunks, read them, then delete the temp file.
-    let (file_bytes, safe_filename) = match reassemble_file(&state.settings, &req.upload_id, req.total_chunks) {
+    // Reassemble the uploaded chunks into a temp file and hand the path to
+    // `launch_common`, which copies it into the shared-files area with a
+    // bounded buffer; the temp file is deleted once the launch is recorded.
+    // The reassembled file no longer sits in memory (audit finding 15).
+    let (temp_path, safe_filename) = match reassemble_file(&state.settings, &req.upload_id, req.total_chunks) {
         Ok(path) => {
-            let bytes = std::fs::read(&path).ok();
-            let _ = std::fs::remove_file(&path);
-            (bytes, std::path::Path::new(&req.filename).file_name().and_then(|f| f.to_str()).unwrap_or(&req.filename).to_string())
+            (path, std::path::Path::new(&req.filename).file_name().and_then(|f| f.to_str()).unwrap_or(&req.filename).to_string())
         }
         Err((s, d)) => {
             return e2ee::encrypt_response(&state, &headers, s, serde_json::json!({ "detail": d })).await
         }
     };
-    match launch_common(
+    let launch_result = launch_common(
         &state,
         &req.application_id,
         &user.record.username,
@@ -3011,7 +3033,7 @@ async fn launch_file(
         HashMap::new(),
         req.language.as_deref(),
         req.selected_gpu.as_deref(),
-        file_bytes,
+        Some(LaunchFileSource::Path(std::path::PathBuf::from(temp_path.clone()))),
         Some(safe_filename.as_str()),
         req.open_file_on_launch,
         None,
@@ -3020,8 +3042,9 @@ async fn launch_file(
         req.session_name.as_deref(),
         true,
     )
-    .await
-    {
+    .await;
+    let _ = std::fs::remove_file(&temp_path);
+    match launch_result {
         Ok(resp) => e2ee::encrypt_response(&state, &headers, StatusCode::OK, serde_json::to_value(&resp).unwrap_or_default()).await,
         Err((s, d)) => e2ee::encrypt_response(&state, &headers, s, serde_json::json!({ "detail": d })).await,
     }
