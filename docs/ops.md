@@ -130,6 +130,19 @@ comma-separated origin list (e.g. `https://a.example.com, https://b.example
 receive the CORS headers, everything else is treated as in strict mode.
 Comparison is exact after lowercasing; there are no wildcards.
 
+**Known risk — audit finding 9 (ANT-857), accepted by the board on
+2026-11-06 and kept by design.** With the default configuration (loose mode,
+empty allowlist) the server echoes *any* requesting origin back with
+credentials, so any site open in a logged-in user's browser can read that
+user's API responses with a credentialed fetch. The board kept the open
+default because the mode exists to let the same server under an alternate
+hostname, IP address, or port share the login without origin entries
+(ANT-653); the exposure is bounded by the mitigations above — the E2EE body
+gate on every state-mutating route, the trusted-machine assumption of a
+single-admin deployment, and the optional allowlist. To tighten: list the
+origins you trust in `VRECKAN_CORS_ALLOWED_ORIGINS`, or set
+`VRECKAN_CORS_MODE=strict` for same-origin only.
+
 Both settings are editable on the admin UI's Settings page (CORS card), and
 the effective mode is re-resolved on every request, so a change applies to
 the next request without a restart. Precedence is DB row over environment
