@@ -1130,6 +1130,9 @@ document.addEventListener('DOMContentLoaded', () => {
     const identityKey = COLLAB_DATA.userToken.slice(0, 8);
     const key8 = (t) => String(t || '').slice(0, 8);
     const isSelfKey = (k) => k === identityKey || k === COLLAB_DATA.userToken;
+    // Self-targeted submissions send the full token so both old and new
+    // servers resolve them; remote targets keep the tile key (ANT-935 note 3).
+    const submitToken = (t) => isSelfKey(t) ? COLLAB_DATA.userToken : t;
 
     if (COLLAB_DATA.userPermission === 'readonly') {
         const localContainer = document.getElementById('local-user-container');
@@ -3316,7 +3319,7 @@ document.addEventListener('DOMContentLoaded', () => {
         if (!dropped || kind === 'stream' || !over) return;
 
         if (kind === 'mk') {
-            const tokenToAssign = (over.id === 'gamepad-source-box') ? identityKey : over.dataset.userToken;
+            const tokenToAssign = (over.id === 'gamepad-source-box') ? submitToken(identityKey) : submitToken(over.dataset.userToken);
             ws.send(JSON.stringify({ action: 'assign_mk', token: tokenToAssign }));
             return;
         }
@@ -3325,11 +3328,11 @@ document.addEventListener('DOMContentLoaded', () => {
             const parentContainer = source.parentElement;
             if (parentContainer && parentContainer.id !== 'gamepad-source-box') {
                 const userToken = parentContainer.dataset.userToken;
-                if (userToken) ws.send(JSON.stringify({ action: 'assign_slot', viewer_token: userToken, slot: null }));
+                if (userToken) ws.send(JSON.stringify({ action: 'assign_slot', viewer_token: submitToken(userToken), slot: null }));
             }
         } else {
             const userToken = over.dataset.userToken;
-            if (userToken) ws.send(JSON.stringify({ action: 'assign_slot', viewer_token: userToken, slot: gamepadId }));
+            if (userToken) ws.send(JSON.stringify({ action: 'assign_slot', viewer_token: submitToken(userToken), slot: gamepadId }));
         }
     };
 
@@ -3485,7 +3488,7 @@ document.addEventListener('DOMContentLoaded', () => {
             // Compare in the key8 domain so the toggle-off test also holds
             // against an un-upgraded server whose speaker key is the full
             // token (ANT-882). The server resolves either form.
-            const tokenToSet = (key8(currentDesignatedSpeaker) === key8(token)) ? null : token;
+            const tokenToSet = (key8(currentDesignatedSpeaker) === key8(token)) ? null : submitToken(token);
             ws.send(JSON.stringify({ action: 'set_designated_speaker', token: tokenToSet }));
         }
     });
