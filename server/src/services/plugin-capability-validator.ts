@@ -126,6 +126,9 @@ const OPERATION_CAPABILITIES: Record<string, readonly PluginCapability[]> = {
   "jobs.schedule": ["jobs.schedule"],
   "jobs.cancel": ["jobs.schedule"],
   "webhooks.receive": ["webhooks.receive"],
+  // The host consults the plugin at the company-wide in-flight run cap.
+  // Declaring the schedulingGate manifest feature requires this capability.
+  "scheduling.gate": ["scheduling.gate"],
   "http.request": ["http.outbound"],
   "secrets.resolve": ["secrets.read-ref"],
 
@@ -479,6 +482,12 @@ export function pluginCapabilityValidator(): PluginCapabilityValidator {
           if (!declared.has(requiredCap) && !allMissing.includes(requiredCap)) {
             allMissing.push(requiredCap);
           }
+        }
+      }
+
+      if (manifest.schedulingGate === true) {
+        if (!declared.has("scheduling.gate") && !allMissing.includes("scheduling.gate")) {
+          allMissing.push("scheduling.gate");
         }
       }
 

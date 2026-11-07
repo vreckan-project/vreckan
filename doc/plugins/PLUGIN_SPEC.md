@@ -641,6 +641,66 @@ The host provides:
 
 The worker executes the tool and returns a typed result (string content, structured data, or error).
 
+### 13.11 `schedulingGate`
+
+Optional. Consults the plugin at the host's company-wide in-flight run cap.
+
+The host enforces a per-company cap on how many agent runs may be in flight
+at once (`maxInFlight`, board-tunable via `GET/PATCH /api/companies/:id/scheduling`,
+default `8`). When a claim pass is about to start queued runs for an agent,
+the host calls `schedulingGate` on every running worker that advertises the
+method (by defining the `onSchedulingGate` hook), in parallel, with an
+explicit 2 second timeout per call.
+
+Parameters:
+
+```jsonc
+{
+  "companyId": "…",           // the company whose runs are scheduled
+  "agentId": "…",             // the agent whose next run is up for a slot
+  "run": {                    // the top-priority queued run being considered
+    "runId": "…",
+    "agentId": "…",
+    "companyId": "…",
+    "status": "queued",
+    "issueId": "…" | null,
+    "invocationSource": "…" | null,
+    "triggerDetail": "…" | null,
+    "createdAt": "ISO-8601"
+  },
+  "hostSlotsRemaining": 3     // host-computed remainder under the cap;
+                              // null when the gate is disabled (no host cap)
+}
+```
+
+Result:
+
+```jsonc
+{
+  "slots": 1,    // optional; may only decrease hostSlotsRemaining (clamped)
+  "defer": false,// optional; true defers the whole claim (runs stay queued)
+  "reason": "… " // optional; policy rationale for logs/status
+}
+```
+
+Semantics:
+
+- **Fail-open.** Timeouts, RPC errors, a dead worker, and malformed results
+  are all treated as "no opinion": the host count stands and the cap stays
+  exact. A plugin that does not implement the method is invisible to the
+  gate — zero behavior change, zero added latency beyond the worker snapshot.
+- **Monotone.** `slots` may only reduce the host remainder; values above it
+  are clamped, never raised. Any `defer` defers the whole claim pass.
+- **`null` means no host cap.** The wire transport is JSON and
+  `JSON.stringify(Infinity)` is `null`, so a disabled gate arrives as
+  `hostSlotsRemaining: null`. Treat `null` as unlimited — do not derive
+  `slots` arithmetically from it (e.g. `Math.floor(null / 2) === 0` would
+  defer every claim while the gate is off).
+- **Capability.** Declaring the `schedulingGate` manifest feature (or
+  implementing the hook) requires the `scheduling.gate` capability.
+- The cap itself is host-enforced and never degrades because of a plugin:
+  when a policy plugin dies, ordering reverts to first-come, the cap holds.
+
 ## 14. SDK Surface
 
 Plugins do not talk to the DB directly.

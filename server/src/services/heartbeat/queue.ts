@@ -144,6 +144,7 @@ import {
 import { readContinuationAttempt } from "../recovery/index.js";
 import { allowsIssueInteractionWake } from "../../modules/run-dispatch/index.js";
 import { withAgentStartLock } from "../agent-start-lock.js";
+import { schedulingGate } from "./scheduling-gate.js";
 import {
   evaluateAgentInvokability,
   shouldCancelRunsForNonInvokableAgent,
@@ -1904,6 +1905,15 @@ export function createHeartbeatQueue(db: Db, dependencies: HeartbeatQueueDepende
     const rejectedClaims: Array<{ run: typeof heartbeatRuns.$inferSelect; err: HttpError }> = [];
     const deferredPostCommitEffects: WakeQueuePostCommitEffect[] = [];
     let cancellationReason: string | undefined;
+    // Scheduling gate reservation bookkeeping, shared with the finally below
+    // so the reservation remainder is settled on every exit path of this
+    // pass. Claimed runs settle their own reservations in the
+    // execution.finally hook below: the pass finally is a microtask that
+    // lands before those fire-and-forget executions reach their start
+    // sites, so it must not release their slots here.
+    let gateCompanyId: string | null = null;
+    let gateReserved = 0;
+    let gateReachedExecute = 0;
 
     return withAgentStartLock(agentId, async () => {
       const agent = await getAgent(agentId);
@@ -1917,11 +1927,30 @@ export function createHeartbeatQueue(db: Db, dependencies: HeartbeatQueueDepende
       }
       const policy = parseHeartbeatPolicy(agent);
       const runningCount = await countRunningRunsForAgent(agentId);
-      const availableSlots = Math.max(
+      const perAgentSlots = Math.max(
         0,
         policy.maxConcurrentRuns - runningCount,
       );
-      if (availableSlots <= 0) return [];
+      // The global scheduling gate composes with the per-agent policy as the
+      // min: a pass never claims more than the company-wide remainder. A
+      // disabled gate reports Infinity, leaving today's per-agent behavior
+      // bit-for-bit unchanged.
+      gateCompanyId = agent.companyId;
+      const gateSlotsRemaining = await schedulingGate.remainingSlots(agent.companyId);
+      const availableSlots = Math.min(perAgentSlots, gateSlotsRemaining);
+      if (availableSlots <= 0) {
+        schedulingGate.recordDecision({
+          companyId: agent.companyId,
+          agentId,
+          runId: null,
+          perAgentSlots,
+          hostSlotsRemaining: gateSlotsRemaining,
+          granted: 0,
+          plugin: null,
+          outcome: perAgentSlots > 0 ? "global_gate" : "no_slots",
+        });
+        return [];
+      }
 
       const queuedRuns = await db
         .select()
@@ -2009,9 +2038,91 @@ export function createHeartbeatQueue(db: Db, dependencies: HeartbeatQueueDepende
         return left.createdAt.getTime() - right.createdAt.getTime();
       });
 
+      // Optional plugin voice at the gate. Consulted once per claim pass,
+      // against the top-priority candidate. Fail-open on any error: the host
+      // count stands and the cap stays exact. A plugin without the method
+      // never appears here, so no plugin means zero extra latency beyond one
+      // listWorkers snapshot.
+      const topRun = prioritizedRuns[0];
+      let pluginGrant: {
+        grantedSlots: number;
+        defer: boolean;
+        plugin: { pluginId: string; slots?: number; defer?: boolean; reason?: string } | null;
+      };
+      try {
+        pluginGrant = await schedulingGate.consultPlugins({
+          companyId: agent.companyId,
+          agentId,
+          run: {
+            runId: topRun.id,
+            agentId,
+            companyId: agent.companyId,
+            status: topRun.status,
+            issueId: readNonEmptyString(parseObject(topRun.contextSnapshot).issueId),
+            invocationSource: topRun.invocationSource ?? null,
+            triggerDetail: topRun.triggerDetail ?? null,
+            createdAt: topRun.createdAt.toISOString(),
+          },
+          hostSlotsRemaining: gateSlotsRemaining,
+        });
+      } catch (err) {
+        logger.warn(
+          { err, agentId, companyId: agent.companyId },
+          "scheduling gate plugin consultation threw; host count stands",
+        );
+        pluginGrant = { grantedSlots: gateSlotsRemaining, defer: false, plugin: null };
+      }
+      let effectiveSlots = availableSlots;
+      if (pluginGrant.defer) {
+        schedulingGate.recordDecision({
+          companyId: agent.companyId,
+          agentId,
+          runId: topRun.id,
+          perAgentSlots,
+          hostSlotsRemaining: gateSlotsRemaining,
+          granted: 0,
+          plugin: pluginGrant.plugin,
+          outcome: "plugin_defer",
+        });
+        return [];
+      }
+      if (Number.isFinite(pluginGrant.grantedSlots) && pluginGrant.grantedSlots < effectiveSlots) {
+        effectiveSlots = pluginGrant.grantedSlots;
+      }
+      if (effectiveSlots <= 0) {
+        schedulingGate.recordDecision({
+          companyId: agent.companyId,
+          agentId,
+          runId: topRun.id,
+          perAgentSlots,
+          hostSlotsRemaining: gateSlotsRemaining,
+          granted: 0,
+          plugin: pluginGrant.plugin,
+          outcome: "plugin_zero_slots",
+        });
+        return [];
+      }
+      gateReserved = schedulingGate.reserve(agent.companyId, effectiveSlots);
+      const claimSlots = Math.min(effectiveSlots, gateReserved);
+      if (claimSlots <= 0) {
+        schedulingGate.release(agent.companyId, gateReserved);
+        gateReserved = 0;
+        schedulingGate.recordDecision({
+          companyId: agent.companyId,
+          agentId,
+          runId: topRun.id,
+          perAgentSlots,
+          hostSlotsRemaining: gateSlotsRemaining,
+          granted: 0,
+          plugin: pluginGrant.plugin,
+          outcome: "global_gate",
+        });
+        return [];
+      }
+
       const claimedRuns: Array<typeof heartbeatRuns.$inferSelect> = [];
       for (const queuedRun of prioritizedRuns) {
-        if (claimedRuns.length >= availableSlots) break;
+        if (claimedRuns.length >= claimSlots) break;
         let claimed: typeof heartbeatRuns.$inferSelect | null;
         try {
           claimed = await claimQueuedRun(queuedRun, companyAgents, deferredPostCommitEffects);
@@ -2027,9 +2138,26 @@ export function createHeartbeatQueue(db: Db, dependencies: HeartbeatQueueDepende
           );
           continue;
         }
-        if (claimed) claimedRuns.push(claimed);
+        if (claimed) {
+          claimedRuns.push(claimed);
+          // This claim holds one of the pass's reserved slots until the
+          // execution starts (conversion) or dies without starting (release
+          // in the execution.finally hook below).
+          schedulingGate.markClaimedRun(claimed.id, agent.companyId);
+        }
       }
       if (claimedRuns.length === 0) return [];
+      gateReachedExecute = claimedRuns.length;
+      schedulingGate.recordDecision({
+        companyId: agent.companyId,
+        agentId,
+        runId: claimedRuns[0].id,
+        perAgentSlots,
+        hostSlotsRemaining: gateSlotsRemaining,
+        granted: claimedRuns.length,
+        plugin: pluginGrant.plugin,
+        outcome: "claimed",
+      });
 
       for (const claimedRun of claimedRuns) {
         const execution = executeRun(claimedRun.id).catch((err) => {
@@ -2047,10 +2175,33 @@ export function createHeartbeatQueue(db: Db, dependencies: HeartbeatQueueDepende
           // drainActiveRunExecutions loops on activeRunExecutionPromises.size,
           // so an entry that never clears here would hang it forever.
           activeRunExecutionPromises.delete(execution);
+          // Settle this claim's reserved slot when the execution promise
+          // settles. executeRun suspends at getSchedulingSuppression (and
+          // further awaits) before its start site, so the pass finally above
+          // always runs first and must not release claimed runs itself; this
+          // hook is the release point for a run that settles without having
+          // reached the start site (rejection, suppression release, missing
+          // run, status mismatch, pre-try throw). For a run that did start,
+          // onExecutionFinished already removed the gate entry, so the
+          // release is a no-op; it is idempotent with the start-time
+          // conversion either way.
+          schedulingGate.releaseClaimedRun(claimedRun.id);
         });
       }
       return claimedRuns;
     }).finally(async () => {
+      // Settle this pass's gate reservation on every exit path. Release only
+      // the reservation remainder that was never claimed. Claimed runs keep
+      // their reserved slots here: this finally is a microtask that lands
+      // before those fire-and-forget executions reach their start sites, so
+      // releasing the claims now would free slots the pending starts are
+      // about to consume (staggered-reentry double-booking). Each claimed
+      // run settles its own slot in the execution.finally hook above —
+      // released if it never reaches the start site, converted to in-flight
+      // by the start-site mirror if it does.
+      if (gateCompanyId) {
+        schedulingGate.release(gateCompanyId, Math.max(0, gateReserved - gateReachedExecute));
+      }
       // Dispatch promoted inputs after the agent start lock is released.
       try {
         await applyWakeQueuePostCommitEffects(deferredPostCommitEffects);

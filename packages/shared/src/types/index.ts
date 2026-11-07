@@ -17,8 +17,13 @@ export type {
   CompleteConnectionIntentInput,
   DeclineConnectionIntentInput,
 } from "./connection-intent.js";
+export {
+  COMPANY_SCHEDULING_DEFAULTS,
+  COMPANY_SCHEDULING_MAX_INFLIGHT_CAP,
+} from "./company.js";
 export type {
   Company,
+  CompanySchedulingConfig,
   InteractionResolverGovernance,
   InteractionResolverKindGovernance,
 } from "./company.js";

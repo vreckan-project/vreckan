@@ -13,6 +13,7 @@ import {
   createHeartbeatScheduling,
   formatIssueIdentifierLink,
 } from "./heartbeat/scheduling.js";
+import { schedulingGate } from "./heartbeat/scheduling-gate.js";
 import { FAST_RESPONSE_AGENT_GUIDANCE, fastResponseHistoryBody } from "@paperclipai/shared";
 import { agentExecutionsHaveStopped } from "./agent-execution-stop.js";
 import {
@@ -973,6 +974,9 @@ export function heartbeatService(
   } = createHeartbeatRunPreparation(db);
   let shutdownInProgress = false;
   const instanceSettings = instanceSettingsService(db);
+  // Bind the process-wide scheduling gate (idempotent across the several
+  // heartbeatService instances routes and the scheduler construct).
+  schedulingGate.bind(db, options.pluginWorkerManager ?? null);
   const getCurrentUserRedactionOptions = async () => ({
     enabled: (await instanceSettings.getGeneral()).censorUsernameInLogs,
   });
@@ -2077,8 +2081,7 @@ export function heartbeatService(
     }
 
     if (run.runtimeMode === "legacy" && run.controllerBootId &&
-        run.controllerBootId !== legacyControllerBootId) return;
-    activeRunExecutions.add(run.id);
+         run.controllerBootId !== legacyControllerBootId) return;
     const executionControl = createAdapterExecutionControl();
     // This coarse scope also covers host finalization after the adapter returns.
     // Nested scopes refine the label without making any termination claim.
@@ -2118,6 +2121,14 @@ export function heartbeatService(
     let identityRedactor = createAgentIdentityRedactor();
 
     try {
+      // The start-site mirrors live inside the try: the pre-try setup above
+      // (control creation, lease watch, redactor) can throw synchronously,
+      // and the try's finally below is the only place that settles
+      // activeRunExecutions and the scheduling gate. Mirrors before the try
+      // would leak one in-flight slot and a tracked entry until restart.
+      // The setup is synchronous, so no await can interleave in the window.
+      activeRunExecutions.add(run.id);
+      schedulingGate.onExecutionStarted(run.id, run.companyId);
       let agent = await getAgent(run.agentId);
       if (!agent) {
         await setRunStatus(runId, "failed", {
@@ -5055,6 +5066,7 @@ export function heartbeatService(
       } finally {
         controllerLease.stop();
         activeRunExecutions.delete(run.id);
+        schedulingGate.onExecutionFinished(run.id);
         // A failed owned Stop remains visible until this exact executor settles,
         // including a graceful exit result arriving after the cancellation error.
         // It is never retained beyond the active execution's cleanup.
