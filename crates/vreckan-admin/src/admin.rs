@@ -2835,13 +2835,23 @@ async fn save_template_schema(
         .await;
     };
     // The bundled YAML baseline (for built-in settings' read-only default).
-    let yaml_by_name: HashMap<String, Value> = catalog::load_template_schema_yaml(&state.settings)
-        .into_iter()
-        .filter_map(|s| {
-            let name = s.get("name").and_then(|n| n.as_str())?.to_string();
-            Some((name, s))
-        })
-        .collect();
+    // A missing/unreadable baseline degrades this save to no built-in
+    // defaults (the pre-ANT-914 behaviour here); the startup load treats
+    // the same failure as fatal.
+    let yaml_by_name: HashMap<String, Value> =
+        match catalog::load_template_schema_yaml(&state.settings) {
+            Ok(list) => list
+                .into_iter()
+                .filter_map(|s| {
+                    let name = s.get("name").and_then(|n| n.as_str())?.to_string();
+                    Some((name, s))
+                })
+                .collect(),
+            Err(e) => {
+                warn!("{e}");
+                HashMap::new()
+            }
+        };
     let mut seen: std::collections::HashSet<String> = std::collections::HashSet::new();
     let mut clean: Vec<(i32, Value)> = Vec::new();
     for (i, s) in settings_list.iter().enumerate() {
@@ -3023,8 +3033,20 @@ async fn save_template_schema(
             .await;
         }
     }
-    // Rebuild the in-memory schema so the launch path sees the change.
-    catalog::load_template_schema(&state).await;
+    // Rebuild the in-memory schema so the launch path sees the change. The
+    // save itself is already persisted above, so a reload failure is
+    // surfaced (not swallowed) instead of leaving a stale mirror to
+    // masquerade as the saved schema (ANT-914).
+    if let Err(e) = catalog::load_template_schema(&state).await {
+        warn!("Template schema reload after save failed: {e}");
+        return e2ee::encrypt_response(
+            &state,
+            &headers,
+            StatusCode::INTERNAL_SERVER_ERROR,
+            serde_json::json!({ "detail": format!("Template schema saved, but reloading it failed: {e}") }),
+        )
+        .await;
+    }
     info!("Template schema updated ({} settings).", clean.len());
     e2ee::encrypt_response(&state, &headers, StatusCode::OK, serde_json::json!({ "ok": true })).await
 }

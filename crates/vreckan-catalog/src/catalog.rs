@@ -510,18 +510,24 @@ pub async fn load_app_templates(state: &AppState) {
 }
 
 /// Load the bundled template-schema YAML baseline (the image baseline).
-pub fn load_template_schema_yaml(settings: &Settings) -> Vec<Value> {
+///
+/// Returns `Err` instead of an empty vec when the file is missing or
+/// unparseable (ANT-914): an empty baseline would silently produce an
+/// empty schema. Callers decide whether that is fatal (the startup load)
+/// or a degraded mode (the save path).
+pub fn load_template_schema_yaml(settings: &Settings) -> Result<Vec<Value>, String> {
     let path = &settings.template_schema_path;
     match yaml_file_to_json(path) {
-        Some(v) => v
-            .get("settings")
-            .and_then(|s| s.as_array())
-            .cloned()
-            .unwrap_or_default(),
-        None => {
-            warn!("Could not load template schema ({path}); editor will be limited.");
-            Vec::new()
-        }
+        Some(v) => Ok(
+            v.get("settings")
+                .and_then(|s| s.as_array())
+                .cloned()
+                .unwrap_or_default(),
+        ),
+        None => Err(format!(
+            "could not load the template schema YAML at {path} \
+             (set VRECKAN_TEMPLATE_SCHEMA_PATH); the editor baseline is unavailable"
+        )),
     }
 }
 
@@ -529,9 +535,22 @@ pub fn load_template_schema_yaml(settings: &Settings) -> Vec<Value> {
 /// into `state.template_schema` / `state.global_default_gpu`. If the table is
 /// empty it is seeded from the bundled YAML baseline. Mirrors
 /// `_init_template_schema` + `_load_template_schema`.
-pub async fn load_template_schema(state: &AppState) {
+///
+/// Returns `Err` on any failure (baseline load, row load, seed insert,
+/// post-seed reload) instead of silently leaving `state.template_schema`
+/// at its `AppState::new` initial value (ANT-914). The `warn!` calls stay
+/// for production log visibility, but callers must not rely on them: test
+/// binaries run without a logging subscriber, so only the returned error
+/// makes a failure loud there.
+pub async fn load_template_schema(state: &AppState) -> Result<(), String> {
     let conn = &state.db.conn;
-    let yaml_settings = load_template_schema_yaml(&state.settings);
+    let yaml_settings = match load_template_schema_yaml(&state.settings) {
+        Ok(settings) => settings,
+        Err(e) => {
+            warn!("{e}");
+            return Err(e);
+        }
+    };
     let yaml_names: std::collections::HashSet<String> = yaml_settings
         .iter()
         .filter_map(|s| s.get("name").and_then(|v| v.as_str()).map(String::from))
@@ -541,12 +560,13 @@ pub async fn load_template_schema(state: &AppState) {
         Ok(rows) => rows,
         Err(e) => {
             warn!("Failed to load template schema: {e}");
-            return;
+            return Err(format!("failed to load template schema rows: {e}"));
         }
     };
 
     // Seed from the YAML baseline if the table is empty.
     if rows.is_empty() {
+        let mut seed_failures: Vec<String> = Vec::new();
         for (i, ys) in yaml_settings.iter().enumerate() {
             let name = match ys.get("name").and_then(|v| v.as_str()) {
                 Some(n) => n.to_string(),
@@ -580,15 +600,27 @@ pub async fn load_template_schema(state: &AppState) {
             };
             if let Err(e) = entities::template_schema_setting::Entity::insert(am).exec(conn).await {
                 warn!("Failed to seed template schema row '{name}': {e}");
+                seed_failures.push(name);
             }
         }
         rows = match entities::template_schema_setting::Entity::find().all(conn).await {
             Ok(rows) => rows,
             Err(e) => {
                 warn!("Failed to reload template schema: {e}");
-                return;
+                return Err(format!("failed to reload template schema after seeding: {e}"));
             }
         };
+        if !seed_failures.is_empty() {
+            // The reloaded rows are a partial baseline, not the full
+            // schema: fail loud instead of serving what a transient lock
+            // dropped (ANT-914).
+            return Err(format!(
+                "failed to seed {} of {} template schema row(s): {}",
+                seed_failures.len(),
+                yaml_settings.len(),
+                seed_failures.join(", ")
+            ));
+        }
     }
 
     // Build the in-memory schema.
@@ -627,6 +659,7 @@ pub async fn load_template_schema(state: &AppState) {
         settings_list.len(),
         state.global_default_gpu.read().await.as_deref().unwrap_or("none")
     );
+    Ok(())
 }
 
 // ---------------------------------------------------------------------------

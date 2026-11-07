@@ -11,6 +11,13 @@
 //! client's crypto. The admin tests drive the full app router
 //! (`vreckan_admin::app::router`), so this harness keeps the complete
 //! lifespan seeding.
+//!
+//! Regression note (ANT-914): these test binaries run without a logging
+//! subscriber, so `tracing` `warn!`/`error!` calls in library code are
+//! invisible here. Test code must never rely on log visibility to surface
+//! a failure — assert state directly, or `expect`/`unwrap` on the error
+//! the code under test returns (see the `load_template_schema` seeding
+//! below, whose silent early-returns masked a flaky seed).
 
 #![allow(dead_code)]
 
@@ -142,8 +149,26 @@ pub async fn build_state_with(
     // first call actually loads/generates it).
     e2ee::init_server_key(&state.settings).expect("init server key");
     // Seed the template schema from the bundled YAML baseline (mirrors the
-    // lifespan startup).
-    catalog::load_template_schema(&state).await;
+    // lifespan startup). `expect` (not a swallowed warn): a transient SQLite
+    // lock under parallel-suite load used to leave the initial empty schema
+    // in place silently (ANT-914).
+    catalog::load_template_schema(&state)
+        .await
+        .expect("load template schema");
+    // Assert the baseline actually seeded: the bundled
+    // `server/template_schema.yml` is non-empty, so an empty settings list
+    // here means the seed silently no-opped. (The guard is scoped so it
+    // drops before `state` is returned.)
+    {
+        let schema = state.template_schema.read().await;
+        assert!(
+            !schema["settings"]
+                .as_array()
+                .map(Vec::is_empty)
+                .unwrap_or(true),
+            "template schema did not seed from the bundled baseline"
+        );
+    }
     // Load application templates (built-in YAML + DB overrides; seeds a blank
     // "Default" template when none exist). Mirrors the lifespan startup.
     catalog::load_app_templates(&state).await;
