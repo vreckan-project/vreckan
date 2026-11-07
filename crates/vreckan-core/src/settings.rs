@@ -77,6 +77,9 @@ pub const SETTING_DEFINITIONS: &[SettingDef] = &[
     // --- Login rate limiting ---
     SettingDef { name: "login_max_attempts", type_: "int", default: "5", help: "Failed logins from one (client IP, username) pair within the lockout window before the pair is temporarily locked out. 0 disables the limiter." },
     SettingDef { name: "login_lockout_seconds", type_: "int", default: "900", help: "Length of the failed-login window and of the temporary lockout (seconds)." },
+    // --- Share password rate limiting (ANT-884) ---
+    SettingDef { name: "share_password_max_attempts", type_: "int", default: "5", help: "Failed share-password guesses on one share (the anonymous /public and /share routes carry no caller identity, so the budget is per share) within the lockout window before the share is temporarily locked out. 0 disables the limiter." },
+    SettingDef { name: "share_password_lockout_seconds", type_: "int", default: "900", help: "Length of the failed share-password guess window and of the temporary lockout (seconds)." },
     SettingDef { name: "trusted_proxies", type_: "str", default: "", help: "Comma-separated IPs/CIDRs of reverse proxies that may sit in front of the server (e.g. '10.0.0.0/8, 192.168.1.5'). Only when the direct TCP peer matches this list are forwarded headers honoured: the leftmost `X-Forwarded-For` entry for the login rate limiter (otherwise the direct peer address is used) and the `X-Forwarded-Proto` scheme for the session cookie's Secure flag and OIDC redirect URL (otherwise the actual connection scheme, https, is used). Empty = trust no proxy (fail closed)." },
     // --- CORS (ANT-653) ---
     SettingDef { name: "cors_mode", type_: "str", default: "loose", help: "CORS behavior for API calls from a different origin (e.g. the same server reached via a different hostname, IP address, or port): 'loose' (default) echoes the requesting origin with credentials and issues the login cookie as SameSite=None; Secure; 'strict' sends no CORS headers at all (same-origin only, the pre-0.9.5 behavior)." },
@@ -171,6 +174,8 @@ pub struct Settings {
     pub default_password_policy: String,
     pub login_max_attempts: i64,
     pub login_lockout_seconds: i64,
+    pub share_password_max_attempts: i64,
+    pub share_password_lockout_seconds: i64,
     pub trusted_proxies: String,
     pub cors_mode: String,
     pub cors_allowed_origins: String,
@@ -305,6 +310,8 @@ impl Settings {
             default_password_policy: get("default_password_policy"),
             login_max_attempts: get_int("login_max_attempts"),
             login_lockout_seconds: get_int("login_lockout_seconds"),
+            share_password_max_attempts: get_int("share_password_max_attempts"),
+            share_password_lockout_seconds: get_int("share_password_lockout_seconds"),
             trusted_proxies: get("trusted_proxies"),
             cors_mode: get("cors_mode"),
             cors_allowed_origins: get("cors_allowed_origins"),
@@ -385,6 +392,8 @@ impl Settings {
             "default_password_policy" => self.default_password_policy.clone(),
             "login_max_attempts" => self.login_max_attempts.to_string(),
             "login_lockout_seconds" => self.login_lockout_seconds.to_string(),
+            "share_password_max_attempts" => self.share_password_max_attempts.to_string(),
+            "share_password_lockout_seconds" => self.share_password_lockout_seconds.to_string(),
             "cors_mode" => self.cors_mode.clone(),
             "cors_allowed_origins" => self.cors_allowed_origins.clone(),
             "acme_enabled" => self.acme_enabled.to_string(),
