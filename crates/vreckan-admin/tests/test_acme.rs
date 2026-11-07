@@ -235,6 +235,12 @@ async fn admin_client(state: vreckan_core::state::AppState) -> SecureClient {
 /// carrying a pre-write WAL snapshot), leaving a field empty in the read-back.
 /// The upsert is idempotent, so re-persisting is safe; a short settle between
 /// attempts lets stale pooled connections drain out of the pool.
+///
+/// Callers must `expect` on the returned `Option` (ANT-914): a `None`
+/// means the retry budget expired under parallel-suite load, and silently
+/// discarding it lets the dependent assertions run against stale state.
+/// The same rule covers the harness in general: test binaries run without
+/// a logging subscriber, so `warn!` visibility is not a liveness path.
 async fn persist_until_visible(
     state: &vreckan_core::state::AppState,
     rec: &acme_orchestrator::AcmeCertRecord,
@@ -422,7 +428,7 @@ async fn test_cert_status_reads_from_db() {
         domains: "example.com".to_string(),
         expires: acme_orchestrator::acme_cert_expiry_from_pem(&cert_pem),
     };
-    persist_until_visible(&state, &rec).await;
+    persist_until_visible(&state, &rec).await.expect("record persisted");
     let status = cert_status_until_db(&state, &["example.com".into()]).await;
     // The DB is the source of truth: cert/key are returned as PEM content.
     assert_eq!(status["present"], true);
@@ -450,7 +456,7 @@ async fn test_cert_status_db_preferred_over_disk() {
         domains: "db.example.com".to_string(),
         expires: acme_orchestrator::acme_cert_expiry_from_pem(&db_cert),
     };
-    persist_until_visible(&state, &rec).await;
+    persist_until_visible(&state, &rec).await.expect("record persisted");
     let status = cert_status_until_db(&state, &["example.com".into()]).await;
     assert_eq!(status["source"], "acme_db");
     assert_eq!(status["cert"], db_cert);
@@ -1062,7 +1068,7 @@ async fn test_renewal_hot_reloads_served_cert_without_restart() {
         domains: "renew-a.example.com".to_string(),
         expires: acme_orchestrator::acme_cert_expiry_from_pem(&cert_a),
     };
-    persist_until_visible(&state, &rec_a).await;
+    persist_until_visible(&state, &rec_a).await.expect("record persisted");
     let cfg = default_cfg();
     let result = acme_orchestrator::renew_acme_cert(&state, &cfg).await;
     assert_eq!(result["renewed"], true, "renewal should have run");
@@ -1169,7 +1175,7 @@ async fn test_certificates_get_masks_db_sourced_key() {
         domains: "example.com".to_string(),
         expires: acme_orchestrator::acme_cert_expiry_from_pem(&cert_pem),
     };
-    persist_until_visible(&state, &rec).await;
+    persist_until_visible(&state, &rec).await.expect("record persisted");
     let client = admin_client(state).await;
     let (status, data) = client.call("GET", "/api/admin/certificates", None).await;
     assert_eq!(status, StatusCode::OK);
