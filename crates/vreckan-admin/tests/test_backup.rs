@@ -18,8 +18,8 @@ mod common;
 use base64::Engine;
 use common::{build_state, SecureClient, TempDir};
 use http::StatusCode;
-use serde_json::json;
 use sea_orm::EntityTrait;
+use serde_json::json;
 use std::io::Read;
 use std::os::unix::fs::PermissionsExt;
 use vreckan_admin::backup_manager;
@@ -96,7 +96,11 @@ async fn test_create_and_list_backup() {
     sc.http.login("admin", "admin1234").await;
     sc.handshake().await;
     let (status, body) = sc
-        .call("POST", "/api/admin/backup/create", Some(&json!({ "include_user_data": false })))
+        .call(
+            "POST",
+            "/api/admin/backup/create",
+            Some(&json!({ "include_user_data": false })),
+        )
         .await;
     assert_eq!(status, StatusCode::CREATED, "{body:?}");
     let name = body.as_ref().unwrap()["name"].as_str().unwrap().to_string();
@@ -110,13 +114,20 @@ async fn test_create_and_list_backup() {
     let raw = std::fs::read(backup_path(&sc, &name)).unwrap();
     let mut gz = flate2::read::GzDecoder::new(std::io::Cursor::new(raw));
     let mut archive = tar::Archive::new(&mut gz);
-    let names: Vec<String> = archive.entries().unwrap().map(|e| e.unwrap().path().unwrap().to_string_lossy().to_string()).collect();
+    let names: Vec<String> = archive
+        .entries()
+        .unwrap()
+        .map(|e| e.unwrap().path().unwrap().to_string_lossy().to_string())
+        .collect();
     assert!(names.contains(&"db_dump.json".to_string()), "{names:?}");
     // The listing reports it.
     let (status, listed) = sc.call("GET", "/api/admin/backup", None).await;
     assert_eq!(status, StatusCode::OK);
     let arr = listed.as_ref().unwrap().as_array().unwrap();
-    let names_listed: Vec<String> = arr.iter().map(|b| b["name"].as_str().unwrap().to_string()).collect();
+    let names_listed: Vec<String> = arr
+        .iter()
+        .map(|b| b["name"].as_str().unwrap().to_string())
+        .collect();
     assert_eq!(names_listed, vec![name]);
 }
 
@@ -127,7 +138,11 @@ async fn test_create_backup_with_user_data() {
     sc.http.login("admin", "admin1234").await;
     sc.handshake().await;
     let (status, body) = sc
-        .call("POST", "/api/admin/backup/create", Some(&json!({ "include_user_data": true })))
+        .call(
+            "POST",
+            "/api/admin/backup/create",
+            Some(&json!({ "include_user_data": true })),
+        )
         .await;
     assert_eq!(status, StatusCode::CREATED, "{body:?}");
     let name = body.as_ref().unwrap()["name"].as_str().unwrap();
@@ -143,17 +158,32 @@ async fn test_create_backup_same_second_collision() {
     sc.handshake().await;
     // Two creations in the same second must not clobber each other: the
     // second gets a numeric suffix.
-    let (_, first) = sc.call("POST", "/api/admin/backup/create", Some(&json!({}))).await;
-    let (_, second) = sc.call("POST", "/api/admin/backup/create", Some(&json!({}))).await;
-    let first_name = first.as_ref().unwrap()["name"].as_str().unwrap().to_string();
-    let second_name = second.as_ref().unwrap()["name"].as_str().unwrap().to_string();
+    let (_, first) = sc
+        .call("POST", "/api/admin/backup/create", Some(&json!({})))
+        .await;
+    let (_, second) = sc
+        .call("POST", "/api/admin/backup/create", Some(&json!({})))
+        .await;
+    let first_name = first.as_ref().unwrap()["name"]
+        .as_str()
+        .unwrap()
+        .to_string();
+    let second_name = second.as_ref().unwrap()["name"]
+        .as_str()
+        .unwrap()
+        .to_string();
     assert_ne!(first_name, second_name);
     let (status, listed) = sc.call("GET", "/api/admin/backup", None).await;
     assert_eq!(status, StatusCode::OK);
     let arr = listed.as_ref().unwrap().as_array().unwrap();
-    let names: std::collections::HashSet<String> =
-        arr.iter().map(|b| b["name"].as_str().unwrap().to_string()).collect();
-    assert_eq!(names, std::collections::HashSet::from([first_name, second_name]));
+    let names: std::collections::HashSet<String> = arr
+        .iter()
+        .map(|b| b["name"].as_str().unwrap().to_string())
+        .collect();
+    assert_eq!(
+        names,
+        std::collections::HashSet::from([first_name, second_name])
+    );
 }
 
 // ---------------------------------------------------------------------------
@@ -166,12 +196,21 @@ async fn test_download_backup_reassembles_file() {
     let mut sc = SecureClient::new(build_state(_root.path()).await);
     sc.http.login("admin", "admin1234").await;
     sc.handshake().await;
-    let (_, created) = sc.call("POST", "/api/admin/backup/create", Some(&json!({}))).await;
-    let name = created.as_ref().unwrap()["name"].as_str().unwrap().to_string();
+    let (_, created) = sc
+        .call("POST", "/api/admin/backup/create", Some(&json!({})))
+        .await;
+    let name = created.as_ref().unwrap()["name"]
+        .as_str()
+        .unwrap()
+        .to_string();
     let on_disk = std::fs::read(backup_path(&sc, &name)).unwrap();
     // The test archive is far smaller than one 2 MiB chunk.
     let (status, chunk0) = sc
-        .call("GET", &format!("/api/admin/backup/{name}/download?chunk_index=0"), None)
+        .call(
+            "GET",
+            &format!("/api/admin/backup/{name}/download?chunk_index=0"),
+            None,
+        )
         .await;
     assert_eq!(status, StatusCode::OK);
     assert_eq!(chunk0.as_ref().unwrap()["filename"], name);
@@ -182,7 +221,11 @@ async fn test_download_backup_reassembles_file() {
     assert_eq!(decoded, on_disk);
     // Asking for the chunk past the end yields an empty final chunk.
     let (status, chunk1) = sc
-        .call("GET", &format!("/api/admin/backup/{name}/download?chunk_index=1"), None)
+        .call(
+            "GET",
+            &format!("/api/admin/backup/{name}/download?chunk_index=1"),
+            None,
+        )
         .await;
     assert_eq!(status, StatusCode::OK);
     assert_eq!(chunk1.as_ref().unwrap()["is_last_chunk"], true);
@@ -202,7 +245,10 @@ async fn test_download_backup_invalid_name() {
         .call("GET", "/api/admin/backup/bogus.tar.gz/download", None)
         .await;
     assert_eq!(status, StatusCode::NOT_FOUND);
-    assert!(body.as_ref().unwrap()["detail"].as_str().unwrap().contains("Invalid backup name"));
+    assert!(body.as_ref().unwrap()["detail"]
+        .as_str()
+        .unwrap()
+        .contains("Invalid backup name"));
 }
 
 #[tokio::test]
@@ -213,10 +259,17 @@ async fn test_download_backup_unknown_name() {
     sc.handshake().await;
     // Valid name shape, but no such archive exists.
     let (status, body) = sc
-        .call("GET", "/api/admin/backup/backup_20200101_000000.tar.gz/download", None)
+        .call(
+            "GET",
+            "/api/admin/backup/backup_20200101_000000.tar.gz/download",
+            None,
+        )
         .await;
     assert_eq!(status, StatusCode::NOT_FOUND);
-    assert!(body.as_ref().unwrap()["detail"].as_str().unwrap().contains("not found"));
+    assert!(body.as_ref().unwrap()["detail"]
+        .as_str()
+        .unwrap()
+        .contains("not found"));
 }
 
 #[tokio::test]
@@ -228,7 +281,9 @@ async fn test_resolve_backup_rejects_traversal() {
     assert!(backup_manager::resolve_backup(&state.settings, "../vreckan.db").is_err());
     assert!(backup_manager::resolve_backup(&state.settings, "/etc/passwd").is_err());
     // Valid shape but missing on disk.
-    assert!(backup_manager::resolve_backup(&state.settings, "backup_20200101_000000.tar.gz").is_err());
+    assert!(
+        backup_manager::resolve_backup(&state.settings, "backup_20200101_000000.tar.gz").is_err()
+    );
 }
 
 // ---------------------------------------------------------------------------
@@ -241,16 +296,25 @@ async fn test_delete_backup() {
     let mut sc = SecureClient::new(build_state(_root.path()).await);
     sc.http.login("admin", "admin1234").await;
     sc.handshake().await;
-    let (_, created) = sc.call("POST", "/api/admin/backup/create", Some(&json!({}))).await;
-    let name = created.as_ref().unwrap()["name"].as_str().unwrap().to_string();
-    let (status, _) = sc.call("DELETE", &format!("/api/admin/backup/{name}"), None).await;
+    let (_, created) = sc
+        .call("POST", "/api/admin/backup/create", Some(&json!({})))
+        .await;
+    let name = created.as_ref().unwrap()["name"]
+        .as_str()
+        .unwrap()
+        .to_string();
+    let (status, _) = sc
+        .call("DELETE", &format!("/api/admin/backup/{name}"), None)
+        .await;
     assert_eq!(status, StatusCode::NO_CONTENT);
     assert!(!backup_path(&sc, &name).exists());
     let (status, listed) = sc.call("GET", "/api/admin/backup", None).await;
     assert_eq!(status, StatusCode::OK);
     assert_eq!(listed, Some(json!([])));
     // Deleting again is a 404.
-    let (status, _) = sc.call("DELETE", &format!("/api/admin/backup/{name}"), None).await;
+    let (status, _) = sc
+        .call("DELETE", &format!("/api/admin/backup/{name}"), None)
+        .await;
     assert_eq!(status, StatusCode::NOT_FOUND);
 }
 
@@ -265,24 +329,46 @@ async fn test_restore_from_stored_rolls_back_changes() {
     sc.http.login("admin", "admin1234").await;
     sc.handshake().await;
     // Snapshot the current state (bootstrap admin only).
-    let (_, created) = sc.call("POST", "/api/admin/backup/create", Some(&json!({}))).await;
-    let name = created.as_ref().unwrap()["name"].as_str().unwrap().to_string();
+    let (_, created) = sc
+        .call("POST", "/api/admin/backup/create", Some(&json!({})))
+        .await;
+    let name = created.as_ref().unwrap()["name"]
+        .as_str()
+        .unwrap()
+        .to_string();
     // Drift: provision a user after the snapshot was taken.
     let (status, _) = sc
-        .call("POST", "/api/admin/people", Some(&json!({ "username": "temp-user" })))
+        .call(
+            "POST",
+            "/api/admin/people",
+            Some(&json!({ "username": "temp-user" })),
+        )
         .await;
     assert_eq!(status, StatusCode::CREATED);
-    assert!(user_manager::get_user(&sc.state.db, "temp-user").await.unwrap().is_some());
+    assert!(user_manager::get_user(&sc.state.db, "temp-user")
+        .await
+        .unwrap()
+        .is_some());
     // Restore the snapshot: the database is rolled back and the in-memory
     // user cache is reloaded from it.
     let (status, body) = sc
-        .call("POST", "/api/admin/backup/restore", Some(&json!({ "name": name })))
+        .call(
+            "POST",
+            "/api/admin/backup/restore",
+            Some(&json!({ "name": name })),
+        )
         .await;
     assert_eq!(status, StatusCode::OK, "{body:?}");
     assert_eq!(body, Some(json!({ "source": name, "restored": true })));
-    assert!(user_manager::get_user(&sc.state.db, "temp-user").await.unwrap().is_none());
+    assert!(user_manager::get_user(&sc.state.db, "temp-user")
+        .await
+        .unwrap()
+        .is_none());
     // The pre-snapshot admin is still present.
-    assert!(user_manager::get_user(&sc.state.db, "admin").await.unwrap().is_some());
+    assert!(user_manager::get_user(&sc.state.db, "admin")
+        .await
+        .unwrap()
+        .is_some());
 }
 
 #[tokio::test]
@@ -295,7 +381,10 @@ async fn test_restore_missing_name() {
         .call("POST", "/api/admin/backup/restore", Some(&json!({})))
         .await;
     assert_eq!(status, StatusCode::UNPROCESSABLE_ENTITY);
-    assert!(body.as_ref().unwrap()["detail"].as_str().unwrap().contains("name"));
+    assert!(body.as_ref().unwrap()["detail"]
+        .as_str()
+        .unwrap()
+        .contains("name"));
 }
 
 #[tokio::test]
@@ -312,7 +401,10 @@ async fn test_restore_unknown_backup() {
         )
         .await;
     assert_eq!(status, StatusCode::BAD_REQUEST);
-    assert!(body.as_ref().unwrap()["detail"].as_str().unwrap().contains("not found"));
+    assert!(body.as_ref().unwrap()["detail"]
+        .as_str()
+        .unwrap()
+        .contains("not found"));
 }
 
 #[tokio::test]
@@ -322,11 +414,20 @@ async fn test_restore_uploaded_archive_chunked() {
     sc.http.login("admin", "admin1234").await;
     sc.handshake().await;
     // Snapshot, then drift.
-    let (_, created) = sc.call("POST", "/api/admin/backup/create", Some(&json!({}))).await;
-    let name = created.as_ref().unwrap()["name"].as_str().unwrap().to_string();
+    let (_, created) = sc
+        .call("POST", "/api/admin/backup/create", Some(&json!({})))
+        .await;
+    let name = created.as_ref().unwrap()["name"]
+        .as_str()
+        .unwrap()
+        .to_string();
     let archive = std::fs::read(backup_path(&sc, &name)).unwrap();
     let (status, _) = sc
-        .call("POST", "/api/admin/people", Some(&json!({ "username": "temp-user" })))
+        .call(
+            "POST",
+            "/api/admin/people",
+            Some(&json!({ "username": "temp-user" })),
+        )
         .await;
     assert_eq!(status, StatusCode::CREATED);
     // Upload the same archive back through the chunked upload flow.
@@ -334,7 +435,10 @@ async fn test_restore_uploaded_archive_chunked() {
         .call("POST", "/api/admin/backup/restore/initiate", None)
         .await;
     assert_eq!(status, StatusCode::OK);
-    let upload_id = initiated.as_ref().unwrap()["upload_id"].as_str().unwrap().to_string();
+    let upload_id = initiated.as_ref().unwrap()["upload_id"]
+        .as_str()
+        .unwrap()
+        .to_string();
     let chunks = split(&archive, 2);
     assert_eq!(chunks.len(), 2);
     for (i, chunk) in chunks.iter().enumerate() {
@@ -363,9 +467,13 @@ async fn test_restore_uploaded_archive_chunked() {
     assert_eq!(status, StatusCode::OK, "{body:?}");
     assert_eq!(body, Some(json!({ "source": "upload", "restored": true })));
     // The restore rolled the drift back again.
-    assert!(user_manager::get_user(&sc.state.db, "temp-user").await.unwrap().is_none());
+    assert!(user_manager::get_user(&sc.state.db, "temp-user")
+        .await
+        .unwrap()
+        .is_none());
     // The temporary upload dir is cleaned up.
-    let upload_dir = std::path::Path::new(&sc.state.settings.backups_path).join(format!("restore_{upload_id}"));
+    let upload_dir =
+        std::path::Path::new(&sc.state.settings.backups_path).join(format!("restore_{upload_id}"));
     assert!(!upload_dir.is_dir());
 }
 
@@ -388,7 +496,10 @@ async fn test_restore_chunk_unknown_session() {
         )
         .await;
     assert_eq!(status, StatusCode::NOT_FOUND);
-    assert!(body.as_ref().unwrap()["detail"].as_str().unwrap().contains("not found"));
+    assert!(body.as_ref().unwrap()["detail"]
+        .as_str()
+        .unwrap()
+        .contains("not found"));
 }
 
 #[tokio::test]
@@ -401,7 +512,10 @@ async fn test_restore_finalize_missing_chunk() {
         .call("POST", "/api/admin/backup/restore/initiate", None)
         .await;
     assert_eq!(status, StatusCode::OK);
-    let upload_id = initiated.as_ref().unwrap()["upload_id"].as_str().unwrap().to_string();
+    let upload_id = initiated.as_ref().unwrap()["upload_id"]
+        .as_str()
+        .unwrap()
+        .to_string();
     // Upload only the first of the two promised chunks.
     let b64 = base64::engine::general_purpose::STANDARD.encode(b"partial");
     let (status, _) = sc
@@ -424,9 +538,13 @@ async fn test_restore_finalize_missing_chunk() {
         )
         .await;
     assert_eq!(status, StatusCode::BAD_REQUEST);
-    assert!(body.as_ref().unwrap()["detail"].as_str().unwrap().contains("Missing chunk 1"));
+    assert!(body.as_ref().unwrap()["detail"]
+        .as_str()
+        .unwrap()
+        .contains("Missing chunk 1"));
     // The half-finished upload dir is cleaned up even on failure.
-    let upload_dir = std::path::Path::new(&sc.state.settings.backups_path).join(format!("restore_{upload_id}"));
+    let upload_dir =
+        std::path::Path::new(&sc.state.settings.backups_path).join(format!("restore_{upload_id}"));
     assert!(!upload_dir.is_dir());
 }
 
@@ -440,7 +558,10 @@ async fn test_restore_rejects_path_traversal_archive() {
         .call("POST", "/api/admin/backup/restore/initiate", None)
         .await;
     assert_eq!(status, StatusCode::OK);
-    let upload_id = initiated.as_ref().unwrap()["upload_id"].as_str().unwrap().to_string();
+    let upload_id = initiated.as_ref().unwrap()["upload_id"]
+        .as_str()
+        .unwrap()
+        .to_string();
     let b64 = base64::engine::general_purpose::STANDARD.encode(malicious_archive());
     let (status, _) = sc
         .call(
@@ -462,7 +583,10 @@ async fn test_restore_rejects_path_traversal_archive() {
         )
         .await;
     assert_eq!(status, StatusCode::BAD_REQUEST);
-    assert!(body.as_ref().unwrap()["detail"].as_str().unwrap().contains("traversal"));
+    assert!(body.as_ref().unwrap()["detail"]
+        .as_str()
+        .unwrap()
+        .contains("traversal"));
     // Nothing was written outside the sandboxed data root.
     let evil = std::path::Path::new(_root.path()).join("evil.txt");
     assert!(!evil.exists());
@@ -479,25 +603,45 @@ async fn test_backup_retention_prunes_old_backups() {
     sc.http.login("admin", "admin1234").await;
     sc.handshake().await;
     // Enable retention (keep only the single newest archive) and rebuild the
-    // router so the handler's state clone sees the new setting.
+    // router so the handler's state clone sees the new setting. `.0`
+    // unwraps the crate's TestClient newtype down to the shared client the
+    // `http` field holds (ANT-853).
     sc.state.settings.backup_retention = 1;
     let cookie = sc.http.auth_cookie.clone();
-    sc.http = common::TestClient::new(sc.state.clone());
+    sc.http = common::TestClient::new(sc.state.clone()).0;
     sc.http.auth_cookie = cookie;
-    let (_, first) = sc.call("POST", "/api/admin/backup/create", Some(&json!({}))).await;
+    let (_, first) = sc
+        .call("POST", "/api/admin/backup/create", Some(&json!({})))
+        .await;
     tokio::time::sleep(std::time::Duration::from_millis(1100)).await;
-    let (_, second) = sc.call("POST", "/api/admin/backup/create", Some(&json!({}))).await;
+    let (_, second) = sc
+        .call("POST", "/api/admin/backup/create", Some(&json!({})))
+        .await;
     tokio::time::sleep(std::time::Duration::from_millis(1100)).await;
-    let (_, third) = sc.call("POST", "/api/admin/backup/create", Some(&json!({}))).await;
-    let first_name = first.as_ref().unwrap()["name"].as_str().unwrap().to_string();
-    let second_name = second.as_ref().unwrap()["name"].as_str().unwrap().to_string();
-    let third_name = third.as_ref().unwrap()["name"].as_str().unwrap().to_string();
+    let (_, third) = sc
+        .call("POST", "/api/admin/backup/create", Some(&json!({})))
+        .await;
+    let first_name = first.as_ref().unwrap()["name"]
+        .as_str()
+        .unwrap()
+        .to_string();
+    let second_name = second.as_ref().unwrap()["name"]
+        .as_str()
+        .unwrap()
+        .to_string();
+    let third_name = third.as_ref().unwrap()["name"]
+        .as_str()
+        .unwrap()
+        .to_string();
     assert!(first_name < second_name && second_name < third_name);
     let (status, listed) = sc.call("GET", "/api/admin/backup", None).await;
     assert_eq!(status, StatusCode::OK);
     // Retention keeps only the single newest archive.
     let arr = listed.as_ref().unwrap().as_array().unwrap();
-    let names: Vec<String> = arr.iter().map(|b| b["name"].as_str().unwrap().to_string()).collect();
+    let names: Vec<String> = arr
+        .iter()
+        .map(|b| b["name"].as_str().unwrap().to_string())
+        .collect();
     assert_eq!(names, vec![third_name.clone()]);
     assert!(backup_path(&sc, &third_name).exists());
     assert!(!backup_path(&sc, &first_name).exists());
@@ -529,7 +673,11 @@ async fn test_backup_archive_is_0600() {
     sc.http.login("admin", "admin1234").await;
     sc.handshake().await;
     let (status, body) = sc
-        .call("POST", "/api/admin/backup/create", Some(&json!({ "include_user_data": false })))
+        .call(
+            "POST",
+            "/api/admin/backup/create",
+            Some(&json!({ "include_user_data": false })),
+        )
         .await;
     assert_eq!(status, StatusCode::CREATED, "{body:?}");
     let name = body.as_ref().unwrap()["name"].as_str().unwrap().to_string();
@@ -549,7 +697,11 @@ async fn test_backup_dump_excludes_auth_tokens() {
     sc.http.login("admin", "admin1234").await;
     sc.handshake().await;
     let (status, body) = sc
-        .call("POST", "/api/admin/backup/create", Some(&json!({ "include_user_data": false })))
+        .call(
+            "POST",
+            "/api/admin/backup/create",
+            Some(&json!({ "include_user_data": false })),
+        )
         .await;
     assert_eq!(status, StatusCode::CREATED, "{body:?}");
     let name = body.as_ref().unwrap()["name"].as_str().unwrap().to_string();
@@ -579,11 +731,10 @@ async fn test_db_dump_restore_preserves_live_auth_tokens() {
     let mut sc = SecureClient::new(build_state(_root.path()).await);
     sc.http.login("admin", "admin1234").await;
     // The login persisted an auth_tokens row.
-    let token_rows =
-        vreckan_core::entities::auth_token::Entity::find()
-            .all(&sc.state.db.conn)
-            .await
-            .unwrap();
+    let token_rows = vreckan_core::entities::auth_token::Entity::find()
+        .all(&sc.state.db.conn)
+        .await
+        .unwrap();
     assert!(!token_rows.is_empty());
     // Round-trip a dump: the new-style dump excludes auth_tokens, and the
     // restore must leave the live token rows untouched.
@@ -602,7 +753,10 @@ async fn test_db_dump_restore_preserves_live_auth_tokens() {
     assert_eq!(after.len(), before);
     assert_eq!(
         after.iter().map(|r| r.token.clone()).collect::<Vec<_>>(),
-        token_rows.iter().map(|r| r.token.clone()).collect::<Vec<_>>()
+        token_rows
+            .iter()
+            .map(|r| r.token.clone())
+            .collect::<Vec<_>>()
     );
     let _ = std::fs::remove_file(&dump_path);
 }
