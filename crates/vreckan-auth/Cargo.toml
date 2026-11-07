@@ -48,6 +48,10 @@ rsa = { workspace = true }
 tokio = { workspace = true }
 tower = { workspace = true }
 uuid = { workspace = true }
+# Privilege-drop helper for the delete_person storage-failure test (a root
+# test process must shed its effective uid to make `remove_dir_all` fail the
+# way a non-owner would hit a read-only storage tree).
+libc = "0.2"
 
 # Opt into the workspace lint table: the clippy baseline is defined once in
 # the root Cargo.toml ([workspace.lints.clippy], ANT-791).

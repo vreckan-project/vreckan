@@ -1182,15 +1182,24 @@ pub async fn delete_person(
             "User or admin '{username}' not found."
         )));
     }
-    let user_storage_path = std::path::Path::new(&settings.storage_path).join(username);
-    if user_storage_path.is_dir() {
-        std::fs::remove_dir_all(&user_storage_path).map_err(|e| {
-            UserError::Validation(format!("Failed to delete storage for '{username}': {e}"))
-        })?;
-        info!("Deleted storage for '{username}'.");
-    }
+    // Delete the DB row before the storage tree (audit finding 12). If the row
+    // delete fails (e.g. a locked database), the account survives with its
+    // files intact and the delete is cleanly retryable. Removing the storage
+    // first would leave a live account with no files the instant the row write
+    // fails — the data would already be destroyed on the retry.
     db_delete_user_row(&db.conn, username).await?;
     info!("Deleted user or admin '{username}'.");
+    // Now drop the storage tree. A failure here is logged but does not fail the
+    // delete: the account no longer exists, and a leftover directory is a
+    // harmless orphan (cleaned up separately), not destroyed user data.
+    let user_storage_path = std::path::Path::new(&settings.storage_path).join(username);
+    if user_storage_path.is_dir() {
+        if let Err(e) = std::fs::remove_dir_all(&user_storage_path) {
+            warn!("Failed to delete storage for '{username}': {e} (account already removed)");
+        } else {
+            info!("Deleted storage for '{username}'.");
+        }
+    }
     Ok(())
 }
 
