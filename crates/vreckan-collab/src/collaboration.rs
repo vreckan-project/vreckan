@@ -222,20 +222,76 @@ async fn collaborative_room(
         };
         let new_viewer_token = vreckan_core::shared::random_token(16);
         let new_username = format!("User-{}", rand::rng().random_range(100..999));
-        if let Some(viewers) = session_data.get_mut("viewers").and_then(|v| v.as_array_mut()) {
-            viewers.push(serde_json::json!({
-                "token": new_viewer_token,
-                "slot": Value::Null,
-                "mk_control": false,
-                "username": new_username,
-                "permission": permission,
-            }));
+        // Add the viewer entry in one sessions write-lock critical section,
+        // re-validating the redeemed token against the live session: two
+        // visitors redeeming the same invite link at once each commit their
+        // own entry instead of the later whole-object write-back clobbering
+        // the earlier one (ANT-887, audit finding 16). The invite-token
+        // migration applied to the first clone above is re-applied to the
+        // live value for the same reason.
+        let committed = {
+            let mut sessions = state.sessions.write().await;
+            let Some(mut live) = sessions.get(&session_id).cloned() else {
+                return (
+                    StatusCode::NOT_FOUND,
+                    "Collaboration room not found.",
+                )
+                    .into_response();
+            };
+            // Migrate before comparing: a legacy session carries the invite
+            // under `viewer_token` until the rename lands, and the first
+            // clone's admission check ran against the migrated value.
+            if live.get("viewer_token").is_some()
+                && live.get("participant_invite_token").is_none()
+            {
+                if let Some(vt) = live.get("viewer_token").cloned() {
+                    live["participant_invite_token"] = vt;
+                    live.as_object_mut().map(|o| o.remove("viewer_token"));
+                }
+            }
+            if live.get("readonly_invite_token").is_none() {
+                live["readonly_invite_token"] =
+                    Value::String(vreckan_core::shared::random_token(16));
+            }
+            let invite_token = if is_new_participant_by_collab {
+                live.get("participant_invite_token").and_then(|v| v.as_str())
+            } else {
+                live.get("readonly_invite_token").and_then(|v| v.as_str())
+            };
+            if opt_tokens_equal(collab_token.as_deref(), invite_token) {
+                if let Some(viewers) = live.get_mut("viewers").and_then(|v| v.as_array_mut()) {
+                    viewers.push(serde_json::json!({
+                        "token": new_viewer_token,
+                        "slot": Value::Null,
+                        "mk_control": false,
+                        "username": new_username,
+                        "permission": permission,
+                    }));
+                }
+                sessions.insert(session_id.clone(), live.clone());
+                Some(live)
+            } else {
+                None
+            }
+        };
+        match committed {
+            // The re-validation raced a session change between the first
+            // read and the lock; treat it like the stale-link case below.
+            None => {
+                return (
+                    StatusCode::FORBIDDEN,
+                    Html("<h1>Invalid or expired collaboration link.</h1>"),
+                )
+                    .into_response();
+            }
+            Some(committed) => {
+                // The write-back already landed and the write lock is
+                // dropped, so the network push no longer spans the
+                // read-modify-write.
+                push_token_table(&state, &session_id, &committed).await;
+                vreckan_core::state::save_sessions(&state).await;
+            }
         }
-        push_token_table(&state, &session_id, &session_data).await;
-        *state.sessions.write().await.entry(session_id.clone()).or_insert(Value::Object(
-            serde_json::Map::new(),
-        )) = session_data.clone();
-        vreckan_core::state::save_sessions(&state).await;
         // Redirect with the new viewer token. The Location carries the
         // visitor's per-visit token, so keep it out of any caching proxy's
         // store, as the share redirect does (ANT-322 F5; ANT-344, item 2).
@@ -871,88 +927,115 @@ async fn handle_assign_slot(
     viewer_token: Option<&str>,
     slot: Option<i64>,
 ) {
-    let Some(mut session_data) = state.sessions.read().await.get(session_id).cloned() else {
-        return;
-    };
-    let controller_token = session_data
-        .get("controller_token")
-        .and_then(|v| v.as_str())
-        .unwrap_or("")
-        .to_string();
-    let viewer_token = viewer_token.unwrap_or("");
+    // Read, mutate, and commit in one sessions write-lock critical section:
+    // a concurrent assignment that lands while the token-table push below is
+    // in flight can no longer be clobbered by a stale whole-object write-back
+    // (ANT-887, audit finding 16). The push, save, and broadcasts run after
+    // the lock is dropped.
+    let (session_data, notifications) = {
+        let mut sessions = state.sessions.write().await;
+        let Some(mut session_data) = sessions.get(session_id).cloned() else {
+            return;
+        };
+        let controller_token = session_data
+            .get("controller_token")
+            .and_then(|v| v.as_str())
+            .unwrap_or("")
+            .to_string();
+        let viewer_token = viewer_token.unwrap_or("");
 
-    let mut target_username = "Unknown".to_string();
-    let mut old_slot_for_target: Option<i64> = None;
+        let mut target_username = "Unknown".to_string();
+        let mut old_slot_for_target: Option<i64> = None;
 
-    let mut notifications: Vec<String> = Vec::new();
+        let mut notifications: Vec<String> = Vec::new();
 
-    if tokens_equal(viewer_token, &controller_token) {
-        target_username = "Controller".to_string();
-        old_slot_for_target = session_data
-            .get("controller_slot")
-            .and_then(|v| v.as_i64());
-    } else if let Some(viewers) = session_data.get_mut("viewers").and_then(|v| v.as_array_mut()) {
-        if let Some(v) = viewers.iter_mut().find(|v| {
-            v.get("token")
-                .and_then(|t| t.as_str())
-                .is_some_and(|t| tokens_equal(t, viewer_token))
-        }) {
-            target_username = v.get("username").and_then(|u| u.as_str()).unwrap_or("Unnamed").to_string();
-            old_slot_for_target = v.get("slot").and_then(|s| s.as_i64());
-        }
-    }
-
-    // Clear the slot from any previous owner.
-    if let Some(slot) = slot {
-        let mut previous_owner_cleared = false;
-        if session_data.get("controller_slot").and_then(|v| v.as_i64()) == Some(slot)
-            && !tokens_equal(&controller_token, viewer_token)
-        {
-            session_data["controller_slot"] = Value::Null;
-            notifications.push(format!("Controller was unassigned from Gamepad {slot}."));
-            previous_owner_cleared = true;
-        }
-        if !previous_owner_cleared {
-            if let Some(viewers) = session_data.get_mut("viewers").and_then(|v| v.as_array_mut()) {
+            if tokens_equal(viewer_token, &controller_token) {
+                target_username = "Controller".to_string();
+                old_slot_for_target = session_data
+                    .get("controller_slot")
+                    .and_then(|v| v.as_i64());
+            } else if let Some(viewers) =
+                session_data.get_mut("viewers").and_then(|v| v.as_array_mut())
+            {
                 if let Some(v) = viewers.iter_mut().find(|v| {
-                    v.get("slot").and_then(|s| s.as_i64()) == Some(slot)
-                        && v.get("token")
-                            .and_then(|t| t.as_str())
-                            .is_none_or(|t| !tokens_equal(t, viewer_token))
+                    v.get("token")
+                        .and_then(|t| t.as_str())
+                        .is_some_and(|t| tokens_equal(t, viewer_token))
                 }) {
-                    v["slot"] = Value::Null;
-                    notifications.push(format!(
-                        "{} was unassigned from Gamepad {slot}.",
-                        v.get("username").and_then(|u| u.as_str()).unwrap_or("Unnamed")
-                    ));
+                    target_username = v
+                        .get("username")
+                        .and_then(|u| u.as_str())
+                        .unwrap_or("Unnamed")
+                        .to_string();
+                    old_slot_for_target = v.get("slot").and_then(|s| s.as_i64());
                 }
             }
-        }
-    }
 
-    // Set the slot on the target.
-    if tokens_equal(viewer_token, &controller_token) {
-        session_data["controller_slot"] = slot.map(Value::from).unwrap_or(Value::Null);
-    } else if let Some(viewers) = session_data.get_mut("viewers").and_then(|v| v.as_array_mut()) {
-        if let Some(v) = viewers.iter_mut().find(|v| {
-            v.get("token")
-                .and_then(|t| t.as_str())
-                .is_some_and(|t| tokens_equal(t, viewer_token))
-        }) {
-            v["slot"] = slot.map(Value::from).unwrap_or(Value::Null);
-        }
-    }
+            // Clear the slot from any previous owner.
+            if let Some(slot) = slot {
+                let mut previous_owner_cleared = false;
+                if session_data.get("controller_slot").and_then(|v| v.as_i64()) == Some(slot)
+                    && !tokens_equal(&controller_token, viewer_token)
+                {
+                    session_data["controller_slot"] = Value::Null;
+                    notifications.push(format!(
+                        "Controller was unassigned from Gamepad {slot}."
+                    ));
+                    previous_owner_cleared = true;
+                }
+                if !previous_owner_cleared {
+                    if let Some(viewers) =
+                        session_data.get_mut("viewers").and_then(|v| v.as_array_mut())
+                    {
+                        if let Some(v) = viewers.iter_mut().find(|v| {
+                            v.get("slot").and_then(|s| s.as_i64()) == Some(slot)
+                                && v.get("token")
+                                    .and_then(|t| t.as_str())
+                                    .is_none_or(|t| !tokens_equal(t, viewer_token))
+                        }) {
+                            v["slot"] = Value::Null;
+                            notifications.push(format!(
+                                "{} was unassigned from Gamepad {slot}.",
+                                v.get("username").and_then(|u| u.as_str()).unwrap_or("Unnamed")
+                            ));
+                        }
+                    }
+                }
+            }
 
-    if let Some(slot) = slot {
-        if old_slot_for_target != Some(slot) {
-            notifications.push(format!("Gamepad {slot} was assigned to {target_username}."));
-        }
-    } else if let Some(old) = old_slot_for_target {
-        notifications.push(format!("{target_username} was unassigned from Gamepad {old}."));
-    }
+            // Set the slot on the target.
+            if tokens_equal(viewer_token, &controller_token) {
+                session_data["controller_slot"] = slot.map(Value::from).unwrap_or(Value::Null);
+            } else if let Some(viewers) =
+                session_data.get_mut("viewers").and_then(|v| v.as_array_mut())
+            {
+                if let Some(v) = viewers.iter_mut().find(|v| {
+                    v.get("token")
+                        .and_then(|t| t.as_str())
+                        .is_some_and(|t| tokens_equal(t, viewer_token))
+                }) {
+                    v["slot"] = slot.map(Value::from).unwrap_or(Value::Null);
+                }
+            }
 
+            if let Some(slot) = slot {
+                if old_slot_for_target != Some(slot) {
+                    notifications.push(format!(
+                        "Gamepad {slot} was assigned to {target_username}."
+                    ));
+                }
+            } else if let Some(old) = old_slot_for_target {
+                notifications.push(format!(
+                    "{target_username} was unassigned from Gamepad {old}."
+                ));
+            }
+
+            sessions.insert(session_id.to_string(), session_data.clone());
+            (session_data, notifications)
+        };
+    // The write-back landed under the write lock above; the network push
+    // runs after the lock is dropped and no longer spans read and write.
     push_token_table(state, session_id, &session_data).await;
-    state.sessions.write().await.insert(session_id.to_string(), session_data);
     vreckan_core::state::save_sessions(state).await;
 
     for msg in notifications {
@@ -973,40 +1056,54 @@ async fn handle_assign_slot(
 /// Assign mouse/keyboard control to a user (or revert to controller). Mirrors
 /// `handle_assign_mk`.
 async fn handle_assign_mk(state: &AppState, session_id: &str, target_token: Option<&str>) {
-    let Some(mut session_data) = state.sessions.read().await.get(session_id).cloned() else {
-        return;
-    };
-    let controller_token = session_data
-        .get("controller_token")
-        .and_then(|v| v.as_str())
-        .unwrap_or("");
-    let mut target_token = target_token.map(|s| s.to_string());
-    if target_token
-        .as_deref()
-        .is_some_and(|t| tokens_equal(t, controller_token))
-    {
-        target_token = None;
-    }
-    let current_owner = session_data.get("mk_owner_token").and_then(|v| v.as_str());
-    if opt_tokens_equal(current_owner, target_token.as_deref()) {
-        return;
-    }
-    session_data["mk_owner_token"] = target_token.clone().map(Value::from).unwrap_or(Value::Null);
+    // Same read-mutate-commit critical section as `handle_assign_slot`
+    // (ANT-887, audit finding 16): the mk transfer commits under the
+    // sessions write lock before the token-table push, so a concurrent
+    // slot/viewer mutation cannot be clobbered by a stale write-back.
+    let (session_data, username) = {
+        let mut sessions = state.sessions.write().await;
+        let Some(mut session_data) = sessions.get(session_id).cloned() else {
+            return;
+        };
+        let controller_token = session_data
+            .get("controller_token")
+            .and_then(|v| v.as_str())
+            .unwrap_or("");
+        let mut target_token = target_token.map(|s| s.to_string());
+        if target_token
+            .as_deref()
+            .is_some_and(|t| tokens_equal(t, controller_token))
+        {
+            target_token = None;
+        }
+        let current_owner = session_data.get("mk_owner_token").and_then(|v| v.as_str());
+        if opt_tokens_equal(current_owner, target_token.as_deref()) {
+            return;
+        }
+        session_data["mk_owner_token"] = target_token.clone().map(Value::from).unwrap_or(Value::Null);
 
-    let mut username = "Controller".to_string();
-    if let Some(tt) = &target_token {
-        if let Some(viewers) = session_data.get("viewers").and_then(|v| v.as_array()) {
-            if let Some(v) = viewers.iter().find(|v| {
-                v.get("token")
-                    .and_then(|t| t.as_str())
-                    .is_some_and(|t| tokens_equal(t, tt))
-            }) {
-                username = v.get("username").and_then(|u| u.as_str()).unwrap_or("User").to_string();
+        let mut username = "Controller".to_string();
+        if let Some(tt) = &target_token {
+            if let Some(viewers) = session_data.get("viewers").and_then(|v| v.as_array()) {
+                if let Some(v) = viewers.iter().find(|v| {
+                    v.get("token")
+                        .and_then(|t| t.as_str())
+                        .is_some_and(|t| tokens_equal(t, tt))
+                }) {
+                    username = v
+                        .get("username")
+                        .and_then(|u| u.as_str())
+                        .unwrap_or("User")
+                        .to_string();
+                }
             }
         }
-    }
+        sessions.insert(session_id.to_string(), session_data.clone());
+        (session_data, username)
+    };
+    // The write-back landed under the write lock above; the network push
+    // runs after the lock is dropped and no longer spans read and write.
     push_token_table(state, session_id, &session_data).await;
-    state.sessions.write().await.insert(session_id.to_string(), session_data);
     vreckan_core::state::save_sessions(state).await;
     let now_ms = (std::time::SystemTime::now()
         .duration_since(std::time::UNIX_EPOCH)
@@ -1552,73 +1649,74 @@ async fn cleanup_disconnect(
             short_token(token)
         );
         // Release slots / MK / designated speaker for the disconnected viewer.
-        let mut sessions = state.sessions.write().await;
-        let mut state_changed = false;
-        let mut input_released = false;
-        if let Some(s) = sessions.get_mut(session_id) {
-            if s.get("designated_speaker")
-                .and_then(|v| v.as_str())
-                .is_some_and(|t| tokens_equal(t, token))
-            {
-                s["designated_speaker"] = Value::Null;
-                state_changed = true;
-            }
-            // Read the MK ownership before mutably borrowing the viewers list.
-            let mk_is_owner = s
-                .get("mk_owner_token")
-                .and_then(|v| v.as_str())
-                .is_some_and(|t| tokens_equal(t, token));
-            let mut slot_to_release: Option<i64> = None;
-            let mut viewer_uname = "A user".to_string();
-            if let Some(viewers) = s.get_mut("viewers").and_then(|v| v.as_array_mut()) {
-                if let Some(v) = viewers.iter_mut().find(|v| {
-                    v.get("token")
-                        .and_then(|t| t.as_str())
-                        .is_some_and(|t| tokens_equal(t, token))
-                }) {
-                    viewer_uname = v
-                        .get("username")
-                        .and_then(|u| u.as_str())
-                        .unwrap_or("A user")
-                        .to_string();
-                    if let Some(slot) = v.get("slot").and_then(|sl| sl.as_i64()) {
-                        v["slot"] = Value::Null;
-                        state_changed = true;
-                        input_released = true;
-                        slot_to_release = Some(slot);
+        // The write guard is dropped before the broadcasts, save_sessions,
+        // the re-read, and the token push: tokio locks are not reentrant, so
+        // holding it across those awaits would deadlock the session map
+        // (ANT-887, audit finding 16 family).
+        let (state_changed, input_released, broadcasts) = {
+            let mut sessions = state.sessions.write().await;
+            let mut state_changed = false;
+            let mut input_released = false;
+            let mut broadcasts: Vec<Value> = Vec::new();
+            if let Some(s) = sessions.get_mut(session_id) {
+                if s.get("designated_speaker")
+                    .and_then(|v| v.as_str())
+                    .is_some_and(|t| tokens_equal(t, token))
+                {
+                    s["designated_speaker"] = Value::Null;
+                    state_changed = true;
+                }
+                // Read the MK ownership before mutably borrowing the viewers list.
+                let mk_is_owner = s
+                    .get("mk_owner_token")
+                    .and_then(|v| v.as_str())
+                    .is_some_and(|t| tokens_equal(t, token));
+                let mut slot_to_release: Option<i64> = None;
+                let mut viewer_uname = "A user".to_string();
+                if let Some(viewers) = s.get_mut("viewers").and_then(|v| v.as_array_mut()) {
+                    if let Some(v) = viewers.iter_mut().find(|v| {
+                        v.get("token")
+                            .and_then(|t| t.as_str())
+                            .is_some_and(|t| tokens_equal(t, token))
+                    }) {
+                        viewer_uname = v
+                            .get("username")
+                            .and_then(|u| u.as_str())
+                            .unwrap_or("A user")
+                            .to_string();
+                        if let Some(slot) = v.get("slot").and_then(|sl| sl.as_i64()) {
+                            v["slot"] = Value::Null;
+                            state_changed = true;
+                            input_released = true;
+                            slot_to_release = Some(slot);
+                        }
                     }
                 }
-            }
-            if mk_is_owner {
-                s["mk_owner_token"] = Value::Null;
-                state_changed = true;
-                input_released = true;
-            }
-            // Broadcast after the mutable borrow of `s` has ended.
-            if let Some(slot) = slot_to_release {
-                broadcast_to_room(
-                    state,
-                    session_id,
-                    &serde_json::json!({
+                if mk_is_owner {
+                    s["mk_owner_token"] = Value::Null;
+                    state_changed = true;
+                    input_released = true;
+                }
+                // Defer the broadcasts until the write guard is dropped.
+                if let Some(slot) = slot_to_release {
+                    broadcasts.push(serde_json::json!({
                         "type": "gamepad_change",
                         "message": format!("{viewer_uname} disconnected and was unassigned from Gamepad {slot}."),
                         "timestamp": now_ms,
-                    }),
-                )
-                .await;
-            }
-            if mk_is_owner {
-                broadcast_to_room(
-                    state,
-                    session_id,
-                    &serde_json::json!({
+                    }));
+                }
+                if mk_is_owner {
+                    broadcasts.push(serde_json::json!({
                         "type": "mk_change",
                         "message": format!("{viewer_uname} disconnected. MK control reverted to Controller."),
                         "timestamp": now_ms,
-                    }),
-                )
-                .await;
+                    }));
+                }
             }
+            (state_changed, input_released, broadcasts)
+        };
+        for msg in broadcasts {
+            broadcast_to_room(state, session_id, &msg).await;
         }
         if state_changed {
             vreckan_core::state::save_sessions(state).await;
@@ -1655,4 +1753,403 @@ pub fn room_router() -> Router<AppState> {
         .route("/room/translation.js", get(get_translation_js))
         .route("/room/{session_id}", get(collaborative_room))
         .route("/ws/room/{session_id}", get(room_websocket))
+}
+
+// ---------------------------------------------------------------------------
+// Tests (ANT-887, audit finding 16): the slot/MK/viewer mutations must
+// commit under the sessions write lock so concurrent control actions cannot
+// clobber each other across the token-table push await.
+// ---------------------------------------------------------------------------
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use std::sync::{Arc, Mutex};
+
+    use axum::body::Body;
+    use axum::http::Request;
+    use tower::ServiceExt;
+    use vreckan_core::settings::Settings;
+
+    const SESSION_ID: &str = "ant887-room";
+    /// The fake container's token endpoint holds each request this long
+    /// before answering — a compressed version of the production ~1–2 s
+    /// push, long enough that concurrently running handlers genuinely
+    /// interleave across the await.
+    const PUSH_DELAY_MS: u64 = 300;
+
+    /// A loopback stand-in for the app container's selkies token endpoint:
+    /// it records every accepted table and delays its 200 by
+    /// `PUSH_DELAY_MS`. Connections are handled one at a time, so the
+    /// recorded order is the order the pushes went out.
+    async fn spawn_delayed_token_endpoint() -> (String, u16, Arc<Mutex<Vec<Value>>>) {
+        let tables: Arc<Mutex<Vec<Value>>> = Arc::new(Mutex::new(Vec::new()));
+        let recorded = tables.clone();
+        let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let addr = listener.local_addr().unwrap();
+        tokio::spawn(async move {
+            loop {
+                let (socket, _) = match listener.accept().await {
+                    Ok(v) => v,
+                    Err(_) => break,
+                };
+                let recorded = recorded.clone();
+                tokio::spawn(async move {
+                    use tokio::io::{AsyncReadExt, AsyncWriteExt};
+                    let mut stream = tokio::net::TcpStream::from_std(socket.into_std().unwrap()).unwrap();
+                    let mut buf = [0u8; 65536];
+                    let mut n = 0usize;
+                    let mut want = 0usize;
+                    loop {
+                        if n >= want && want > 0 {
+                            break;
+                        }
+                        match stream.read(&mut buf[n..]).await {
+                            Ok(0) => break,
+                            Ok(k) => {
+                                n += k;
+                                if want == 0 {
+                                    let raw = String::from_utf8_lossy(&buf[..n]).to_string();
+                                    if let Some(head_end) = raw.find("\r\n\r\n") {
+                                        let head = &raw[..head_end];
+                                        let len = head
+                                            .lines()
+                                            .find_map(|l| {
+                                                l.to_ascii_lowercase()
+                                                    .strip_prefix("content-length:")
+                                                    .and_then(|v| v.trim().parse::<usize>().ok())
+                                            })
+                                            .unwrap_or(0);
+                                        want = head_end + 4 + len;
+                                        if want <= n {
+                                            break;
+                                        }
+                                    }
+                                }
+                            }
+                            Err(_) => break,
+                        }
+                    }
+                    let raw = String::from_utf8_lossy(&buf[..n]).to_string();
+                    let head_end = raw.find("\r\n\r\n").unwrap_or(0);
+                    let body = &raw[head_end + 4..];
+                    tokio::time::sleep(std::time::Duration::from_millis(PUSH_DELAY_MS)).await;
+                    if let Ok(table) = serde_json::from_slice::<Value>(body.as_bytes()) {
+                        recorded.lock().unwrap().push(table);
+                    }
+                    let resp = b"HTTP/1.1 200 OK\r\nContent-Length: 2\r\n\r\nok";
+                    let _ = stream.write_all(resp).await;
+                    let _ = stream.shutdown().await;
+                });
+            }
+        });
+        (addr.ip().to_string(), addr.port(), tables)
+    }
+
+    /// A throwaway SQLite-backed `AppState` (removed on drop).
+    struct TestState {
+        state: AppState,
+        dir: std::path::PathBuf,
+    }
+
+    impl TestState {
+        async fn new() -> Self {
+            // Unit tests run with the CWD at the crate directory, so point
+            // the static dir at the checkout root's web client (the same
+            // override the per-crate integration harnesses use, ANT-810);
+            // the room page renders `collaboration/room.html` from there.
+            static STATIC_DIR_SET: std::sync::OnceLock<()> = std::sync::OnceLock::new();
+            STATIC_DIR_SET.get_or_init(|| {
+                if std::env::var_os("VRECKAN_STATIC_DIR").is_none() {
+                    std::env::set_var(
+                        "VRECKAN_STATIC_DIR",
+                        std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
+                            .join("..")
+                            .join("..")
+                            .join("server/static"),
+                    );
+                }
+            });
+            let dir = std::env::temp_dir().join(format!(
+                "vreckan-collab-test-{}-{}",
+                std::process::id(),
+                uuid::Uuid::new_v4()
+            ));
+            std::fs::create_dir_all(&dir).unwrap();
+            let db = vreckan_core::db::connect(&format!(
+                "sqlite://{}?mode=rwc",
+                dir.join("test.db").display()
+            ))
+            .await
+            .unwrap();
+            db.init().await.unwrap();
+            Self {
+                state: AppState::new(Settings::from_env(), db),
+                dir,
+            }
+        }
+    }
+
+    impl Drop for TestState {
+        fn drop(&mut self) {
+            let _ = std::fs::remove_dir_all(&self.dir);
+        }
+    }
+
+    /// A collab room session pointed at the fake container endpoint, with
+    /// two viewers and no slots/MK assigned yet.
+    fn collab_session(ip: &str, port: u16) -> Value {
+        serde_json::json!({
+            "instance_id": "ctr-ant887",
+            "ip": ip,
+            "port": port,
+            "created_at": 1.0,
+            "access_token": "access-ant887",
+            "is_collaboration": true,
+            "username": "admin",
+            "master_token": "master-ant887",
+            "controller_token": "ctrl-ant887",
+            "participant_invite_token": "invite-ant887",
+            "readonly_invite_token": "readonly-ant887",
+            "controller_slot": Value::Null,
+            "mk_owner_token": Value::Null,
+            "viewers": [
+                { "token": "alice", "slot": Value::Null, "mk_control": false,
+                  "username": "alice", "permission": "participant" },
+                { "token": "bob", "slot": Value::Null, "mk_control": false,
+                  "username": "bob", "permission": "participant" },
+            ],
+            "container_registry": {},
+        })
+    }
+
+    fn viewer_slot(session: &Value, token: &str) -> Value {
+        session
+            .get("viewers")
+            .and_then(|v| v.as_array())
+            .and_then(|arr| {
+                arr.iter()
+                    .find(|v| v.get("token").and_then(|t| t.as_str()) == Some(token))
+            })
+            .and_then(|v| v.get("slot"))
+            .cloned()
+            .unwrap_or(Value::Null)
+    }
+
+    /// Finding 16's core scenario: the controller assigns gamepad 2 to alice
+    /// and gamepad 3 to bob back-to-back. Under the old read-clone / push /
+    /// write-back shape the second write clobbers the first; with the
+    /// commit under the sessions write lock both land.
+    #[tokio::test(flavor = "multi_thread", worker_threads = 4)]
+    async fn concurrent_slot_assignments_do_not_clobber_each_other() {
+        let (ip, port, tables) = spawn_delayed_token_endpoint().await;
+        let ts = TestState::new().await;
+        let state = ts.state.clone();
+        state
+            .sessions
+            .write()
+            .await
+            .insert(SESSION_ID.to_string(), collab_session(&ip, port));
+
+        let s1 = state.clone();
+        let a = tokio::spawn(async move {
+            handle_assign_slot(&s1, SESSION_ID, Some("alice"), Some(2)).await;
+        });
+        let s2 = state.clone();
+        let b = tokio::spawn(async move {
+            handle_assign_slot(&s2, SESSION_ID, Some("bob"), Some(3)).await;
+        });
+        // A timeout here means the handler deadlocked on the sessions lock.
+        let (ra, rb) = tokio::join!(
+            tokio::time::timeout(std::time::Duration::from_secs(10), a),
+            tokio::time::timeout(std::time::Duration::from_secs(10), b)
+        );
+        ra.unwrap().unwrap();
+        rb.unwrap().unwrap();
+
+        let session = state.sessions.read().await.get(SESSION_ID).cloned().unwrap();
+        assert_eq!(
+            viewer_slot(&session, "alice"),
+            serde_json::json!(2),
+            "alice's assignment must not be clobbered by the concurrent bob assignment: {session:?}"
+        );
+        assert_eq!(viewer_slot(&session, "bob"), serde_json::json!(3), "bob's assignment: {session:?}");
+
+        // The container keeps the last table it was pushed; the lock
+        // serializes the commits, so the later push (bob's) was built from
+        // a read that already includes alice's assignment.
+        let captured = tables.lock().unwrap();
+        assert_eq!(captured.len(), 2, "each assignment pushed a table");
+        let last = captured.last().unwrap();
+        assert_eq!(
+            last.get("alice").and_then(|v| v.get("slot")),
+            Some(&serde_json::json!(2)),
+            "last pushed table keeps alice's slot: {last:?}"
+        );
+        assert_eq!(
+            last.get("bob").and_then(|v| v.get("slot")),
+            Some(&serde_json::json!(3)),
+            "last pushed table keeps bob's slot: {last:?}"
+        );
+    }
+
+    /// A slot assignment and an MK transfer racing each other: under the old
+    /// shape whichever write-back landed last rewrote the whole session and
+    /// dropped the other's change.
+    #[tokio::test(flavor = "multi_thread", worker_threads = 4)]
+    async fn concurrent_slot_and_mk_assignments_do_not_clobber_each_other() {
+        let (ip, port, _tables) = spawn_delayed_token_endpoint().await;
+        let ts = TestState::new().await;
+        let state = ts.state.clone();
+        state
+            .sessions
+            .write()
+            .await
+            .insert(SESSION_ID.to_string(), collab_session(&ip, port));
+
+        let s1 = state.clone();
+        let a = tokio::spawn(async move {
+            handle_assign_slot(&s1, SESSION_ID, Some("alice"), Some(2)).await;
+        });
+        let s2 = state.clone();
+        let b = tokio::spawn(async move {
+            handle_assign_mk(&s2, SESSION_ID, Some("bob")).await;
+        });
+        // A timeout here means the handler deadlocked on the sessions lock.
+        let (ra, rb) = tokio::join!(
+            tokio::time::timeout(std::time::Duration::from_secs(10), a),
+            tokio::time::timeout(std::time::Duration::from_secs(10), b)
+        );
+        ra.unwrap().unwrap();
+        rb.unwrap().unwrap();
+
+        let session = state.sessions.read().await.get(SESSION_ID).cloned().unwrap();
+        assert_eq!(
+            viewer_slot(&session, "alice"),
+            serde_json::json!(2),
+            "the slot assignment must survive the concurrent MK transfer: {session:?}"
+        );
+        assert_eq!(
+            session.get("mk_owner_token").and_then(|v| v.as_str()),
+            Some("bob"),
+            "the MK transfer must survive the concurrent slot assignment: {session:?}"
+        );
+    }
+
+    /// Finding 16's second case: two visitors redeeming the same participant
+    /// link at once must both get a viewer entry (the old write-back dropped
+    /// one, 401-ing that visitor's token on reload).
+    #[tokio::test(flavor = "multi_thread", worker_threads = 4)]
+    async fn concurrent_new_viewer_redemptions_both_land() {
+        let (ip, port, _tables) = spawn_delayed_token_endpoint().await;
+        let ts = TestState::new().await;
+        let state = ts.state.clone();
+        state
+            .sessions
+            .write()
+            .await
+            .insert(SESSION_ID.to_string(), collab_session(&ip, port));
+
+        let router = room_router().with_state(state.clone());
+        let make_req = |router: Router| {
+            let req = Request::builder()
+                .uri(format!("/room/{SESSION_ID}?token=invite-ant887"))
+                .body(Body::empty())
+                .unwrap();
+            router.clone().oneshot(req)
+        };
+        let (r1, r2) = tokio::join!(
+            tokio::time::timeout(std::time::Duration::from_secs(10), make_req(router.clone())),
+            tokio::time::timeout(std::time::Duration::from_secs(10), make_req(router))
+        );
+        let resp1 = r1.unwrap().unwrap();
+        let resp2 = r2.unwrap().unwrap();
+        assert_eq!(resp1.status(), StatusCode::SEE_OTHER, "visitor 1: {:?}", resp1);
+        assert_eq!(resp2.status(), StatusCode::SEE_OTHER, "visitor 2: {:?}", resp2);
+
+        let token_from = |resp: &axum::response::Response| {
+            let loc = resp
+                .headers()
+                .get(axum::http::header::LOCATION)
+                .unwrap()
+                .to_str()
+                .unwrap();
+            loc.split("token=")
+                .nth(1)
+                .unwrap()
+                .trim()
+                .to_string()
+        };
+        let t1 = token_from(&resp1);
+        let t2 = token_from(&resp2);
+        assert!(!t1.is_empty() && !t2.is_empty(), "both redirects carry a token");
+        assert_ne!(t1, t2, "each redemption mints its own viewer token");
+
+        let session = state.sessions.read().await.get(SESSION_ID).cloned().unwrap();
+        let viewers = session.get("viewers").and_then(|v| v.as_array()).unwrap();
+        // The two seeded viewers plus exactly one entry per redemption.
+        assert_eq!(viewers.len(), 4, "both viewer entries landed: {session:?}");
+        for t in [&t1, &t2] {
+            let entry = viewers
+                .iter()
+                .find(|v| v.get("token").and_then(|x| x.as_str()) == Some(t))
+                .unwrap_or_else(|| panic!("viewer entry for {t} missing: {session:?}"));
+            assert_eq!(entry["permission"], "participant");
+        }
+        // Neither redemption clobbered the other's (or the seeded) entries.
+        assert!(
+            viewers
+                .iter()
+                .any(|v| v.get("token").and_then(|x| x.as_str()) == Some("alice"))
+                && viewers
+                    .iter()
+                    .any(|v| v.get("token").and_then(|x| x.as_str()) == Some("bob")),
+            "seeded viewers survive: {session:?}"
+        );
+    }
+
+    /// The adjacent same-family defect (ANT-887): `cleanup_disconnect`
+    /// released a viewer's slot/MK and then called `save_sessions` and
+    /// re-read the session map while still holding the sessions WRITE guard —
+    /// tokio locks are not reentrant, so a viewer holding a slot or MK that
+    /// disconnects deadlocked the session map. The guard must be dropped
+    /// before any await that re-locks it.
+    #[tokio::test]
+    async fn viewer_disconnect_releasing_slot_does_not_deadlock() {
+        let (ip, port, _tables) = spawn_delayed_token_endpoint().await;
+        let ts = TestState::new().await;
+        let state = ts.state.clone();
+        let mut session = collab_session(&ip, port);
+        // alice holds gamepad 2 and the MK.
+        if let Some(viewers) = session.get_mut("viewers").and_then(|v| v.as_array_mut()) {
+            if let Some(v) = viewers.iter_mut().find(|v| v["token"] == "alice") {
+                v["slot"] = serde_json::json!(2);
+            }
+        }
+        session["mk_owner_token"] = Value::String("alice".to_string());
+        state.sessions.write().await.insert(SESSION_ID.to_string(), session);
+
+        let s1 = state.clone();
+        let handle = tokio::spawn(async move {
+            cleanup_disconnect(&s1, SESSION_ID, "alice", "alice", false, "pub-ant887").await;
+        });
+        let outcome = tokio::time::timeout(std::time::Duration::from_secs(10), handle).await;
+        outcome
+            .unwrap()
+            .unwrap();
+
+        let session = state.sessions.read().await.get(SESSION_ID).cloned().unwrap();
+        assert_eq!(
+            viewer_slot(&session, "alice"),
+            Value::Null,
+            "the disconnected viewer's slot is released: {session:?}"
+        );
+        assert!(
+            session
+                .get("mk_owner_token")
+                .map(|v| v.is_null())
+                .unwrap_or(true),
+            "MK reverts to the controller: {session:?}"
+        );
+    }
 }
