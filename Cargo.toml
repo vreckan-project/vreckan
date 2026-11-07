@@ -34,7 +34,7 @@ license = "MPL-2.0"
 # HTTP server + routing
 axum = { version = "0.8", features = ["macros", "query", "json", "multipart", "ws", "http2", "form"] }
 axum-extra = { version = "0.12", features = ["cookie"] }
-axum-server = { version = "0.8", features = ["tls-rustls"] }
+axum-server = { version = "0.9", features = ["tls-rustls"] }
 axum-reverse-proxy = "2.4"
 tokio = { version = "1", features = ["full"] }
 hyper = { version = "1", features = ["full"] }
