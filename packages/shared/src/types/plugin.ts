@@ -731,6 +731,12 @@ export interface PaperclipPluginManifestV1 {
   };
   /** Durable, acknowledged resource events delivered to onResourceLifecycle. Requires events.subscribe. */
   resourceLifecycle?: Array<"agent" | "project" | "agent_runtime">;
+  /**
+   * Takes part in the host's company-wide in-flight run cap: the host calls
+   * the plugin's `onSchedulingGate` hook at claim time. Requires the
+   * `scheduling.gate` capability.
+   */
+  schedulingGate?: true;
   /** Opt into the native pooled-connection catalog, setup, and management UI. */
   aiConnectionRouter?: { name: string; description: string };
   /** Entrypoint paths relative to the package root. */

@@ -1642,6 +1642,11 @@ export type {
 export { WORKSPACE_READINESS_STATES, WORKSPACE_SOURCE_VERIFICATION_REASONS,
   type WorkspaceSourceVerificationFailure, type WorkspaceSourceInspection } from "./types/index.js";
 export {
+  COMPANY_SCHEDULING_DEFAULTS,
+  COMPANY_SCHEDULING_MAX_INFLIGHT_CAP,
+  type CompanySchedulingConfig,
+} from "./types/index.js";
+export {
   COMPANY_SEARCH_EXTRACT_KINDS,
   COMPANY_SEARCH_EXTRACT_SCOPES,
   COMPANY_SEARCH_SCOPES,

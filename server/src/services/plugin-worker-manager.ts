@@ -863,6 +863,13 @@ export interface PluginWorkerManager {
   getWorker(pluginId: string): PluginWorkerHandle | undefined;
 
   /**
+   * Snapshot of every registered worker handle. Used by call sites that
+   * need to fan a host→worker method out to all plugins that advertise it
+   * (e.g. the scheduling gate's `schedulingGate` consultation).
+   */
+  listWorkers(): PluginWorkerHandle[];
+
+  /**
    * Check if a worker is registered and running for a plugin.
    */
   isRunning(pluginId: string): boolean;
@@ -4190,6 +4197,10 @@ export function createPluginWorkerManager(
     },
     async drainStartup(contextId: string) {
       await Promise.all([...startupWorkers()].map(worker => worker.drainStartup?.(contextId)));
+    },
+
+    listWorkers(): PluginWorkerHandle[] {
+      return [...workers.values()];
     },
 
     isRunning(pluginId: string): boolean {
