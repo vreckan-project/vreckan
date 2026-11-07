@@ -578,6 +578,91 @@ describe.skipIf(!support.supported)("scheduling gate", () => {
       expect(gate.inFlightCount(company.id) + gate.reservedCount(company.id)).toBeLessThanOrEqual(4);
     });
 
+    it("holds the cap under staggered re-entry (reservations survive the pass finally until the start site)", async () => {
+      // Regression for ANT-903's major finding: the pass finally used to
+      // release every claimed run's reservation as a microtask BEFORE the
+      // fire-and-forget executions reached their start sites (executeRun
+      // suspends at getSchedulingSuppression and further awaits first), so a
+      // second pass landing in that gap double-booked the freed slots.
+      gate.bind(db);
+      const company = await fixtureCompany("Stagger Co");
+      await gate.setConfig(company.id, { maxInFlight: 4 });
+      const agentA = await fixtureAgent(company.id, "Stagger agent A");
+      const agentB = await fixtureAgent(company.id, "Stagger agent B");
+      const agentC = await fixtureAgent(company.id, "Stagger agent C");
+      // Two seeded in-flight runs under a third agent: agents A and B keep
+      // their full per-agent capacity (2) while the company starts with 2 of
+      // 4 slots used.
+      for (let i = 0; i < 2; i += 1) {
+        const { run } = await fixtureQueuedRun(company.id, agentC, `Seeded ${i}`);
+        await db.update(heartbeatRuns).set({ status: "running", startedAt: new Date() }).where(eq(heartbeatRuns.id, run.id));
+        gate.onExecutionStarted(run.id, company.id);
+      }
+      expect(gate.inFlightCount(company.id)).toBe(2);
+      const fixtureA1 = await fixtureQueuedRun(company.id, agentA, "A queued 1");
+      const fixtureA2 = await fixtureQueuedRun(company.id, agentA, "A queued 2");
+      await fixtureQueuedRun(company.id, agentB, "B queued 1");
+      await fixtureQueuedRun(company.id, agentB, "B queued 2");
+
+      const samples: number[] = [];
+      const invariant = () => {
+        const total = gate.inFlightCount(company.id) + gate.reservedCount(company.id);
+        samples.push(total);
+        expect(total).toBeLessThanOrEqual(4);
+      };
+      const callbacks = gateCallbacks(db, {
+        executeRun: vi.fn(async (runId: string) => {
+          const [run] = await db.select().from(heartbeatRuns).where(eq(heartbeatRuns.id, runId));
+          if (!run) return;
+          // Delayed start site: mirrors the real pre-start awaits that land
+          // after the claim pass's finally has already run.
+          await new Promise((resolve) => setTimeout(resolve, 40));
+          gate.onExecutionStarted(runId, run.companyId);
+          invariant();
+        }),
+      });
+      const queue = createHeartbeatQueue(db, callbacks);
+
+      // Pass A claims both remaining slots with delayed starts.
+      const claimedA = await queue.startNextQueuedRunForAgent(agentA.id);
+      expect(claimedA.length).toBe(2);
+      invariant();
+      // The fix: A's claimed runs keep their reservations after the pass
+      // finally (which releases only the unclaimed remainder, here 0). The
+      // old code released them here, leaving 2 phantom-free slots.
+      expect(gate.reservedCount(company.id)).toBe(2);
+
+      // Pass B lands in the staggered gap: A's runs are claimed but not yet
+      // started. The held reservations leave no room, so B claims nothing.
+      const claimedB = await queue.startNextQueuedRunForAgent(agentB.id);
+      expect(claimedB.length).toBe(0);
+      invariant();
+      expect(gate.reservedCount(company.id)).toBe(2);
+
+      // A's runs reach their delayed start sites (conversion, not release).
+      await drainExecutions(callbacks);
+      invariant();
+      expect(gate.inFlightCount(company.id)).toBe(4);
+      expect(gate.reservedCount(company.id)).toBe(0);
+
+      // A's runs finish; the slots free for B's queued runs on the next pass.
+      for (const runId of [fixtureA1.run.id, fixtureA2.run.id]) {
+        await db.update(heartbeatRuns).set({ status: "succeeded", finishedAt: new Date() }).where(eq(heartbeatRuns.id, runId));
+        gate.onExecutionFinished(runId);
+      }
+      invariant();
+      expect(gate.inFlightCount(company.id)).toBe(2);
+      const claimedBSecond = await queue.startNextQueuedRunForAgent(agentB.id);
+      expect(claimedBSecond.length).toBe(2);
+      invariant();
+      await drainExecutions(callbacks);
+      invariant();
+      // Sampled at the start sites and on every pass exit: the invariant
+      // never broke, including the staggered gap the old code overshot to 6.
+      expect(samples.length).toBeGreaterThan(0);
+      expect(Math.max(...samples)).toBeLessThanOrEqual(4);
+    });
+
     it("enabled false reproduces today's per-agent-only claim behavior", async () => {
       gate.bind(db);
       const company = await fixtureCompany("Legacy Co");
