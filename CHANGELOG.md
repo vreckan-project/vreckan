@@ -9,7 +9,7 @@ is committed normally in `vreckan`. The changelog is the authoritative
 record of what shipped in each release — see
 [`docs/release.md`](./docs/release.md) for the conventions.
 
-## 2026-11-07 — v0.11.5: base-image bump — zlib1g security refresh clears the PR scan gate (ANT-932)
+## 2026-11-07 — v0.11.5: base-image bump + runtime zlib1g refresh — clears the PR scan gate (ANT-932)
 
 - **The build base advanced to the 2026-11-07 8:16 AM MST re-bake**
   (`vreckan-base-build` `sha256:1c676e219b49…` → `sha256:a38d1cd2258e…`;
@@ -27,15 +27,31 @@ record of what shipped in each release — see
   `deb13u1`, the pinned Rust toolchain unchanged at 1.99.1, and the bake's
   rustup-component and mold end-to-end smoke checks green.
 
+- **The runtime stage now carries the patched `zlib1g` explicitly.** The
+  Trivy step of the `VRECKAN: Scan (Rust)` check scans the *final* image —
+  the digest-pinned `debian:trixie-slim` runtime stage — not the
+  `vreckan-base-build` build stage, so the base advance alone could not clear
+  the gate (run 885 on this branch stayed Scan-red for exactly that reason,
+  while PR #167's identical runtime fix went green in run 882). The runtime
+  `apt-get install` now lists `zlib1g` explicitly, so every rebuild resolves
+  `1:1.3.dfsg+really1.3.1-1+deb13u1` from the trixie-security repo at build
+  time. This is the same hunk Bobby landed on PR #167 (commit `b50f693`,
+  verified locally with trivy v0.76: 0 HIGH/CRITICAL findings), folded into
+  this release so the approved PR passes its own scan gate.
+
 - **Operator-visible effect:** since ~5:05 AM MST on 2026-11-07, the Trivy
   step of the `VRECKAN: Scan (Rust)` check was red on every vreckan PR (and on
   the main-branch CI dispatches) because of those two HIGH `zlib1g`
   advisories, and the `main-protection` ruleset made every open PR
-  unmergeable. This base advance clears the gate: any PR branch synced onto
-  this commit rebuilds on the fixed base and the check goes green again.
+  unmergeable. Both stages now carry the fix — the build base via the
+  re-bake, the runtime via the explicit install — so any PR branch synced
+  onto this commit rebuilds green and the check goes back to passing.
 
-- No source changes since v0.11.4 — a base-bump-only release in the
-  established pattern (v0.10.1, v0.10.2, v0.10.5, v0.10.7, v0.11.1, v0.11.3).
+- No other source changes since v0.11.4 — a base-bump-plus-one-Dockerfile-line
+  release in the established pattern (v0.10.1, v0.10.2, v0.10.5, v0.10.7,
+  v0.11.1, v0.11.3). Once this merges, the zlib hunk in PR #167 becomes
+  redundant and the branch re-cuts to 0.11.6 under the whichever-merges-first
+  rule.
 
 ## 2026-11-07 — v0.11.4: base-image bump + bounded memory on the anonymous/proxy paths (audit findings 15 & 18)
 
