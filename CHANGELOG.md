@@ -9,7 +9,7 @@ is committed normally in `vreckan`. The changelog is the authoritative
 record of what shipped in each release — see
 [`docs/release.md`](./docs/release.md) for the conventions.
 
-## 2026-11-07 — v0.11.5: base-image bump + runtime zlib1g refresh — clears the PR scan gate (ANT-932)
+## 2026-11-07 — v0.11.6: base-image bump + runtime zlib1g refresh — clears the PR scan gate (ANT-932)
 
 - **The build base advanced to the 2026-11-07 8:16 AM MST re-bake**
   (`vreckan-base-build` `sha256:1c676e219b49…` → `sha256:a38d1cd2258e…`;
@@ -47,11 +47,14 @@ record of what shipped in each release — see
   re-bake, the runtime via the explicit install — so any PR branch synced
   onto this commit rebuilds green and the check goes back to passing.
 
-- No other source changes since v0.11.4 — a base-bump-plus-one-Dockerfile-line
+- No other source changes since v0.11.5 — a base-bump-plus-one-Dockerfile-line
   release in the established pattern (v0.10.1, v0.10.2, v0.10.5, v0.10.7,
-  v0.11.1, v0.11.3). Once this merges, the zlib hunk in PR #167 becomes
-  redundant and the branch re-cuts to 0.11.6 under the whichever-merges-first
-  rule.
+  v0.11.1, v0.11.3, v0.11.4). PR #167 landed first as v0.11.5 (merged
+  11:52 AM MST, tag + GitHub Release cut by bump-and-tag), which is where the
+  runtime `zlib1g` hunk already lives in main; under the
+  whichever-merges-first rule this branch therefore re-cuts from 0.11.5 to
+  0.11.6 so the base advance ships under its own tag.
+
 ## 2026-11-07 — v0.11.5: dependency consolidation — lock 592 → 581, websocket stack compiles once, shared test-support crate
 
 - **The lockfile drops 12 packages and gains 1 (592 → 581)** (ANT-849).
