@@ -1,4 +1,4 @@
-import type { InteractionResolverGovernance } from "@paperclipai/shared";
+import type { CompanySchedulingConfig, InteractionResolverGovernance } from "@paperclipai/shared";
 import { numeric, pgTable, uuid, text, integer, timestamp, boolean, jsonb, uniqueIndex } from "drizzle-orm/pg-core";
 
 export const companies = pgTable(
@@ -21,6 +21,10 @@ export const companies = pgTable(
       .default(false),
     interactionResolverGovernance: jsonb("interaction_resolver_governance")
       .$type<InteractionResolverGovernance>()
+      .notNull()
+      .default({}),
+    scheduling: jsonb("scheduling")
+      .$type<CompanySchedulingConfig>()
       .notNull()
       .default({}),
     feedbackDataSharingEnabled: boolean("feedback_data_sharing_enabled")

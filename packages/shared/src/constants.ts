@@ -1410,6 +1410,8 @@ export const PLUGIN_CAPABILITIES = [
   "secrets.read-ref",
   "environment.drivers.register",
   "local.folders",
+  // Run scheduling: the plugin may voice on the host's global in-flight cap.
+  "scheduling.gate",
   // Agent Tools
   "agent.tools.register",
   // UI

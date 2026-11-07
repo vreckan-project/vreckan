@@ -114,6 +114,7 @@ import type {
   PluginDuplexChannelWriteParams,
   PluginDuplexChannelStopParams,
   PluginDuplexChannelCloseParams,
+  PluginSchedulingGateParams,
   PluginInvocationContext,
   WorkerToHostMethodName,
   WorkerToHostMethods,
@@ -1748,6 +1749,10 @@ export function startWorkerRpcHost(options: WorkerRpcHostOptions): WorkerRpcHost
       case "duplexChannelClose":
         return handleDuplexChannelClose(params as PluginDuplexChannelCloseParams);
 
+      case "schedulingGate":
+        if (!plugin.definition.onSchedulingGate) throw methodNotImplemented("schedulingGate");
+        return plugin.definition.onSchedulingGate(params as PluginSchedulingGateParams);
+
       default:
         throw Object.assign(
           new Error(`Unknown method: ${method}`),
@@ -1814,6 +1819,7 @@ export function startWorkerRpcHost(options: WorkerRpcHostOptions): WorkerRpcHost
     if (plugin.definition.onDuplexChannelWrite) supportedMethods.push("duplexChannelWrite");
     if (plugin.definition.onDuplexChannelStop) supportedMethods.push("duplexChannelStop");
     if (plugin.definition.onDuplexChannelClose) supportedMethods.push("duplexChannelClose");
+    if (plugin.definition.onSchedulingGate) supportedMethods.push("schedulingGate");
 
     return { ok: true, supportedMethods };
   }

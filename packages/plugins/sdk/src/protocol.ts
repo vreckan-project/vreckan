@@ -1321,6 +1321,48 @@ export const DUPLEX_CHANNEL_DATA_NOTIFICATION = "duplexChannel.data";
 /** The worker→host notification method for one duplex channel exit. */
 export const DUPLEX_CHANNEL_EXIT_NOTIFICATION = "duplexChannel.exit";
 
+/** The run summary the host passes to a `schedulingGate` consultation. */
+export interface PluginSchedulingGateRun {
+  runId: string;
+  agentId: string;
+  companyId: string;
+  status: string;
+  issueId: string | null;
+  invocationSource: string | null;
+  triggerDetail: string | null;
+  createdAt: string;
+}
+
+/** The host→worker `schedulingGate` consultation parameters. */
+export interface PluginSchedulingGateParams {
+  /** The company whose runs are being scheduled. */
+  companyId: string;
+  /** The agent whose next queued run is up for a slot. */
+  agentId: string;
+  /** The top-priority queued run being considered. */
+  run: PluginSchedulingGateRun;
+  /**
+   * Host-computed slots remaining under the company's in-flight cap for this
+   * company at this moment. A `slots` result may only decrease this number.
+   * Finite when the gate is enabled, `Number.POSITIVE_INFINITY` when disabled.
+   */
+  hostSlotsRemaining: number;
+}
+
+/** The `schedulingGate` consultation result. */
+export interface PluginSchedulingGateResult {
+  /**
+   * Slots the plugin wants granted for this claim pass. May only decrease
+   * `hostSlotsRemaining`; values above it are clamped by the host. Omit to
+   * leave the host count standing.
+   */
+  slots?: number;
+  /** True to defer this claim entirely; the run stays queued for a later pass. */
+  defer?: boolean;
+  /** Human-readable policy rationale for logs and the status view. */
+  reason?: string;
+}
+
 /**
  * Map of host→worker RPC method names to their `[params, result]` types.
  *
@@ -1465,6 +1507,16 @@ export interface HostToWorkerMethods {
     params: PluginDuplexChannelCloseParams,
     result: PluginDuplexChannelCloseResult,
   ];
+  /**
+   * Consult the plugin at the host's company-wide in-flight run cap, once per
+   * claim pass. Fail-open: the host treats timeouts, errors, and absence as
+   * "no opinion". Requires the `scheduling.gate` capability.
+   * @see PLUGIN_SPEC.md §13.11
+   */
+  schedulingGate: [
+    params: PluginSchedulingGateParams,
+    result: PluginSchedulingGateResult,
+  ];
 }
 
 /** Union of all host→worker method names. */
@@ -1520,6 +1572,7 @@ export const HOST_TO_WORKER_OPTIONAL_METHODS: readonly HostToWorkerMethodName[] 
   "duplexChannelWrite",
   "duplexChannelStop",
   "duplexChannelClose",
+  "schedulingGate",
 ] as const;
 
 // ---------------------------------------------------------------------------

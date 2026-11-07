@@ -689,6 +689,12 @@ export interface PaperclipPluginManifestV1 {
   capabilities: PluginCapability[];
   /** Required participant in agent preparation, stop, resume, and cleanup. */
   agentLifecycle?: true;
+  /**
+   * Takes part in the host's company-wide in-flight run cap: the host calls
+   * the plugin's `onSchedulingGate` hook at claim time. Requires the
+   * `scheduling.gate` capability.
+   */
+  schedulingGate?: true;
   /** Opt into the native pooled-connection catalog, setup, and management UI. */
   aiConnectionRouter?: { name: string; description: string };
   /** Entrypoint paths relative to the package root. */

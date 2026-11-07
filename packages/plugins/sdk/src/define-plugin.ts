@@ -99,6 +99,8 @@ import type {
   PluginDuplexChannelStopParams,
   PluginDuplexChannelCloseParams,
   PluginDuplexChannelCloseResult,
+  PluginSchedulingGateParams,
+  PluginSchedulingGateResult,
 } from "./protocol.js";
 
 // ---------------------------------------------------------------------------
@@ -538,6 +540,22 @@ export interface PluginDefinition {
   onDuplexChannelClose?(
     params: PluginDuplexChannelCloseParams,
   ): Promise<PluginDuplexChannelCloseResult>;
+
+  /**
+   * Called at the host's company-wide in-flight run cap, once per claim pass,
+   * when the agent's next queued run is up for a slot. The plugin may return
+   * a tighter `slots` count (may only decrease `hostSlotsRemaining`), ask the
+   * host to `defer` the claim, or return an empty object to leave the host
+   * count standing. The host is fail-open: a timeout, error, or missing
+   * result never blocks or corrupts scheduling, and a plugin that does not
+   * define this hook is invisible to the gate. Requires the
+   * `scheduling.gate` capability (advertise the method by defining the hook).
+   *
+   * @see PLUGIN_SPEC.md §13.11 — `schedulingGate`
+   */
+  onSchedulingGate?(
+    params: PluginSchedulingGateParams,
+  ): Promise<PluginSchedulingGateResult>;
 }
 
 // ---------------------------------------------------------------------------

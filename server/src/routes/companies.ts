@@ -49,6 +49,7 @@ import {
   writeImportTransferPart,
 } from "../services/company-import-transfers.js";
 import { companyTransferRunService } from "../services/company-transfer-runs.js";
+import { schedulingGate, validateSchedulingConfigPatch } from "../services/heartbeat/scheduling-gate.js";
 import { agentInstructionsBundleMode } from "../services/agent-instructions.js";
 import { resolvePortableExportAgentSelection } from "../services/company-portability-agent-selection.js";
 import {
@@ -1342,6 +1343,55 @@ export function companyRoutes(db: Db, storage?: StorageService, options?: Compan
       details: body,
     });
     res.json(company);
+  });
+
+  router.get("/:companyId/scheduling", async (req, res) => {
+    const companyId = req.params.companyId as string;
+    assertBoard(req);
+    const company = await svc.getById(companyId);
+    if (!company) {
+      res.status(404).json({ error: "Company not found" });
+      return;
+    }
+    res.json(await schedulingGate.status(companyId));
+  });
+
+  router.patch("/:companyId/scheduling", async (req, res) => {
+    const companyId = req.params.companyId as string;
+    assertBoard(req);
+    const company = await svc.getById(companyId);
+    if (!company) {
+      res.status(404).json({ error: "Company not found" });
+      return;
+    }
+    let patch;
+    try {
+      patch = validateSchedulingConfigPatch(req.body);
+    } catch (err) {
+      res.status(400).json({ error: err instanceof Error ? err.message : "Invalid scheduling config" });
+      return;
+    }
+    let updated;
+    try {
+      updated = await schedulingGate.setConfig(companyId, patch);
+    } catch (err) {
+      res.status(500).json({ error: err instanceof Error ? err.message : "Failed to update scheduling config" });
+      return;
+    }
+    const actor = getActorInfo(req);
+    await logActivity(db, {
+      companyId,
+      actorType: actor.actorType,
+      actorId: actor.actorId,
+      agentId: actor.agentId,
+      runId: actor.runId,
+      agentApiKeyId: actor.agentApiKeyId,
+      action: "company.scheduling_updated",
+      entityType: "company",
+      entityId: companyId,
+      details: { patch, scheduling: updated },
+    });
+    res.json(await schedulingGate.status(companyId));
   });
 
   router.post("/:companyId/archive", async (req, res) => {

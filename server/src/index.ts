@@ -93,6 +93,7 @@ import {
   toolAccessService,
   workspaceOperationService,
 } from "./services/index.js";
+import { schedulingGate } from "./services/heartbeat/scheduling-gate.js";
 import { questionResponseDeliveryService } from "./services/question-response-delivery.js";
 import { deliverNativeQuestionResponse } from "./services/native-runtime/native-question-bridge.js";
 import { queueIssueAssignmentWakeup } from "./services/issue-assignment-wakeup.js";
@@ -1004,6 +1005,19 @@ async function startServerWithDatabaseTeardown(
   });
 
   setStartupRecoveryPhase("recovering");
+  // Seed the scheduling gate from the durable run table before any claim
+  // pass can run, so runs re-adopted by restart recovery — which bypass the
+  // execution add/remove mirror sites — are counted and the global in-flight
+  // cap holds across a restart. A seed failure is fail-open: the counters
+  // stay empty and the mirror counts everything started after this point.
+  try {
+    await schedulingGate.seedFromDatabase();
+  } catch (err) {
+    logger.error(
+      { err },
+      "scheduling gate startup seed failed; the gate fails open to an empty counter",
+    );
+  }
   // Bind the shared HTTP/PRP listener before native startup recovery. A
   // runnerd process that survived a controller crash is already reconnecting
   // to this address; delaying listen until after orphan reconciliation makes
