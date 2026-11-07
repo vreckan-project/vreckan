@@ -3493,9 +3493,16 @@ pub async fn recreate_session(
     state: &AppState,
     session_id: &str,
 ) -> Result<Value, (StatusCode, String)> {
-    let mut sessions = state.sessions.write().await;
-    let Some(session_data) = sessions.get_mut(session_id) else {
-        return Err((StatusCode::NOT_FOUND, "Session not found.".to_string()));
+    // Finding 18: clone the session under a read lock, drop the lock, do the
+    // container work, then re-read/merge under a write lock. This avoids
+    // holding the sessions write lock across Docker stop + relaunch (which
+    // can take a minute or more when it pulls an image), unblocking all
+    // concurrent readers (collab rooms, session listings, room-WS messages).
+    let mut session_data = match state.sessions.read().await.get(session_id).cloned() {
+        Some(v) => v,
+        None => {
+            return Err((StatusCode::NOT_FOUND, "Session not found.".to_string()));
+        }
     };
     let registry = session_data
         .get("container_registry")
@@ -3656,6 +3663,18 @@ pub async fn recreate_session(
         }
     }
     if !primary_restored {
+        // Best-effort: mark the session as failed so the UI reflects that the
+        // recreate did not complete (the old container is already stopped).
+        {
+            let mut sessions = state.sessions.write().await;
+            if let Some(current) = sessions.get_mut(session_id) {
+                current["ready"] = serde_json::json!(false);
+                current["launch_failed"] = serde_json::json!(true);
+                current["launch_error"] =
+                    serde_json::json!("Could not recreate the session's primary container.");
+            }
+        }
+        save_sessions(state).await;
         return Err((
             StatusCode::INTERNAL_SERVER_ERROR,
             "Could not recreate the session's primary container.".to_string(),
@@ -3675,8 +3694,34 @@ pub async fn recreate_session(
             }
         }
     }
-    let updated = session_data.clone();
-    drop(sessions);
+    // Re-read/merge under the write lock (finding 18): other code may have
+    // modified the session while we were doing container work. We merge only
+    // the fields we changed, preserving any concurrent updates to other fields
+    // (e.g. collab slot/viewer assignments).
+    let updated = {
+        let mut sessions = state.sessions.write().await;
+        if let Some(current) = sessions.get_mut(session_id) {
+            current["ready"] = session_data["ready"].clone();
+            current["launch_failed"] = session_data["launch_failed"].clone();
+            current["launch_error"] = session_data["launch_error"].clone();
+            if let Some(reg) = session_data.get("container_registry") {
+                current["container_registry"] = reg.clone();
+            }
+            if primary_restored {
+                current["instance_id"] = session_data["instance_id"].clone();
+                current["ip"] = session_data["ip"].clone();
+                current["port"] = session_data["port"].clone();
+            }
+            if let Some(digest) = session_data.get("launch_image_digest") {
+                if !digest.is_null() {
+                    current["launch_image_digest"] = digest.clone();
+                }
+            }
+            current.clone()
+        } else {
+            session_data.clone()
+        }
+    };
     save_sessions(state).await;
 
     // ANT-654: run the readiness wait + capability probe in the background
