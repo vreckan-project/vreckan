@@ -450,8 +450,12 @@ custom-format dump (`pg_dump -Fc`) of the vreckan database as a dated file
 server (§4): `VRECKAN_DATABASE_URL` (postgres:// URL, wins over the
 discrete vars), or `VRECKAN_DB_BACKEND` / `VRECKAN_DB_HOST` /
 `VRECKAN_DB_PORT` / `VRECKAN_DB_USER` / `VRECKAN_DB_PASS` /
-`VRECKAN_DB_NAME`. Run it with the same environment the server uses — for
-a compose deployment, source the same `.env` first:
+`VRECKAN_DB_NAME`. The `restore` command additionally probes for a running
+server via `VRECKAN_SERVER_CONTAINER` (default: `vreckan-http`) and/or
+`VRECKAN_HEALTH_URL` (the server's `GET /api/health`) and refuses while
+one is detectably up (`--force` overrides). Run it with the same
+environment the server uses — for a compose deployment, source the same
+`.env` first:
 
 ```bash
 set -a; . ./.env; set +a
@@ -483,10 +487,14 @@ scripts/backup-postgres.sh backup      # write a dated dump, rotate to the
                                         # retention count
 scripts/backup-postgres.sh list        # stored dumps, newest first
 scripts/backup-postgres.sh restore vreckan-postgres-YYYYmmdd-HHMMSS.dump
-#   FILE is a path, or a name inside VRECKAN_BACKUP_DIR. Stop the vreckan
-#   server first (it re-syncs the schema on startup). The default
-#   --clean --if-exists drops and recreates the dumped objects;
-#   --no-clean restores over the existing schema.
+#   FILE is a path, or a name inside VRECKAN_BACKUP_DIR. The script checks
+#   for a running vreckan server (the `vreckan-http` container, or
+#   VRECKAN_SERVER_CONTAINER / VRECKAN_HEALTH_URL) and refuses while one is
+#   up — with --clean, pg_restore drops and recreates tables the live server
+#   is writing to, leaving a half-restored database (ANT-888). Stop the
+#   server (it re-syncs the schema on startup), or pass --force to restore
+#   anyway. The default --clean --if-exists drops and recreates the dumped
+#   objects; --no-clean restores over the existing schema.
 ```
 
 **Scheduling.** Cron (daily at 03:17):
@@ -525,9 +533,13 @@ WantedBy=timers.target
 archive it restores to *any* Postgres 11+ cluster: point
 `VRECKAN_DATABASE_URL` at the new cluster and run
 `scripts/backup-postgres.sh restore FILE` (or use `pg_restore` directly).
-For full disaster recovery, restore into a fresh (dropped/recreated)
-database and then start the server — the startup schema-sync reconciles
-the rest.
+The running-server check (§4.2 usage) sees the *local* `vreckan-http`
+container; when restoring into a remote or fresh cluster while a local
+server still runs, pass `--force` (or set `VRECKAN_SERVER_CONTAINER=`
+empty / `VRECKAN_HEALTH_URL` at the target) so the check reflects the
+target, not the source host. For full disaster recovery, restore into a
+fresh (dropped/recreated) database and then start the server — the
+startup schema-sync reconciles the rest.
 
 **Full cutover procedure:** the end-to-end runbook for a running deployment —
 pre-cutover snapshot, stopping the legacy service, the dry-run and real

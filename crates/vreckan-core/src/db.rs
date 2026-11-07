@@ -259,6 +259,15 @@ impl Db {
     /// The format is `{"version": 1, "tables": {"users": [ {...}, ... ], ...}}`
     /// which lets the same backup be restored onto SQLite, Postgres, or MySQL.
     ///
+    /// Every table is read inside one transaction, so the archive is a single
+    /// point-in-time snapshot: a concurrent multi-table write (e.g. a
+    /// `save_sessions` rewrite racing the dump) cannot split across the
+    /// tables and leave the archive holding a combination of rows that never
+    /// coexisted (audit finding 17). Postgres pins the transaction to
+    /// REPEATABLE READ because its default READ COMMITTED takes a fresh
+    /// snapshot per statement; SQLite read snapshots already span the
+    /// transaction, and MySQL's InnoDB default is already REPEATABLE READ.
+    ///
     /// The `auth_tokens` table is excluded: its rows are live session tokens
     /// held as the plaintext primary key, and active tokens are intentionally
     /// not part of a backup (a restore leaves in-flight sessions untouched).
@@ -271,13 +280,24 @@ impl Db {
     /// DNS/OIDC provider credentials in plaintext (ANT-273).
     pub async fn dump(&self, dest_path: &str) -> Result<(), sea_orm::DbErr> {
         let backend = self.conn.get_database_backend();
+        let txn = self.conn.begin().await?;
+        // Must be the first statement of the transaction (Postgres rule); the
+        // level resets to the session default at commit/rollback, so the
+        // pooled connection carries no state into the next user.
+        if backend == DbBackend::Postgres {
+            txn
+                .execute_raw(Statement::from_string(
+                    backend,
+                    "SET TRANSACTION ISOLATION LEVEL REPEATABLE READ",
+                ))
+                .await?;
+        }
         let mut tables = serde_json::Map::new();
         for table in TABLE_ORDER {
             if table == "auth_tokens" {
                 continue;
             }
-            let rows = self
-                .conn
+            let rows = txn
                 .query_all_raw(Statement::from_string(backend, format!("SELECT * FROM {table}")))
                 .await?;
             let mut out = Vec::new();
@@ -304,6 +324,9 @@ impl Db {
             }
             tables.insert(table.to_string(), serde_json::Value::Array(out));
         }
+        // Commit before writing the file so a failed dump leaves no file
+        // behind and the snapshot transaction is released either way.
+        txn.commit().await?;
         let data = serde_json::json!({ "version": 1, "tables": tables });
         std::fs::write(dest_path, data.to_string())
             .map_err(|e| sea_orm::DbErr::Custom(e.to_string()))?;
@@ -645,6 +668,112 @@ mod tests {
                 assert_eq!(mode_of(p), 0o600, "{} must land 0600", p.display());
             }
         }
+        std::fs::remove_dir_all(&dir).ok();
+    }
+
+    /// Audit finding 17: a dump taken while a multi-table write is in flight
+    /// must hold a single point-in-time snapshot, not a mix of per-statement
+    /// reads. A writer toggles two tables atomically (the same cycle number
+    /// in both); every dump must show the same cycle in both tables.
+    #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+    async fn dump_is_a_single_point_in_time_snapshot() {
+        use std::sync::atomic::{AtomicBool, Ordering};
+        use std::sync::Arc;
+
+        let dir = tmp_dir("dump-snapshot");
+        let db = connect(&format!(
+            "sqlite://{}?mode=rwc",
+            dir.join("snap.db").display()
+        ))
+        .await
+        .unwrap();
+        db.init().await.unwrap();
+        let backend = db.conn.get_database_backend();
+        db.conn
+            .execute_raw(Statement::from_string(
+                backend,
+                "INSERT INTO app_settings (key, value) VALUES ('dump_marker_a', 'v0')",
+            ))
+            .await
+            .unwrap();
+        db.conn
+            .execute_raw(Statement::from_string(
+                backend,
+                "INSERT INTO installed_apps (id, data) VALUES ('dump_marker', '{\"n\": 0}')",
+            ))
+            .await
+            .unwrap();
+
+        let stop = Arc::new(AtomicBool::new(false));
+        let stop_writer = stop.clone();
+        let db_writer = db.clone();
+        let writer = tokio::spawn(async move {
+            let backend = db_writer.conn.get_database_backend();
+            let mut n = 0u64;
+            while !stop_writer.load(Ordering::Relaxed) {
+                n += 1;
+                let txn = db_writer.conn.begin().await.unwrap();
+                txn.execute_raw(Statement::from_string(
+                    backend,
+                    &format!(
+                        "UPDATE app_settings SET value = 'v{n}' WHERE key = 'dump_marker_a'"
+                    ),
+                ))
+                .await
+                .unwrap();
+                txn.execute_raw(Statement::from_string(
+                    backend,
+                    &format!(
+                        "INSERT OR REPLACE INTO installed_apps (id, data) VALUES ('dump_marker', '{{\"n\": {n}}}') "
+                    ),
+                ))
+                .await
+                .unwrap();
+                txn.commit().await.unwrap();
+                tokio::time::sleep(Duration::from_millis(1)).await;
+            }
+            n
+        });
+
+        for i in 0..30 {
+            let path = dir.join(format!("dump_{i}.json"));
+            db.dump(path.to_str().unwrap()).await.unwrap();
+            let data: serde_json::Value =
+                serde_json::from_str(&std::fs::read_to_string(&path).unwrap()).unwrap();
+            // The app_settings marker holds the cycle as "v<n>".
+            let app_cycle = data["tables"]["app_settings"]
+                .as_array()
+                .unwrap()
+                .iter()
+                .find(|r| r["key"] == "dump_marker_a")
+                .and_then(|r| r["value"].as_str())
+                .unwrap()
+                .trim_start_matches('v')
+                .parse::<u64>()
+                .unwrap();
+            // The installed_apps marker holds the same cycle in its JSON
+            // `data` column; extract_cell re-parses JSON-looking strings, so
+            // accept both a parsed object and a raw string.
+            let marker = data["tables"]["installed_apps"]
+                .as_array()
+                .unwrap()
+                .iter()
+                .find(|r| r["id"] == "dump_marker")
+                .cloned()
+                .expect("installed_apps marker row missing from dump");
+            let marker_cycle = marker["data"]["n"].as_u64().unwrap_or_else(|| {
+                serde_json::from_str::<serde_json::Value>(marker["data"].as_str().unwrap())
+                    .unwrap()["n"]
+                    .as_u64()
+                    .unwrap()
+            });
+            assert_eq!(
+                app_cycle, marker_cycle,
+                "dump {i} straddles a writer cycle (app_settings v{app_cycle} vs installed_apps n{marker_cycle})"
+            );
+        }
+        stop.store(true, Ordering::Relaxed);
+        writer.await.unwrap();
         std::fs::remove_dir_all(&dir).ok();
     }
 }

@@ -312,6 +312,57 @@ pub fn resolve_backup(settings: &vreckan_core::settings::Settings, name: &str) -
     Ok(path)
 }
 
+/// How old a `.restore_tmp_*.tar.gz` must be before the cleanup below treats
+/// it as stranded. An in-flight concurrent upload restore writes its temp
+/// file moments before its own cleanup pass, so anything younger than this
+/// is assumed live (a restore takes seconds, never an hour).
+const STALE_RESTORE_TMP_MAX_AGE: std::time::Duration = std::time::Duration::from_secs(60 * 60);
+
+/// Remove restore temp state left behind by an interrupted restore (or a
+/// backup that crashed right after writing its dump), so the next restore
+/// re-applies only the state of the archive it restores (audit finding 17):
+/// a `db_dump.json` stranded in the data root by a crashed restore would
+/// otherwise be silently re-restored on the next restore whose archive
+/// carries no dump of its own, and a crashed upload restore strands a
+/// `.restore_tmp_*.tar.gz` in the backups dir that accumulates until it
+/// fills the disk.
+fn clear_stale_restore_state(settings: &vreckan_core::settings::Settings) {
+    let dump_path = data_root(settings).join(DB_DUMP_ARCNAME);
+    if dump_path.exists() {
+        match std::fs::remove_file(&dump_path) {
+            Ok(()) => warn!(
+                "Backup restore: removed stale {DB_DUMP_ARCNAME} left by an interrupted restore"
+            ),
+            Err(e) => warn!("Backup restore: could not remove stale {DB_DUMP_ARCNAME}: {e}"),
+        }
+    }
+    let backup_dir = get_backup_dir(settings);
+    let Ok(entries) = std::fs::read_dir(&backup_dir) else {
+        return;
+    };
+    for entry in entries.flatten() {
+        let name = entry.file_name().to_string_lossy().to_string();
+        if !name.starts_with(".restore_tmp_") || !name.ends_with(".tar.gz") {
+            continue;
+        }
+        let age_ok = entry
+            .metadata()
+            .and_then(|m| m.modified())
+            .and_then(|t| t.elapsed().map_err(std::io::Error::other))
+            .map(|age| age > STALE_RESTORE_TMP_MAX_AGE)
+            .unwrap_or(true); // unstatable file: treat as stale
+        if !age_ok {
+            continue;
+        }
+        match std::fs::remove_file(entry.path()) {
+            Ok(()) => warn!("Backup restore: removed stale upload temp file {name}"),
+            Err(e) => {
+                warn!("Backup restore: could not remove stale upload temp file {name}: {e}")
+            }
+        }
+    }
+}
+
 /// Return (raw_chunk_bytes, is_last) for the given backup and chunk index.
 /// Mirrors `get_backup_chunk`.
 pub fn get_backup_chunk(
@@ -382,18 +433,24 @@ fn validate_archive<R: Read>(archive: &mut Archive<R>, root: &Path) -> Result<()
 }
 
 /// Safely extract an archive over the data root. Mirrors `_safe_extract`.
+///
+/// The archive is streamed straight from disk in two passes (validate, then
+/// extract on a fresh decoder, since the reader is consumed by validation)
+/// instead of being read into memory and cloned: a multi-GB backup would
+/// otherwise keep two full compressed copies resident (audit finding 17).
+/// Memory stays bounded by the largest single archive member.
 fn safe_extract(archive_path: &Path, root: &Path) -> Result<(), BackupError> {
     std::fs::create_dir_all(root).ok();
-    let raw = std::fs::read(archive_path)
-        .map_err(|e| BackupError(format!("Could not read archive: {e}")))?;
-    // Validate first (on one decoder), then extract (on a fresh decoder, since
-    // the cursor is consumed by validation).
-    let mut gz = GzDecoder::new(std::io::Cursor::new(raw.clone()));
+    let file = std::fs::File::open(archive_path)
+        .map_err(|e| BackupError(format!("Could not open archive: {e}")))?;
+    let mut gz = GzDecoder::new(file);
     let mut archive = Archive::new(&mut gz);
     validate_archive(&mut archive, root)?;
-    let mut gz2 = GzDecoder::new(std::io::Cursor::new(raw));
-    let mut archive2 = Archive::new(&mut gz2);
-    archive2
+    let file = std::fs::File::open(archive_path)
+        .map_err(|e| BackupError(format!("Could not open archive: {e}")))?;
+    let mut gz = GzDecoder::new(file);
+    let mut archive = Archive::new(&mut gz);
+    archive
         .unpack(root)
         .map_err(|e| BackupError(format!("Refusing to extract unsafe archive: {e}")))?;
     Ok(())
@@ -427,6 +484,7 @@ async fn reload_state(state: &AppState) {
 /// Restore from a stored backup archive. Mirrors `restore_from_stored`.
 pub async fn restore_from_stored(state: &AppState, name: &str) -> Result<Value, BackupError> {
     let path = resolve_backup(&state.settings, name)?;
+    clear_stale_restore_state(&state.settings);
     let root = data_root(&state.settings);
     safe_extract(&path, &root)?;
     reload_state(state).await;
@@ -440,6 +498,7 @@ pub async fn restore_from_bytes(state: &AppState, data: &[u8]) -> Result<Value, 
         return Err(BackupError("Empty archive.".into()));
     }
     let backup_dir = get_backup_dir(&state.settings);
+    clear_stale_restore_state(&state.settings);
     let tmp = backup_dir.join(format!(".restore_tmp_{}.tar.gz", vreckan_core::shared::random_uuid()));
     std::fs::write(&tmp, data).map_err(|e| BackupError(format!("Could not write temp: {e}")))?;
     let result = (|| -> Result<Value, BackupError> {
