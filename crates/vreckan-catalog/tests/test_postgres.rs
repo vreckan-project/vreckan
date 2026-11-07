@@ -113,6 +113,17 @@ fn pg_marker_dir() -> std::path::PathBuf {
     dir
 }
 
+/// Container name for the throwaway postgres fixture: `ant-test-pg-<pid>`,
+/// where `<pid>` is the pid of the owning test process. The `ant-*` prefix
+/// keeps it out of the B2 adjective_noun naming-pass detector, and the
+/// embedded pid is the attribution evidence the routine GC (ANT-892)
+/// consumes — a named pid that is no longer alive marks an orphaned
+/// container to reclaim, which is the residual evidence for a SIGKILLed run
+/// that no trap can catch (ANT-901).
+fn container_name() -> String {
+    format!("ant-test-pg-{}", std::process::id())
+}
+
 /// Record the spun-up container (and its anonymous volume) in a per-PID
 /// marker file so a killed test process can be swept on the next run
 /// (ANT-378). The hostname identifies the container that created the marker;
@@ -244,7 +255,18 @@ async fn sweep_stale_pg_markers(client: &bollard::Docker, dir: &std::path::Path)
                             )
                             .await;
                     }
-                    let _ = client.remove_container(container_id, None).await;
+                    // `-v`: reclaim the container's anonymous volume too, so a
+                    // sweep never orphans the data dir (ANT-901). The marker's
+                    // volume list below is a redundant belt-and-suspenders pass.
+                    let _ = client
+                        .remove_container(
+                            container_id,
+                            Some(bollard::query_parameters::RemoveContainerOptions {
+                                v: true,
+                                ..Default::default()
+                            }),
+                        )
+                        .await;
                 }
                 Err(_) => {
                     // Container already gone; drop its volume + marker below.
@@ -295,8 +317,43 @@ async fn spin_up_postgres(marker_dir: &std::path::Path) -> (String, bollard::Doc
         host_config: Some(host_config),
         ..Default::default()
     };
+    // Name the container `ant-test-pg-<pid>` (this test process's pid). A
+    // hard-killed run then leaves attributable residue: the routine GC
+    // (ANT-892) reaps a label-less `ant-test-pg-*` container whose pid is no
+    // longer alive, and the `ant-*` prefix keeps it out of the B2
+    // adjective_noun naming-pass detector (ANT-901).
+    let name = container_name();
+    // A reused pid can leave a stale same-named container from an earlier
+    // run; remove it (with its volume) so the named create below does not
+    // 409 on "name is already in use".
+    if client.inspect_container(&name, None).await.is_ok() {
+        let _ = client
+            .stop_container(
+                &name,
+                Some(bollard::query_parameters::StopContainerOptions {
+                    signal: None,
+                    t: Some(2),
+                }),
+            )
+            .await;
+        let _ = client
+            .remove_container(
+                &name,
+                Some(bollard::query_parameters::RemoveContainerOptions {
+                    v: true,
+                    ..Default::default()
+                }),
+            )
+            .await;
+    }
     let cid = client
-        .create_container(None, body)
+        .create_container(
+            Some(bollard::query_parameters::CreateContainerOptions {
+                name: Some(name),
+                ..Default::default()
+            }),
+            body,
+        )
         .await
         .expect("create postgres container")
         .id;
@@ -405,7 +462,15 @@ async fn pg_server() -> &'static PgServer {
             }
         }
     };
+    let spun_up = !server.container_id.is_empty();
     PG.set(server).ok();
+    // Install the teardown hooks (atexit + INT/TERM trap) now that `PG` is
+    // readable, so the teardown finds the container (ANT-901). Only the
+    // spin-up branch creates a container; the URL/skip branches leave
+    // `container_id` empty (the atexit hook no-ops) or return early.
+    if spun_up {
+        install_pg_teardown_hooks();
+    }
     PG.get().unwrap()
 }
 
@@ -415,64 +480,223 @@ fn pg_ready(s: &PgServer) -> bool {
     !s.url.is_empty()
 }
 
-/// Best-effort teardown of a spun-up container.
+/// Stop the spun-up container and remove it WITH its anonymous volume
+/// (`docker rm -v`), then drop this process's marker file. Shared by the
+/// normal-exit `Drop` guard and the INT/TERM trap so both reclaim the volume
+/// (ANT-901). The marker is removed only when the container was actually
+/// removed — otherwise the next run's sweep, or the routine GC, collects the
+/// leftover.
+async fn teardown_pg_container(
+    client: &bollard::Docker,
+    cid: &str,
+    marker_dir: &std::path::Path,
+) -> Result<(), bollard::errors::Error> {
+    // Graceful stop first. `force: true` on the remove below is the backstop:
+    // on the INT/TERM path the test threads are still driving this container,
+    // so a bare `stop` may not finish inside its timeout and a non-forced
+    // remove would fail on a still-stopping container (`docker rm -fv` never
+    // does) (ANT-901).
+    let _ = client
+        .stop_container(
+            cid,
+            Some(bollard::query_parameters::StopContainerOptions {
+                signal: None,
+                t: Some(5),
+            }),
+        )
+        .await;
+    client
+        .remove_container(
+            cid,
+            Some(bollard::query_parameters::RemoveContainerOptions {
+                v: true,
+                force: true,
+                ..Default::default()
+            }),
+        )
+        .await?;
+    remove_pg_marker(marker_dir);
+    Ok(())
+}
+
+/// Teardown idempotency guard: the normal-exit `atexit` hook and the INT/TERM
+/// trap can both fire for the same process, but the container + volume is
+/// `true` once any teardown path (the INT/TERM trap or the `atexit` hook) has
+/// started reclaiming the container, so a second path does not double-remove
+/// it. Distinct from `PG_TEARDOWN_JOINED`, which is only set after the
+/// container was *actually* removed (ANT-901).
+static PG_TEARDOWN_REQUESTED: std::sync::atomic::AtomicBool =
+    std::sync::atomic::AtomicBool::new(false);
+
+/// Set to `true` only after the container was actually removed (and its
+/// marker dropped). The `atexit` hook uses this to decide whether it must
+/// itself complete the teardown — critical on the INT/TERM path, where the
+/// test harness's own `std::process::exit` can run before the trap's teardown
+/// thread finishes its `remove_container` (ANT-901).
+static PG_TEARDOWN_JOINED: std::sync::atomic::AtomicBool =
+    std::sync::atomic::AtomicBool::new(false);
+
+/// Perform the container teardown (stop + `docker rm -fv` + marker drop) now,
+/// driving it on the current runtime if there is one (re-entrant
+/// `Handle::block_on`) else a fresh current-thread runtime. This must not
+/// panic with "Cannot start a runtime from within a runtime".
 ///
-/// The `PgServer` is a `'static` (a `OnceLock`), so on a normal test-run exit
-/// its `Drop` fires during process teardown — after every `#[tokio::test]`
-/// runtime is gone. `Handle::try_current()` then fails and the old guard
-/// silently did nothing, leaving the container behind (ANT-378). The guard
-/// now falls back to a short-lived runtime, and removes the marker file only
-/// when the container was actually removed — otherwise the next run's sweep
-/// collects the leftover.
-impl Drop for PgServer {
-    fn drop(&mut self) {
-        if self.container_id.is_empty() {
-            return;
+/// `PG_TEARDOWN_REQUESTED` prevents a concurrent second path from double
+/// removing; on success the function sets `PG_TEARDOWN_JOINED` so the
+/// process-exit path knows the container is gone. Returns `false` when no
+/// container needs reclaiming (URL/skip branch).
+fn teardown_pg_server_now() -> bool {
+    use std::sync::atomic::Ordering;
+    if PG_TEARDOWN_REQUESTED.swap(true, Ordering::SeqCst) {
+        return false;
+    }
+    let Some(server) = PG.get() else {
+        return false;
+    };
+    let cid = server.container_id.clone();
+    if cid.is_empty() {
+        return false;
+    }
+    // A non-empty container_id only ever comes from the spin-up branch, which
+    // always holds a connected client.
+    let Some(client) = server.client.clone() else {
+        eprintln!("warning: postgres test teardown: no docker client; \
+                   marker left for the next run's sweep");
+        return false;
+    };
+    let marker_dir = server.marker_dir.clone();
+    // A current runtime → re-entrant `Handle::block_on`; none (the `atexit`
+    // C-context and the trap's dedicated thread) → a fresh current-thread one.
+    enum Driver {
+        Handle(tokio::runtime::Handle),
+        Runtime(tokio::runtime::Runtime),
+    }
+    let driver = match tokio::runtime::Handle::try_current() {
+        Ok(handle) => Driver::Handle(handle),
+        Err(_) => match tokio::runtime::Builder::new_current_thread()
+            .enable_all()
+            .build()
+        {
+            Ok(rt) => Driver::Runtime(rt),
+            Err(e) => {
+                eprintln!("warning: postgres test teardown: no runtime ({e}); \
+                           marker left for the next run's sweep");
+                return false;
+            }
+        },
+    };
+    let outcome = match driver {
+        Driver::Handle(handle) => {
+            handle.block_on(teardown_pg_container(&client, &cid, &marker_dir))
         }
-        let cid = self.container_id.clone();
-        let cid_short = cid.clone();
-        // A non-empty container_id only ever comes from the spin-up branch,
-        // which always holds a connected client.
-        let Some(client) = self.client.clone() else {
-            eprintln!("warning: postgres test container {cid_short} teardown: \
-                       no docker client; marker left for the next run's sweep");
-            return;
-        };
-        let teardown = async move {
-            let _ = client
-                .stop_container(
-                    &cid,
-                    Some(bollard::query_parameters::StopContainerOptions {
-                        signal: None,
-                        t: Some(2),
-                    }),
-                )
-                .await;
-            client.remove_container(&cid, None).await
-        };
-        let outcome = match tokio::runtime::Handle::try_current() {
-            Ok(handle) => handle.block_on(teardown),
-            Err(_) => match tokio::runtime::Builder::new_current_thread()
+        Driver::Runtime(rt) => rt.block_on(teardown_pg_container(&client, &cid, &marker_dir)),
+    };
+    match outcome {
+        Ok(()) => {
+            PG_TEARDOWN_JOINED.store(true, Ordering::SeqCst);
+            true
+        }
+        Err(e) => {
+            eprintln!(
+                "warning: postgres test teardown failed: {e}; \
+                 marker left for the next run's sweep"
+            );
+            false
+        }
+    }
+}
+
+/// `libc::atexit` handler, registered so it runs at process exit (a normal
+/// `main` return and `std::process::exit` both go through the C `exit`, which
+/// runs atexit handlers). It runs *last*, on the main thread, so it is the
+/// reliable place to finish the teardown: on the INT/TERM path the harness's
+/// own exit can beat the trap's teardown thread, and this handler blocks the
+/// process exit until the container is really gone. SIGKILL bypasses atexit
+/// entirely — that residual case is the `ant-test-pg-<pid>` name + marker the
+/// routine GC (ANT-892) consumes.
+extern "C" fn pg_teardown_atexit() {
+    if teardown_pg_server_now() {
+        return; // this path completed the teardown
+    }
+    // The trap already requested a teardown but it has not finished (the
+    // harness's exit beat it). Block until that dedicated thread is done so
+    // the container is removed before the process actually exits.
+    if PG_TEARDOWN_REQUESTED.load(std::sync::atomic::Ordering::SeqCst) {
+        // Poll the completion flag; the trap's teardown thread sets it. This
+        // is a bounded wait (the teardown is a single stop — up to its 5s
+        // timeout — plus a remove), so it cannot hang the process exit
+        // indefinitely (ANT-901).
+        for _ in 0..3000 {
+            if PG_TEARDOWN_JOINED.load(std::sync::atomic::Ordering::SeqCst) {
+                return;
+            }
+            std::thread::sleep(std::time::Duration::from_millis(10));
+        }
+    }
+}
+
+/// Install the two teardown hooks for the throwaway container (ANT-901):
+///
+///  1. A `libc::atexit` handler — reclaims the container + volume on a
+///     normal exit / `std::process::exit`.
+///  2. An INT/TERM trap on a dedicated thread — reclaims the container +
+///     volume, then exits. It uses its own current-thread runtime so the
+///     bollard teardown never runs on an interrupted `#[tokio::test]` thread
+///     (a handler that built a runtime inline would clobber the thread's
+///     active runtime handle).
+///
+/// Both read the shared `PG`, so this must be installed after `PG` is set.
+/// SIGKILL is uncatchable; it is the residual case handled by the
+/// `ant-test-pg-<pid>` name + the per-PID marker (ANT-892/ANT-901).
+fn install_pg_teardown_hooks() {
+    use std::sync::atomic::{AtomicBool, Ordering};
+    static INSTALLED: AtomicBool = AtomicBool::new(false);
+    if INSTALLED.swap(true, Ordering::SeqCst) {
+        return;
+    }
+    unsafe {
+        let _ = libc::atexit(pg_teardown_atexit);
+    }
+    std::thread::Builder::new()
+        .name("pg-test-teardown-trap".into())
+        .spawn(move || {
+            let Ok(rt) = tokio::runtime::Builder::new_current_thread()
                 .enable_all()
                 .build()
-            {
-                Ok(runtime) => runtime.block_on(teardown),
-                Err(e) => {
-                    eprintln!("warning: postgres test teardown: no runtime ({e}); \
-                              marker left for the next run's sweep");
+            else {
+                return;
+            };
+            rt.block_on(async {
+                use tokio::signal::unix::{signal, SignalKind};
+                let Ok(mut sigint) = signal(SignalKind::interrupt()) else {
                     return;
+                };
+                let Ok(mut sigterm) = signal(SignalKind::terminate()) else {
+                    return;
+                };
+                let name = tokio::select! {
+                    _ = sigint.recv() => "SIGINT",
+                    _ = sigterm.recv() => "SIGTERM",
+                };
+                eprintln!(
+                    "postgres test fixture: caught {name}; tearing down container + \
+                     volume before exit"
+                );
+                // Run the teardown on a fresh thread: this thread is already
+                // inside its own runtime (the `block_on` above), and
+                // `Runtime::block_on` from within a runtime panics. A fresh
+                // thread has no enclosing runtime, so `teardown_pg_server_now`
+                // builds a clean current-thread runtime and succeeds (ANT-901).
+                let worker = std::thread::Builder::new()
+                    .name("pg-test-teardown".into())
+                    .spawn(teardown_pg_server_now);
+                if let Ok(w) = worker {
+                    let _ = w.join();
                 }
-            },
-        };
-        if let Err(e) = outcome {
-            eprintln!(
-                "warning: postgres test container {cid_short} teardown failed: {e}; \
-                  marker left for the next run's sweep"
-            );
-            return;
-        }
-        remove_pg_marker(&self.marker_dir);
-    }
+                std::process::exit(1);
+            });
+        })
+        .ok();
 }
 
 // ---------------------------------------------------------------------------

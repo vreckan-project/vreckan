@@ -50,6 +50,10 @@ uuid = { workspace = true }
 aes-gcm = { workspace = true }
 http = { workspace = true }
 http-body-util = { workspace = true }
+# `atexit` hook for the throwaway postgres fixture teardown on normal exit
+# (the `OnceLock` static never drops its contained value) — ANT-901. Already
+# locked transitively (0.2.x), so no new crate is fetched.
+libc = "0.2"
 pkcs8 = { workspace = true }
 rsa = { workspace = true }
 tower = { workspace = true }
