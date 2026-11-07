@@ -10,6 +10,7 @@
 
 use std::collections::HashMap;
 use std::sync::OnceLock;
+use tracing::warn;
 
 /// A single setting definition, mirroring one entry of `SETTING_DEFINITIONS`.
 #[derive(Clone, Debug)]
@@ -194,6 +195,51 @@ pub struct Settings {
     pub acme_dns_provider_config: String,
 }
 
+/// The outcome of reading one key from the `app_settings` table, splitting the
+/// three cases the old `get_setting` collapsed into a single `_ =>` arm: a
+/// stored override, an absent key (a normal, silent fallback to the env/
+/// default value), and a DB error (the table is unreachable, which must be
+/// logged and, for security-relevant settings, fail closed — audit finding 10).
+#[derive(Debug)]
+enum DbSetting {
+    /// A value is stored in `app_settings`; it wins over env/default.
+    Override(String),
+    /// The key is absent; fall back to the env/default value (no log).
+    Absent,
+    /// The `app_settings` table could not be read; the caller logs the error
+    /// and applies its fallback.
+    Unreachable(sea_orm::DbErr),
+}
+
+/// The fail-closed value for a security-relevant setting, or `None` for a
+/// setting that simply falls back to its env/default value on a DB error.
+///
+/// When the `app_settings` table is unreachable, a transient blip must not
+/// silently relax the operator's security posture: these settings return their
+/// strictest value instead of reverting to the env/default. Each entry is the
+/// strict direction documented by the setting's own help text. `oidc_enabled`
+/// is deliberately *not* here — "strict" is ambiguous for a login-method
+/// toggle (is "SSO required" or "SSO off" stricter depends on the rest of the
+/// deployment), so a blip there is logged but falls back to env/default.
+fn security_fail_closed(name: &str) -> Option<serde_json::Value> {
+    match name {
+        // 'allow' / 'warn' / 'reject'; 'reject' fails the login with the
+        // default password, the strictest of the three.
+        "default_password_policy" => Some(serde_json::Value::String("reject".to_string())),
+        // "When true, login fails closed if the provider's JWKS is
+        // unreachable"; hold the restrictive value when the override can't
+        // be read.
+        "oidc_require_signature" => Some(serde_json::Value::Bool(true)),
+        // "Empty = trust no proxy (fail closed)".
+        "trusted_proxies" => Some(serde_json::Value::String(String::new())),
+        // "0 disables the limiter"; the tightest throttle is fail-closed (a
+        // blip must not loosen brute-force protection, and 0 is the literal
+        // fail-open).
+        "login_max_attempts" => Some(serde_json::Value::Number(1.into())),
+        _ => None,
+    }
+}
+
 impl Settings {
     /// Build settings from the `VRECKAN_*` environment, falling back to the
     /// code defaults. Mirrors `AppSettings._process_and_set_attributes`.
@@ -367,19 +413,39 @@ impl Settings {
     ///
     /// The value is parsed according to the setting's declared type
     /// (bool/int/str) and returned as a `serde_json::Value`.
+    ///
+    /// A DB error is distinguished from an absent key (audit finding 10): an
+    /// absent key silently falls back to the env/default value, but an
+    /// unreachable `app_settings` table is logged and, for security-relevant
+    /// settings, fails closed to the strictest value so a transient blip cannot
+    /// silently relax the operator's security posture.
     pub async fn get_setting(&self, db: &crate::db::Db, name: &str) -> serde_json::Value {
         let def = Self::definition(name);
         let stype = def.map(|d| d.type_).unwrap_or("str");
         let default = def.map(|d| d.default).unwrap_or("");
-        let env_var = format!("VRECKAN_{}", name.to_uppercase());
 
-        // DB value wins if present.
-        let raw = match db.get_app_setting(&env_var).await {
-            Ok(Some(v)) => v,
-            _ => match self.raw_value(name) {
+        let raw = match self.read_app_setting(db, name).await {
+            DbSetting::Override(v) => v,
+            DbSetting::Absent => match self.raw_value(name) {
                 Some(v) => v,
                 None => return serde_json::Value::String(default.to_string()),
             },
+            DbSetting::Unreachable(e) => {
+                warn!(
+                    setting = %name,
+                    error = %e,
+                    "get_setting: app_settings lookup failed; falling back to env/default value",
+                );
+                // A DB blip must not silently relax the security posture:
+                // security-relevant settings fail closed to their strict value.
+                if let Some(v) = security_fail_closed(name) {
+                    return v;
+                }
+                match self.raw_value(name) {
+                    Some(v) => v,
+                    None => return serde_json::Value::String(default.to_string()),
+                }
+            }
         };
         match stype {
             "bool" => serde_json::Value::Bool(parse_value("bool", &raw) == "true"),
@@ -387,6 +453,19 @@ impl Settings {
                 parse_value("int", &raw).parse::<i64>().unwrap_or(0).into(),
             ),
             _ => serde_json::Value::String(raw),
+        }
+    }
+
+    /// Read one key from the `app_settings` table, distinguishing a stored
+    /// override, an absent key, and an unreachable table (see [`DbSetting`]).
+    /// Shared by `get_setting` and `cors_config` so the error path is logged
+    /// consistently.
+    async fn read_app_setting(&self, db: &crate::db::Db, name: &str) -> DbSetting {
+        let env_var = format!("VRECKAN_{}", name.to_uppercase());
+        match db.get_app_setting(&env_var).await {
+            Ok(Some(v)) => DbSetting::Override(v),
+            Ok(None) => DbSetting::Absent,
+            Err(e) => DbSetting::Unreachable(e),
         }
     }
 
@@ -399,13 +478,33 @@ impl Settings {
     /// The value is re-resolved on every call, so a change saved on the admin
     /// page takes effect on the next request without a restart.
     pub async fn cors_config(&self, db: &crate::db::Db) -> CorsConfig {
-        let mode_raw = match db.get_app_setting("VRECKAN_CORS_MODE").await {
-            Ok(Some(v)) => v,
-            _ => self.cors_mode.clone(),
+        // Logging only: the value semantics (empty allowlist, mode parsing)
+        // stay finding 9 / ANT-880's domain. The only change here is that a
+        // DB error is logged and distinguished from an absent key, matching
+        // `get_setting` (audit finding 10).
+        let mode_raw = match self.read_app_setting(db, "cors_mode").await {
+            DbSetting::Override(v) => v,
+            DbSetting::Absent => self.cors_mode.clone(),
+            DbSetting::Unreachable(e) => {
+                warn!(
+                    setting = "cors_mode",
+                    error = %e,
+                    "cors_config: app_settings lookup failed; falling back to env/default value",
+                );
+                self.cors_mode.clone()
+            }
         };
-        let origins_raw = match db.get_app_setting("VRECKAN_CORS_ALLOWED_ORIGINS").await {
-            Ok(Some(v)) => v,
-            _ => self.cors_allowed_origins.clone(),
+        let origins_raw = match self.read_app_setting(db, "cors_allowed_origins").await {
+            DbSetting::Override(v) => v,
+            DbSetting::Absent => self.cors_allowed_origins.clone(),
+            DbSetting::Unreachable(e) => {
+                warn!(
+                    setting = "cors_allowed_origins",
+                    error = %e,
+                    "cors_config: app_settings lookup failed; falling back to env/default value",
+                );
+                self.cors_allowed_origins.clone()
+            }
         };
         let mode = CorsMode::parse(&mode_raw).unwrap_or(CorsMode::Loose);
         let allowed_origins = origins_raw
@@ -600,5 +699,149 @@ pub fn default_db_creds_policy() -> DefaultDbCredsPolicy {
         Some("1" | "true" | "yes" | "on" | "silent" | "allow") => DefaultDbCredsPolicy::Silent,
         Some("refuse" | "strict" | "fail") => DefaultDbCredsPolicy::Refuse,
         _ => DefaultDbCredsPolicy::Warn,
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::db::connect;
+    use sea_orm::ConnectionTrait;
+
+    /// A real SQLite-backed `Db` with the schema synced, so `app_settings`
+    /// exists. Fresh file per test to avoid cross-test interference.
+    async fn fresh_db(name: &str) -> crate::db::Db {
+        let dir = std::env::temp_dir().join(format!(
+            "vreckan-settings-test-{}-{}",
+            std::process::id(),
+            name
+        ));
+        let _ = std::fs::remove_dir_all(&dir);
+        std::fs::create_dir_all(&dir).unwrap();
+        let path = dir.join("settings.db");
+        let db = connect(&format!("sqlite://{}?mode=rwc", path.display()))
+            .await
+            .unwrap();
+        db.init().await.unwrap();
+        db
+    }
+
+    /// `Settings` with the fields under test pinned to known values so the
+    /// assertions are deterministic regardless of the process environment
+    /// (env vars are process-global and tests run on parallel threads).
+    fn pinned_settings() -> Settings {
+        let mut s = Settings::from_env();
+        s.default_password_policy = "warn".to_string();
+        s.log_level = "INFO".to_string();
+        s.oidc_require_signature = true;
+        s.trusted_proxies = String::new();
+        s.login_max_attempts = 5;
+        s
+    }
+
+    // --- the fail-closed mapping table (pure, no DB) ---
+
+    #[test]
+    fn security_fail_closed_maps_security_settings_to_strict_values() {
+        assert_eq!(
+            security_fail_closed("default_password_policy"),
+            Some(serde_json::Value::String("reject".to_string())),
+        );
+        assert_eq!(
+            security_fail_closed("oidc_require_signature"),
+            Some(serde_json::Value::Bool(true)),
+        );
+        assert_eq!(
+            security_fail_closed("trusted_proxies"),
+            Some(serde_json::Value::String(String::new())),
+        );
+        assert_eq!(
+            security_fail_closed("login_max_attempts"),
+            Some(serde_json::Value::Number(1.into())),
+        );
+        // Non-security settings fall back to env/default, not a strict value.
+        assert_eq!(security_fail_closed("log_level"), None);
+        assert_eq!(security_fail_closed("oidc_enabled"), None);
+        assert_eq!(security_fail_closed("cors_mode"), None);
+        assert_eq!(security_fail_closed("auto_update_apps"), None);
+    }
+
+    // --- the three-way DB outcome, exercised end-to-end through get_setting ---
+
+    #[tokio::test]
+    async fn ok_some_db_override_wins_over_env_default() {
+        let db = fresh_db("ok-some").await;
+        // An admin saved a *looser* policy than both the code default ('warn')
+        // and the fail-closed value ('reject'); the DB value must win, since
+        // fail-closed only applies when the table itself errors.
+        db.set_app_setting("VRECKAN_DEFAULT_PASSWORD_POLICY", "allow")
+            .await
+            .unwrap();
+        let v = pinned_settings()
+            .get_setting(&db, "default_password_policy")
+            .await;
+        assert_eq!(v, serde_json::Value::String("allow".to_string()));
+    }
+
+    #[tokio::test]
+    async fn ok_none_absent_key_falls_back_to_env_default_not_fail_closed() {
+        let db = fresh_db("ok-none").await;
+        // The table exists but holds no override: the setting falls back to
+        // the env/default value ('warn'), NOT the fail-closed 'reject' — an
+        // absent key is a normal, silent fallback, not an error.
+        let v = pinned_settings()
+            .get_setting(&db, "default_password_policy")
+            .await;
+        assert_eq!(v, serde_json::Value::String("warn".to_string()));
+    }
+
+    #[tokio::test]
+    async fn err_unreachable_table_fails_closed_for_security_settings() {
+        let db = fresh_db("err-security").await;
+        // Make the app_settings table unreadable: the next lookup errors.
+        db.conn
+            .execute_raw(sea_orm::Statement::from_string(
+                db.conn.get_database_backend(),
+                "DROP TABLE app_settings".to_string(),
+            ))
+            .await
+            .unwrap();
+        let s = pinned_settings();
+        // Security settings fail closed to their strict values...
+        assert_eq!(
+            s.get_setting(&db, "default_password_policy").await,
+            serde_json::Value::String("reject".to_string()),
+        );
+        assert_eq!(
+            s.get_setting(&db, "oidc_require_signature").await,
+            serde_json::Value::Bool(true),
+        );
+        assert_eq!(
+            s.get_setting(&db, "login_max_attempts").await,
+            serde_json::Value::Number(1.into()),
+        );
+        // ...while a non-security setting still falls back to its env/default.
+        assert_eq!(
+            s.get_setting(&db, "log_level").await,
+            serde_json::Value::String("INFO".to_string()),
+        );
+    }
+
+    #[tokio::test]
+    async fn err_unreachable_table_logs_and_falls_back_for_cors_config() {
+        let db = fresh_db("err-cors").await;
+        db.conn
+            .execute_raw(sea_orm::Statement::from_string(
+                db.conn.get_database_backend(),
+                "DROP TABLE app_settings".to_string(),
+            ))
+            .await
+            .unwrap();
+        // cors_config logs the error and falls back to the env/default values
+        // (no fail-closed value change for CORS — that is finding 9's domain).
+        let s = pinned_settings();
+        let cors = s.cors_config(&db).await;
+        assert_eq!(cors.mode, CorsMode::Loose);
+        assert!(cors.allowed_origins.is_empty());
     }
 }

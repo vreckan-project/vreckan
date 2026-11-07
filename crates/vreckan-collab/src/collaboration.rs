@@ -411,15 +411,45 @@ fn cookie_from_headers(headers: &HeaderMap, name: &str) -> Option<String> {
     None
 }
 
-/// The first 8 chars of a token, for logs: enough to tell two viewers apart,
-/// too short to recover the token (ANT-344, item 1). Char-boundary safe for
-/// any string.
+/// The first 8 chars of a token: enough to tell two room users apart, too
+/// short to recover the token (ANT-344, item 1). Char-boundary safe for any
+/// string. Since ANT-882 it doubles as the room's non-secret identity key in
+/// broadcast frames — a truncated prefix is not replayable for admission,
+/// because `tokens_equal` is a length-checked full compare.
 fn short_token(token: &str) -> &str {
     let mut end = token.len().min(8);
     while end > 0 && !token.is_char_boundary(end) {
         end -= 1;
     }
     &token[..end]
+}
+
+/// Resolve a room identity submitted by a room client — either a full token
+/// or its non-secret 8-char broadcast form (ANT-882) — to the full token it
+/// addresses: the controller token or a stored viewer token. Returns `None`
+/// when the key matches no stored token (a stale or unknown key).
+fn resolve_room_token(session_data: &Value, key: &str) -> Option<String> {
+    if key.is_empty() {
+        return None;
+    }
+    let controller = session_data
+        .get("controller_token")
+        .and_then(|v| v.as_str())
+        .unwrap_or("");
+    if !controller.is_empty()
+        && (tokens_equal(key, controller) || short_token(controller) == key)
+    {
+        return Some(controller.to_string());
+    }
+    if let Some(viewers) = session_data.get("viewers").and_then(|v| v.as_array()) {
+        for v in viewers {
+            let t = v.get("token").and_then(|t| t.as_str()).unwrap_or("");
+            if !t.is_empty() && (tokens_equal(key, t) || short_token(t) == key) {
+                return Some(t.to_string());
+            }
+        }
+    }
+    None
 }
 
 // ---------------------------------------------------------------------------
@@ -506,8 +536,12 @@ async fn broadcast_state(state: &AppState, session_id: &str) {
     } else {
         Value::Null
     };
+    // The frame carries each user's non-secret identity key (the 8-char
+    // short form), never the full token: a viewer must not end up holding a
+    // replayable control credential (finding 11, ANT-882). Admission still
+    // requires the exact full token, so the short form grants nothing.
     let controller_info = serde_json::json!({
-        "token": controller_token,
+        "token": short_token(controller_token),
         "username": "Controller",
         "slot": session_data.get("controller_slot").cloned().unwrap_or(Value::Null),
         "online": controller_online,
@@ -525,6 +559,9 @@ async fn broadcast_state(state: &AppState, session_id: &str) {
             let vtoken = v.get("token").and_then(|t| t.as_str()).unwrap_or("");
             let is_online = online_viewer_tokens.contains(vtoken);
             if let Some(obj) = viewer_info.as_object_mut() {
+                // Replace the full token with its non-secret identity key
+                // (finding 11, ANT-882).
+                obj.insert("token".into(), serde_json::json!(short_token(vtoken)));
                 obj.insert(
                     "has_mk".into(),
                     serde_json::json!(mk_owner.is_some_and(|o| tokens_equal(o, vtoken))),
@@ -539,12 +576,50 @@ async fn broadcast_state(state: &AppState, session_id: &str) {
             users_with_status.push(viewer_info);
         }
     }
-    let state_payload = serde_json::json!({
-        "type": "state_update",
-        "viewers": users_with_status,
-        "designated_speaker": session_data.get("designated_speaker").cloned().unwrap_or(Value::Null),
-    });
-    broadcast_to_room(state, session_id, &state_payload).await;
+    // The stored speaker is a full token; the frame carries the same
+    // non-secret 8-char identity key as the viewer list (finding 11,
+    // ANT-882).
+    let designated_speaker = session_data
+        .get("designated_speaker")
+        .and_then(|v| v.as_str())
+        .map(|t| Value::String(short_token(t).to_string()))
+        .unwrap_or(Value::Null);
+    // Mixed-version tolerance (ANT-882): an un-upgraded client matches its
+    // own list entry against the page-local full token and keys its own
+    // stream on it, so each recipient gets its own entry back in the
+    // full-token form. Every *other* entry stays in the non-secret 8-char
+    // identity-key form — no client ever sees a foreign full token — and the
+    // new client accepts both forms, so the frame is safe in either
+    // deployment direction.
+    let frame_for = |own_token: Option<&str>| {
+        let mut viewers = users_with_status.clone();
+        if let Some(own) = own_token.filter(|t| !t.is_empty()) {
+            for v in viewers.iter_mut() {
+                if v.get("token").and_then(|t| t.as_str()) == Some(short_token(own)) {
+                    if let Some(obj) = v.as_object_mut() {
+                        obj.insert("token".into(), Value::String(own.to_string()));
+                    }
+                }
+            }
+        }
+        serde_json::json!({
+            "type": "state_update",
+            "viewers": viewers,
+            "designated_speaker": designated_speaker,
+        })
+    };
+    if let Some(c) = &conns.controller {
+        let _ = c
+            .sender
+            .send(Message::Text(frame_for(Some(controller_token)).to_string().into()))
+            .await;
+    }
+    for v in conns.viewers.values() {
+        let _ = v
+            .sender
+            .send(Message::Text(frame_for(Some(&v.token)).to_string().into()))
+            .await;
+    }
 }
 
 /// The token that addresses the session owner in the token table. A room
@@ -943,6 +1018,13 @@ async fn handle_assign_slot(
             .unwrap_or("")
             .to_string();
         let viewer_token = viewer_token.unwrap_or("");
+        // The state frame carries the 8-char identity key, but mixed-version
+        // clients may still submit the full token: normalize to the stored
+        // full token before any compare or store below (ANT-882). An unknown
+        // key resolves to itself, preserving the existing no-match behavior.
+        let resolved_viewer_token = resolve_room_token(&session_data, viewer_token)
+            .unwrap_or_else(|| viewer_token.to_string());
+        let viewer_token = resolved_viewer_token.as_str();
 
         let mut target_username = "Unknown".to_string();
         let mut old_slot_for_target: Option<i64> = None;
@@ -1070,6 +1152,16 @@ async fn handle_assign_mk(state: &AppState, session_id: &str, target_token: Opti
             .and_then(|v| v.as_str())
             .unwrap_or("");
         let mut target_token = target_token.map(|s| s.to_string());
+        // The state frame carries the 8-char identity key, but mixed-version
+        // clients may still submit the full token: normalize to the stored
+        // full token before the controller/mk-owner/viewer compares below
+        // (ANT-882). An unknown key resolves to itself, preserving the
+        // existing no-match behavior.
+        if let Some(t) = &target_token {
+            if let Some(resolved) = resolve_room_token(&session_data, t) {
+                target_token = Some(resolved);
+            }
+        }
         if target_token
             .as_deref()
             .is_some_and(|t| tokens_equal(t, controller_token))
@@ -1290,7 +1382,15 @@ async fn room_websocket(
                         };
                         let mut data = data;
                         if let Some(obj) = data.as_object_mut() {
-                            obj.insert("sender_token".into(), serde_json::json!(token_clone));
+                            // Non-secret identity key, not the replayable full
+                            // token: the `control` re-broadcast below embeds
+                            // this field in every frame (finding 11, ANT-882).
+                            // `route_message` identifies the sender through
+                            // its own parameters, never this field.
+                            obj.insert(
+                                "sender_token".into(),
+                                serde_json::json!(short_token(&token_clone)),
+                            );
                         }
                         route_message(
                             &state_clone,
@@ -1395,9 +1495,16 @@ async fn route_message(
             handle_assign_mk(state, session_id, target).await;
         }
         "set_designated_speaker" if is_controller => {
-            let speaker = data.get("token").and_then(|t| t.as_str());
+            let speaker_key = data.get("token").and_then(|t| t.as_str());
             let mut sessions = state.sessions.write().await;
             if let Some(s) = sessions.get_mut(session_id) {
+                // Resolve the identity key (full or 8-char form, ANT-882) to
+                // the stored full token before storing: the audio gate and
+                // the disconnect cleanup compare `designated_speaker` with
+                // full connection tokens, so the stored shape stays a full
+                // token. A key that addresses nobody clears the designation
+                // instead of storing an unmatchable value.
+                let speaker = speaker_key.and_then(|k| resolve_room_token(s, k));
                 s["designated_speaker"] = speaker.map(Value::from).unwrap_or(Value::Null);
             }
             drop(sessions);
@@ -1501,7 +1608,9 @@ async fn route_message(
                     session_id,
                     &serde_json::json!({
                         "type": "resolution_update",
-                        "token": token,
+                        // Identity key, not the replayable full token
+                        // (finding 11, ANT-882).
+                        "token": short_token(token),
                         "width": w,
                         "height": h,
                     }),
@@ -2150,6 +2259,307 @@ mod tests {
                 .map(|v| v.is_null())
                 .unwrap_or(true),
             "MK reverts to the controller: {session:?}"
+        );
+    }
+
+    // ------------------------------------------------------------------
+    // ANT-882, audit finding 11: broadcast frames carry the non-secret
+    // 8-char identity key — never a replayable full token.
+    // ------------------------------------------------------------------
+
+    // Tokens long enough that the 8-char broadcast form is a strict prefix.
+    const CTRL882: &str = "ctrltok-ant882-000000";
+    const ALICE882: &str = "viewer-alice-ant882-000";
+    const BOB882: &str = "viewer-bob-ant882-0000";
+
+    fn ant882_session() -> Value {
+        serde_json::json!({
+            "instance_id": "ctr-ant882",
+            "ip": "127.0.0.1",
+            "port": 1,
+            "created_at": 1.0,
+            "access_token": "access-ant882",
+            "is_collaboration": true,
+            "username": "admin",
+            "master_token": "master-ant882",
+            "controller_token": CTRL882,
+            "participant_invite_token": "invite-ant882",
+            "readonly_invite_token": "readonly-ant882",
+            "controller_slot": Value::Null,
+            "mk_owner_token": Value::Null,
+            "viewers": [
+                { "token": ALICE882, "slot": Value::Null, "mk_control": false,
+                  "username": "alice", "permission": "participant" },
+                { "token": BOB882, "slot": Value::Null, "mk_control": false,
+                  "username": "bob", "permission": "participant" },
+            ],
+            "container_registry": {},
+        })
+    }
+
+    #[test]
+    fn resolve_room_token_maps_full_and_short_forms_to_the_stored_token() {
+        let s = ant882_session();
+        assert_eq!(resolve_room_token(&s, CTRL882), Some(CTRL882.to_string()));
+        assert_eq!(
+            resolve_room_token(&s, short_token(CTRL882)),
+            Some(CTRL882.to_string())
+        );
+        assert_eq!(resolve_room_token(&s, ALICE882), Some(ALICE882.to_string()));
+        assert_eq!(
+            resolve_room_token(&s, short_token(ALICE882)),
+            Some(ALICE882.to_string())
+        );
+        assert_eq!(
+            resolve_room_token(&s, short_token(BOB882)),
+            Some(BOB882.to_string())
+        );
+        // One user's key must not resolve to another user, and an unknown
+        // key (or the empty string) resolves to nothing.
+        assert_ne!(
+            resolve_room_token(&s, short_token(ALICE882)).as_deref(),
+            Some(BOB882)
+        );
+        assert_eq!(resolve_room_token(&s, "nobody-here"), None);
+        assert_eq!(resolve_room_token(&s, ""), None);
+    }
+
+    #[test]
+    fn short_identity_key_is_not_replayable_for_admission() {
+        // Room-page admission and the WS upgrade compare the submitted token
+        // against the stored full token with `tokens_equal` — a
+        // length-checked full compare — so the 8-char key admits no one.
+        for stored in [CTRL882, ALICE882, BOB882] {
+            let key = short_token(stored);
+            assert!(
+                key.len() < stored.len(),
+                "{stored} must be longer than its 8-char key"
+            );
+            assert!(tokens_equal(stored, stored));
+            assert!(
+                !tokens_equal(key, stored),
+                "the 8-char key of {stored} must not be admitted as that token"
+            );
+        }
+    }
+
+    /// A live controller + alice connection so `broadcast_state` and
+    /// `route_message` have somewhere to send. `ts` keeps the temp dir alive.
+    async fn ant882_state_with_live_room() -> (
+        TestState,
+        AppState,
+        tokio::sync::mpsc::Receiver<Message>,
+        tokio::sync::mpsc::Receiver<Message>,
+    ) {
+        let ts = TestState::new().await;
+        let state = ts.state.clone();
+        let mut session = ant882_session();
+        // The designated speaker is stored as the full token.
+        session["designated_speaker"] = Value::String(ALICE882.to_string());
+        state
+            .sessions
+            .write()
+            .await
+            .insert(SESSION_ID.to_string(), session);
+        let (ctrl_tx, ctrl_rx) = tokio::sync::mpsc::channel::<Message>(16);
+        let (alice_tx, alice_rx) = tokio::sync::mpsc::channel::<Message>(16);
+        state.room_connections.write().await.insert(
+            SESSION_ID.to_string(),
+            RoomConnections {
+                controller: Some(ConnectionInfo {
+                    username: "Controller".into(),
+                    token: CTRL882.to_string(),
+                    public_id: "pub-ctrl".into(),
+                    has_joined: true,
+                    sender: ctrl_tx,
+                }),
+                viewers: HashMap::from([(
+                    ALICE882.to_string(),
+                    ConnectionInfo {
+                        username: "alice".into(),
+                        token: ALICE882.to_string(),
+                        public_id: "pub-alice".into(),
+                        has_joined: true,
+                        sender: alice_tx,
+                    },
+                )]),
+            },
+        );
+        (ts, state, ctrl_rx, alice_rx)
+    }
+
+    async fn next_text(mut rx: tokio::sync::mpsc::Receiver<Message>) -> Value {
+        let msg = tokio::time::timeout(std::time::Duration::from_secs(5), rx.recv())
+            .await
+            .expect("broadcast timed out")
+            .expect("the broadcast channel closed");
+        match msg {
+            Message::Text(t) => serde_json::from_str(&t).expect("frame is JSON"),
+            other => panic!("expected a text frame, got {other:?}"),
+        }
+    }
+
+    /// The finding-11 invariant: no client ever sees a *foreign* full token
+    /// in the state frame. The recipient's own entry comes back in the
+    /// full-token form (mixed-version self-match for un-upgraded clients);
+    /// every other entry — and the designated speaker — stays in the
+    /// non-secret 8-char identity-key form.
+    #[tokio::test]
+    async fn state_update_frame_carries_only_identity_keys() {
+        let (_ts, state, ctrl_rx, alice_rx) = ant882_state_with_live_room().await;
+        broadcast_state(&state, SESSION_ID).await;
+        let ctrl_frame = next_text(ctrl_rx).await;
+        let alice_frame = next_text(alice_rx).await;
+
+        // A viewer's frame must not carry the controller's or another
+        // viewer's full token — that is the replay vector finding 11
+        // closes.
+        for full in [CTRL882, BOB882] {
+            assert!(
+                !alice_frame.to_string().contains(full),
+                "the viewer's state_update must not carry the full token {full}: {alice_frame:?}"
+            );
+        }
+        assert!(
+            !ctrl_frame.to_string().contains(BOB882),
+            "the controller's state_update must not carry bob's full token: {ctrl_frame:?}"
+        );
+
+        // Each recipient gets its own entry back in the full-token form.
+        let own_entry = |frame: &Value, name: &str| -> Value {
+            frame["viewers"]
+                .as_array()
+                .unwrap()
+                .iter()
+                .find(|v| v["username"] == name)
+                .cloned()
+                .unwrap_or(Value::Null)
+        };
+        assert_eq!(
+            own_entry(&ctrl_frame, "Controller")["token"],
+            Value::String(CTRL882.to_string())
+        );
+        assert_eq!(
+            own_entry(&alice_frame, "alice")["token"],
+            Value::String(ALICE882.to_string())
+        );
+        // In the controller's frame alice is a foreign user: short form.
+        assert_eq!(
+            own_entry(&ctrl_frame, "alice")["token"],
+            Value::String(short_token(ALICE882).to_string())
+        );
+
+        // The stored full speaker token comes out in its 8-char form in
+        // every recipient's frame, and the offline viewer is still listed,
+        // keyed by his short form.
+        for frame in [&ctrl_frame, &alice_frame] {
+            assert_eq!(
+                frame["designated_speaker"],
+                Value::String(short_token(ALICE882).to_string())
+            );
+            let bob = own_entry(frame, "bob");
+            assert_eq!(bob["token"], Value::String(short_token(BOB882).to_string()));
+            assert_eq!(bob["online"], false);
+        }
+    }
+
+    #[tokio::test]
+    async fn control_rebroadcast_carries_short_sender_token() {
+        let (_ts, state, _ctrl_rx, alice_rx) = ant882_state_with_live_room().await;
+        // The WS loop injects the sender's identity key before routing; the
+        // `control` re-broadcast embeds that field in every frame.
+        let mut data = serde_json::json!({ "action": "video_state", "state": true });
+        if let Some(obj) = data.as_object_mut() {
+            obj.insert(
+                "sender_token".into(),
+                Value::String(short_token(CTRL882).to_string()),
+            );
+        }
+        route_message(
+            &state,
+            SESSION_ID,
+            CTRL882,
+            "Controller",
+            true,
+            "controller",
+            &data,
+        )
+        .await;
+        let frame = next_text(alice_rx).await;
+        assert_eq!(frame["type"], "control");
+        assert_eq!(
+            frame["payload"]["sender_token"],
+            Value::String(short_token(CTRL882).to_string())
+        );
+        assert!(
+            !frame.to_string().contains(CTRL882),
+            "the control re-broadcast must not carry the full sender token: {frame:?}"
+        );
+    }
+
+    #[tokio::test]
+    async fn set_designated_speaker_resolves_the_short_form_to_the_stored_token() {
+        let (_ts, state, _ctrl_rx, _alice_rx) = ant882_state_with_live_room().await;
+        let data = serde_json::json!({ "action": "set_designated_speaker", "token": short_token(BOB882) });
+        route_message(
+            &state,
+            SESSION_ID,
+            CTRL882,
+            "Controller",
+            true,
+            "controller",
+            &data,
+        )
+        .await;
+        let session = state.sessions.read().await.get(SESSION_ID).cloned().unwrap();
+        assert_eq!(
+            session.get("designated_speaker").and_then(|v| v.as_str()),
+            Some(BOB882),
+            "the stored speaker must be the full token: {session:?}"
+        );
+    }
+
+    #[tokio::test]
+    async fn assign_slot_accepts_the_short_identity_key() {
+        let (_ts, state, _ctrl_rx, _alice_rx) = ant882_state_with_live_room().await;
+        let data = serde_json::json!({ "action": "assign_slot", "viewer_token": short_token(ALICE882), "slot": 2 });
+        route_message(
+            &state,
+            SESSION_ID,
+            CTRL882,
+            "Controller",
+            true,
+            "controller",
+            &data,
+        )
+        .await;
+        let session = state.sessions.read().await.get(SESSION_ID).cloned().unwrap();
+        assert_eq!(
+            viewer_slot(&session, ALICE882),
+            serde_json::json!(2),
+            "the 8-char key must address the viewer entry: {session:?}"
+        );
+    }
+
+    #[tokio::test]
+    async fn assign_mk_accepts_the_short_identity_key() {
+        let (_ts, state, _ctrl_rx, _alice_rx) = ant882_state_with_live_room().await;
+        let data = serde_json::json!({ "action": "assign_mk", "token": short_token(BOB882) });
+        route_message(
+            &state,
+            SESSION_ID,
+            CTRL882,
+            "Controller",
+            true,
+            "controller",
+            &data,
+        )
+        .await;
+        let session = state.sessions.read().await.get(SESSION_ID).cloned().unwrap();
+        assert_eq!(
+            session.get("mk_owner_token").and_then(|v| v.as_str()),
+            Some(BOB882),
+            "the stored mk owner must be the full token: {session:?}"
         );
     }
 }

@@ -1120,6 +1120,20 @@ document.addEventListener('DOMContentLoaded', () => {
         return;
     }
 
+    // Broadcast frames carry a non-secret 8-char identity key derived from
+    // the page-local full token (ANT-882, finding 11). The full token stays
+    // page-local: it authenticates the WS upgrade and the iframe, and room
+    // admission requires the exact full token, so the short key is not
+    // replayable. key8() normalizes any key (full or short) to the wire
+    // domain; isSelfKey() accepts both forms so a new client keeps working
+    // against an un-upgraded server that still lists full tokens.
+    const identityKey = COLLAB_DATA.userToken.slice(0, 8);
+    const key8 = (t) => String(t || '').slice(0, 8);
+    const isSelfKey = (k) => k === identityKey || k === COLLAB_DATA.userToken;
+    // Self-targeted submissions send the full token so both old and new
+    // servers resolve them; remote targets keep the tile key (ANT-935 note 3).
+    const submitToken = (t) => isSelfKey(t) ? COLLAB_DATA.userToken : t;
+
     if (COLLAB_DATA.userPermission === 'readonly') {
         const localContainer = document.getElementById('local-user-container');
         if (localContainer) {
@@ -1231,17 +1245,17 @@ document.addEventListener('DOMContentLoaded', () => {
 
     const applyAutoResolution = () => {
         if (COLLAB_DATA.userRole !== 'controller') return;
-        const targetToken = currentMkOwner || COLLAB_DATA.userToken;
+        const targetToken = currentMkOwner || identityKey;
         const iframe = document.getElementById('session-frame');
         if (!iframe || !iframe.contentWindow) return;
 
         if (isResolutionLocked) return;
 
-        if (targetToken === COLLAB_DATA.userToken) {
+        if (isSelfKey(targetToken)) {
             console.log("[Controller] MK owner is controller. Resetting resolution to window.");
             iframe.contentWindow.postMessage({ type: 'resetResolutionToWindow' }, window.location.origin);
         } else {
-            const res = clientResolutions[targetToken];
+            const res = clientResolutions[key8(targetToken)];
             if (res) {
                 console.log(`[Controller] Auto-syncing resolution to MK owner (${targetToken}): ${res.width}x${res.height}`);
                 iframe.contentWindow.postMessage({ type: 'setManualResolution', width: res.width, height: res.height }, window.location.origin);
@@ -1304,7 +1318,7 @@ document.addEventListener('DOMContentLoaded', () => {
     const inviteTile = document.getElementById('invite-tile');
     const inviteBtn = document.getElementById('invite-btn');
 
-    localContainer.dataset.userToken = COLLAB_DATA.userToken;
+    localContainer.dataset.userToken = identityKey;
     if (COLLAB_DATA.userRole !== 'controller') gamingModeBtn.classList.remove('hidden');
 
     const initNotificationAudio = () => {
@@ -2242,7 +2256,7 @@ document.addEventListener('DOMContentLoaded', () => {
             return;
         }
 
-        const self = currentUserState.find(u => u.token === COLLAB_DATA.userToken);
+        const self = currentUserState.find(u => isSelfKey(u.token));
         const hasInput = self && (self.slot || self.has_mk);
 
         if (hasInput) {
@@ -2345,7 +2359,7 @@ document.addEventListener('DOMContentLoaded', () => {
                 if (iframe) {
                     ws.send(JSON.stringify({ action: 'client_resolution', width: iframe.clientWidth, height: iframe.clientHeight }));
                     if (COLLAB_DATA.userRole === 'controller') {
-                        clientResolutions[COLLAB_DATA.userToken] = { width: iframe.clientWidth, height: iframe.clientHeight };
+                        clientResolutions[identityKey] = { width: iframe.clientWidth, height: iframe.clientHeight };
                     }
                 }
             };
@@ -2383,8 +2397,11 @@ document.addEventListener('DOMContentLoaded', () => {
                         break;
                     }
                     case 'resolution_update':
-                        clientResolutions[data.token] = { width: data.width, height: data.height };
-                        if (COLLAB_DATA.userRole === 'controller' && !isResolutionLocked && currentMkOwner === data.token) {
+                        // data.token is the 8-char identity key on the new
+                        // server and the full token on an un-upgraded one:
+                        // normalize both to the same key8 domain (ANT-882).
+                        clientResolutions[key8(data.token)] = { width: data.width, height: data.height };
+                        if (COLLAB_DATA.userRole === 'controller' && !isResolutionLocked && key8(currentMkOwner) === key8(data.token)) {
                             applyAutoResolution();
                         }
                         break;
@@ -2416,7 +2433,7 @@ document.addEventListener('DOMContentLoaded', () => {
 
                         currentDesignatedSpeaker = data.designated_speaker;
 
-                        const self = data.viewers.find(u => u.token === COLLAB_DATA.userToken);
+                        const self = data.viewers.find(u => isSelfKey(u.token));
                         if (self && self.publicId && self.publicId !== localPublicId) {
                             localPublicId = self.publicId;
                             localPublicIdBytes = textEncoder.encode(localPublicId);
@@ -2431,7 +2448,12 @@ document.addEventListener('DOMContentLoaded', () => {
                         document.querySelectorAll('.video-container').forEach(el => el.classList.remove('designated-speaker'));
                         document.querySelectorAll('.designate-speaker').forEach(el => el.classList.remove('active'));
                         if (currentDesignatedSpeaker) {
-                            const speakerContainer = document.querySelector(`[data-user-token="${currentDesignatedSpeaker}"]`);
+                            // On an un-upgraded server the speaker key is the
+                            // full token, while our own tile's data-user-token
+                            // is the 8-char key: fall back to the local tile
+                            // for our own designation (ANT-882 mixed versions).
+                            const speakerContainer = document.querySelector(`[data-user-token="${currentDesignatedSpeaker}"]`)
+                                || (isSelfKey(currentDesignatedSpeaker) ? localContainer : null);
                             if (speakerContainer) {
                                 speakerContainer.classList.add('designated-speaker');
                                 const speakerButton = speakerContainer.querySelector('.designate-speaker');
@@ -2442,9 +2464,9 @@ document.addEventListener('DOMContentLoaded', () => {
                         updateGestureOverlay();
 
                         const mkOwnerUser = data.viewers.find(u => u.has_mk);
-                        const newMkOwner = mkOwnerUser ? mkOwnerUser.token : COLLAB_DATA.userToken;
+                        const newMkOwner = mkOwnerUser ? mkOwnerUser.token : identityKey;
 
-                        const iHaveMk = (mkOwnerUser && mkOwnerUser.token === COLLAB_DATA.userToken)
+                        const iHaveMk = (mkOwnerUser && isSelfKey(mkOwnerUser.token))
                             || (!mkOwnerUser && COLLAB_DATA.userRole === 'controller');
                         gamingModeBtn.classList.toggle('hidden', COLLAB_DATA.userRole === 'controller' && !iHaveMk);
 
@@ -2458,7 +2480,7 @@ document.addEventListener('DOMContentLoaded', () => {
                         const participantsToShow = data.viewers.filter(u =>
                             u.permission !== 'readonly' &&
                             u.online &&
-                            u.token !== COLLAB_DATA.userToken
+                            !isSelfKey(u.token)
                         );
                         const serverTokens = new Set(participantsToShow.map(u => u.token));
                         const clientTokens = new Set(Object.keys(remoteStreams));
@@ -2640,8 +2662,8 @@ document.addEventListener('DOMContentLoaded', () => {
         if (isController) {
             localControls = `
                 <button class="remote-control-btn toggle-resolution-lock" title="${t('tooltips.lockResolution')}"><i class="fas fa-lock-open"></i></button>
-                <button class="remote-control-btn resize-to-client" data-token="${COLLAB_DATA.userToken}" title="${t('tooltips.resizeClient')}"><i class="fas fa-desktop"></i></button>
-                <button class="remote-control-btn designate-speaker" data-token="${COLLAB_DATA.userToken}" title="${t('tooltips.designateSpeaker')}"><i class="fas fa-star"></i></button>
+                <button class="remote-control-btn resize-to-client" data-token="${identityKey}" title="${t('tooltips.resizeClient')}"><i class="fas fa-desktop"></i></button>
+                <button class="remote-control-btn designate-speaker" data-token="${identityKey}" title="${t('tooltips.designateSpeaker')}"><i class="fas fa-star"></i></button>
             `;
         }
         localContainer.querySelector('.video-overlay').innerHTML = `
@@ -3203,7 +3225,7 @@ document.addEventListener('DOMContentLoaded', () => {
             if (user.slot) {
                 assignedGamepadIds.add(user.slot);
                 const icon = gamepadIcons[user.slot];
-                const container = user.token === COLLAB_DATA.userToken
+                const container = isSelfKey(user.token)
                     ? document.getElementById('local-user-container')
                     : document.getElementById(`container-${user.token}`);
 
@@ -3214,7 +3236,7 @@ document.addEventListener('DOMContentLoaded', () => {
 
             if (user.has_mk) {
                 mkAssigned = true;
-                const container = user.token === COLLAB_DATA.userToken
+                const container = isSelfKey(user.token)
                     ? document.getElementById('local-user-container')
                     : document.getElementById(`container-${user.token}`);
 
@@ -3247,7 +3269,10 @@ document.addEventListener('DOMContentLoaded', () => {
     let drag = null;
 
     const dragTargets = () => Array.from(document.querySelectorAll('.video-container')).filter((container) => {
-        const user = currentUserState.find(u => u.token === container.dataset.userToken);
+        // The list token and the tile attribute are both normalized to the
+        // 8-char key domain: an un-upgraded server lists full tokens while
+        // our own tile attribute is the short key (ANT-882).
+        const user = currentUserState.find(u => key8(u.token) === key8(container.dataset.userToken));
         return container.id === 'gamepad-source-box' || user;
     });
 
@@ -3294,7 +3319,7 @@ document.addEventListener('DOMContentLoaded', () => {
         if (!dropped || kind === 'stream' || !over) return;
 
         if (kind === 'mk') {
-            const tokenToAssign = (over.id === 'gamepad-source-box') ? COLLAB_DATA.userToken : over.dataset.userToken;
+            const tokenToAssign = (over.id === 'gamepad-source-box') ? submitToken(identityKey) : submitToken(over.dataset.userToken);
             ws.send(JSON.stringify({ action: 'assign_mk', token: tokenToAssign }));
             return;
         }
@@ -3303,11 +3328,11 @@ document.addEventListener('DOMContentLoaded', () => {
             const parentContainer = source.parentElement;
             if (parentContainer && parentContainer.id !== 'gamepad-source-box') {
                 const userToken = parentContainer.dataset.userToken;
-                if (userToken) ws.send(JSON.stringify({ action: 'assign_slot', viewer_token: userToken, slot: null }));
+                if (userToken) ws.send(JSON.stringify({ action: 'assign_slot', viewer_token: submitToken(userToken), slot: null }));
             }
         } else {
             const userToken = over.dataset.userToken;
-            if (userToken) ws.send(JSON.stringify({ action: 'assign_slot', viewer_token: userToken, slot: gamepadId }));
+            if (userToken) ws.send(JSON.stringify({ action: 'assign_slot', viewer_token: submitToken(userToken), slot: gamepadId }));
         }
     };
 
@@ -3460,7 +3485,10 @@ document.addEventListener('DOMContentLoaded', () => {
                 applyAutoResolution();
             }
         } else if (btn.classList.contains('designate-speaker')) {
-            const tokenToSet = (currentDesignatedSpeaker === token) ? null : token;
+            // Compare in the key8 domain so the toggle-off test also holds
+            // against an un-upgraded server whose speaker key is the full
+            // token (ANT-882). The server resolves either form.
+            const tokenToSet = (key8(currentDesignatedSpeaker) === key8(token)) ? null : submitToken(token);
             ws.send(JSON.stringify({ action: 'set_designated_speaker', token: tokenToSet }));
         }
     });
@@ -3488,8 +3516,8 @@ document.addEventListener('DOMContentLoaded', () => {
                 const height = iframeEl.clientHeight;
                 ws.send(JSON.stringify({ action: 'client_resolution', width, height }));
                 if (COLLAB_DATA.userRole === 'controller') {
-                    clientResolutions[COLLAB_DATA.userToken] = { width, height };
-                    if (!isResolutionLocked && currentMkOwner === COLLAB_DATA.userToken) {
+                    clientResolutions[identityKey] = { width, height };
+                    if (!isResolutionLocked && isSelfKey(currentMkOwner)) {
                         applyAutoResolution();
                     }
                 }

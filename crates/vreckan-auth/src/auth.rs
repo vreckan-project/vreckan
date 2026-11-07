@@ -25,7 +25,6 @@ use axum::response::{IntoResponse, Response};
 use axum::routing::{get, post, put};
 use axum::{Json, Router};
 use base64::Engine;
-use jwks::Jwks;
 use rand::Rng;
 use sea_orm::{ActiveModelTrait, ActiveValue, ConnectionTrait, DbErr, EntityTrait};
 use serde::{Deserialize, Serialize};
@@ -1317,30 +1316,63 @@ pub async fn oidc_apply_groups(
     let _ = user_manager::recompute_is_admin(&state.db, username).await;
 }
 
-/// `jwks 0.5.x` still compiles against `jsonwebtoken` v10, so the
-/// `DecodingKey` stored on its `Jwk` is a v10 type. vreckan decodes with v11,
-/// so translate the v10 key into the equivalent v11 key before use (the
-/// `jsonwebtoken_v10` companion dep in Cargo.toml names that v10 crate).
-fn v11_decoding_key(
-    v10_key: &jsonwebtoken_v10::DecodingKey,
-) -> Option<jsonwebtoken::DecodingKey> {
-    use jsonwebtoken_v10::DecodingKeyKind;
-    match v10_key.kind() {
-        DecodingKeyKind::RsaModulusExponent { n, e } => {
-            Some(jsonwebtoken::DecodingKey::from_rsa_raw_components(n, e))
-        }
-        DecodingKeyKind::SecretOrDer(der) => match v10_key.family() {
-            jsonwebtoken_v10::AlgorithmFamily::Rsa => {
-                Some(jsonwebtoken::DecodingKey::from_rsa_der(der))
-            }
-            jsonwebtoken_v10::AlgorithmFamily::Ec => {
-                Some(jsonwebtoken::DecodingKey::from_ec_der(der))
-            }
-            // HMAC/Ed keys can never satisfy the RS256 validation below;
-            // treat as "no usable key" (fail-closed path).
-            _ => None,
-        },
+/// Fetch the provider's JWKS document and return its `keys` array. Hand-
+/// rolled on reqwest (the pattern `oidc_discovery` already uses): a 10 s
+/// timeout, a non-200 response is a failure, and the body is parsed as plain
+/// JSON — the only fields consumed downstream are the per-entry `kid`,
+/// `kty`, `n`, and `e`. The `jwks` crate used to do this fetch against
+/// jsonwebtoken v10; with the validation algorithm pinned to RS256 the RSA
+/// modulus/exponent is all that is needed, so the v10 companion dep is gone
+/// (ANT-855).
+async fn fetch_jwks(jwks_uri: &str) -> Result<Vec<serde_json::Value>, String> {
+    let client = reqwest::Client::builder()
+        .timeout(std::time::Duration::from_secs(10))
+        .build()
+        .map_err(|e| format!("build HTTP client: {e}"))?;
+    let r = client
+        .get(jwks_uri)
+        .send()
+        .await
+        .map_err(|e| format!("request failed: {e}"))?;
+    if r.status() != 200 {
+        return Err(format!("status {}", r.status()));
     }
+    let doc: serde_json::Value = r
+        .json()
+        .await
+        .map_err(|e| format!("invalid JSON: {e}"))?;
+    doc.get("keys")
+        .and_then(|v| v.as_array())
+        .cloned()
+        .ok_or_else(|| "document has no 'keys' array".to_string())
+}
+
+/// Pick the JWKS entry for the token's `kid` (or the first entry when the
+/// token header carries no kid) and build the v11 `DecodingKey` from it.
+/// RS256 is the pinned validation algorithm, so only `kty = "RSA"` entries
+/// with base64url (unpadded) `n`/`e` are usable; every other shape — unknown
+/// kid, EC/HMAC/Ed keys, missing or malformed components — is "no usable
+/// key" and falls through to the fail-closed / claims-only branch below.
+fn jwks_entry_decoding_key(
+    keys: &[serde_json::Value],
+    kid: &Option<String>,
+) -> Option<jsonwebtoken::DecodingKey> {
+    let entry = match kid {
+        Some(k) => keys
+            .iter()
+            .find(|e| e.get("kid").and_then(|v| v.as_str()) == Some(k.as_str())),
+        None => keys.first(),
+    }?;
+    if entry.get("kty").and_then(|v| v.as_str()) != Some("RSA") {
+        return None;
+    }
+    let n = entry.get("n")?.as_str()?;
+    let e = entry.get("e")?.as_str()?;
+    // The same unpadded base64url engine jsonwebtoken's `from_rsa_components`
+    // decodes with.
+    let n = base64::engine::general_purpose::URL_SAFE_NO_PAD.decode(n).ok()?;
+    let e = base64::engine::general_purpose::URL_SAFE_NO_PAD.decode(e).ok()?;
+    Some(jsonwebtoken::DecodingKey::from_rsa_raw_components(&n, &e))
 }
 
 /// Verify the id_token signature (via the provider's JWKS) and standard claims
@@ -1377,16 +1409,8 @@ async fn oidc_verify_id_token(
         .map(|s| s.to_string());
 
     let decoding_key = if let Some(jwks_uri) = jwks_uri {
-        match Jwks::from_jwks_url(&jwks_uri).await {
-            Ok(jwks) => {
-                // Match by kid when present; otherwise take the first key.
-                let entry = if let Some(k) = &kid {
-                    jwks.keys.get(k)
-                } else {
-                    jwks.keys.values().next()
-                };
-                entry.and_then(|j| v11_decoding_key(&j.decoding_key))
-            }
+        match fetch_jwks(&jwks_uri).await {
+            Ok(keys) => jwks_entry_decoding_key(&keys, &kid),
             Err(e) => {
                 warn!("OIDC JWKS fetch/parse failed: {e}");
                 None
@@ -1831,5 +1855,241 @@ mod tests {
         // A different, untrusted peer: the header falls back to https.
         let other = SocketAddr::new(IpAddr::V4(Ipv4Addr::new(203, 0, 113, 7)), 1234);
         assert_eq!(request_scheme(&s, &xfp("http"), Some(other)), "https");
+    }
+
+    // -- OIDC id_token verification (ANT-855) --------------------------------
+    //
+    // Drives `oidc_verify_id_token` against a one-shot loopback JWKS server
+    // (same shape as the mock IdP in vreckan-admin's test_oidc.rs). Each test
+    // seeds the discovery cache with a unique issuer so the parallel tests'
+    // cache entries never collide.
+
+    use pkcs8::EncodePrivateKey;
+    use rsa::traits::PublicKeyParts;
+    use rsa::RsaPrivateKey;
+
+    /// Base64url-encode a big-endian byte slice without padding.
+    fn b64u(bytes: &[u8]) -> String {
+        base64::engine::general_purpose::URL_SAFE_NO_PAD.encode(bytes)
+    }
+
+    fn rsa_key() -> RsaPrivateKey {
+        RsaPrivateKey::new(&mut rand::rng(), 2048).unwrap()
+    }
+
+    fn rsa_jwk_entry(key: &RsaPrivateKey, kid: Option<&str>) -> serde_json::Value {
+        let mut entry = serde_json::json!({
+            "kty": "RSA",
+            "use": "sig",
+            "alg": "RS256",
+            "n": b64u(&key.n().to_be_bytes_trimmed_vartime()),
+            "e": b64u(&key.e().to_be_bytes_trimmed_vartime()),
+        });
+        if let Some(k) = kid {
+            entry["kid"] = serde_json::json!(k);
+        }
+        entry
+    }
+
+    /// Sign an id_token (RS256) with the given key. `None` kid for the
+    /// no-kid fallback path. Mirrors the mock IdP in vreckan-admin's
+    /// test_oidc.rs (PEM-based `EncodingKey`).
+    fn sign_id_token(
+        key: &RsaPrivateKey,
+        kid: Option<&str>,
+        claims: &serde_json::Value,
+    ) -> String {
+        let encoding_key = jsonwebtoken::EncodingKey::from_rsa_pem(
+            key.to_pkcs8_pem(pkcs8::LineEnding::LF)
+                .unwrap()
+                .as_bytes(),
+        )
+        .unwrap();
+        let mut header = jsonwebtoken::Header::new(jsonwebtoken::Algorithm::RS256);
+        header.kid = kid.map(|k| k.to_string());
+        jsonwebtoken::encode(&header, claims, &encoding_key).unwrap()
+    }
+
+    /// Accept one connection on a fresh loopback listener, drain the request,
+    /// and write a fixed HTTP response. Returns the address plus the listener
+    /// (held by the test for its lifetime so the port stays bound).
+    fn jwks_server(
+        status: u16,
+        body: String,
+    ) -> (std::net::SocketAddr, std::net::TcpListener) {
+        let listener = std::net::TcpListener::bind("127.0.0.1:0").unwrap();
+        let addr = listener.local_addr().unwrap();
+        let acceptor = listener.try_clone().unwrap();
+        std::thread::spawn(move || {
+            if let Ok((mut stream, _)) = acceptor.accept() {
+                use std::io::{Read, Write};
+                let mut raw = Vec::new();
+                let mut buf = [0u8; 4096];
+                while !raw.windows(4).any(|w| w == b"\r\n\r\n") {
+                    match stream.read(&mut buf) {
+                        Ok(0) | Err(_) => break,
+                        Ok(n) => raw.extend_from_slice(&buf[..n]),
+                    }
+                }
+                let resp = format!(
+                    "HTTP/1.1 {status} X\r\nContent-Type: application/json\r\nContent-Length: {}\r\nConnection: close\r\n\r\n{body}",
+                    body.len()
+                );
+                let _ = stream.write_all(resp.as_bytes());
+            }
+        });
+        (addr, listener)
+    }
+
+    fn verify_cfg(require_signature: bool) -> OidcConfig {
+        OidcConfig {
+            enabled: true,
+            issuer: String::new(),
+            client_id: "vreckan-test-client".into(),
+            client_secret: String::new(),
+            redirect_uri: String::new(),
+            scopes: String::new(),
+            allow_signup: true,
+            state_ttl: 600,
+            admin_groups: String::new(),
+            user_groups: String::new(),
+            require_signature,
+        }
+    }
+
+    /// Seed the discovery cache for a unique issuer so the verify path finds
+    /// the `jwks_uri` without a network round trip (mirrors the authorize
+    /// step having cached discovery).
+    fn seed_discovery(issuer: &str, jwks_uri: &str) -> OidcConfig {
+        let doc = serde_json::json!({
+            "issuer": issuer,
+            "authorization_endpoint": format!("{issuer}/authorize"),
+            "token_endpoint": format!("{issuer}/token"),
+            "jwks_uri": jwks_uri,
+        });
+        oidc_discovery_cache()
+            .lock()
+            .unwrap()
+            .insert(issuer.to_string(), doc);
+        let mut cfg = verify_cfg(true);
+        cfg.issuer = issuer.to_string();
+        cfg
+    }
+
+    fn id_token_claims(issuer: &str) -> serde_json::Value {
+        let now = now_secs() as i64;
+        serde_json::json!({
+            "iss": issuer,
+            "aud": "vreckan-test-client",
+            "sub": "user-1",
+            "iat": now,
+            "exp": now + 3600,
+        })
+    }
+
+    #[tokio::test]
+    async fn verify_id_token_rs256_against_real_jwks() {
+        let key = rsa_key();
+        let issuer = "http://127.0.0.1:1/issuer-rs256";
+        let (addr, _l) = jwks_server(
+            200,
+            serde_json::json!({ "keys": [rsa_jwk_entry(&key, Some("test-key-1"))] })
+                .to_string(),
+        );
+        let cfg = seed_discovery(issuer, &format!("http://{addr}/jwks"));
+        let token = sign_id_token(&key, Some("test-key-1"), &id_token_claims(issuer));
+        let claims = oidc_verify_id_token(&cfg, &token)
+            .await
+            .expect("RS256 verification against the real JWKS must pass");
+        assert_eq!(claims.get("sub").and_then(|v| v.as_str()), Some("user-1"));
+    }
+
+    #[tokio::test]
+    async fn verify_id_token_no_kid_falls_back_to_first_key() {
+        let key = rsa_key();
+        let issuer = "http://127.0.0.1:1/issuer-nokid";
+        let (addr, _l) = jwks_server(
+            200,
+            serde_json::json!({ "keys": [rsa_jwk_entry(&key, None)] }).to_string(),
+        );
+        let cfg = seed_discovery(issuer, &format!("http://{addr}/jwks"));
+        let token = sign_id_token(&key, None, &id_token_claims(issuer));
+        let claims = oidc_verify_id_token(&cfg, &token)
+            .await
+            .expect("a kid-less token must verify against the first JWKS key");
+        assert_eq!(claims.get("sub").and_then(|v| v.as_str()), Some("user-1"));
+    }
+
+    #[tokio::test]
+    async fn verify_id_token_unknown_kid_fails_closed() {
+        let key = rsa_key();
+        let issuer = "http://127.0.0.1:1/issuer-unknownkid";
+        let (addr, _l) = jwks_server(
+            200,
+            serde_json::json!({ "keys": [rsa_jwk_entry(&key, Some("other-key"))] })
+                .to_string(),
+        );
+        let cfg = seed_discovery(issuer, &format!("http://{addr}/jwks"));
+        let token = sign_id_token(&key, Some("test-key-1"), &id_token_claims(issuer));
+        let err = oidc_verify_id_token(&cfg, &token)
+            .await
+            .expect_err("a kid missing from the JWKS must fail closed");
+        assert_eq!(err.0, StatusCode::BAD_GATEWAY);
+        assert!(err.1.contains("JWKS unavailable"));
+    }
+
+    #[tokio::test]
+    async fn verify_id_token_jwks_unreachable_fails_closed() {
+        let key = rsa_key();
+        let issuer = "http://127.0.0.1:1/issuer-unreachable";
+        // A closed port: the fetch errors before any response.
+        let cfg = seed_discovery(issuer, "http://127.0.0.1:1/jwks");
+        let token = sign_id_token(&key, Some("test-key-1"), &id_token_claims(issuer));
+        let err = oidc_verify_id_token(&cfg, &token)
+            .await
+            .expect_err("an unreachable JWKS must fail closed");
+        assert_eq!(err.0, StatusCode::BAD_GATEWAY);
+        assert!(err.1.contains("JWKS unavailable"));
+    }
+
+    #[tokio::test]
+    async fn verify_id_token_jwks_unreachable_claims_only_fallback() {
+        let key = rsa_key();
+        let issuer = "http://127.0.0.1:1/issuer-claims-only";
+        let mut cfg = seed_discovery(issuer, "http://127.0.0.1:1/jwks");
+        cfg.require_signature = false;
+        let token = sign_id_token(&key, Some("test-key-1"), &id_token_claims(issuer));
+        let claims = oidc_verify_id_token(&cfg, &token)
+            .await
+            .expect("with oidc_require_signature off the claims-only fallback applies");
+        assert_eq!(claims.get("sub").and_then(|v| v.as_str()), Some("user-1"));
+    }
+
+    #[tokio::test]
+    async fn verify_id_token_non_rsa_key_fails_closed() {
+        let key = rsa_key();
+        let issuer = "http://127.0.0.1:1/issuer-ec";
+        // The JWKS only offers an EC key: it can never satisfy the pinned
+        // RS256 validation, so it is "no usable key".
+        let (addr, _l) = jwks_server(
+            200,
+            serde_json::json!({
+                "keys": [{
+                    "kty": "EC",
+                    "kid": "test-key-1",
+                    "crv": "P-256",
+                    "x": b64u(b"0123456789abcdef0123456789abcdef"),
+                    "y": b64u(b"0123456789abcdef0123456789abcdef"),
+                }]
+            })
+            .to_string(),
+        );
+        let cfg = seed_discovery(issuer, &format!("http://{addr}/jwks"));
+        let token = sign_id_token(&key, Some("test-key-1"), &id_token_claims(issuer));
+        let err = oidc_verify_id_token(&cfg, &token)
+            .await
+            .expect_err("a non-RSA JWKS entry must fail closed under RS256");
+        assert_eq!(err.0, StatusCode::BAD_GATEWAY);
+        assert!(err.1.contains("JWKS unavailable"));
     }
 }
