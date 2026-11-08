@@ -10,7 +10,9 @@
 
 mod common;
 
+use std::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
 use std::sync::{Arc, Mutex};
+use std::thread::ThreadId;
 
 use async_trait::async_trait;
 use http::StatusCode;
@@ -66,7 +68,124 @@ fn write_cert_tree(base: &std::path::Path, domain: &str, days: i64) {
 /// process-global state — the cert-dir statics AND the `FAKE_ACME_ISSUER`
 /// seam (mirrors pytest's function-scoped `monkeypatch`, which runs tests
 /// sequentially). Every test that reads or writes either global must hold it.
-static ACME_TEST_LOCK: Mutex<()> = Mutex::new(());
+///
+/// Reentrant: tests hold the lock via `lock_le()`/`acme_paths()` and also
+/// create `IssuerGuard`s, which acquire the same lock themselves (so a
+/// guard can never be installed or cleared outside the critical section —
+/// the cross-test window behind the
+/// `test_renewal_hot_reloads_served_cert_without_restart` flake, ANT-927).
+/// A plain `std::sync::Mutex` would self-deadlock the current-thread test
+/// runtime on that second acquisition (the ANT-269 masking-test hang).
+static ACME_TEST_LOCK: ReentrantLock = ReentrantLock::new();
+
+/// A minimal reentrant mutex: same-thread acquisitions nest (the holder's
+/// `count` goes up); every other thread blocks until the current holder
+/// releases entirely. The holder slot is never touched by a waiting
+/// claimant, so a holder that nests again always takes the fast path (no
+/// claim race); at most one claim is in flight at a time (`claiming`), and
+/// the claimant only becomes the holder after it actually acquires `inner`.
+struct ReentrantLock {
+    /// Nesting depth of the current holder; 0 = free.
+    count: AtomicUsize,
+    /// The holder while `count > 0` (stale otherwise).
+    holder: Mutex<Option<ThreadId>>,
+    /// The thread mid-claim while `claiming` is set.
+    claimant: Mutex<Option<ThreadId>>,
+    claiming: AtomicBool,
+    /// The actual exclusion; held by the holder.
+    inner: Mutex<()>,
+}
+
+impl ReentrantLock {
+    const fn new() -> Self {
+        Self {
+            count: AtomicUsize::new(0),
+            holder: Mutex::new(None),
+            claimant: Mutex::new(None),
+            claiming: AtomicBool::new(false),
+            inner: Mutex::new(()),
+        }
+    }
+
+    /// Acquire the lock. A re-acquisition by the current holder nests;
+    /// other threads claim the pending slot and block on `inner`. Poisoned
+    /// inner locks (a prior test panicked while holding one) recover to
+    /// the live state instead of cascading the failure to every other test
+    /// that uses the global cert-dir statics.
+    fn lock(&self) -> ReentrantGuard<'_> {
+        let tid = std::thread::current().id();
+        loop {
+            let hg = self
+                .holder
+                .lock()
+                .unwrap_or_else(std::sync::PoisonError::into_inner);
+            // Fast path: we are the holder and nest.
+            if *hg == Some(tid) && self.count.load(Ordering::SeqCst) > 0 {
+                self.count.fetch_add(1, Ordering::SeqCst);
+                return ReentrantGuard {
+                    lock: self,
+                    inner: None,
+                };
+            }
+            drop(hg);
+            // Claim the pending slot (one claimant at a time).
+            if !self
+                .claiming
+                .compare_exchange(false, true, Ordering::SeqCst, Ordering::SeqCst)
+                .is_ok()
+            {
+                std::thread::yield_now();
+                continue;
+            }
+            *self
+                .claimant
+                .lock()
+                .unwrap_or_else(std::sync::PoisonError::into_inner) = Some(tid);
+            // Wait for the current holder to release, then take over. The
+            // inner guard travels with this guard so it is released when the
+            // *outermost* acquisition drops.
+            let ig = self
+                .inner
+                .lock()
+                .unwrap_or_else(std::sync::PoisonError::into_inner);
+            self.count.store(1, Ordering::SeqCst);
+            *self
+                .holder
+                .lock()
+                .unwrap_or_else(std::sync::PoisonError::into_inner) = Some(tid);
+            self.claiming.store(false, Ordering::SeqCst);
+            return ReentrantGuard {
+                lock: self,
+                inner: Some(ig),
+            };
+        }
+    }
+}
+
+/// Guard for [`ReentrantLock`]; decrements the holder's count on drop and
+/// releases the underlying lock when the last (outermost) guard drops.
+struct ReentrantGuard<'a> {
+    lock: &'a ReentrantLock,
+    /// Present only on the outermost acquisition.
+    inner: Option<std::sync::MutexGuard<'a, ()>>,
+}
+
+impl Drop for ReentrantGuard<'_> {
+    fn drop(&mut self) {
+        debug_assert!(
+            self.lock.count.load(Ordering::SeqCst) > 0,
+            "reentrant guard double-dropped"
+        );
+        self.lock.count.fetch_sub(1, Ordering::SeqCst);
+        if self.lock.count.load(Ordering::SeqCst) == 0 {
+            drop(
+                self.inner
+                    .take()
+                    .expect("the outermost guard carries the inner guard"),
+            );
+        }
+    }
+}
 
 /// Point the module's cert dirs at a fresh temp tree (host + app). Mirrors
 /// the `acme_paths` fixture. Holds `ACME_TEST_LOCK` for its lifetime so the
@@ -74,15 +193,13 @@ static ACME_TEST_LOCK: Mutex<()> = Mutex::new(());
 struct AcmePaths {
     host: String,
     app: String,
-    _guard: std::sync::MutexGuard<'static, ()>,
+    _guard: ReentrantGuard<'static>,
     _tmp: TempDir,
 }
 
-/// Acquire the LE test lock, recovering from a poisoned lock (a prior test
-/// that panicked while holding it) so one failure doesn't cascade to every
-/// other test that uses the global cert-dir statics.
-fn lock_le() -> std::sync::MutexGuard<'static, ()> {
-    ACME_TEST_LOCK.lock().unwrap_or_else(|e| e.into_inner())
+/// Acquire the LE test lock (reentrant; see `ACME_TEST_LOCK`).
+fn lock_le() -> ReentrantGuard<'static> {
+    ACME_TEST_LOCK.lock()
 }
 
 fn acme_paths() -> AcmePaths {
@@ -205,16 +322,29 @@ impl acme_orchestrator::AcmeIssuer for FakeAcmeIssuer {
 }
 
 /// Install a fake issuer; the guard clears it on drop.
-struct IssuerGuard;
+///
+/// The guard also holds `ACME_TEST_LOCK` for its whole lifetime (the lock is
+/// reentrant, so a test that already holds it via `lock_le()`/`acme_paths()`
+/// can install guards without self-deadlocking). This makes the issuer's
+/// process-global lifetime *structurally* inside the critical section: a
+/// concurrent test's guard can no longer clear `FAKE_ACME_ISSUER` in the
+/// window between another test installing it and the orchestrator reading
+/// it (ANT-927).
+struct IssuerGuard {
+    _lock: ReentrantGuard<'static>,
+}
 impl IssuerGuard {
     fn new(issuer: Arc<dyn acme_orchestrator::AcmeIssuer>) -> Self {
+        let lock = lock_le();
         *acme_orchestrator::FAKE_ACME_ISSUER.lock().unwrap() = Some(issuer);
-        Self
+        Self { _lock: lock }
     }
 }
 impl Drop for IssuerGuard {
     fn drop(&mut self) {
         *acme_orchestrator::FAKE_ACME_ISSUER.lock().unwrap() = None;
+        // `_lock` drops last (fields drop in declaration order), keeping the
+        // issuer clear inside the critical section.
     }
 }
 
@@ -246,7 +376,7 @@ async fn persist_until_visible(
     rec: &acme_orchestrator::AcmeCertRecord,
 ) -> Option<acme_orchestrator::AcmeCertRecord> {
     let mut stored: Option<acme_orchestrator::AcmeCertRecord> = None;
-    for attempt in 0..10 {
+    for attempt in 0..20 {
         if attempt > 0 {
             tokio::time::sleep(std::time::Duration::from_millis(250)).await;
         }
@@ -281,7 +411,7 @@ async fn cert_status_until_db(
     domains: &[String],
 ) -> serde_json::Value {
     let mut status = acme_orchestrator::cert_status(state, domains).await;
-    for _ in 0..10 {
+    for _ in 0..20 {
         let db_sourced = status.get("source").and_then(|v| v.as_str()) == Some("acme_db");
         let expiry_visible = status.get("days_remaining").is_some_and(|v| v.is_i64());
         let key_visible = status
@@ -428,7 +558,14 @@ async fn test_cert_status_reads_from_db() {
         domains: "example.com".to_string(),
         expires: acme_orchestrator::acme_cert_expiry_from_pem(&cert_pem),
     };
-    persist_until_visible(&state, &rec).await.expect("record persisted");
+    let stored = persist_until_visible(&state, &rec)
+        .await
+        .expect("record persisted");
+    // A timed-out visibility retry would leave a field missing here; fail
+    // loudly on the persist itself rather than on the status read below
+    // (ANT-927 hardening, per the ANT-577 candidate).
+    assert_eq!(stored.cert_pem, cert_pem, "persisted cert not visible");
+    assert_eq!(stored.key_pem, key_pem, "persisted key not visible");
     let status = cert_status_until_db(&state, &["example.com".into()]).await;
     // The DB is the source of truth: cert/key are returned as PEM content.
     assert_eq!(status["present"], true);
@@ -456,7 +593,14 @@ async fn test_cert_status_db_preferred_over_disk() {
         domains: "db.example.com".to_string(),
         expires: acme_orchestrator::acme_cert_expiry_from_pem(&db_cert),
     };
-    persist_until_visible(&state, &rec).await.expect("record persisted");
+    let stored = persist_until_visible(&state, &rec)
+        .await
+        .expect("record persisted");
+    // A timed-out visibility retry would leave a field missing here; fail
+    // loudly on the persist itself rather than on the status read below
+    // (ANT-927 hardening, per the ANT-577 candidate).
+    assert_eq!(stored.cert_pem, db_cert, "persisted cert not visible");
+    assert_eq!(stored.key_pem, db_key, "persisted key not visible");
     let status = cert_status_until_db(&state, &["example.com".into()]).await;
     assert_eq!(status["source"], "acme_db");
     assert_eq!(status["cert"], db_cert);
@@ -1069,9 +1213,38 @@ async fn test_renewal_hot_reloads_served_cert_without_restart() {
         expires: acme_orchestrator::acme_cert_expiry_from_pem(&cert_a),
     };
     persist_until_visible(&state, &rec_a).await.expect("record persisted");
+    // `renew_acme_cert` takes a single `cert_status` read to decide whether
+    // the renewal is due; that read can land on a pooled connection still
+    // carrying a pre-write WAL snapshot of the seed and miss it (falling
+    // through to the disk path, which this test never populated —
+    // `days_remaining: null` -> "not due" -> a silent no-op with
+    // `renewed=false`, the ANT-927 line-1068 failure mode). Drain the pool
+    // until the DB record is actually visible before the one-shot renew
+    // (ANT-328 discipline).
+    let status = cert_status_until_db(&state, &["example.com".into()]).await;
+    assert_eq!(
+        status["source"], "acme_db",
+        "seeded cert A must be visible to the renewal check: {status}"
+    );
+    let days = status["days_remaining"].as_i64().expect("days_remaining");
+    assert!(
+        (0..=30).contains(&days),
+        "seeded cert A must be inside the renewal window: days={days}"
+    );
     let cfg = default_cfg();
-    let result = acme_orchestrator::renew_acme_cert(&state, &cfg).await;
-    assert_eq!(result["renewed"], true, "renewal should have run");
+    // A missed "due" read is a side-effect-free no-op (no issuance), so
+    // retry the one-shot renewal across pool rotation instead of flaking
+    // (ANT-927); the loop stops at the first real renewal, so no double
+    // issuance.
+    let mut result = acme_orchestrator::renew_acme_cert(&state, &cfg).await;
+    for _ in 0..10 {
+        if result["renewed"].as_bool() == Some(true) {
+            break;
+        }
+        tokio::time::sleep(std::time::Duration::from_millis(250)).await;
+        result = acme_orchestrator::renew_acme_cert(&state, &cfg).await;
+    }
+    assert_eq!(result["renewed"], true, "renewal should have run: {result}");
     // The renewed cert is persisted to the config DB (the source of truth);
     // the visibility helper bounds the persist against transient pool drops.
     let expected = acme_orchestrator::AcmeCertRecord {
@@ -1084,16 +1257,36 @@ async fn test_renewal_hot_reloads_served_cert_without_restart() {
     let rec = persist_until_visible(&state, &expected).await.expect("record persisted");
     assert_eq!(rec.cert_pem, cert_b, "the renewed cert is in the DB");
 
+    // The in-renewal hot reload re-reads the record from the DB and can
+    // itself land on a pre-write WAL snapshot (re-applying cert A to the
+    // listener). Now that the renewed record is confirmed fully visible,
+    // reload once more so the swap reflects the committed bundle, then poll
+    // the served cert with a bounded deadline instead of a single sample
+    // (ANT-927: under load the reload/probe window can stall — a timing
+    // race, not a logic failure). A reload that lands on a stale snapshot
+    // self-heals on the NEXT reload trigger, so each missed probe
+    // re-triggers the reload (bounded: the loop stops at the first B).
+    let _ = acme_orchestrator::reload_served_cert(&state).await;
+    let expected_served = pem_first_cert(&cert_b);
+    let mut served_b = first_served_cert(addr).await;
+    for _ in 0..20 {
+        if served_b == expected_served {
+            break;
+        }
+        let _ = acme_orchestrator::reload_served_cert(&state).await;
+        tokio::time::sleep(std::time::Duration::from_millis(250)).await;
+        served_b = first_served_cert(addr).await;
+    }
+
     // The SAME running listener (no restart, no rebind) now serves cert B,
     // sourced from the DB — proving the in-place hot-reload.
-    let served_b = first_served_cert(addr).await;
     assert_ne!(
         served_a, served_b,
         "a renewal should change the served cert in place"
     );
     assert_eq!(
         served_b,
-        pem_first_cert(&cert_b),
+        expected_served,
         "the served cert must be the renewed cert read from the DB"
     );
 }
