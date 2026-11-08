@@ -177,6 +177,16 @@ pub struct AppState {
     /// a newer snapshot always carries the larger generation; a push from an
     /// older generation is dropped when a newer one has already been pushed.
     pub token_table_generations: Arc<RwLock<HashMap<String, u64>>>,
+    /// Per-session token-table push lock (ANT-927): collab slot/MK/viewer
+    /// mutations acquire it BEFORE the sessions write lock and hold it
+    /// through the container POST, so per-session push completion order
+    /// matches commit order — the last-write-wins container endpoint can no
+    /// longer record a table built from an older commit after a newer one
+    /// (the `concurrent_slot_assignments_do_not_clobber_each_other` flake).
+    /// A tokio lock (held across the push await); the map itself uses a std
+    /// lock, never held across an await.
+    pub token_table_push_locks:
+        Arc<std::sync::Mutex<HashMap<String, Arc<tokio::sync::Mutex<()>>>>>,
     /// When true, the background image-pull task is a no-op (it just marks
     /// the image "queued" and returns without talking to Docker). Tests set
     /// this so the `tokio::spawn`-ed pull doesn't do a real (slow/hanging)
@@ -239,6 +249,7 @@ impl AppState {
             selkies_conn_seq: Arc::new(std::sync::atomic::AtomicU64::new(0)),
             last_pushed_token_tables: Arc::new(RwLock::new(HashMap::new())),
             token_table_generations: Arc::new(RwLock::new(HashMap::new())),
+            token_table_push_locks: Arc::new(std::sync::Mutex::new(HashMap::new())),
             pull_noop: Arc::new(std::sync::atomic::AtomicBool::new(false)),
             fake_provider: Arc::new(std::sync::atomic::AtomicBool::new(false)),
             fake_provider_record: Arc::new(std::sync::Mutex::new(None)),

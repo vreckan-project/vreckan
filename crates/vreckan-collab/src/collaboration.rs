@@ -229,6 +229,14 @@ async fn collaborative_room(
         // the earlier one (ANT-887, audit finding 16). The invite-token
         // migration applied to the first clone above is re-applied to the
         // live value for the same reason.
+        //
+        // Per-session push lock held from here through the push below
+        // (ANT-927, same discipline as the slot/MK handlers): a viewer
+        // join's push cannot be overtaken by a later-committed mutation's
+        // push on this session, and vice versa. The guard lives to the end
+        // of this branch (both exits return).
+        let push_lock = session_push_lock(&state, &session_id);
+        let _push = push_lock.lock().await;
         let committed = {
             let mut sessions = state.sessions.write().await;
             let Some(mut live) = sessions.get(&session_id).cloned() else {
@@ -713,6 +721,30 @@ pub async fn push_token_table(state: &AppState, session_id: &str, session_data: 
     post_token_table(state, session_id, session_data, &table, generation).await
 }
 
+/// The per-session token-table push lock (ANT-927). Collab mutations that
+/// commit under the sessions write lock must acquire it FIRST and hold it
+/// through the container POST: the sessions lock orders the commits and
+/// this lock orders the pushes, so the last-write-wins container records
+/// pushes in commit order and a table built from an older commit can no
+/// longer land after a newer one (the flake behind
+/// `concurrent_slot_assignments_do_not_clobber_each_other`). Every path
+/// takes the locks in the same order (push lock -> sessions lock) and
+/// nothing acquires the push lock while holding the sessions lock, so no
+/// deadlock.
+fn session_push_lock(
+    state: &AppState,
+    session_id: &str,
+) -> std::sync::Arc<tokio::sync::Mutex<()>> {
+    let mut locks = state
+        .token_table_push_locks
+        .lock()
+        .unwrap_or_else(std::sync::PoisonError::into_inner);
+    locks
+        .entry(session_id.to_string())
+        .or_insert_with(|| std::sync::Arc::new(tokio::sync::Mutex::new(())))
+        .clone()
+}
+
 
 /// A derived plain-session token table plus the generation stamped when the
 /// derivation started (ANT-470).
@@ -1006,7 +1038,16 @@ async fn handle_assign_slot(
     // a concurrent assignment that lands while the token-table push below is
     // in flight can no longer be clobbered by a stale whole-object write-back
     // (ANT-887, audit finding 16). The push, save, and broadcasts run after
-    // the lock is dropped.
+    // the sessions lock is dropped.
+    //
+    // The per-session push lock is acquired BEFORE the sessions write lock
+    // and held until the POST completes (ANT-927): commits are ordered by
+    // the sessions lock and pushes by this lock, so the container records
+    // this session's tables in commit order and a stale push can no longer
+    // land after a newer one (lock order push -> sessions everywhere, so no
+    // deadlock).
+    let push_lock = session_push_lock(state, session_id);
+    let _push = push_lock.lock().await;
     let (session_data, notifications) = {
         let mut sessions = state.sessions.write().await;
         let Some(mut session_data) = sessions.get(session_id).cloned() else {
@@ -1116,8 +1157,11 @@ async fn handle_assign_slot(
             (session_data, notifications)
         };
     // The write-back landed under the write lock above; the network push
-    // runs after the lock is dropped and no longer spans read and write.
+    // runs after the sessions lock is dropped and no longer spans read and
+    // write. The push lock stays held until the POST completes, so a
+    // later-committed mutation's push cannot overtake this one (ANT-927).
     push_token_table(state, session_id, &session_data).await;
+    drop(_push);
     vreckan_core::state::save_sessions(state).await;
 
     for msg in notifications {
@@ -1142,6 +1186,12 @@ async fn handle_assign_mk(state: &AppState, session_id: &str, target_token: Opti
     // (ANT-887, audit finding 16): the mk transfer commits under the
     // sessions write lock before the token-table push, so a concurrent
     // slot/viewer mutation cannot be clobbered by a stale write-back.
+    //
+    // Same per-session push-lock discipline as `handle_assign_slot`
+    // (ANT-927): acquired before the sessions write lock, held through the
+    // POST, so this push cannot be overtaken by a later-committed one.
+    let push_lock = session_push_lock(state, session_id);
+    let _push = push_lock.lock().await;
     let (session_data, username) = {
         let mut sessions = state.sessions.write().await;
         let Some(mut session_data) = sessions.get(session_id).cloned() else {
@@ -1194,8 +1244,11 @@ async fn handle_assign_mk(state: &AppState, session_id: &str, target_token: Opti
         (session_data, username)
     };
     // The write-back landed under the write lock above; the network push
-    // runs after the lock is dropped and no longer spans read and write.
+    // runs after the sessions lock is dropped and no longer spans read and
+    // write. The push lock stays held until the POST completes, so a
+    // later-committed mutation's push cannot overtake this one (ANT-927).
     push_token_table(state, session_id, &session_data).await;
+    drop(_push);
     vreckan_core::state::save_sessions(state).await;
     let now_ms = (std::time::SystemTime::now()
         .duration_since(std::time::UNIX_EPOCH)
@@ -1762,6 +1815,12 @@ async fn cleanup_disconnect(
         // the re-read, and the token push: tokio locks are not reentrant, so
         // holding it across those awaits would deadlock the session map
         // (ANT-887, audit finding 16 family).
+        //
+        // Per-session push lock acquired before the write lock and held
+        // through the push below (ANT-927, same discipline as the slot/MK
+        // handlers): this session's pushes keep commit order.
+        let push_lock = session_push_lock(state, session_id);
+        let _push = push_lock.lock().await;
         let (state_changed, input_released, broadcasts) = {
             let mut sessions = state.sessions.write().await;
             let mut state_changed = false;
@@ -1836,6 +1895,7 @@ async fn cleanup_disconnect(
                 push_token_table(state, session_id, &sd).await;
             }
         }
+        drop(_push);
     }
 
     if was_live && has_joined {
