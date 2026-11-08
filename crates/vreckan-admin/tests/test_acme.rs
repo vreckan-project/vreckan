@@ -1291,6 +1291,278 @@ async fn test_renewal_hot_reloads_served_cert_without_restart() {
     );
 }
 
+// --- ANT-939: the renewal reload must not re-read the config DB --------------
+
+/// Ensure the app's SQLite pool holds at least `n` idle connections
+/// (acquiring more than the idle count makes the pool create the difference)
+/// and return a handle to that pool. A single pooled connection can never
+/// observe a stale read — the writer and every reader share it — so at least
+/// two connections are needed to exercise the pool-visibility race.
+async fn ensure_idle_connections(
+    state: &vreckan_core::state::AppState,
+    n: usize,
+) -> sea_orm::sqlx::SqlitePool {
+    let pool = state.db.conn.get_sqlite_connection_pool().clone();
+    let mut held = Vec::new();
+    while held.len() < n {
+        held.push(pool.acquire().await.expect("grow the pool"));
+    }
+    // Dropping a `PoolConnection` returns it to the pool.
+    drop(held);
+    pool
+}
+
+/// One pooled SQLite connection that was returned to the pool with an open
+/// read transaction: the first read on it pinned a pre-write WAL snapshot,
+/// and every read that subsequently lands on that connection keeps seeing
+/// that snapshot until the transaction ends (the mechanism behind the
+/// ANT-328/ANT-770 visibility flakes and the ANT-939 production gap).
+struct StalePin {
+    pool: sea_orm::sqlx::SqlitePool,
+}
+
+impl StalePin {
+    /// Check out a pooled connection, open a (deferred) read transaction,
+    /// pin its snapshot with one read, and return the connection to the pool
+    /// with the transaction still open. The pinned snapshot is the committed
+    /// state at the call site — pin *after* the seed is fully visible and
+    /// *before* the write the reload must not miss.
+    async fn pin(state: &vreckan_core::state::AppState) -> Self {
+        use sea_orm::sqlx::Executor;
+        let pool = state.db.conn.get_sqlite_connection_pool().clone();
+        let mut conn = pool.acquire().await.expect("acquire a pool connection");
+        (&mut *conn)
+            .execute(sea_orm::sqlx::query("BEGIN"))
+            .await
+            .expect("open the pinning read transaction");
+        (&mut *conn)
+            .fetch_all(sea_orm::sqlx::query(
+                "SELECT value FROM app_settings WHERE key = 'VRECKAN_ACME_CERT_PEM'",
+            ))
+            .await
+            .expect("snapshot-pinning read");
+        // The raw BEGIN bypasses sqlx's transaction tracking, so the pool
+        // hands this stale connection out to the next reader as if it were
+        // ordinary (dropping the `PoolConnection` returns it to the pool).
+        drop(conn);
+        Self { pool }
+    }
+
+    /// Close every idle pooled connection (closing a connection rolls back
+    /// its open transaction implicitly); the pool recreates fresh
+    /// connections on demand, leaving the pool healthy for the rest of the
+    /// test.
+    async fn unpin(self) {
+        while let Some(conn) = self.pool.try_acquire() {
+            conn.close().await.expect("close the pooled connection");
+        }
+    }
+}
+
+/// A background task that continually rotates the pool's idle connections:
+/// it checks out all idle connections and re-releases them in acquisition
+/// order, which rotates the LIFO idle stack by one slot per pass. With a
+/// stale pinned connection in the pool, successive reads from other tasks
+/// then cycle over every pooled connection — the interleaving that produces
+/// stale reads in the production pool under load.
+async fn churn_pool(pool: sea_orm::sqlx::SqlitePool, stop: Arc<AtomicBool>) {
+    while !stop.load(Ordering::Relaxed) {
+        let mut held = Vec::new();
+        while let Some(c) = pool.try_acquire() {
+            held.push(c);
+        }
+        // Re-release in acquisition order (dropping returns to the pool),
+        // which rotates the LIFO idle stack by one slot per pass.
+        drop(held);
+        tokio::task::yield_now().await;
+    }
+}
+
+#[tokio::test]
+async fn test_reload_from_pem_swaps_served_cert_without_db_read() {
+    // rustls needs a process-default crypto provider for both the server
+    // `ServerConfig` and the test's client; install once (ignore "already set").
+    let _ = rustls::crypto::aws_lc_rs::default_provider().install_default();
+
+    let mut state = build_state(TempDir::new().path()).await;
+
+    // A different cert C sits in the config DB: if the reload re-read the DB
+    // instead of using the in-memory bundle, C would be served.
+    let (cert_c, key_c) = make_cert("reload-from-pem-c.example.com", 60);
+    persist_until_visible(
+        &state,
+        &acme_orchestrator::AcmeCertRecord {
+            cert_pem: cert_c.clone(),
+            key_pem: key_c.clone(),
+            ca: "letsencrypt".to_string(),
+            domains: "reload-from-pem-c.example.com".to_string(),
+            expires: acme_orchestrator::acme_cert_expiry_from_pem(&cert_c),
+        },
+    )
+    .await
+    .expect("record persisted");
+
+    // Cert A is the currently-served certificate; the in-memory bundle to
+    // reload is a DIFFERENT cert B.
+    let (cert_a, key_a) = make_cert("reload-from-pem-a.example.com", 90);
+    let config = axum_server::tls_rustls::RustlsConfig::from_pem(
+        cert_a.as_bytes().to_vec(),
+        key_a.as_bytes().to_vec(),
+    )
+    .await
+    .expect("build config from cert A");
+    state.tls_config = Some(config.clone());
+    let app = axum::Router::new().route("/", axum::routing::get(|| async { "hi" }));
+    let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.expect("bind");
+    let addr = listener.local_addr().expect("local addr");
+    let server_config = config.clone();
+    let _server = tokio::spawn(async move {
+        axum_server::Server::<std::net::SocketAddr>::from_listener(listener)
+            .acceptor(axum_server::tls_rustls::RustlsAcceptor::new(server_config))
+            .serve(app.into_make_service())
+            .await
+            .expect("serve");
+    });
+
+    let (cert_b, key_b) = make_cert("reload-from-pem-b.example.com", 90);
+    assert!(
+        acme_orchestrator::reload_served_cert_from_pem(&state, &cert_b, &key_b).await,
+        "the swap should have performed"
+    );
+    let served = first_served_cert(addr).await;
+    assert_eq!(
+        served,
+        pem_first_cert(&cert_b),
+        "the served cert must be the in-memory bundle"
+    );
+    assert_ne!(served, pem_first_cert(&cert_a), "the old served cert was replaced");
+    assert_ne!(
+        served,
+        pem_first_cert(&cert_c),
+        "a DB re-read would have served cert C instead"
+    );
+
+    // No listener attached -> no swap (the startup path before the bind).
+    state.tls_config = None;
+    assert!(
+        !acme_orchestrator::reload_served_cert_from_pem(&state, &cert_b, &key_b).await,
+        "no listener attached -> no swap"
+    );
+    // An empty bundle is skipped, not a fatal error.
+    state.tls_config = Some(config.clone());
+    assert!(
+        !acme_orchestrator::reload_served_cert_from_pem(&state, "", &key_b).await,
+        "an empty bundle is skipped"
+    );
+    let served = first_served_cert(addr).await;
+    assert_eq!(served, pem_first_cert(&cert_b), "the skip left the served cert untouched");
+}
+
+#[tokio::test]
+// The LE serialization lock intentionally spans the whole test.
+#[allow(clippy::await_holding_lock)]
+async fn test_renewal_serves_renewed_cert_when_pooled_read_is_stale() {
+    let _serial = lock_le();
+    // rustls needs a process-default crypto provider for both the server
+    // `ServerConfig` and the test's client; install once (ignore "already set").
+    let _ = rustls::crypto::aws_lc_rs::default_provider().install_default();
+
+    // The temp dir must outlive the test: `TempDir` removes its directory on
+    // drop, and growing the pool beyond the first connection re-opens the
+    // database *by path* (the pre-existing connection keeps the unlinked file
+    // alive only through its open handle).
+    let tmp = TempDir::new();
+    let mut state = build_state(tmp.path()).await;
+
+    // The running listener serves cert A (inside the renewal window, so the
+    // renewal below is "due"); attach it to the state as main.rs does.
+    let (cert_a, key_a) = make_cert("renew-stale-a.example.com", 10);
+    let config = axum_server::tls_rustls::RustlsConfig::from_pem(
+        cert_a.as_bytes().to_vec(),
+        key_a.as_bytes().to_vec(),
+    )
+    .await
+    .expect("build config from cert A");
+    state.tls_config = Some(config.clone());
+    let app = axum::Router::new().route("/", axum::routing::get(|| async { "hi" }));
+    let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.expect("bind");
+    let addr = listener.local_addr().expect("local addr");
+    let server_config = config.clone();
+    let _server = tokio::spawn(async move {
+        axum_server::Server::<std::net::SocketAddr>::from_listener(listener)
+            .acceptor(axum_server::tls_rustls::RustlsAcceptor::new(server_config))
+            .serve(app.into_make_service())
+            .await
+            .expect("serve");
+    });
+    let served_a = first_served_cert(addr).await;
+    assert_eq!(served_a, pem_first_cert(&cert_a), "the running listener serves cert A");
+
+    // Seed the DB with the (due) current cert and make it fully visible on
+    // every pooled connection: the snapshot the stale pin captures below
+    // must contain the complete seed record, so the renewal's "due" check
+    // reads it consistently from any connection.
+    let rec_a = acme_orchestrator::AcmeCertRecord {
+        cert_pem: cert_a.clone(),
+        key_pem: key_a.clone(),
+        ca: "letsencrypt".to_string(),
+        domains: "renew-stale-a.example.com".to_string(),
+        expires: acme_orchestrator::acme_cert_expiry_from_pem(&cert_a),
+    };
+    persist_until_visible(&state, &rec_a).await.expect("seed persisted");
+    cert_status_until_db(&state, &["example.com".into()]).await;
+
+    // At least two idle connections (a single one can never be stale), then
+    // pin a pre-write WAL snapshot on one of them and keep the pool's idle
+    // stack rotating during the renewal.
+    let pool = ensure_idle_connections(&state, 2).await;
+    let pin = StalePin::pin(&state).await;
+    let stop = Arc::new(AtomicBool::new(false));
+    let churn = tokio::spawn(churn_pool(pool, stop.clone()));
+
+    // Renew with a fake issuer that returns a DIFFERENT cert B. The renewal
+    // persists B to the config DB and hot-reloads the listener; with the
+    // ANT-939 fix the reload is sourced from the in-memory bundle, so the
+    // served cert is B no matter which (possibly stale) pooled connection
+    // any DB read lands on.
+    let (cert_b, key_b) = make_cert("renew-stale-b.example.com", 90);
+    let _guard = IssuerGuard::new(issuer_returning(&cert_b, &key_b));
+    let result = acme_orchestrator::renew_acme_cert(&state, &default_cfg()).await;
+    stop.store(true, Ordering::Relaxed);
+    churn.await.expect("churn task finished");
+    assert_eq!(result["renewed"], true, "renewal should have run: {result}");
+
+    // A single immediate handshake — no settle, no second reload, no
+    // polling: the SAME running listener must serve the renewed cert. On
+    // the pre-fix code, the reload re-read the record from the DB and could
+    // re-apply cert A here, leaving an expiring cert on the listener while
+    // the DB reported the renewed one.
+    let served = first_served_cert(addr).await;
+    assert_ne!(served, served_a, "the renewal must change the served cert in place");
+    assert_eq!(served, pem_first_cert(&cert_b), "the served cert must be the renewed cert");
+
+    // Once the pinned read transaction is drained, the renewed bundle is
+    // committed and visible in the config DB (re-persisting settles any
+    // field that only landed inside the pinned transaction), and the served
+    // cert and the DB agree on the renewed bundle.
+    pin.unpin().await;
+    let expected = acme_orchestrator::AcmeCertRecord {
+        cert_pem: cert_b.clone(),
+        key_pem: key_b.clone(),
+        ca: default_cfg().acme_ca.clone(),
+        domains: default_cfg().acme_domains.clone(),
+        expires: acme_orchestrator::acme_cert_expiry_from_pem(&cert_b),
+    };
+    let rec = persist_until_visible(&state, &expected).await.expect("renewed bundle committed");
+    assert_eq!(rec.cert_pem, cert_b, "the renewed cert is in the DB");
+    let served_again = first_served_cert(addr).await;
+    assert_eq!(
+        served_again,
+        pem_first_cert(&cert_b),
+        "the DB and the served cert agree on the renewed bundle"
+    );
+}
+
 // --- ANT-275: admin surface hardening ----------------------------------------
 
 // The LE serialization lock intentionally spans the whole test.
