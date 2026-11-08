@@ -2429,7 +2429,29 @@ async fn access_public_share_post(
         )
             .into_response();
     };
-    if user_manager::verify_share_password(hash, &form.password) {
+    // Brute-force protection (ANT-884, audit finding 13): a locked-out share
+    // is refused before the ~100-300 ms / ~19 MiB Argon2 verification runs,
+    // and the verification itself runs on a blocking thread so a burst of
+    // guesses cannot pin the tokio worker threads (which serve every other
+    // request, including the health probe).
+    let max_attempts = state.settings.share_password_max_attempts;
+    let window_secs = state.settings.share_password_lockout_seconds.max(1) as f64;
+    if user_manager::check_share_password_lockout(&state, &share_id, now, window_secs, max_attempts).await
+    {
+        return render_password_page(
+            &format!("/public/{share_id}"),
+            &share_id,
+            "Too many failed password attempts; try again in a few minutes.",
+            StatusCode::TOO_MANY_REQUESTS,
+        );
+    }
+    let hash = hash.clone();
+    let password = form.password.clone();
+    let ok = tokio::task::spawn_blocking(move || user_manager::verify_share_password(&hash, &password))
+        .await
+        .unwrap_or(false);
+    if ok {
+        user_manager::clear_share_password_attempts(&state, &share_id).await;
         let token = vreckan_catalog::catalog::random_token(32);
         {
             let mut tokens = state.download_tokens.write().await;
@@ -2448,6 +2470,7 @@ async fn access_public_share_post(
             .body(axum::body::Body::empty())
             .unwrap_or_else(|e| (StatusCode::INTERNAL_SERVER_ERROR, e.to_string()).into_response())
     } else {
+        user_manager::record_share_password_failure(&state, &share_id, now, window_secs, max_attempts).await;
         render_password_page(
             &format!("/public/{share_id}"),
             &share_id,

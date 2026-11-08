@@ -68,6 +68,19 @@ pub struct LoginAttemptWindow {
     pub locked_until: f64,
 }
 
+/// Share-password guess accounting for one public share, used by the
+/// brute-force limiter on the anonymous `POST /public/{share_id}` and
+/// `POST /share/{share_id}` routes (ANT-884, audit finding 13).
+#[derive(Clone, Debug, Default)]
+pub struct SharePasswordAttempts {
+    /// Failed guesses recorded in the current window.
+    pub fails: u32,
+    /// Wall-clock start (unix seconds) of the current failure window.
+    pub window_start: f64,
+    /// While nonzero, the share is locked out until this time (unix seconds).
+    pub locked_until: f64,
+}
+
 /// Per-session selkies data-plane connections: session id ->
 /// [(token presented to selkies, connect sequence)] in connect order
 /// (ANT-443).
@@ -89,6 +102,12 @@ pub struct AppState {
     /// Login-attempt windows for the brute-force limiter, keyed by
     /// "ip:username". In-memory only: a server restart clears the counters.
     pub login_attempts: Arc<RwLock<HashMap<String, LoginAttemptWindow>>>,
+    /// Share-password guess windows for the anonymous share brute-force
+    /// limiter, keyed by share id. The budget is per share because the
+    /// `/public` and `/share` routes carry no caller identity — the leaked
+    /// link is the attacker's only stable handle (ANT-884). In-memory only:
+    /// a server restart clears the counters.
+    pub share_password_attempts: Arc<RwLock<HashMap<String, SharePasswordAttempts>>>,
     /// In-flight OIDC authorization states, keyed by the opaque `state` string.
     pub oidc_states: Arc<RwLock<HashMap<String, OidcStateRecord>>>,
     /// Short-lived public-share download tokens.
@@ -224,6 +243,7 @@ impl AppState {
             crypto_sessions: Arc::new(RwLock::new(HashMap::new())),
             auth_tokens: Arc::new(RwLock::new(HashMap::new())),
             login_attempts: Arc::new(RwLock::new(HashMap::new())),
+            share_password_attempts: Arc::new(RwLock::new(HashMap::new())),
             oidc_states: Arc::new(RwLock::new(HashMap::new())),
             download_tokens: Arc::new(RwLock::new(HashMap::new())),
             pull_progress: Arc::new(Mutex::new(HashMap::new())),
