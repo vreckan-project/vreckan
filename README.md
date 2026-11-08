@@ -98,6 +98,7 @@ The Vreckan server is configured entirely through `VRECKAN_*` environment variab
 | --- | --- | --- |
 | `VRECKAN_LOG_LEVEL` | Logging level (e.g., DEBUG, INFO, WARNING). | `INFO` |
 | `VRECKAN_API_PORT` | Port the server binds with TLS. The entrypoint reads this directly and defaults to `443` when it is unset. The `api_port` entry on the admin Settings page is carried-over metadata from the Python port (default `8000`); it does not affect the bind port. | `443` |
+| `VRECKAN_HOST_PORT` | Compose-only knob: the host side of the published port mapping in `docker-compose.yml` (`${VRECKAN_HOST_PORT:-443}:${VRECKAN_API_PORT:-443}`). Not read by the server process. | `443` |
 | `VRECKAN_TLS_HTTP_REDIRECT_ENABLED` | Same-port HTTP to HTTPS redirect: each new connection to the TLS port is sniffed on its first byte; a TLS ClientHello (`0x16`) proceeds to the TLS handshake, anything else gets a `301` to `https://{Host}{uri}`, so plain-HTTP clients (e.g. `http://host:443`) bounce to the working HTTPS URL instead of a TLS handshake error. Set `false` for deployments behind a TLS-terminating reverse proxy that already redirects (ANT-652). | `true` |
 | `VRECKAN_DATABASE_URL` | Full override of the configuration-database URL (sqlx format). When empty, the URL is built from the `VRECKAN_DB_*` settings below. | *(empty)* |
 | `VRECKAN_APP_RESOURCE_PATH` | URL for the YAML file defining default available applications. | `https://raw.githubusercontent.com/linuxserver/sealskin-apps/refs/heads/master/apps.yml` |
@@ -110,7 +111,7 @@ The Vreckan server is configured entirely through `VRECKAN_*` environment variab
 ### Database
 
 Backends are selected with `VRECKAN_DB_BACKEND` (SQLite is the default; the
-same 13-table schema is created and migrated idempotently on every start).
+same 14-table schema is created and migrated idempotently on every start).
 
 | Environment Variable | Description | Default Value |
 | --- | --- | --- |
@@ -148,6 +149,8 @@ All persistent data lives under the data root (`VRECKAN_DATA_ROOT`, default `/da
 | Environment Variable | Description | Default Value |
 | --- | --- | --- |
 | `VRECKAN_DATA_ROOT` | Root of the persistent data tree (database, storage, caches, backups). | `/data` |
+| `VRECKAN_DATA_PATH` | Compose-only knob: the host path bound to the data root in `docker-compose.yml` (`${VRECKAN_DATA_PATH:-./vreckan-data}:${VRECKAN_DATA_ROOT:-/data}`). Not read by the server process. | `./vreckan-data` |
+| `VRECKAN_STATIC_DIR` | Directory the server serves the web client from (overrides the built-in `server/static`). | `server/static` |
 | `VRECKAN_STORAGE_PATH` | Base directory for user home directories. | `/data/storage` |
 | `VRECKAN_UPLOAD_DIR` | Directory for temporary file uploads. | `/data/storage/vreckan_uploads` |
 | `VRECKAN_APP_ICONS_PATH` | Directory for storing custom-uploaded application icons. | `/data/storage/vreckan_app_icons` |

@@ -26,7 +26,7 @@ Key properties of the default `docker-compose.yml`:
 
 | Setting | Value | Why |
 |---|---|---|
-| `image` | the published `ghcr.io/vreckan-project/vreckan` tag — `:latest` by default; pin a versioned tag (e.g. `:v0.11.2`) and drop `build:` in a real deployment (Rust cutover complete, ANT-40) | `build: .` is the local fallback: `docker compose build` / `up --build` builds the **Rust** image from this repo and tags it under the `image:` name, so a local checkout runs the Rust server even without a registry |
+| `image` | the published `ghcr.io/vreckan-project/vreckan` tag — `:latest` by default; pin a versioned tag (e.g. `:v0.11.3`) and drop `build:` in a real deployment (Rust cutover complete, ANT-40) | `build: .` is the local fallback: `docker compose build` / `up --build` builds the **Rust** image from this repo and tags it under the `image:` name, so a local checkout runs the Rust server even without the published image registry (GHCR) — the build stage still needs the pinned `vreckan-base-build` base image (§3.1/§3.5) |
 | `ports` | `443:443` | Single TLS port for API + session proxy + web client |
 | non-root `USER` in the image | UID/GID 1000 | the server process no longer runs as root; the only capability it needs is `cap_net_bind_service` (a file capability on the binary, so the default port 443 binds on any host) because all host-side work (app-container creation, GPU setup) is done by the Docker daemon over the socket (§6) |
 | `ipc: host` | — | shared memory for the streamed apps |
@@ -129,6 +129,19 @@ comma-separated origin list (e.g. `https://a.example.com, https://b.example
 .com`) — in loose mode only listed origins (compared case-insensitively)
 receive the CORS headers, everything else is treated as in strict mode.
 Comparison is exact after lowercasing; there are no wildcards.
+
+**Known risk — audit finding 9 (ANT-857), accepted by the board on
+2026-11-06 and kept by design.** With the default configuration (loose mode,
+empty allowlist) the server echoes *any* requesting origin back with
+credentials, so any site open in a logged-in user's browser can read that
+user's API responses with a credentialed fetch. The board kept the open
+default because the mode exists to let the same server under an alternate
+hostname, IP address, or port share the login without origin entries
+(ANT-653); the exposure is bounded by the mitigations above — the E2EE body
+gate on every state-mutating route, the trusted-machine assumption of a
+single-admin deployment, and the optional allowlist. To tighten: list the
+origins you trust in `VRECKAN_CORS_ALLOWED_ORIGINS`, or set
+`VRECKAN_CORS_MODE=strict` for same-origin only.
 
 Both settings are editable on the admin UI's Settings page (CORS card), and
 the effective mode is re-resolved on every request, so a change applies to

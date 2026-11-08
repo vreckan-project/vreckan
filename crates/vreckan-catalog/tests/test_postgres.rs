@@ -16,8 +16,6 @@
 //! These tests are skipped (not failed) when no Postgres server is reachable
 //! and no Docker daemon is available, so the suite stays runnable anywhere.
 
-mod common;
-
 use std::collections::HashMap;
 use std::sync::{Mutex, OnceLock};
 use std::time::Duration;

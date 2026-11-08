@@ -105,7 +105,10 @@ async fn test_global_settings_fresh() {
     assert!(data.as_ref().unwrap()["global_default_gpu"].is_null());
     // The GPU list mirrors whatever the test host exposes at startup.
     let gpus = sc.state.available_gpus.read().await.clone();
-    assert_eq!(data.as_ref().unwrap()["gpus"], serde_json::to_value(&gpus).unwrap());
+    assert_eq!(
+        data.as_ref().unwrap()["gpus"],
+        serde_json::to_value(&gpus).unwrap()
+    );
 }
 
 #[tokio::test]
@@ -148,10 +151,11 @@ async fn test_global_settings_set_and_persist() {
     assert_eq!(status, StatusCode::OK);
     assert_eq!(data.as_ref().unwrap()["global_default_gpu"], device);
     // The choice is persisted to the app_settings shadow table.
-    let row = vreckan_core::entities::app_setting::Entity::find_by_id("global_default_gpu".to_string())
-        .one(&sc.state.db.conn)
-        .await
-        .unwrap();
+    let row =
+        vreckan_core::entities::app_setting::Entity::find_by_id("global_default_gpu".to_string())
+            .one(&sc.state.db.conn)
+            .await
+            .unwrap();
     assert_eq!(row.as_ref().unwrap().value, device);
 }
 
@@ -238,15 +242,20 @@ async fn test_sso_groups_reflects_env() {
     // The admin/user group lists are read from the environment (exposed as
     // settings attributes), so the endpoint reflects the configured values.
     // The router holds a clone of the state, so rebuild it after mutating
-    // settings (preserving the auth cookie).
+    // settings (preserving the auth cookie). `.0` unwraps the crate's
+    // TestClient newtype down to the shared client the `http` field holds
+    // (ANT-853).
     sc.state.settings.oidc_admin_groups = "vdi-admins, ops".to_string();
     sc.state.settings.oidc_user_groups = "vdi-users".to_string();
     let cookie = sc.http.auth_cookie.clone();
-    sc.http = common::TestClient::new(sc.state.clone());
+    sc.http = common::TestClient::new(sc.state.clone()).0;
     sc.http.auth_cookie = cookie;
     let (status, data) = sc.call("GET", "/api/admin/sso-groups", None).await;
     assert_eq!(status, StatusCode::OK);
-    assert_eq!(data.as_ref().unwrap()["admin_groups"], json!(["vdi-admins", "ops"]));
+    assert_eq!(
+        data.as_ref().unwrap()["admin_groups"],
+        json!(["vdi-admins", "ops"])
+    );
     assert_eq!(data.as_ref().unwrap()["user_groups"], json!(["vdi-users"]));
 }
 
@@ -282,11 +291,11 @@ async fn test_sso_groups_observed() {
     let am = vreckan_core::entities::user::ActiveModel {
         username: sea_orm::ActiveValue::Set("local".to_string()),
         is_admin: sea_orm::ActiveValue::Set(false),
-            is_sso: sea_orm::ActiveValue::Set(false),
-            settings: sea_orm::ActiveValue::Set(Some(json!({}))),
-            password_hash: sea_orm::ActiveValue::Set(Some("x".to_string())),
-            must_change_password: sea_orm::ActiveValue::NotSet,
-            sso_groups: sea_orm::ActiveValue::Set(Some(json!(["should-not-appear"]))),
+        is_sso: sea_orm::ActiveValue::Set(false),
+        settings: sea_orm::ActiveValue::Set(Some(json!({}))),
+        password_hash: sea_orm::ActiveValue::Set(Some("x".to_string())),
+        must_change_password: sea_orm::ActiveValue::NotSet,
+        sso_groups: sea_orm::ActiveValue::Set(Some(json!(["should-not-appear"]))),
         roles: sea_orm::ActiveValue::Set(Some(json!([]))),
         permissions: sea_orm::ActiveValue::Set(Some(json!([]))),
         groups: sea_orm::ActiveValue::Set(Some(json!([]))),
@@ -297,7 +306,10 @@ async fn test_sso_groups_observed() {
         .unwrap();
     let (status, data) = sc.call("GET", "/api/admin/sso-groups", None).await;
     assert_eq!(status, StatusCode::OK);
-    assert_eq!(data.as_ref().unwrap()["observed"], json!(["vdi-admins", "vdi-users"]));
+    assert_eq!(
+        data.as_ref().unwrap()["observed"],
+        json!(["vdi-admins", "vdi-users"])
+    );
 }
 
 // ---------------------------------------------------------------------------
@@ -328,7 +340,10 @@ async fn test_admin_sessions_grouped_and_sorted() {
     assert_eq!(status, StatusCode::OK);
     let arr = data.as_ref().unwrap().as_array().unwrap();
     // Users sorted by name; sessions within a user newest-first.
-    let usernames: Vec<&str> = arr.iter().map(|u| u["username"].as_str().unwrap()).collect();
+    let usernames: Vec<&str> = arr
+        .iter()
+        .map(|u| u["username"].as_str().unwrap())
+        .collect();
     assert_eq!(usernames, vec!["admin", "bob"]);
     let bob = &arr[1];
     let sids: Vec<&str> = bob["sessions"]
@@ -346,13 +361,7 @@ async fn test_admin_sessions_grouped_and_sorted() {
         .collect();
     assert_eq!(names, vec!["New", "Old"]);
     // session_url carries the per-session access token.
-    let tok = sc
-        .state
-        .sessions
-        .read()
-        .await
-        .get(&sid_new)
-        .unwrap()["access_token"]
+    let tok = sc.state.sessions.read().await.get(&sid_new).unwrap()["access_token"]
         .as_str()
         .unwrap()
         .to_string();
@@ -380,7 +389,9 @@ async fn test_admin_delete_session() {
     sc.http.login("admin", "admin1234").await;
     sc.handshake().await;
     let sid = seed_session(&sc, "admin", json!({})).await;
-    let (status, _) = sc.call("DELETE", &format!("/api/admin/sessions/{sid}"), None).await;
+    let (status, _) = sc
+        .call("DELETE", &format!("/api/admin/sessions/{sid}"), None)
+        .await;
     assert_eq!(status, StatusCode::NO_CONTENT);
     assert!(!sc.state.sessions.read().await.contains_key(&sid));
 }
@@ -405,7 +416,9 @@ async fn test_install_app_success() {
     let _root = TempDir::new();
     let mut sc = SecureClient::new(build_state(_root.path()).await);
     // No-op the background pull so the spawned task doesn't do a real docker pull.
-    sc.state.pull_noop.store(true, std::sync::atomic::Ordering::Relaxed);
+    sc.state
+        .pull_noop
+        .store(true, std::sync::atomic::Ordering::Relaxed);
     sc.http.login("admin", "admin1234").await;
     sc.handshake().await;
     let (status, data) = sc
@@ -433,7 +446,9 @@ async fn test_install_app_duplicate() {
     let _root = TempDir::new();
     let mut sc = SecureClient::new(build_state(_root.path()).await);
     // No-op the background pull so the spawned task doesn't do a real docker pull.
-    sc.state.pull_noop.store(true, std::sync::atomic::Ordering::Relaxed);
+    sc.state
+        .pull_noop
+        .store(true, std::sync::atomic::Ordering::Relaxed);
     sc.http.login("admin", "admin1234").await;
     sc.handshake().await;
     let (status, _) = sc
@@ -473,7 +488,9 @@ async fn test_pull_latest_already_queued() {
     let _root = TempDir::new();
     let mut sc = SecureClient::new(build_state(_root.path()).await);
     // No-op the background pull so the spawned task doesn't do a real docker pull.
-    sc.state.pull_noop.store(true, std::sync::atomic::Ordering::Relaxed);
+    sc.state
+        .pull_noop
+        .store(true, std::sync::atomic::Ordering::Relaxed);
     sc.http.login("admin", "admin1234").await;
     sc.handshake().await;
     sc.call(
@@ -494,7 +511,9 @@ async fn test_pull_latest_idle_app() {
     let _root = TempDir::new();
     let mut sc = SecureClient::new(build_state(_root.path()).await);
     // No-op the background pull so the spawned task doesn't do a real docker pull.
-    sc.state.pull_noop.store(true, std::sync::atomic::Ordering::Relaxed);
+    sc.state
+        .pull_noop
+        .store(true, std::sync::atomic::Ordering::Relaxed);
     sc.http.login("admin", "admin1234").await;
     sc.handshake().await;
     let image = "registry.example.invalid/other:latest";
@@ -502,7 +521,11 @@ async fn test_pull_latest_idle_app() {
     body["id"] = json!("app-2");
     body["provider_config"]["image"] = json!(image);
     let app: vreckan_core::shared::InstalledApp = serde_json::from_value(body).unwrap();
-    sc.state.installed_apps.write().await.insert(app.id.clone(), app);
+    sc.state
+        .installed_apps
+        .write()
+        .await
+        .insert(app.id.clone(), app);
     assert!(!sc.state.pull_status.read().await.contains_key(image));
     let (status, data) = sc
         .call("POST", "/api/admin/apps/installed/app-2/pull_latest", None)
@@ -510,7 +533,12 @@ async fn test_pull_latest_idle_app() {
     assert_eq!(status, StatusCode::OK);
     assert_eq!(data, Some(json!({ "status": "pulling", "new_sha": null })));
     assert_eq!(
-        sc.state.pull_status.read().await.get(image).map(|s| s.as_str()),
+        sc.state
+            .pull_status
+            .read()
+            .await
+            .get(image)
+            .map(|s| s.as_str()),
         Some("queued")
     );
 }
@@ -529,7 +557,10 @@ async fn test_global_settings_db_write_failure_returns_500() {
     sc.handshake().await;
     let device = gpu_device(&sc).await;
     // Simulate a configuration-database outage for the write path.
-    sc.state.db.fail_writes.store(true, std::sync::atomic::Ordering::Relaxed);
+    sc.state
+        .db
+        .fail_writes
+        .store(true, std::sync::atomic::Ordering::Relaxed);
     let (status, data) = sc
         .call(
             "POST",
@@ -550,7 +581,10 @@ async fn test_sso_save_db_write_failure_returns_500() {
     let mut sc = SecureClient::new(build_state(_root.path()).await);
     sc.http.login("admin", "admin1234").await;
     sc.handshake().await;
-    sc.state.db.fail_writes.store(true, std::sync::atomic::Ordering::Relaxed);
+    sc.state
+        .db
+        .fail_writes
+        .store(true, std::sync::atomic::Ordering::Relaxed);
     let (status, data) = sc
         .call(
             "PUT",
@@ -587,7 +621,9 @@ async fn test_auto_update_settings_save() {
     // An empty body changes nothing; the response reflects the effective
     // values (the test state forces auto_update_apps off so no background
     // job runs).
-    let (status, data) = sc.call("PUT", "/api/admin/apps/auto_update", Some(&json!({}))).await;
+    let (status, data) = sc
+        .call("PUT", "/api/admin/apps/auto_update", Some(&json!({})))
+        .await;
     assert_eq!(status, StatusCode::OK, "{:?}", data);
     assert_eq!(data.as_ref().unwrap()["enabled"], false);
     assert_eq!(data.as_ref().unwrap()["interval_seconds"], 3600);
@@ -604,7 +640,12 @@ async fn test_auto_update_settings_save() {
     assert_eq!(data.as_ref().unwrap()["enabled"], true);
     assert_eq!(data.as_ref().unwrap()["interval_seconds"], 21600);
     assert_eq!(
-        sc.state.db.get_app_setting("VRECKAN_AUTO_UPDATE_APPS").await.unwrap().as_deref(),
+        sc.state
+            .db
+            .get_app_setting("VRECKAN_AUTO_UPDATE_APPS")
+            .await
+            .unwrap()
+            .as_deref(),
         Some("true")
     );
     assert_eq!(

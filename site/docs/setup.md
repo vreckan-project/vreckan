@@ -19,7 +19,7 @@ description: Prerequisites, server installation, configuration, and getting your
   <h2>1. Get the image</h2>
   <p>Vreckan ships as a container image. Pull the latest release:</p>
   <pre><code>docker pull ghcr.io/vreckan-project/vreckan:latest</code></pre>
-  <p>Versioned tags (for example <code>:v0.11.2</code>) are published alongside <code>latest</code> for every release. The current release is <strong>v0.11.2</strong> — the v0.11.x line is a structural rewrite of the server internals: the single monolithic crate is now a nine-crate Cargo workspace, and the TLS/crypto provider stack is unified on one crypto backend (aws-lc-rs). Both changes are transparent to operators: the same binary name, the same API surface, and the same <code>VRECKAN_*</code> environment variables. See the <a href="https://github.com/vreckan-project/vreckan/blob/main/CHANGELOG.md">changelog</a> for what changed in each version.</p>
+  <p>Versioned tags (for example <code>:v0.11.3</code>) are published alongside <code>latest</code> for every release. The current release is <strong>v0.11.3</strong> — the v0.11.x line is a structural rewrite of the server internals: the single monolithic crate is now a nine-crate Cargo workspace, and the TLS/crypto provider stack is unified on one crypto backend (aws-lc-rs). Both changes are transparent to operators: the same binary name, the same API surface, and the same <code>VRECKAN_*</code> environment variables. See the <a href="https://github.com/vreckan-project/vreckan/blob/main/CHANGELOG.md">changelog</a> for what changed in each version.</p>
 
   <h2>2. Configure</h2>
   <p>Vreckan is configured entirely through <code>VRECKAN_*</code> environment variables. The repository ships a <code>.env.example</code> you can copy and edit:</p>
