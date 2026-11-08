@@ -1383,7 +1383,18 @@ async fn add_app_store(
         }
     }
     state.app_stores.write().await.push(store.clone());
-    catalog::save_app_stores(&state).await;
+    // Handler with an error channel: a failed save is a 500, not a silent
+    // warn — the in-memory entry stays (it is authoritative) and the next
+    // store event retries the full replace (audit finding 1).
+    if let Err(e) = catalog::save_app_stores(&state).await {
+        return e2ee::encrypt_response(
+            &state,
+            &headers,
+            StatusCode::INTERNAL_SERVER_ERROR,
+            serde_json::json!({ "detail": format!("Failed to persist the app store: {e}") }),
+        )
+        .await;
+    }
     let value = serde_json::to_value(&store).unwrap_or_default();
     e2ee::encrypt_response(&state, &headers, StatusCode::CREATED, value).await
 }
@@ -1431,7 +1442,18 @@ async fn delete_app_store(
         .await;
     }
     drop(stores);
-    catalog::save_app_stores(&state).await;
+    // Handler with an error channel: a failed save is a 500, not a silent
+    // warn — the in-memory removal stays (it is authoritative) and the next
+    // store event retries the full replace (audit finding 1).
+    if let Err(e) = catalog::save_app_stores(&state).await {
+        return e2ee::encrypt_response(
+            &state,
+            &headers,
+            StatusCode::INTERNAL_SERVER_ERROR,
+            serde_json::json!({ "detail": format!("Failed to persist the app store deletion: {e}") }),
+        )
+        .await;
+    }
     e2ee::encrypt_response(&state, &headers, StatusCode::NO_CONTENT, serde_json::json!({})).await
 }
 
@@ -1536,7 +1558,18 @@ async fn create_meta_app(
     meta_app.source_app_id = base_app.source_app_id;
 
     state.installed_apps.write().await.insert(new_app_id, meta_app.clone());
-    catalog::save_installed_apps(&state).await;
+    // Handler with an error channel: a failed save is a 500, not a silent
+    // warn — the in-memory entry stays (it is authoritative) and the next
+    // app event retries the full replace (audit finding 1).
+    if let Err(e) = catalog::save_installed_apps(&state).await {
+        return e2ee::encrypt_response(
+            &state,
+            &headers,
+            StatusCode::INTERNAL_SERVER_ERROR,
+            serde_json::json!({ "detail": format!("Failed to persist the meta app: {e}") }),
+        )
+        .await;
+    }
     let value = serde_json::to_value(&meta_app).unwrap_or_default();
     e2ee::encrypt_response(&state, &headers, StatusCode::CREATED, value).await
 }
@@ -1968,7 +2001,18 @@ async fn install_app(
         }
     }
     state.installed_apps.write().await.insert(app.id.clone(), app.clone());
-    catalog::save_installed_apps(&state).await;
+    // Handler with an error channel: a failed save is a 500, not a silent
+    // warn — the in-memory entry stays (it is authoritative) and the next
+    // app event retries the full replace (audit finding 1).
+    if let Err(e) = catalog::save_installed_apps(&state).await {
+        return e2ee::encrypt_response(
+            &state,
+            &headers,
+            StatusCode::INTERNAL_SERVER_ERROR,
+            serde_json::json!({ "detail": format!("Failed to persist the installed app: {e}") }),
+        )
+        .await;
+    }
     let image = app.provider_config.base.image.clone();
     // Scope the read guard so it drops BEFORE we take the write lock below;
     // holding a read guard while acquiring a write lock in the same task
@@ -2088,7 +2132,18 @@ async fn update_installed_app(
         .map(|a| a.provider_config.base.image.clone())
         .unwrap_or_default();
     state.installed_apps.write().await.insert(app_id.clone(), app_update.clone());
-    catalog::save_installed_apps(&state).await;
+    // Handler with an error channel: a failed save is a 500, not a silent
+    // warn — the in-memory entry stays (it is authoritative) and the next
+    // app event retries the full replace (audit finding 1).
+    if let Err(e) = catalog::save_installed_apps(&state).await {
+        return e2ee::encrypt_response(
+            &state,
+            &headers,
+            StatusCode::INTERNAL_SERVER_ERROR,
+            serde_json::json!({ "detail": format!("Failed to persist the installed app update: {e}") }),
+        )
+        .await;
+    }
     let new_image = app_update.provider_config.base.image.clone();
     if old_image_name != new_image {
         let pull_status = state.pull_status.read().await;
@@ -2160,7 +2215,18 @@ async fn delete_installed_app(
         }
     }
     state.installed_apps.write().await.remove(&app_id);
-    catalog::save_installed_apps(&state).await;
+    // Handler with an error channel: a failed save is a 500, not a silent
+    // warn — the in-memory removal stays (it is authoritative) and the next
+    // app event retries the full replace (audit finding 1).
+    if let Err(e) = catalog::save_installed_apps(&state).await {
+        return e2ee::encrypt_response(
+            &state,
+            &headers,
+            StatusCode::INTERNAL_SERVER_ERROR,
+            serde_json::json!({ "detail": format!("Failed to persist the installed app deletion: {e}") }),
+        )
+        .await;
+    }
     e2ee::encrypt_response(&state, &headers, StatusCode::NO_CONTENT, serde_json::json!({})).await
 }
 
@@ -3386,7 +3452,19 @@ async fn stop_any_session(
         )
         .await;
     }
-    catalog::stop_session(&state, &session_id).await;
+    // Handler with an error channel: a failed save is a 500 — the stop is
+    // effective in memory either way (the stale row is pruned by the next
+    // full-replace save), but the client is told it may not have persisted
+    // (audit finding 1).
+    if let Err(e) = catalog::stop_session(&state, &session_id).await {
+        return e2ee::encrypt_response(
+            &state,
+            &headers,
+            StatusCode::INTERNAL_SERVER_ERROR,
+            serde_json::json!({ "detail": format!("Session stopped but failed to persist: {e}") }),
+        )
+        .await;
+    }
     e2ee::encrypt_response(&state, &headers, StatusCode::NO_CONTENT, serde_json::json!({})).await
 }
 
@@ -3516,7 +3594,18 @@ async fn revoke_oidc_sessions(
         .await;
     }
     let revoked = auth::revoke_all_tokens_for_user(&state, &req.username).await;
-    let _ = auth::save_auth_tokens(&state).await;
+    // Handler with an error channel: the save is unconditional, so a retry
+    // re-runs the full replace and converges — surface a failure instead of
+    // reporting a revocation that may not have persisted (audit finding 1).
+    if let Err(e) = auth::save_auth_tokens(&state).await {
+        return e2ee::encrypt_response(
+            &state,
+            &headers,
+            StatusCode::INTERNAL_SERVER_ERROR,
+            serde_json::json!({ "detail": format!("Failed to persist the forced logout: {e}") }),
+        )
+        .await;
+    }
     info!("Admin force-logout: revoked {revoked} web token(s) for '{}'.", req.username);
     let value = serde_json::json!({ "username": req.username, "revoked": revoked });
     e2ee::encrypt_response(&state, &headers, StatusCode::OK, value).await

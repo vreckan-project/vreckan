@@ -1553,7 +1553,7 @@ async fn test_session_share_load_save_roundtrip() {
 
     // Wipe the in-memory map, reload from the database: the share survives.
     sc.state.session_shares.write().await.clear();
-    vreckan_sessions::session_shares::load_session_shares(&sc.state).await;
+    vreckan_sessions::session_shares::load_session_shares(&sc.state).await.unwrap();
     let reloaded = sc
         .state
         .session_shares
@@ -1615,7 +1615,7 @@ async fn test_session_share_legacy_row_deserializes_as_generic() {
         .unwrap();
     }
     sc.state.session_shares.write().await.clear();
-    vreckan_sessions::session_shares::load_session_shares(&sc.state).await;
+    vreckan_sessions::session_shares::load_session_shares(&sc.state).await.unwrap();
     let shares = sc.state.session_shares.read().await;
     let legacy = shares.get(&legacy_id).expect("legacy row loads");
     assert_eq!(

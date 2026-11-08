@@ -18,7 +18,7 @@ use axum::routing::{delete, get, post};
 use axum::{Json, Router};
 use base64::Engine;
 use bollard::Docker;
-use sea_orm::{ActiveValue, EntityTrait};
+use sea_orm::{ActiveValue, EntityTrait, TransactionTrait};
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
 use tracing::{debug, error, info, warn};
@@ -168,14 +168,16 @@ pub type GpuInfoPublic = GpuInfo;
 
 /// Load installed applications from the database into `state.installed_apps`.
 /// Mirrors `load_app_configs` (the installed-apps half).
-pub async fn load_installed_apps(state: &AppState) {
-    let rows = match entities::installed_app::Entity::find().all(&state.db.conn).await {
-        Ok(rows) => rows,
-        Err(e) => {
-            warn!("Error loading installed apps from the database: {e}");
-            return;
-        }
-    };
+///
+/// A SELECT failure is an error, not a warning (audit finding 2): a failed
+/// load must leave `state.installed_apps` untouched so a later full-replace
+/// save cannot rewrite the table from an empty/stale map. Malformed rows are
+/// still skipped with a warning — a data-level issue, not a failed load.
+pub async fn load_installed_apps(state: &AppState) -> Result<(), sea_orm::DbErr> {
+    if let Some(e) = state.db.fail_reads_error() {
+        return Err(e);
+    }
+    let rows = entities::installed_app::Entity::find().all(&state.db.conn).await?;
     let mut apps = HashMap::new();
     for row in rows {
         match serde_json::from_value::<InstalledApp>(row.data) {
@@ -188,29 +190,29 @@ pub async fn load_installed_apps(state: &AppState) {
     let count = apps.len();
     *state.installed_apps.write().await = apps;
     info!("Loaded {count} installed application(s) from the database.");
+    Ok(())
 }
 
 /// Sync the in-memory installed-app set to the database (full replace).
 /// Mirrors `save_installed_apps`.
-pub async fn save_installed_apps(state: &AppState) {
+///
+/// The delete-all + re-insert runs inside a single transaction (audit
+/// finding 1): any failed statement rolls the whole rewrite back, so a
+/// mid-save outage can never leave the table partially emptied, and the
+/// error is surfaced to the caller instead of warn-and-continue. The
+/// `fail_writes` test hook fires at commit time, so a test-armed save proves
+/// the rollback rather than short-circuiting before any statement runs.
+pub async fn save_installed_apps(state: &AppState) -> Result<(), sea_orm::DbErr> {
     let apps = state.installed_apps.read().await.clone();
-    let conn = &state.db.conn;
+    let txn = state.db.conn.begin().await?;
     // Delete all existing rows, then re-insert the current set.
-    let all = match entities::installed_app::Entity::find().all(conn).await {
-        Ok(rows) => rows,
-        Err(e) => {
-            warn!("Failed to save installed apps (delete): {e}");
-            return;
-        }
-    };
+    let all = entities::installed_app::Entity::find().all(&txn).await?;
     for row in all {
         let am = entities::installed_app::ActiveModel {
             id: ActiveValue::Set(row.id),
             data: ActiveValue::NotSet,
         };
-        if let Err(e) = entities::installed_app::Entity::delete(am).exec(conn).await {
-            warn!("Failed to delete installed app row: {e}");
-        }
+        entities::installed_app::Entity::delete(am).exec(&txn).await?;
     }
     for app in apps.values() {
         let data = match serde_json::to_value(app) {
@@ -224,11 +226,14 @@ pub async fn save_installed_apps(state: &AppState) {
             id: ActiveValue::Set(app.id.clone()),
             data: ActiveValue::Set(data),
         };
-        if let Err(e) = entities::installed_app::Entity::insert(am).exec(conn).await {
-            warn!("Failed to insert installed app row: {e}");
-        }
+        entities::installed_app::Entity::insert(am).exec(&txn).await?;
     }
+    if state.db.fail_writes.load(std::sync::atomic::Ordering::Relaxed) {
+        return Err(vreckan_core::db::Db::simulated_write_failure());
+    }
+    txn.commit().await?;
     info!("Saved {} installed application(s) to the database.", apps.len());
+    Ok(())
 }
 
 /// Load the configured app stores from the database into `state.app_stores`.
@@ -236,14 +241,18 @@ pub async fn save_installed_apps(state: &AppState) {
 /// first run after the v0.8.6 rename, the legacy "Vreckan Apps" row is
 /// migrated to "SealSkin Apps" (ANT-492). Mirrors `load_app_configs` (the
 /// app-stores half).
-pub async fn load_app_stores(state: &AppState) {
-    let rows = match entities::app_store::Entity::find().all(&state.db.conn).await {
-        Ok(rows) => rows,
-        Err(e) => {
-            warn!("Error loading app stores from the database: {e}");
-            return;
-        }
-    };
+///
+/// A SELECT failure is an error, not a warning (audit finding 2): a failed
+/// load must leave `state.app_stores` untouched so a later full-replace save
+/// cannot rewrite the table from an empty/stale list. The first-run default
+/// seed stays best-effort (a failed seed insert is warn-logged; the in-memory
+/// default persists until the next save), and the ANT-492 rename migration
+/// keeps its existing best-effort shape.
+pub async fn load_app_stores(state: &AppState) -> Result<(), sea_orm::DbErr> {
+    if let Some(e) = state.db.fail_reads_error() {
+        return Err(e);
+    }
+    let rows = entities::app_store::Entity::find().all(&state.db.conn).await?;
     if rows.is_empty() {
         let default = AppStore {
             name: "SealSkin Apps".to_string(),
@@ -258,7 +267,7 @@ pub async fn load_app_stores(state: &AppState) {
         }
         *state.app_stores.write().await = vec![default];
         info!("Seeded the default SealSkin Apps store.");
-        return;
+        return Ok(());
     }
     let mut rows = rows;
     migrate_vreckan_apps_to_sealskin_apps(state, &mut rows).await;
@@ -269,6 +278,7 @@ pub async fn load_app_stores(state: &AppState) {
     let count = stores.len();
     *state.app_stores.write().await = stores;
     info!("Loaded {count} app store(s) from the database.");
+    Ok(())
 }
 
 /// v0.8.6 startup migration (ANT-492): rename the seeded "Vreckan Apps"
@@ -382,35 +392,153 @@ async fn migrate_vreckan_apps_to_sealskin_apps(
 
 /// Sync the in-memory app-store list to the database (full replace). Mirrors
 /// `save_app_stores`.
-pub async fn save_app_stores(state: &AppState) {
+///
+/// The delete-all + re-insert runs inside a single transaction (audit
+/// finding 1): any failed statement rolls the whole rewrite back, so a
+/// mid-save outage can never leave the table partially emptied, and the
+/// error is surfaced to the caller instead of warn-and-continue. The
+/// `fail_writes` test hook fires at commit time, so a test-armed save proves
+/// the rollback rather than short-circuiting before any statement runs.
+pub async fn save_app_stores(state: &AppState) -> Result<(), sea_orm::DbErr> {
     let stores = state.app_stores.read().await.clone();
-    let conn = &state.db.conn;
-    let all = match entities::app_store::Entity::find().all(conn).await {
-        Ok(rows) => rows,
-        Err(e) => {
-            warn!("Failed to save app stores (delete): {e}");
-            return;
-        }
-    };
+    let txn = state.db.conn.begin().await?;
+    let all = entities::app_store::Entity::find().all(&txn).await?;
     for row in all {
         let am = entities::app_store::ActiveModel {
             name: ActiveValue::Set(row.name),
             url: ActiveValue::NotSet,
         };
-        if let Err(e) = entities::app_store::Entity::delete(am).exec(conn).await {
-            warn!("Failed to delete app store row: {e}");
-        }
+        entities::app_store::Entity::delete(am).exec(&txn).await?;
     }
     for store in stores.iter() {
         let am = entities::app_store::ActiveModel {
             name: ActiveValue::Set(store.name.clone()),
             url: ActiveValue::Set(store.url.clone()),
         };
-        if let Err(e) = entities::app_store::Entity::insert(am).exec(conn).await {
-            warn!("Failed to insert app store row: {e}");
+        entities::app_store::Entity::insert(am).exec(&txn).await?;
+    }
+    if state.db.fail_writes.load(std::sync::atomic::Ordering::Relaxed) {
+        return Err(vreckan_core::db::Db::simulated_write_failure());
+    }
+    txn.commit().await?;
+    info!("Saved {} app store(s) to the database.", stores.len());
+    Ok(())
+}
+
+// ---------------------------------------------------------------------------
+// Post-restore session reconcile (audit finding 4)
+// ---------------------------------------------------------------------------
+
+/// Read the `sessions` table into a local map without touching
+/// `state.sessions` (the post-restore reconcile compares the two stores and
+/// needs both at once; `load_sessions` replaces the map and can't be used).
+async fn read_sessions_table(
+    db: &vreckan_core::db::Db,
+) -> Result<HashMap<String, Value>, sea_orm::DbErr> {
+    let rows = entities::session_record::Entity::find().all(&db.conn).await?;
+    Ok(rows
+        .into_iter()
+        .map(|r| (r.session_id, r.data))
+        .collect())
+}
+
+/// Whether a session's containers are *verified dead*: the session has at
+/// least one container-registry entry and every one of them reports
+/// `state.running == false` from a successful `inspect_container`.
+///
+/// Everything else is "no liveness signal" and returns `false` — a running
+/// container, an inspect error (daemon down, container already removed), an
+/// unbuildable provider, or a missing registry. A no-signal session keeps its
+/// in-memory entry and is left to the existing status probes: a dead
+/// container's row is exactly what relaunch/recreate replay.
+async fn session_verified_dead(session_data: &Value) -> bool {
+    let Some(registry) = session_data
+        .get("container_registry")
+        .and_then(Value::as_object)
+    else {
+        return false;
+    };
+    let mut any_entry = false;
+    for (_app_id, container_info) in registry.iter() {
+        let Some(instance_id) = container_info
+            .get("instance_id")
+            .and_then(Value::as_str)
+        else {
+            continue;
+        };
+        any_entry = true;
+        let provider = match container_info.get("app_config") {
+            Some(cfg) => DockerProvider::new(cfg.clone()),
+            None => DockerProvider::new(serde_json::json!({})),
+        };
+        let Ok(provider) = provider else {
+            return false;
+        };
+        match provider.running_state(instance_id).await {
+            Some(running) if !running => {}
+            _ => return false,
         }
     }
-    info!("Saved {} app store(s) to the database.", stores.len());
+    any_entry
+}
+
+/// Reconcile the in-memory session map with the restored `sessions` table and
+/// persist the result (audit finding 4).
+///
+/// A restore rewrites the `sessions` table but deliberately leaves the
+/// in-memory map alone so connected users keep their sessions — which means
+/// the two stores can disagree until a session event happens to trigger
+/// `save_sessions`. A process restart in that window would load the
+/// backup's stale rows: dead sessions come back and live ones vanish. So the
+/// restore itself merges the two stores:
+///
+/// - **in both:** the in-memory entry is kept while it is live or has no
+///   liveness signal ([`session_verified_dead`]); a verified-dead session
+///   yields to the restored row.
+/// - **restored only:** resurrected (that is what the restore is for).
+/// - **live only:** kept and left to the existing status probes.
+///
+/// The merged map replaces `state.sessions` and is persisted with the
+/// transactional full-replace save.
+pub async fn reconcile_sessions_after_restore(state: &AppState) -> Result<(), sea_orm::DbErr> {
+    let live = state.sessions.read().await.clone();
+    let restored = read_sessions_table(&state.db).await?;
+
+    let mut merged = HashMap::new();
+    let mut yielded = 0usize;
+    for (id, live_data) in live.iter() {
+        match restored.get(id) {
+            Some(restored_data) if session_verified_dead(live_data).await => {
+                // Verified-dead in-memory session: the backup's row is the
+                // fresher record of it.
+                merged.insert(id.clone(), restored_data.clone());
+                yielded += 1;
+            }
+            _ => {
+                // Live, or no liveness signal (daemon down, container gone,
+                // no registry): the in-memory entry is authoritative.
+                merged.insert(id.clone(), live_data.clone());
+            }
+        }
+    }
+    let mut resurrected = 0usize;
+    for (id, restored_data) in restored.iter() {
+        if !live.contains_key(id) {
+            merged.insert(id.clone(), restored_data.clone());
+            resurrected += 1;
+        }
+    }
+    *state.sessions.write().await = merged;
+    save_sessions(state).await?;
+    info!(
+        "Post-restore session reconcile: {} session(s) in memory, {} in the \
+         restored table, {} verified-dead yielded to the backup, {} resurrected.",
+        live.len(),
+        restored.len(),
+        yielded,
+        resurrected
+    );
+    Ok(())
 }
 
 // ---------------------------------------------------------------------------
@@ -2524,7 +2652,16 @@ pub async fn launch_common(
     }
 
     state.sessions.write().await.insert(session_id.clone(), session);
-    save_sessions(state).await;
+    // Handler with an error channel: the session stays in the live map either
+    // way (the container is already running and the next session event
+    // retries the full replace), but the client is told the session may not
+    // have been persisted (audit finding 1).
+    save_sessions(state).await.map_err(|e| {
+        (
+            StatusCode::INTERNAL_SERVER_ERROR,
+            format!("Session started but failed to persist: {e}"),
+        )
+    })?;
 
     if let (Some(provider), Some(wait_env)) = (probe_provider, wait_env) {
         let state_bg = state.clone();
@@ -2574,7 +2711,12 @@ pub async fn launch_common(
                         sessions.insert(session_id_bg.clone(), s);
                     }
                     drop(sessions);
-                    save_sessions(&state_bg).await;
+                    // Background task: in-memory state is authoritative and the
+                    // next session event retries the full replace (audit
+                    // finding 1) — there is no request to return a 500 to.
+                    if let Err(e) = save_sessions(&state_bg).await {
+                        error!("[{session_id_bg}] Failed to persist session after readiness probe: {e}");
+                    }
                     info!(
                         "[{session_id_bg}] Session ready. Proxying to {ip}:{port}."
                     );
@@ -2601,7 +2743,9 @@ pub async fn launch_common(
                         s["launch_error"] = Value::String(e.detail);
                     }
                     drop(sessions);
-                    save_sessions(&state_bg).await;
+                    if let Err(e) = save_sessions(&state_bg).await {
+                        error!("[{session_id_bg}] Failed to persist session after failed readiness wait: {e}");
+                    }
                 }
             }
         });
@@ -3365,7 +3509,12 @@ pub async fn session_out_of_date(state: &AppState, session_data: &Value) -> bool
 
 /// Stop a session's container(s) and clean up ephemeral storage. Mirrors
 /// `_stop_session`.
-pub async fn stop_session(state: &AppState, session_id: &str) {
+///
+/// The session is removed from the in-memory map before the save (the stop
+/// is effective in memory either way); a failed save is returned to the
+/// caller so the stop handler can report a 500 instead of warn-and-continue
+/// — the stale row is pruned by the next full-replace save (audit finding 1).
+pub async fn stop_session(state: &AppState, session_id: &str) -> Result<(), sea_orm::DbErr> {
     info!("[{session_id}] Stopping session...");
     // Prune the per-session in-memory maps the plain-session token-table
     // refresh keeps, or they grow one entry per session for the process
@@ -3385,13 +3534,13 @@ pub async fn stop_session(state: &AppState, session_id: &str) {
     let session_data = state.sessions.write().await.remove(session_id);
     let Some(session_data) = session_data else {
         warn!("Attempted to stop session {session_id}, but it was not found.");
-        return;
+        return Ok(());
     };
     // Tell any collaboration-room viewers the session has ended so their room
     // UI shows "session ended" instead of a dead iframe. A no-op for
     // non-collaboration sessions (they have no room connections).
     vreckan_collab::collaboration::notify_session_ended(state, session_id).await;
-    save_sessions(state).await;
+    save_sessions(state).await?;
     info!(
         "[{session_id}] Session stopped; containers are torn down in the background."
     );
@@ -3447,6 +3596,7 @@ pub async fn stop_session(state: &AppState, session_id: &str) {
         }
         info!("[{session_id_bg}] Containers stopped and cleaned up.");
     });
+    Ok(())
 }
 
 /// Whether a session was launched with ephemeral (cleanroom) storage.
@@ -3707,7 +3857,12 @@ pub async fn recreate_session(
                     serde_json::json!("Could not recreate the session's primary container.");
             }
         }
-        save_sessions(state).await;
+        // The recreate already failed: log a save failure on top of it
+        // instead of masking the real error (the in-memory failure marker is
+        // authoritative and the next save retries the full replace).
+        if let Err(e) = save_sessions(state).await {
+            error!("[{session_id}] Failed to persist session after failed recreate: {e}");
+        }
         return Err((
             StatusCode::INTERNAL_SERVER_ERROR,
             "Could not recreate the session's primary container.".to_string(),
@@ -3755,7 +3910,15 @@ pub async fn recreate_session(
             session_data.clone()
         }
     };
-    save_sessions(state).await;
+    // Handler with an error channel: the recreated session stays in the live
+    // map either way (the next session event retries the full replace), but
+    // the client is told it may not have been persisted (audit finding 1).
+    save_sessions(state).await.map_err(|e| {
+        (
+            StatusCode::INTERNAL_SERVER_ERROR,
+            format!("Session recreated but failed to persist: {e}"),
+        )
+    })?;
 
     // ANT-654: run the readiness wait + capability probe in the background
     // so the recreate response returns as soon as the containers are
@@ -3835,7 +3998,11 @@ pub async fn recreate_session(
                 sessions.insert(session_id_bg.clone(), s);
             }
             drop(sessions);
-            save_sessions(&state_bg).await;
+            // Background task: in-memory state is authoritative and the next
+            // session event retries the full replace (audit finding 1).
+            if let Err(e) = save_sessions(&state_bg).await {
+                error!("[{session_id_bg}] Failed to persist session after recreate probe: {e}");
+            }
         });
     }
     Ok(updated)
@@ -4180,7 +4347,19 @@ async fn stop_my_session(
         )
         .await;
     }
-    stop_session(&state, &session_id).await;
+    // Handler with an error channel: a failed save is a 500 — the stop is
+    // effective in memory either way (the stale row is pruned by the next
+    // full-replace save), but the client is told it may not have persisted
+    // (audit finding 1).
+    if let Err(e) = stop_session(&state, &session_id).await {
+        return e2ee::encrypt_response(
+            &state,
+            &headers,
+            StatusCode::INTERNAL_SERVER_ERROR,
+            serde_json::json!({ "detail": format!("Session stopped but failed to persist: {e}") }),
+        )
+        .await;
+    }
     e2ee::encrypt_response(&state, &headers, StatusCode::NO_CONTENT, serde_json::json!({})).await
 }
 
@@ -4723,4 +4902,402 @@ mod tests {
         // 33.333…% rounds to one decimal place.
         assert_eq!(prog["percentage"], serde_json::json!(33.3));
     }
-}
+
+    // ------------------------------------------------------------------
+    // Durable-store failure injection (audit findings 1–2, 4)
+    // ------------------------------------------------------------------
+
+    async fn fresh_state(name: &str) -> (std::path::PathBuf, AppState) {
+        let dir = std::env::temp_dir().join(format!(
+            "vreckan-catalog-test-{}-{}-{}",
+            std::process::id(),
+            name,
+            std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .unwrap()
+                .as_nanos()
+        ));
+        std::fs::create_dir_all(&dir).unwrap();
+        let db = vreckan_core::db::connect(&format!(
+            "sqlite://{}?mode=rwc",
+            dir.join("vreckan.db").display()
+        ))
+        .await
+        .unwrap();
+        db.init().await.unwrap();
+        (dir, AppState::new(vreckan_core::settings::Settings::from_env(), db))
+    }
+
+    fn minimal_app(id: &str) -> vreckan_core::shared::InstalledApp {
+        serde_json::from_value(serde_json::json!({
+            "id": id,
+            "name": id,
+            "logo": "x",
+            "provider": "docker",
+            "provider_config": {
+                "image": "python:3.12-slim",
+                "port": 8080,
+                "nvidia_support": false,
+                "dri3_support": false,
+                "type": "docker",
+                "url_support": false,
+                "open_support": false,
+                "extensions": []
+            }
+        }))
+        .unwrap()
+    }
+
+    /// F1: a write failure mid-rewrite must fail the save AND roll the whole
+    /// delete+reinsert back — the table is the pre-save state, not a
+    /// partially-emptied one.
+    #[tokio::test]
+    async fn save_installed_apps_write_failure_rolls_back_the_rewrite() {
+        let (dir, state) = fresh_state("save-installed-apps-rollback").await;
+        let conn = &state.db.conn;
+        for id in ["keep-a", "keep-b"] {
+            entities::installed_app::Entity::insert(entities::installed_app::ActiveModel {
+                id: sea_orm::ActiveValue::Set(id.to_string()),
+                data: sea_orm::ActiveValue::Set(serde_json::to_value(&minimal_app(id)).unwrap()),
+            })
+            .exec(conn)
+            .await
+            .unwrap();
+        }
+        // The in-memory map is empty: a successful save would delete both
+        // rows; the failed one must leave them in place.
+        state.db.fail_writes.store(true, std::sync::atomic::Ordering::Relaxed);
+        let err = save_installed_apps(&state).await.unwrap_err();
+        assert!(err.to_string().contains("simulated write failure"));
+        state.db.fail_writes.store(false, std::sync::atomic::Ordering::Relaxed);
+
+        assert_eq!(
+            entities::installed_app::Entity::find().all(conn).await.unwrap().len(),
+            2,
+            "failed save must not drop rows"
+        );
+
+        save_installed_apps(&state).await.unwrap();
+        assert_eq!(
+            entities::installed_app::Entity::find().all(conn).await.unwrap().len(),
+            0,
+            "the converged save applies the (empty) map"
+        );
+
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    /// F2: a failed load must not touch `state.installed_apps`.
+    #[tokio::test]
+    async fn load_installed_apps_read_failure_leaves_map_untouched() {
+        let (dir, state) = fresh_state("load-installed-apps-fail").await;
+        entities::installed_app::Entity::insert(entities::installed_app::ActiveModel {
+            id: sea_orm::ActiveValue::Set("db-app".to_string()),
+            data: sea_orm::ActiveValue::Set(serde_json::to_value(&minimal_app("db-app")).unwrap()),
+        })
+        .exec(&state.db.conn)
+        .await
+        .unwrap();
+        state
+            .installed_apps
+            .write()
+            .await
+            .insert("mem-app".to_string(), minimal_app("mem-app"));
+
+        state.db.fail_reads.store(true, std::sync::atomic::Ordering::Relaxed);
+        let err = load_installed_apps(&state).await.unwrap_err();
+        assert!(err.to_string().contains("simulated read failure"));
+        state.db.fail_reads.store(false, std::sync::atomic::Ordering::Relaxed);
+
+        let map = state.installed_apps.read().await.clone();
+        assert_eq!(map.len(), 1, "failed load must not replace the map");
+        assert!(map.contains_key("mem-app"));
+        assert!(!map.contains_key("db-app"));
+
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    /// F1: app stores — same rollback guarantee.
+    #[tokio::test]
+    async fn save_app_stores_write_failure_rolls_back_the_rewrite() {
+        let (dir, state) = fresh_state("save-app-stores-rollback").await;
+        let conn = &state.db.conn;
+        for name in ["store-a", "store-b"] {
+            entities::app_store::Entity::insert(entities::app_store::ActiveModel {
+                name: sea_orm::ActiveValue::Set(name.to_string()),
+                url: sea_orm::ActiveValue::Set(format!("https://example.com/{name}.yml")),
+            })
+            .exec(conn)
+            .await
+            .unwrap();
+        }
+        state
+            .app_stores
+            .write()
+            .await
+            .push(vreckan_core::shared::AppStore {
+                name: "store-a".to_string(),
+                url: "https://example.com/store-a.yml".to_string(),
+            });
+
+        state.db.fail_writes.store(true, std::sync::atomic::Ordering::Relaxed);
+        let err = save_app_stores(&state).await.unwrap_err();
+        assert!(err.to_string().contains("simulated write failure"));
+        state.db.fail_writes.store(false, std::sync::atomic::Ordering::Relaxed);
+
+        assert_eq!(
+            entities::app_store::Entity::find().all(conn).await.unwrap().len(),
+            2,
+            "failed save must not drop rows"
+        );
+
+        save_app_stores(&state).await.unwrap();
+        let rows = entities::app_store::Entity::find().all(conn).await.unwrap();
+        assert_eq!(rows.len(), 1);
+        assert_eq!(rows[0].name, "store-a");
+
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    /// F2: a failed load must not touch `state.app_stores`.
+    #[tokio::test]
+    async fn load_app_stores_read_failure_leaves_map_untouched() {
+        let (dir, state) = fresh_state("load-app-stores-fail").await;
+        entities::app_store::Entity::insert(entities::app_store::ActiveModel {
+            name: sea_orm::ActiveValue::Set("db-store".to_string()),
+            url: sea_orm::ActiveValue::Set("https://example.com/db.yml".to_string()),
+        })
+        .exec(&state.db.conn)
+        .await
+        .unwrap();
+        state.app_stores.write().await.push(vreckan_core::shared::AppStore {
+            name: "mem-store".to_string(),
+            url: "https://example.com/mem.yml".to_string(),
+        });
+
+        state.db.fail_reads.store(true, std::sync::atomic::Ordering::Relaxed);
+        let err = load_app_stores(&state).await.unwrap_err();
+        assert!(err.to_string().contains("simulated read failure"));
+        state.db.fail_reads.store(false, std::sync::atomic::Ordering::Relaxed);
+
+        let stores = state.app_stores.read().await.clone();
+        assert_eq!(stores.len(), 1, "failed load must not replace the list");
+        assert_eq!(stores[0].name, "mem-store");
+
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    /// F4 (no daemon needed): entries with no liveness signal keep their
+    /// in-memory data; restored-only rows resurrect; live-only rows are kept.
+    #[tokio::test]
+    async fn reconcile_keeps_live_entries_without_liveness_signal() {
+        let (dir, state) = fresh_state("reconcile-no-signal").await;
+        let conn = &state.db.conn;
+        // Restored table: `live-1` carries stale data, `restored-only` only
+        // exists in the table.
+        entities::session_record::Entity::insert(entities::session_record::ActiveModel {
+            session_id: sea_orm::ActiveValue::Set("live-1".to_string()),
+            data: sea_orm::ActiveValue::Set(serde_json::json!({ "source": "restored" })),
+        })
+        .exec(conn)
+        .await
+        .unwrap();
+        entities::session_record::Entity::insert(entities::session_record::ActiveModel {
+            session_id: sea_orm::ActiveValue::Set("restored-only".to_string()),
+            data: sea_orm::ActiveValue::Set(serde_json::json!({ "source": "restored" })),
+        })
+        .exec(conn)
+        .await
+        .unwrap();
+        // Live map: `live-1` with fresh data and an empty registry (no
+        // liveness signal), plus `live-only`.
+        state.sessions.write().await.insert(
+            "live-1".to_string(),
+            serde_json::json!({ "source": "live", "container_registry": {} }),
+        );
+        state.sessions.write().await.insert(
+            "live-only".to_string(),
+            serde_json::json!({ "source": "live" }),
+        );
+
+        reconcile_sessions_after_restore(&state).await.unwrap();
+
+        let map = state.sessions.read().await.clone();
+        assert_eq!(map.len(), 3, "merged map: {map:?}");
+        assert_eq!(map["live-1"]["source"], "live", "no-signal live entry must win");
+        assert_eq!(map["restored-only"]["source"], "restored", "restored-only must resurrect");
+        assert_eq!(map["live-only"]["source"], "live", "live-only must be kept");
+
+        // The merged map is persisted (a restart would reload it).
+        let rows = entities::session_record::Entity::find().all(conn).await.unwrap();
+        let table: std::collections::HashMap<_, _> =
+            rows.into_iter().map(|r| (r.session_id, r.data)).collect();
+        assert_eq!(table["live-1"]["source"], "live");
+        assert_eq!(table.len(), 3);
+
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    async fn docker_client() -> Option<Docker> {
+        let Ok(client) = Docker::connect_with_local_defaults() else {
+            return None;
+        };
+        if client.ping().await.is_ok() {
+            Some(client)
+        } else {
+            None
+        }
+    }
+
+    /// F4 (daemon-gated, skip when dockerless): a session whose containers
+    /// are verified dead (present, `state.running == false`) yields to the
+    /// restored row; a session with a running container keeps its live entry.
+    #[tokio::test]
+    async fn reconcile_verified_dead_yields_to_restored_row() {
+        let Some(client) = docker_client().await else {
+            eprintln!("skipping reconcile_verified_dead test: no Docker daemon");
+            return;
+        };
+        use std::collections::HashMap;
+        use bollard::query_parameters::{
+            CreateContainerOptions, CreateImageOptions, ListImagesOptions,
+            RemoveContainerOptions,
+        };
+        use futures_util::StreamExt;
+
+        // Make sure the probe image is present; skip the test rather than
+        // fail when the registry is unreachable.
+        let image = "python:3.12-slim";
+        let mut filters = HashMap::new();
+        filters.insert("reference".to_string(), vec![image.to_string()]);
+        let has_image = client
+            .list_images(Some(ListImagesOptions {
+                filters: Some(filters),
+                ..Default::default()
+            }))
+            .await
+            .map(|l| !l.is_empty())
+            .unwrap_or(false);
+        if !has_image {
+            // `create_image` is the synchronous pull (mirrors the provider's
+            // own pull path) and yields a stream of progress events.
+            let mut stream = client.create_image(
+                Some(CreateImageOptions {
+                    from_image: Some(image.to_string()),
+                    ..Default::default()
+                }),
+                None,
+                None,
+            );
+            let mut pull_failed = false;
+            while let Some(event) = stream.next().await {
+                if event.is_err() {
+                    pull_failed = true;
+                    break;
+                }
+            }
+            if pull_failed {
+                eprintln!("skipping reconcile_verified_dead test: image pull failed");
+                return;
+            }
+        }
+
+        async fn start_sleep(client: &Docker) -> Option<String> {
+            let body: bollard::models::ContainerCreateBody = serde_json::from_value(
+                serde_json::json!({
+                    "Image": "python:3.12-slim",
+                    "Cmd": ["python", "-c", "import time; time.sleep(3600)"]
+                }),
+            )
+            .ok()?;
+            client
+                .create_container(
+                    Some(CreateContainerOptions {
+                        name: Some(format!("ant-875-{}-reconcile", rand::random::<u64>())),
+                        ..Default::default()
+                    }),
+                    body,
+                )
+                .await
+                .ok()
+                .map(|r| r.id)
+        }
+
+        let Some(dead_id) = start_sleep(&client).await else {
+            eprintln!("skipping reconcile_verified_dead test: container create failed");
+            return;
+        };
+        let Some(live_id) = start_sleep(&client).await else {
+            let _ = client.remove_container(&dead_id, None).await;
+            eprintln!("skipping reconcile_verified_dead test: container create failed");
+            return;
+        };
+        let force_remove = Some(RemoveContainerOptions {
+            force: true,
+            ..Default::default()
+        });
+        if client.start_container(&live_id, None).await.is_err() {
+            let _ = client.remove_container(&live_id, force_remove).await;
+            let _ = client.remove_container(&dead_id, None).await;
+            eprintln!("skipping reconcile_verified_dead test: container start failed");
+            return;
+        }
+        // `stop_container` blocks until the container is down, which is
+        // exactly the "verified dead" state the reconcile must see.
+        if client.stop_container(&dead_id, None).await.is_err() {
+            let _ = client.remove_container(&live_id, force_remove).await;
+            let _ = client.remove_container(&dead_id, None).await;
+            eprintln!("skipping reconcile_verified_dead test: container stop failed");
+            return;
+        }
+
+        let (dir, state) = fresh_state("reconcile-verified-dead").await;
+        let conn = &state.db.conn;
+        let dead_cfg = serde_json::json!({});
+        let live_cfg = serde_json::json!({});
+        entities::session_record::Entity::insert(entities::session_record::ActiveModel {
+            session_id: sea_orm::ActiveValue::Set("s-dead".to_string()),
+            data: sea_orm::ActiveValue::Set(serde_json::json!({ "source": "restored" })),
+        })
+        .exec(conn)
+        .await
+        .unwrap();
+        entities::session_record::Entity::insert(entities::session_record::ActiveModel {
+            session_id: sea_orm::ActiveValue::Set("s-live".to_string()),
+            data: sea_orm::ActiveValue::Set(serde_json::json!({ "source": "restored" })),
+        })
+        .exec(conn)
+        .await
+        .unwrap();
+        state.sessions.write().await.insert(
+            "s-dead".to_string(),
+            serde_json::json!({
+                "source": "live",
+                "container_registry": { "app-1": { "instance_id": dead_id, "app_config": dead_cfg } }
+            }),
+        );
+        state.sessions.write().await.insert(
+            "s-live".to_string(),
+            serde_json::json!({
+                "source": "live",
+                "container_registry": { "app-1": { "instance_id": live_id, "app_config": live_cfg } }
+            }),
+        );
+
+        reconcile_sessions_after_restore(&state).await.unwrap();
+
+        let map = state.sessions.read().await.clone();
+        assert_eq!(
+            map["s-dead"]["source"], "restored",
+            "verified-dead session must yield to the restored row"
+        );
+        assert_eq!(
+            map["s-live"]["source"], "live",
+            "running-container session must keep its live entry"
+        );
+
+        // Cleanup: remove both containers and the scratch database.
+        let _ = client.remove_container(&dead_id, None).await;
+        let _ = client.remove_container(&live_id, force_remove).await;
+        let _ = std::fs::remove_dir_all(&dir);
+    }}

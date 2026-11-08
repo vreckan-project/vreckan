@@ -120,7 +120,7 @@ async fn test_stop_session_prunes_ant443_maps() {
         .await
         .insert(sid.clone(), 1);
 
-    vreckan_catalog::catalog::stop_session(&state, &sid).await;
+    vreckan_catalog::catalog::stop_session(&state, &sid).await.unwrap();
 
     assert!(
         !state.sessions.read().await.contains_key(&sid),
