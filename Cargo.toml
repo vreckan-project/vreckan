@@ -47,7 +47,7 @@ http-body-util = "0.1"
 futures-util = "0.3"
 # Pinned to the 0.29 line axum's `ws` feature already resolves (ANT-854),
 # collapsing the lock to a single tungstenite/tokio-tungstenite version.
-tokio-tungstenite = "0.29"
+tokio-tungstenite = "0.30"
 # Per-connection service plumbing for the manual accept loop in
 # `serve.rs` (ANT-652); also used by integration tests.
 tower = { version = "0.5", features = ["util"] }
