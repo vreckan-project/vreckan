@@ -99,7 +99,6 @@ API_OK=0
 API_NOTE="not attempted"
 RECLAIM_COUNT=0
 KEEP_COUNT=0
-ERROR_COUNT=0
 
 ACTIVE_IDS="$TMP/active-ids"        # run ids / workspace ids of active issues
 ACTIVE_CWDS="$TMP/active-cwds"      # realpath'd cwds of active execution workspaces
@@ -269,6 +268,7 @@ salvage_tar_dir() {
     return 0
   fi
   mkdir -p "$SALVAGE_DIR"
+  # shellcheck disable=SC2086  # word-split on purpose: list of --exclude= flags
   if tar czf "$tar" $excludes -C "$(dirname "$d")" "$(basename "$d")" 2>"$TMP/tar.err"; then
     if [[ -s "$tar" ]]; then
       add_salvage "$tar"
@@ -458,32 +458,38 @@ consider_worktree() {
   if (( merged == 0 )); then
    # "gone from remotes" only when the base actually has remote-tracking refs
    # (i.e. has been fetched at least once); otherwise a never-fetched base
-   # would make every pushed branch look "gone". NB: for-each-ref's `*` does
-   # NOT cross `/` (FNM_PATHNAME), so 'refs/remotes/*' never matches the real
-   # refs/remotes/<remote>/<ref> layout and this gate was always empty — which
-   # silently disabled "gone" detection for every squash-merged branch. Grep
-   # the ref list instead (version-independent).
+   # would make every pushed branch look "gone". (Grep the ref list:
+   # for-each-ref's `*` does not cross `/`, so the old 'refs/remotes/*'
+   # pattern never matched the real refs/remotes/<remote>/<ref> layout.)
    if git -C "$base" for-each-ref --format='%(refname)' 2>/dev/null | grep -qm1 '^refs/remotes/'; then
-    if [[ -z "$(git -C "$base" for-each-ref --format='%(refname:short)' --count=1 "refs/remotes/*/${branch}" 2>/dev/null)" ]]; then
-      # Local absence is ambiguous (never pushed vs. deleted after push), so
-      # confirm against the remotes before treating the branch as gone. Any
-      # remote that still has it means "not gone"; a network failure means
-      # "in doubt" -> keep.
-      local r gone_confirmed=1
-      for r in $(git -C "$base" remote 2>/dev/null); do
+    # A local tracking ref is NOT proof the branch still exists remotely:
+    # after the remote deletes the branch, refs/remotes/<remote>/<branch>
+    # lingers until `git fetch --prune`, so an unmerged branch is always
+    # confirmed against the reachable remotes (ANT-965). Any remote that
+    # still has it means "not gone"; the branch is "gone" only when every
+    # remote is reachable AND none of them has it. No remotes left in the
+    # config, or any unreachable remote, means "in doubt" -> keep.
+    local r in_doubt=0 gone_confirmed=0
+    remotes="$(git -C "$base" remote 2>/dev/null || true)"
+    if [[ -n "$remotes" ]]; then
+      gone_confirmed=1
+      # shellcheck disable=SC2086  # word-split on purpose: one remote per line
+      for r in $remotes; do
         if git -C "$base" ls-remote --exit-code "$r" "refs/heads/${branch}" >/dev/null 2>&1; then
-          gone_confirmed=0
+          gone_confirmed=0   # still on this remote: not gone
           break
         fi
         if ! git -C "$base" ls-remote "$r" >/dev/null 2>&1; then
-          gone_confirmed=1   # unreachable: stay in doubt
+          in_doubt=1         # unreachable: absence unconfirmed
           break
         fi
       done
-      (( gone_confirmed )) && gone=1
+      if (( gone_confirmed == 1 && in_doubt == 0 )); then
+        gone=1
+      fi
     fi
-  fi
-  fi
+   fi
+   fi
 
   if (( merged == 0 && gone == 0 )); then
     add_kept "$wt" "$size" "${age}d" "branch ${branch} not merged/gone"
