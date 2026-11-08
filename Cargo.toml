@@ -27,14 +27,14 @@ resolver = "2"
 # Single version shared by all six workspace crates via
 # `version = { workspace = true }` (Candidate C split, ANT-770). Bumped
 # 0.10.7 -> 0.11.0 for the v0.11.0 cut that ships the split (ANT-775).
-version = "0.11.6"
+version = "0.11.7"
 edition = "2021"
 license = "MPL-2.0"
 
 [workspace.dependencies]
 # HTTP server + routing
 axum = { version = "0.8", features = ["macros", "query", "json", "multipart", "ws", "http2", "form"] }
-axum-server = { version = "0.8", features = ["tls-rustls"] }
+axum-server = { version = "0.9", features = ["tls-rustls"] }
 tokio = { version = "1", features = ["full"] }
 hyper = { version = "1", features = ["full"] }
 # Per-connection HTTP driver for the manual accept loop in `serve.rs`

@@ -456,10 +456,14 @@ consider_worktree() {
   # The "gone" confirmation costs network round-trips, so only run it when
   # the branch was not already caught as merged.
   if (( merged == 0 )); then
-  # "gone from remotes" only when the base actually has remote-tracking refs
-  # (i.e. has been fetched at least once); otherwise a never-fetched base
-  # would make every pushed branch look "gone".
-  if [[ -n "$(git -C "$base" for-each-ref --format='%(refname)' 'refs/remotes/*' 2>/dev/null | head -1)" ]]; then
+   # "gone from remotes" only when the base actually has remote-tracking refs
+   # (i.e. has been fetched at least once); otherwise a never-fetched base
+   # would make every pushed branch look "gone". NB: for-each-ref's `*` does
+   # NOT cross `/` (FNM_PATHNAME), so 'refs/remotes/*' never matches the real
+   # refs/remotes/<remote>/<ref> layout and this gate was always empty — which
+   # silently disabled "gone" detection for every squash-merged branch. Grep
+   # the ref list instead (version-independent).
+   if git -C "$base" for-each-ref --format='%(refname)' 2>/dev/null | grep -qm1 '^refs/remotes/'; then
     if [[ -z "$(git -C "$base" for-each-ref --format='%(refname:short)' --count=1 "refs/remotes/*/${branch}" 2>/dev/null)" ]]; then
       # Local absence is ambiguous (never pushed vs. deleted after push), so
       # confirm against the remotes before treating the branch as gone. Any

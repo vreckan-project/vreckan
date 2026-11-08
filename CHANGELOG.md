@@ -9,6 +9,42 @@ is committed normally in `vreckan`. The changelog is the authoritative
 record of what shipped in each release — see
 [`docs/release.md`](./docs/release.md) for the conventions.
 
+## 2026-11-08 — v0.11.7: base-image bump + loud template-schema failures + rsa rc.22
+
+- **The build base advanced to the 2026-11-07 11:39 PM MST re-bake**
+  (`vreckan-base-build` `sha256:a38d1cd2258e…` → `sha256:512581dbc91a…`;
+  `.base-image-digest` and the `Dockerfile` build-stage `FROM` re-pointed
+  together, ANT-277). The Rust toolchain is unchanged — 1.99.1, parent
+  `rust:1.99.1-slim` still at `sha256:7eab7ce1…`. What the re-bake brings:
+  the pre-warmed crates.io dependency cache now matches the current
+  `main` `Cargo.lock` (the cache still held the 0.11.4-era lock from
+  `3fff4f2`) — rsa rc.22, the new `vreckan-test-support` workspace
+  member, and the pruned test-harness dependencies are pre-fetched, so
+  nightly image builds on `main` only fetch lockfile deltas — and the
+  `apt-get upgrade` security layer was refreshed to the trixie-security
+  state at bake time.
+
+- **Template-schema load failures are now loud (ANT-914).**
+  `load_template_schema` returns `Result<(), String>` instead of
+  early-returning behind `warn!` calls that can be swallowed: a transient
+  SQLite lock that left the schema at its empty initial value now fails
+  startup (like the other required core-store loaders) instead of serving
+  an empty schema to admin; a missing or unparseable YAML baseline is an
+  error, not a silent empty vec; a partial seed is reported as a failure,
+  not a servable schema; and a post-save reload failure returns 500 (the
+  save itself is persisted).
+
+- **`rsa` advanced to 0.10.0-rc.22 (renovate #146; ANT-917 lock repair).**
+  Patch-level RC advance of the crypto dependency; no API changes.
+
+- **Collab pushes are now recorded in commit order (ANT-927).**
+  The collab paths that commit and then push (slot/MK assignment, viewer
+  invite-join, viewer disconnect) acquire a per-session token-table push
+  lock before the sessions write lock, so the last-write-wins container
+  endpoint records pushes in commit order — the CI flake was the shadow
+  of a real, if transient, out-of-order push. The ACME renewal test is
+  gated on persisted visibility with bounded retries.
+
 ## 2026-11-07 — v0.11.6: base-image bump + runtime zlib1g refresh — clears the PR scan gate (ANT-932)
 
 - **The build base advanced to the 2026-11-07 8:16 AM MST re-bake**
