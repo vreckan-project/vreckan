@@ -51,6 +51,7 @@ pass() { echo "ok   - $1"; PASS=$((PASS + 1)); }
 fail() { echo "FAIL - $1" >&2; FAIL=$((FAIL + 1)); }
 
 FIXTURE="${GC_TEST_FIXTURE:-$(mktemp -d "${TMPDIR:-/tmp}/gc-workspace-sessions-test.XXXXXX")}"
+# shellcheck disable=SC2329  # invoked via 'trap cleanup EXIT' below; shellcheck 0.11.0 does not track trap invocations here (false positive; no-op on 0.10.0)
 cleanup() {
   # shellcheck disable=SC2317  # body runs from the EXIT trap
   [[ -n "${FAKE_PID:-}" ]] && kill "$FAKE_PID" 2>/dev/null
