@@ -80,8 +80,9 @@ except ImportError:
 #   "float"   -> double precision
 #   "json"    -> json (stored as TEXT in SQLite)
 #
-# The column set and order mirror `src/entities.rs` (SeaORM entities) and the
-# `known_columns`/`json_columns` maps in `src/db.rs`. JSON columns always hold
+# The column set and order mirror `crates/vreckan-core/src/entities.rs`
+# (SeaORM entities) and the `known_columns`/`json_columns` maps in
+# `crates/vreckan-core/src/db.rs`. JSON columns always hold
 # an object or array in this schema, so the TEXT -> json conversion below is
 # unambiguous.
 
@@ -156,6 +157,10 @@ COLUMNS: Dict[str, List[Tuple[str, str]]] = {
         ("share_id", "text"),
         ("data", "json"),
     ],
+    "session_shares": [
+        ("share_id", "text"),
+        ("data", "json"),
+    ],
     "sessions": [
         ("session_id", "text"),
         ("data", "json"),
@@ -191,6 +196,7 @@ PRIMARY_KEYS = {
     "sessions": "session_id",
     "auth_tokens": "token",
     "public_shares": "share_id",
+    "session_shares": "share_id",
     "app_templates": "name",
     "template_schema_settings": "name",
     "pinned_behaviors": "id",
@@ -205,8 +211,8 @@ def q(ident: str) -> str:
 
 # ``DEFAULT`` literals for non-nullable columns that carry an entity default
 # (mirrors the ``#[sea_orm(default_value = ...)]`` attributes in
-# ``src/entities.rs``). A source row omits a column when the source database
-# predates it (e.g. a pre-v0.6.1 SQLite database has no
+# ``crates/vreckan-core/src/entities.rs``). A source row omits a column when
+# the source database predates it (e.g. a pre-v0.6.1 SQLite database has no
 # ``users.must_change_password``); the INSERT then leaves the column out and
 # the target column must fall back to this default instead of tripping the
 # NOT NULL constraint.
@@ -273,7 +279,8 @@ def build_ddl(table: str) -> str:
 
 def _nullable(table: str, col: str, kind: str) -> bool:
     """A column is nullable if it is a JSON column or an explicitly-Optional
-    scalar in the entity (mirrors `src/entities.rs`). Every other scalar has a
+    scalar in the entity (mirrors `crates/vreckan-core/src/entities.rs`).
+    Every other scalar has a
     default in the entity and is NOT NULL."""
     if kind == "json":
         return True
@@ -304,15 +311,18 @@ def convert_cell(kind: str, value: Any) -> Any:
     if value is None:
         return None
     if kind == "json":
-        # SQLite stores JSON as TEXT. Pass it back as a json value; an empty
-        # string becomes NULL (an empty string is not valid JSON).
+        # SQLite stores JSON as TEXT — already-serialized JSON. Pass the text
+        # through untouched: the Json adapter's default dumps is json.dumps,
+        # which would serialize the serialized string a second time and land
+        # a quoted JSON *string* (not an object/array) in the json column.
+        # An empty string becomes NULL (an empty string is not valid JSON).
         if isinstance(value, (bytes, bytearray)):
             value = value.decode("utf-8", "replace")
         if not isinstance(value, str):
             value = str(value)
         if value.strip() == "":
             return None
-        return Json(value)
+        return Json(value, dumps=lambda s: s)
     if kind == "bool":
         return bool(value)
     if kind == "int":
