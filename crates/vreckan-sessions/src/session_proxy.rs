@@ -11,7 +11,7 @@
 
 use std::collections::HashMap;
 
-use axum::body::Body;
+use axum::body::{Body, HttpBody};
 use axum::extract::{FromRequestParts, Path, State, WebSocketUpgrade};
 use axum::http::header;
 use axum::http::{HeaderMap, HeaderValue, Method, StatusCode};
@@ -449,17 +449,13 @@ async fn proxy_session_request(
         }
     }
 
-    let headers = upstream_headers(&parts.headers, &session, &upstream_host);
-    let body_bytes = match axum::body::to_bytes(body, 1024 * 1024 * 1024).await {
-        Ok(b) => b,
-        Err(e) => {
-            return (
-                StatusCode::BAD_REQUEST,
-                axum::Json(serde_json::json!({ "detail": format!("Bad request body: {e}") })),
-            )
-                .into_response();
-        }
-    };
+    let mut headers = upstream_headers(&parts.headers, &session, &upstream_host);
+    // The request body is forwarded as a stream (audit finding 15) instead of
+    // being collected into a 1 GiB buffer. The forwarded `content-length` is
+    // dropped: reqwest frames a stream body as chunked, and per RFC 9112 the
+    // sender's transfer coding takes precedence over the client's length —
+    // the byte sequence forwarded is exactly the client's.
+    headers.remove(header::CONTENT_LENGTH);
 
     let client = match reqwest::Client::builder()
         .timeout(std::time::Duration::from_secs(300))
@@ -477,8 +473,26 @@ async fn proxy_session_request(
 
     let mut req = client.request(parts.method.clone(), &target_url);
     req = req.headers(headers);
-    if !body_bytes.is_empty() {
-        req = req.body(body_bytes);
+    // The request body is forwarded without being collected into a buffer
+    // (audit finding 15). A body known to be empty goes out as a reusable
+    // empty body: reqwest's redirect layer (tower-http) follows an upstream
+    // redirect only when the request body is cloneable or provably empty,
+    // and a one-shot stream body makes it hand the redirect back to the
+    // client instead of following it. Non-empty bodies (chunked or
+    // length-declared uploads) are wrapped as a stream and never buffered;
+    // a 307/308 on one is returned as-is, which the client browser re-issues
+    // with the body, as it does for any proxied redirect.
+    // `reqwest::Body::wrap_stream` requires the stream's error type to be
+    // `Into<Box<dyn Error + Send + Sync>>`; `axum::Error` isn't, so we
+    // unwrap it back to the boxed error before handing it over.
+    if HttpBody::size_hint(&body).exact() == Some(0) {
+        req = req.body(reqwest::Body::from(Vec::<u8>::new()));
+    } else {
+        req = req.body(reqwest::Body::wrap_stream(
+            body
+                .into_data_stream()
+                .map(|chunk| chunk.map_err(|e| e.into_inner())),
+        ));
     }
 
     let upstream_response = match req.send().await {

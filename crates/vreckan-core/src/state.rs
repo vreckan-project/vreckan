@@ -18,10 +18,10 @@
 use std::collections::HashMap;
 use std::sync::{Arc, Mutex};
 use tokio::sync::{RwLock, Semaphore};
-use tracing::{info, warn};
+use tracing::info;
 
 use axum_server::tls_rustls::RustlsConfig;
-use sea_orm::{ActiveValue, EntityTrait};
+use sea_orm::{ActiveValue, EntityTrait, TransactionTrait};
 
 use crate::db::Db;
 use crate::settings::Settings;
@@ -68,6 +68,19 @@ pub struct LoginAttemptWindow {
     pub locked_until: f64,
 }
 
+/// Share-password guess accounting for one public share, used by the
+/// brute-force limiter on the anonymous `POST /public/{share_id}` and
+/// `POST /share/{share_id}` routes (ANT-884, audit finding 13).
+#[derive(Clone, Debug, Default)]
+pub struct SharePasswordAttempts {
+    /// Failed guesses recorded in the current window.
+    pub fails: u32,
+    /// Wall-clock start (unix seconds) of the current failure window.
+    pub window_start: f64,
+    /// While nonzero, the share is locked out until this time (unix seconds).
+    pub locked_until: f64,
+}
+
 /// Per-session selkies data-plane connections: session id ->
 /// [(token presented to selkies, connect sequence)] in connect order
 /// (ANT-443).
@@ -89,6 +102,12 @@ pub struct AppState {
     /// Login-attempt windows for the brute-force limiter, keyed by
     /// "ip:username". In-memory only: a server restart clears the counters.
     pub login_attempts: Arc<RwLock<HashMap<String, LoginAttemptWindow>>>,
+    /// Share-password guess windows for the anonymous share brute-force
+    /// limiter, keyed by share id. The budget is per share because the
+    /// `/public` and `/share` routes carry no caller identity — the leaked
+    /// link is the attacker's only stable handle (ANT-884). In-memory only:
+    /// a server restart clears the counters.
+    pub share_password_attempts: Arc<RwLock<HashMap<String, SharePasswordAttempts>>>,
     /// In-flight OIDC authorization states, keyed by the opaque `state` string.
     pub oidc_states: Arc<RwLock<HashMap<String, OidcStateRecord>>>,
     /// Short-lived public-share download tokens.
@@ -177,6 +196,16 @@ pub struct AppState {
     /// a newer snapshot always carries the larger generation; a push from an
     /// older generation is dropped when a newer one has already been pushed.
     pub token_table_generations: Arc<RwLock<HashMap<String, u64>>>,
+    /// Per-session token-table push lock (ANT-927): collab slot/MK/viewer
+    /// mutations acquire it BEFORE the sessions write lock and hold it
+    /// through the container POST, so per-session push completion order
+    /// matches commit order — the last-write-wins container endpoint can no
+    /// longer record a table built from an older commit after a newer one
+    /// (the `concurrent_slot_assignments_do_not_clobber_each_other` flake).
+    /// A tokio lock (held across the push await); the map itself uses a std
+    /// lock, never held across an await.
+    pub token_table_push_locks:
+        Arc<std::sync::Mutex<HashMap<String, Arc<tokio::sync::Mutex<()>>>>>,
     /// When true, the background image-pull task is a no-op (it just marks
     /// the image "queued" and returns without talking to Docker). Tests set
     /// this so the `tokio::spawn`-ed pull doesn't do a real (slow/hanging)
@@ -214,6 +243,7 @@ impl AppState {
             crypto_sessions: Arc::new(RwLock::new(HashMap::new())),
             auth_tokens: Arc::new(RwLock::new(HashMap::new())),
             login_attempts: Arc::new(RwLock::new(HashMap::new())),
+            share_password_attempts: Arc::new(RwLock::new(HashMap::new())),
             oidc_states: Arc::new(RwLock::new(HashMap::new())),
             download_tokens: Arc::new(RwLock::new(HashMap::new())),
             pull_progress: Arc::new(Mutex::new(HashMap::new())),
@@ -239,6 +269,7 @@ impl AppState {
             selkies_conn_seq: Arc::new(std::sync::atomic::AtomicU64::new(0)),
             last_pushed_token_tables: Arc::new(RwLock::new(HashMap::new())),
             token_table_generations: Arc::new(RwLock::new(HashMap::new())),
+            token_table_push_locks: Arc::new(std::sync::Mutex::new(HashMap::new())),
             pull_noop: Arc::new(std::sync::atomic::AtomicBool::new(false)),
             fake_provider: Arc::new(std::sync::atomic::AtomicBool::new(false)),
             fake_provider_record: Arc::new(std::sync::Mutex::new(None)),
@@ -283,46 +314,55 @@ impl AppState {
 
 /// Persist the in-memory session map to the database (full replace). Mirrors
 /// `save_sessions_to_disk`.
-pub async fn save_sessions(state: &AppState) {
+///
+/// The delete-all + re-insert runs inside a single transaction (audit
+/// finding 1): any failed statement rolls the whole rewrite back, so a
+/// mid-save outage can never leave the table partially emptied, and the
+/// error is surfaced to the caller instead of warn-and-continue. The
+/// `fail_writes` test hook fires at commit time — after the statements have
+/// executed inside the open transaction — so a test-armed save proves the
+/// rollback rather than short-circuiting before any statement runs.
+pub async fn save_sessions(state: &AppState) -> Result<(), sea_orm::DbErr> {
     let sessions = state.sessions.read().await.clone();
-    let conn = &state.db.conn;
-    let all = match crate::entities::session_record::Entity::find().all(conn).await {
-        Ok(rows) => rows,
-        Err(e) => {
-            warn!("Failed to save sessions (delete): {e}");
-            return;
-        }
-    };
+    let txn = state.db.conn.begin().await?;
+    let all = crate::entities::session_record::Entity::find().all(&txn).await?;
     for row in all {
         let am = crate::entities::session_record::ActiveModel {
             session_id: ActiveValue::Set(row.session_id),
             data: ActiveValue::NotSet,
         };
-        if let Err(e) = crate::entities::session_record::Entity::delete(am).exec(conn).await {
-            warn!("Failed to delete session row: {e}");
-        }
+        crate::entities::session_record::Entity::delete(am).exec(&txn).await?;
     }
     for (id, data) in sessions.iter() {
         let am = crate::entities::session_record::ActiveModel {
             session_id: ActiveValue::Set(id.clone()),
             data: ActiveValue::Set(data.clone()),
         };
-        if let Err(e) = crate::entities::session_record::Entity::insert(am).exec(conn).await {
-            warn!("Failed to insert session row: {e}");
-        }
+        crate::entities::session_record::Entity::insert(am).exec(&txn).await?;
     }
+    if state.db.fail_writes.load(std::sync::atomic::Ordering::Relaxed) {
+        return Err(crate::db::Db::simulated_write_failure());
+    }
+    txn.commit().await?;
+    Ok(())
 }
 
 /// Load sessions from the database into `state.sessions`. Mirrors
 /// `load_sessions_from_disk`.
-pub async fn load_sessions(state: &AppState) {
-    let rows = match crate::entities::session_record::Entity::find().all(&state.db.conn).await {
-        Ok(rows) => rows,
-        Err(e) => {
-            warn!("Error loading sessions from the database: {e}");
-            return;
-        }
-    };
+///
+/// A SELECT failure is an error, not a warning (audit finding 2): a failed
+/// load must leave `state.sessions` untouched so a later full-replace save
+/// cannot rewrite the table from an empty/stale map. At startup the error
+/// fails the boot (like `load_auth_tokens`); at restore it surfaces through
+/// the backup-restore endpoint. Malformed rows are still skipped with a
+/// warning — that is a data-level issue, not a failed load.
+pub async fn load_sessions(state: &AppState) -> Result<(), sea_orm::DbErr> {
+    if let Some(e) = state.db.fail_reads_error() {
+        return Err(e);
+    }
+    let rows = crate::entities::session_record::Entity::find()
+        .all(&state.db.conn)
+        .await?;
     let mut sessions = HashMap::new();
     for row in rows {
         sessions.insert(row.session_id, row.data);
@@ -330,6 +370,7 @@ pub async fn load_sessions(state: &AppState) {
     let count = sessions.len();
     *state.sessions.write().await = sessions;
     info!("Loaded {count} session(s) from the database.");
+    Ok(())
 }
 
 #[cfg(test)]
@@ -381,6 +422,113 @@ mod tests {
         // Clones share the same live semaphore (the router holds clones).
         let sem4 = state.clone().pull_semaphore().await;
         assert!(Arc::ptr_eq(&sem2, &sem4));
+
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    /// A throwaway SQLite-backed `AppState` for the durable-store tests.
+    async fn fresh_state(name: &str) -> (std::path::PathBuf, AppState) {
+        let dir = std::env::temp_dir().join(format!(
+            "vreckan-state-test-{}-{}-{}",
+            std::process::id(),
+            name,
+            std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .unwrap()
+                .as_nanos()
+        ));
+        std::fs::create_dir_all(&dir).unwrap();
+        let db = crate::db::connect(&format!(
+            "sqlite://{}?mode=rwc",
+            dir.join("vreckan.db").display()
+        ))
+        .await
+        .unwrap();
+        db.init().await.unwrap();
+        (dir, AppState::new(Settings::from_env(), db))
+    }
+
+    fn session_row(session_id: &str, data: serde_json::Value)
+    -> crate::entities::session_record::ActiveModel {
+        crate::entities::session_record::ActiveModel {
+            session_id: ActiveValue::Set(session_id.to_string()),
+            data: ActiveValue::Set(data),
+        }
+    }
+
+    /// F1: a write failure mid-rewrite must fail the save AND roll the whole
+    /// delete+reinsert back — the table is byte-for-byte the pre-save state,
+    /// not a partially-emptied one. The `fail_writes` hook fires at commit
+    /// time (after the statements ran inside the open transaction), so this
+    /// proves the rollback rather than a short-circuit.
+    #[tokio::test]
+    async fn save_sessions_write_failure_rolls_back_the_rewrite() {
+        let (dir, state) = fresh_state("save-sessions-rollback").await;
+        let conn = &state.db.conn;
+        // The table holds three rows; the in-memory map knows only `a`
+        // (with newer data), so a successful save would delete `b`/`c` and
+        // replace `a`.
+        for (id, v) in [("a", 0), ("b", 0), ("c", 0)] {
+            crate::entities::session_record::Entity::insert(session_row(id, serde_json::json!({ "v": v })))
+                .exec(conn)
+                .await
+                .unwrap();
+        }
+        state
+            .sessions
+            .write()
+            .await
+            .insert("a".to_string(), serde_json::json!({ "v": 1 }));
+
+        state.db.fail_writes.store(true, std::sync::atomic::Ordering::Relaxed);
+        let err = save_sessions(&state).await.unwrap_err();
+        assert!(err.to_string().contains("simulated write failure"));
+        state.db.fail_writes.store(false, std::sync::atomic::Ordering::Relaxed);
+
+        // The rollback left the table exactly as it was before the save.
+        let rows = crate::entities::session_record::Entity::find().all(conn).await.unwrap();
+        let table: std::collections::HashMap<_, _> =
+            rows.into_iter().map(|r| (r.session_id, r.data)).collect();
+        assert_eq!(table.len(), 3, "failed save must not drop rows: {table:?}");
+        assert_eq!(table["a"], serde_json::json!({ "v": 0 }), "failed save must not re-insert");
+        assert!(table.contains_key("b") && table.contains_key("c"));
+
+        // The same save succeeds once the outage clears and converges.
+        save_sessions(&state).await.unwrap();
+        let rows = crate::entities::session_record::Entity::find().all(conn).await.unwrap();
+        let table: std::collections::HashMap<_, _> =
+            rows.into_iter().map(|r| (r.session_id, r.data)).collect();
+        assert_eq!(table.len(), 1);
+        assert_eq!(table["a"], serde_json::json!({ "v": 1 }));
+
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    /// F2: a failed load must not touch `state.sessions` — the map keeps its
+    /// pre-load contents (never an empty/stale replacement) so a later save
+    /// cannot rewrite the table from it.
+    #[tokio::test]
+    async fn load_sessions_read_failure_leaves_map_untouched() {
+        let (dir, state) = fresh_state("load-sessions-fail").await;
+        crate::entities::session_record::Entity::insert(session_row("db-row", serde_json::json!({ "v": 1 })))
+            .exec(&state.db.conn)
+            .await
+            .unwrap();
+        state
+            .sessions
+            .write()
+            .await
+            .insert("sentinel".to_string(), serde_json::json!({ "v": 99 }));
+
+        state.db.fail_reads.store(true, std::sync::atomic::Ordering::Relaxed);
+        let err = load_sessions(&state).await.unwrap_err();
+        assert!(err.to_string().contains("simulated read failure"));
+        state.db.fail_reads.store(false, std::sync::atomic::Ordering::Relaxed);
+
+        let map = state.sessions.read().await.clone();
+        assert_eq!(map.len(), 1, "failed load must not replace the map: {map:?}");
+        assert!(map.contains_key("sentinel"), "pre-load entry must survive");
+        assert!(!map.contains_key("db-row"), "table rows must not leak in");
 
         let _ = std::fs::remove_dir_all(&dir);
     }

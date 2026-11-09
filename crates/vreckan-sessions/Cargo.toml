@@ -38,13 +38,17 @@ tracing = { workspace = true }
 # re-homed per crate in ANT-810 so each test binary links only the crates
 # it exercises, and the dissolved `vreckan-apps` session-share and
 # participant tests landed here in ANT-821 (including the real-Docker
-# session-share e2e, which needs `bollard`). The dev-deps are the external
-# crates the tests + the shared harness use, trimmed from the old root
+# session-share e2e, which needs `bollard`). The shared harness lives in
+# `vreckan-test-support` (ANT-853); the dev-deps below are the external
+# crates the test files themselves reference, trimmed from the old root
 # [dev-dependencies].
 [dev-dependencies]
+# The shared test harness (ANT-853): the per-crate `tests/common` shim
+# re-exports it. It depends on core/acme/auth, which this crate already
+# links, so no new link closure is introduced.
+vreckan-test-support = { path = "../vreckan-test-support" }
 aes-gcm = { workspace = true }
 bollard = { workspace = true }
-http-body-util = { workspace = true }
 pkcs8 = { workspace = true }
 rsa = { workspace = true }
 tower = { workspace = true }

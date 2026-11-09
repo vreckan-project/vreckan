@@ -27,6 +27,9 @@ vreckan-sessions = { path = "../vreckan-sessions" }
 
 axum = { workspace = true }
 base64 = { workspace = true }
+# The public-share download routes stream files as `Body::from_stream`
+# (audit finding 15).
+futures-util = { workspace = true }
 rand = { workspace = true }
 sea-orm = { workspace = true }
 serde = { workspace = true }
@@ -37,13 +40,17 @@ tracing = { workspace = true }
 # Integration test suite (tests/): the former root-package suite was
 # re-homed per crate in ANT-810 so each test binary links only the crates
 # it exercises, and the dissolved `vreckan-apps` files tests (upload,
-# user-homedirs, pinned-behaviours) landed here in ANT-821. The dev-deps
-# are the external crates the tests + the shared harness use, trimmed from
-# the old root [dev-dependencies].
+# user-homedirs, pinned-behaviours) landed here in ANT-821. The shared
+# harness lives in `vreckan-test-support` (ANT-853); the dev-deps below are
+# the external crates the test files themselves reference, trimmed from the
+# old root [dev-dependencies].
 [dev-dependencies]
+# The shared test harness (ANT-853): the per-crate `tests/common` shim
+# re-exports it. It depends on core/acme/auth, which this crate already
+# links, so no new link closure is introduced.
+vreckan-test-support = { path = "../vreckan-test-support" }
 aes-gcm = { workspace = true }
 http = { workspace = true }
-http-body-util = { workspace = true }
 pkcs8 = { workspace = true }
 rsa = { workspace = true }
 tower = { workspace = true }

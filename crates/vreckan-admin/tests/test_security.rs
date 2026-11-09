@@ -310,7 +310,12 @@ async fn test_security_headers_present() {
 #[tokio::test]
 async fn test_cors_loose_is_default() {
     // Out of the box the server runs loose CORS: a request carrying an
-    // Origin gets it echoed back with credentials.
+    // Origin gets it echoed back with credentials. This open default is a
+    // documented accepted risk (ANT-857 audit finding 9; board decision
+    // 2026-11-06 — keep loose mode, an empty allowlist accepts any origin,
+    // a defined allowlist is an optional tightening): any site in a
+    // logged-in user's browser can read that user's API data. Tighten with
+    // an allowlist entry or strict mode; see the ops guide §2.1.
     let _root = TempDir::new();
     let sc = SecureClient::new(build_state(_root.path()).await);
     let mut headers = HashMap::new();

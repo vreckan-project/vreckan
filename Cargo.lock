@@ -946,7 +946,7 @@ dependencies = [
  "sha1 0.10.7",
  "sync_wrapper",
  "tokio",
- "tokio-tungstenite 0.29.0",
+ "tokio-tungstenite",
  "tower",
  "tower-layer",
  "tower-service",
@@ -973,28 +973,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "axum-extra"
-version = "0.12.6"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "be44683b41ccb9ab2d23a5230015c9c3c55be97a25e4428366de8873103f7970"
-dependencies = [
- "axum",
- "axum-core",
- "bytes",
- "cookie",
- "futures-core",
- "futures-util",
- "http",
- "http-body",
- "http-body-util",
- "mime",
- "pin-project-lite",
- "tower-layer",
- "tower-service",
- "tracing",
-]
-
-[[package]]
 name = "axum-macros"
 version = "0.5.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -1006,36 +984,10 @@ dependencies = [
 ]
 
 [[package]]
-name = "axum-reverse-proxy"
-version = "2.4.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "3fc7d76335475f8fb5312cb38dceceeba6d9ebccfe3c5e06fa871579a5cf4965"
-dependencies = [
- "axum",
- "bytes",
- "futures-util",
- "http",
- "http-body",
- "http-body-util",
- "hyper",
- "hyper-rustls",
- "hyper-util",
- "percent-encoding",
- "rand 0.9.5",
- "rustls",
- "tokio",
- "tokio-tungstenite 0.28.0",
- "tokio-util",
- "tower",
- "tracing",
- "url",
-]
-
-[[package]]
 name = "axum-server"
-version = "0.8.0"
+version = "0.9.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "b1df331683d982a0b9492b38127151e6453639cd34926eb9c07d4cd8c6d22bfc"
+checksum = "f2c55b0e6ae7c8951bc27682e97934423357c1a8208886305290a3adb1ce3c14"
 dependencies = [
  "arc-swap",
  "bytes",
@@ -1048,6 +1000,7 @@ dependencies = [
  "pin-project-lite",
  "rustls",
  "rustls-pki-types",
+ "socket2",
  "tokio",
  "tokio-rustls",
  "tower-service",
@@ -1432,17 +1385,6 @@ dependencies = [
  "getrandom 0.2.17",
  "once_cell",
  "tiny-keccak",
-]
-
-[[package]]
-name = "cookie"
-version = "0.18.2"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "1a373e3602691c3cdea496d2f0ee5935151e6168fe87739483c463db1b2f2f87"
-dependencies = [
- "percent-encoding",
- "time",
- "version_check",
 ]
 
 [[package]]
@@ -2315,16 +2257,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "hdrhistogram"
-version = "7.6.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "f49d1053f4708f0af3cf9fc5bffc7e68a914a3c45becb231c80068c9c3f78bea"
-dependencies = [
- "byteorder",
- "num-traits",
-]
-
-[[package]]
 name = "heck"
 version = "0.4.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -2549,13 +2481,11 @@ dependencies = [
  "http",
  "hyper",
  "hyper-util",
- "log",
  "rustls",
  "rustls-native-certs",
  "tokio",
  "tokio-rustls",
  "tower-service",
- "webpki-roots",
 ]
 
 [[package]]
@@ -2934,30 +2864,6 @@ dependencies = [
 
 [[package]]
 name = "jsonwebtoken"
-version = "10.4.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "eba32bfb4ffdeaca3e34431072faf01745c9b26d25504aa7a6cf5684334fc4fc"
-dependencies = [
- "base64 0.22.1",
- "ed25519-dalek",
- "getrandom 0.2.17",
- "hmac 0.12.1",
- "js-sys",
- "p256",
- "p384",
- "pem 3.0.6",
- "rand 0.8.8",
- "rsa 0.9.10",
- "serde",
- "serde_json",
- "sha2 0.10.9",
- "signature 2.2.0",
- "simple_asn1",
- "zeroize",
-]
-
-[[package]]
-name = "jsonwebtoken"
 version = "11.1.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "e75fe14a82d81e5f5af639997db37d8b96045938a7ac6ab18cdbe1c7467e05e1"
@@ -2978,19 +2884,6 @@ dependencies = [
  "signature 2.2.0",
  "simple_asn1",
  "zeroize",
-]
-
-[[package]]
-name = "jwks"
-version = "0.5.3"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "32a4cf2e9dd754c698b41139c2ec88304249ecf3dd15cabfeddd48665cdf5c0c"
-dependencies = [
- "base64 0.22.1",
- "jsonwebtoken 10.4.0",
- "reqwest",
- "serde",
- "thiserror 2.0.21",
 ]
 
 [[package]]
@@ -4216,9 +4109,9 @@ dependencies = [
 
 [[package]]
 name = "rsa"
-version = "0.10.0-rc.20"
+version = "0.10.0-rc.22"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "2389407c34c6039d7c8740520ec758090883c5b92df93a5edada2779256bf2e0"
+checksum = "d4fb656eb8fa4b5fb89c86cbb9099dd28604edc8987d59401fde20c4ebc8466e"
 dependencies = [
  "const-oid 0.10.2",
  "crypto-bigint 0.7.10",
@@ -5372,18 +5265,6 @@ dependencies = [
 
 [[package]]
 name = "tokio-tungstenite"
-version = "0.28.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "d25a406cddcc431a75d3d9afc6a7c0f7428d4891dd973e4d54c56b46127bf857"
-dependencies = [
- "futures-util",
- "log",
- "tokio",
- "tungstenite 0.28.0",
-]
-
-[[package]]
-name = "tokio-tungstenite"
 version = "0.29.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "8f72a05e828585856dacd553fba484c242c46e391fb0e58917c942ee9202915c"
@@ -5391,19 +5272,7 @@ dependencies = [
  "futures-util",
  "log",
  "tokio",
- "tungstenite 0.29.0",
-]
-
-[[package]]
-name = "tokio-tungstenite"
-version = "0.30.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "17a073bfed563fa236697a068031408a93cd9522e08abf9933ead3e73411bd71"
-dependencies = [
- "futures-util",
- "log",
- "tokio",
- "tungstenite 0.30.0",
+ "tungstenite",
 ]
 
 [[package]]
@@ -5415,7 +5284,6 @@ dependencies = [
  "bytes",
  "futures-core",
  "futures-sink",
- "futures-util",
  "libc",
  "pin-project-lite",
  "tokio",
@@ -5528,7 +5396,6 @@ checksum = "ebe5ef63511595f1344e2d5cfa636d973292adc0eec1f0ad45fae9f0851ab1d4"
 dependencies = [
  "futures-core",
  "futures-util",
- "hdrhistogram",
  "indexmap",
  "pin-project-lite",
  "slab",
@@ -5661,23 +5528,6 @@ checksum = "e421abadd41a4225275504ea4d6566923418b7f05506fbc9c0fe86ba7396114b"
 
 [[package]]
 name = "tungstenite"
-version = "0.28.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "8628dcc84e5a09eb3d8423d6cb682965dea9133204e8fb3efee74c2a0c259442"
-dependencies = [
- "bytes",
- "data-encoding",
- "http",
- "httparse",
- "log",
- "rand 0.9.5",
- "sha1 0.10.7",
- "thiserror 2.0.21",
- "utf-8",
-]
-
-[[package]]
-name = "tungstenite"
 version = "0.29.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "6c01152af293afb9c7c2a57e4b559c5620b421f6d133261c60dd2d0cdb38e6b8"
@@ -5689,22 +5539,6 @@ dependencies = [
  "log",
  "rand 0.9.5",
  "sha1 0.10.7",
- "thiserror 2.0.21",
-]
-
-[[package]]
-name = "tungstenite"
-version = "0.30.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "e48ac77174b19c110a50ab2128b24215ac9cb40e0e12e093fb602d175c569d22"
-dependencies = [
- "bytes",
- "data-encoding",
- "http",
- "httparse",
- "log",
- "rand 0.10.3",
- "sha1 0.11.0",
  "thiserror 2.0.21",
 ]
 
@@ -5801,12 +5635,6 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "daf8dba3b7eb870caf1ddeed7bc9d2a049f3cfdfae7cb521b087cc33ae4c49da"
 
 [[package]]
-name = "utf-8"
-version = "0.7.6"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "09cc8ee72d2a9becf2f2febe0205bbed8fc6615b7cb429ad062dc7b7ddd036a9"
-
-[[package]]
 name = "utf8_iter"
 version = "1.0.4"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -5850,13 +5678,10 @@ checksum = "0b928f33d975fc6ad9f86c8f283853ad26bdd5b10b7f1542aa2fa15e2289105a"
 
 [[package]]
 name = "vreckan"
-version = "0.11.2"
+version = "0.11.7"
 dependencies = [
  "anyhow",
- "axum-extra",
- "axum-reverse-proxy",
  "axum-server",
- "http-body-util",
  "rustls",
  "tokio",
  "tracing",
@@ -5873,7 +5698,7 @@ dependencies = [
 
 [[package]]
 name = "vreckan-acme"
-version = "0.11.2"
+version = "0.11.7"
 dependencies = [
  "acmex",
  "aes-gcm",
@@ -5888,7 +5713,7 @@ dependencies = [
  "rand 0.10.3",
  "rcgen",
  "reqwest",
- "rsa 0.10.0-rc.20",
+ "rsa 0.10.0-rc.22",
  "rustls-pemfile",
  "serde",
  "serde_json",
@@ -5904,7 +5729,7 @@ dependencies = [
 
 [[package]]
 name = "vreckan-admin"
-version = "0.11.2"
+version = "0.11.7"
 dependencies = [
  "aes-gcm",
  "anyhow",
@@ -5917,15 +5742,14 @@ dependencies = [
  "flate2",
  "futures-util",
  "http",
- "http-body-util",
  "hyper",
  "hyper-util",
- "jsonwebtoken 11.1.0",
+ "jsonwebtoken",
  "pkcs8 0.11.0",
  "rand 0.10.3",
  "rcgen",
  "reqwest",
- "rsa 0.10.0-rc.20",
+ "rsa 0.10.0-rc.22",
  "rustls",
  "rustls-pemfile",
  "rustls-pki-types",
@@ -5937,7 +5761,7 @@ dependencies = [
  "time",
  "tokio",
  "tokio-rustls",
- "tokio-tungstenite 0.30.0",
+ "tokio-tungstenite",
  "tower",
  "tracing",
  "url",
@@ -5949,11 +5773,12 @@ dependencies = [
  "vreckan-core",
  "vreckan-files",
  "vreckan-sessions",
+ "vreckan-test-support",
 ]
 
 [[package]]
 name = "vreckan-auth"
-version = "0.11.2"
+version = "0.11.7"
 dependencies = [
  "aes-gcm",
  "argon2",
@@ -5961,14 +5786,12 @@ dependencies = [
  "base64 0.23.1",
  "hex",
  "http",
- "http-body-util",
- "jsonwebtoken 10.4.0",
- "jsonwebtoken 11.1.0",
- "jwks",
+ "jsonwebtoken",
+ "libc",
  "pkcs8 0.11.0",
  "rand 0.10.3",
  "reqwest",
- "rsa 0.10.0-rc.20",
+ "rsa 0.10.0-rc.22",
  "sea-orm",
  "serde",
  "serde_json",
@@ -5980,11 +5803,12 @@ dependencies = [
  "uuid",
  "vreckan-acme",
  "vreckan-core",
+ "vreckan-test-support",
 ]
 
 [[package]]
 name = "vreckan-catalog"
-version = "0.11.2"
+version = "0.11.7"
 dependencies = [
  "aes-gcm",
  "axum",
@@ -5992,11 +5816,10 @@ dependencies = [
  "bollard",
  "futures-util",
  "http",
- "http-body-util",
  "pkcs8 0.11.0",
  "rand 0.10.3",
  "reqwest",
- "rsa 0.10.0-rc.20",
+ "rsa 0.10.0-rc.22",
  "sea-orm",
  "serde",
  "serde_json",
@@ -6010,11 +5833,12 @@ dependencies = [
  "vreckan-collab",
  "vreckan-core",
  "vreckan-sessions",
+ "vreckan-test-support",
 ]
 
 [[package]]
 name = "vreckan-collab"
-version = "0.11.2"
+version = "0.11.7"
 dependencies = [
  "axum",
  "base64 0.23.1",
@@ -6025,13 +5849,15 @@ dependencies = [
  "serde",
  "serde_json",
  "tokio",
+ "tower",
  "tracing",
+ "uuid",
  "vreckan-core",
 ]
 
 [[package]]
 name = "vreckan-core"
-version = "0.11.2"
+version = "0.11.7"
 dependencies = [
  "async-trait",
  "axum",
@@ -6052,16 +5878,16 @@ dependencies = [
 
 [[package]]
 name = "vreckan-files"
-version = "0.11.2"
+version = "0.11.7"
 dependencies = [
  "aes-gcm",
  "axum",
  "base64 0.23.1",
+ "futures-util",
  "http",
- "http-body-util",
  "pkcs8 0.11.0",
  "rand 0.10.3",
- "rsa 0.10.0-rc.20",
+ "rsa 0.10.0-rc.22",
  "sea-orm",
  "serde",
  "serde_json",
@@ -6074,11 +5900,12 @@ dependencies = [
  "vreckan-catalog",
  "vreckan-core",
  "vreckan-sessions",
+ "vreckan-test-support",
 ]
 
 [[package]]
 name = "vreckan-sessions"
-version = "0.11.2"
+version = "0.11.7"
 dependencies = [
  "aes-gcm",
  "axum",
@@ -6086,16 +5913,15 @@ dependencies = [
  "bollard",
  "futures-util",
  "http",
- "http-body-util",
  "pkcs8 0.11.0",
  "rand 0.10.3",
  "reqwest",
- "rsa 0.10.0-rc.20",
+ "rsa 0.10.0-rc.22",
  "sea-orm",
  "serde",
  "serde_json",
  "tokio",
- "tokio-tungstenite 0.30.0",
+ "tokio-tungstenite",
  "tower",
  "tracing",
  "uuid",
@@ -6103,6 +5929,27 @@ dependencies = [
  "vreckan-auth",
  "vreckan-catalog",
  "vreckan-collab",
+ "vreckan-core",
+ "vreckan-test-support",
+]
+
+[[package]]
+name = "vreckan-test-support"
+version = "0.11.7"
+dependencies = [
+ "aes-gcm",
+ "axum",
+ "base64 0.23.1",
+ "http",
+ "http-body-util",
+ "pkcs8 0.11.0",
+ "rand 0.10.3",
+ "rsa 0.10.0-rc.22",
+ "serde_json",
+ "tower",
+ "uuid",
+ "vreckan-acme",
+ "vreckan-auth",
  "vreckan-core",
 ]
 
@@ -6241,15 +6088,6 @@ name = "webpki-root-certs"
 version = "1.0.10"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "58ec80e73fd8baf57bf0d9615554c75348bda990d6d5bbeab964dd068319fecb"
-dependencies = [
- "rustls-pki-types",
-]
-
-[[package]]
-name = "webpki-roots"
-version = "1.0.10"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "1c1c8e20c8a38fc7d65abfe74eb7280e4aa667e8eec8bc84996d2874810748d9"
 dependencies = [
  "rustls-pki-types",
 ]

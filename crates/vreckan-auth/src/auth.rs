@@ -25,11 +25,12 @@ use axum::response::{IntoResponse, Response};
 use axum::routing::{get, post, put};
 use axum::{Json, Router};
 use base64::Engine;
-use jwks::Jwks;
 use rand::Rng;
-use sea_orm::{ActiveModelTrait, ActiveValue, ConnectionTrait, DbErr, EntityTrait};
+use sea_orm::{
+    ActiveModelTrait, ActiveValue, ConnectionTrait, DbErr, EntityTrait, TransactionTrait,
+};
 use serde::{Deserialize, Serialize};
-use tracing::{debug, info, warn};
+use tracing::{debug, error, info, warn};
 
 use vreckan_core::entities;
 use vreckan_core::permissions;
@@ -99,8 +100,14 @@ pub async fn revoke_all_tokens_for_user(state: &AppState, username: &str) -> usi
 
 /// Persist the in-memory token store to the database (atomic replace), pruning
 /// expired entries. Mirrors `save_auth_tokens_to_disk`.
+///
+/// The DELETE + per-row inserts run inside a single transaction (audit
+/// finding 1): a mid-rewrite failure used to leave the token table partially
+/// emptied even though the error was propagated; now it rolls the whole
+/// replace back. The `fail_writes` test hook fires at commit time, so a
+/// test-armed save proves the rollback rather than short-circuiting before
+/// any statement runs.
 pub async fn save_auth_tokens(state: &AppState) -> Result<(), DbErr> {
-    let conn = &state.db.conn;
     let snapshot: Vec<(String, String, f64)> = {
         let map = state.auth_tokens.read().await;
         let now = now_secs();
@@ -109,9 +116,12 @@ pub async fn save_auth_tokens(state: &AppState) -> Result<(), DbErr> {
             .map(|(t, v)| (t.clone(), v.username.clone(), v.expires_at))
             .collect()
     };
-    // Replace the whole table: delete all, then insert the snapshot.
+    let conn = &state.db.conn;
+    // Replace the whole table: delete all, then insert the snapshot, inside
+    // one transaction.
+    let txn = conn.begin().await?;
     let backend = conn.get_database_backend();
-    conn.execute_raw(
+    txn.execute_raw(
         sea_orm::Statement::from_string(backend, "DELETE FROM auth_tokens"),
     )
     .await?;
@@ -121,14 +131,25 @@ pub async fn save_auth_tokens(state: &AppState) -> Result<(), DbErr> {
             username: ActiveValue::Set(username),
             expires_at: ActiveValue::Set(expires_at),
         };
-        am.insert(conn).await?;
+        am.insert(&txn).await?;
     }
+    if state.db.fail_writes.load(std::sync::atomic::Ordering::Relaxed) {
+        return Err(vreckan_core::db::Db::simulated_write_failure());
+    }
+    txn.commit().await?;
     Ok(())
 }
 
 /// Load the web-login token store from the database into memory, pruning
 /// expired entries. Called once at startup. Mirrors `load_auth_tokens_from_disk`.
+///
+/// A SELECT failure leaves `state.auth_tokens` untouched (audit finding 2):
+/// the map is never replaced by an empty/stale one, so a later full-replace
+/// save cannot wipe the table from it.
 pub async fn load_auth_tokens(state: &AppState) -> Result<(), DbErr> {
+    if let Some(e) = state.db.fail_reads_error() {
+        return Err(e);
+    }
     let conn = &state.db.conn;
     let rows = entities::auth_token::Entity::find().all(conn).await?;
     let now = now_secs();
@@ -784,7 +805,14 @@ async fn logout(
 ) -> Response {
     if let Some(token) = extract_token(&state, &headers).await {
         revoke_auth_token(&state, &token).await;
-        let _ = save_auth_tokens(&state).await;
+        // Deliberately best-effort (audit finding 1): the token is already
+        // gone from the in-memory map and the cookie is cleared below, so a
+        // 500 would report a logout that effectively happened; a retry skips
+        // the save (no token left to extract), so the stale row is pruned by
+        // the next user's full-replace save instead.
+        if let Err(e) = save_auth_tokens(&state).await {
+            error!("Logout: failed to persist the token table: {e}");
+        }
     }
     let trusted = state.settings.effective_trusted_proxies(&state.db).await;
     let secure = request_scheme(&trusted, &headers, remote) == "https";
@@ -836,7 +864,14 @@ async fn revoke_sessions(
         }
     }
     let revoked = revoke_all_tokens_for_user(&state, &caller).await;
-    let _ = save_auth_tokens(&state).await;
+    // Deliberately best-effort (audit finding 1): the tokens are already
+    // gone from the in-memory map and the cookie is cleared below, so a 500
+    // would report a revocation that effectively happened; a retry skips the
+    // save (no tokens left to revoke), so the stale rows are pruned by the
+    // next user's full-replace save instead.
+    if let Err(e) = save_auth_tokens(&state).await {
+        error!("Self-revoke: failed to persist the token table: {e}");
+    }
     info!(
         "Self-revoke: user '{caller}' revoked {revoked} of their own web token(s)."
     );
@@ -1337,30 +1372,63 @@ pub async fn oidc_apply_groups(
     let _ = user_manager::recompute_is_admin(&state.db, username).await;
 }
 
-/// `jwks 0.5.x` still compiles against `jsonwebtoken` v10, so the
-/// `DecodingKey` stored on its `Jwk` is a v10 type. vreckan decodes with v11,
-/// so translate the v10 key into the equivalent v11 key before use (the
-/// `jsonwebtoken_v10` companion dep in Cargo.toml names that v10 crate).
-fn v11_decoding_key(
-    v10_key: &jsonwebtoken_v10::DecodingKey,
-) -> Option<jsonwebtoken::DecodingKey> {
-    use jsonwebtoken_v10::DecodingKeyKind;
-    match v10_key.kind() {
-        DecodingKeyKind::RsaModulusExponent { n, e } => {
-            Some(jsonwebtoken::DecodingKey::from_rsa_raw_components(n, e))
-        }
-        DecodingKeyKind::SecretOrDer(der) => match v10_key.family() {
-            jsonwebtoken_v10::AlgorithmFamily::Rsa => {
-                Some(jsonwebtoken::DecodingKey::from_rsa_der(der))
-            }
-            jsonwebtoken_v10::AlgorithmFamily::Ec => {
-                Some(jsonwebtoken::DecodingKey::from_ec_der(der))
-            }
-            // HMAC/Ed keys can never satisfy the RS256 validation below;
-            // treat as "no usable key" (fail-closed path).
-            _ => None,
-        },
+/// Fetch the provider's JWKS document and return its `keys` array. Hand-
+/// rolled on reqwest (the pattern `oidc_discovery` already uses): a 10 s
+/// timeout, a non-200 response is a failure, and the body is parsed as plain
+/// JSON — the only fields consumed downstream are the per-entry `kid`,
+/// `kty`, `n`, and `e`. The `jwks` crate used to do this fetch against
+/// jsonwebtoken v10; with the validation algorithm pinned to RS256 the RSA
+/// modulus/exponent is all that is needed, so the v10 companion dep is gone
+/// (ANT-855).
+async fn fetch_jwks(jwks_uri: &str) -> Result<Vec<serde_json::Value>, String> {
+    let client = reqwest::Client::builder()
+        .timeout(std::time::Duration::from_secs(10))
+        .build()
+        .map_err(|e| format!("build HTTP client: {e}"))?;
+    let r = client
+        .get(jwks_uri)
+        .send()
+        .await
+        .map_err(|e| format!("request failed: {e}"))?;
+    if r.status() != 200 {
+        return Err(format!("status {}", r.status()));
     }
+    let doc: serde_json::Value = r
+        .json()
+        .await
+        .map_err(|e| format!("invalid JSON: {e}"))?;
+    doc.get("keys")
+        .and_then(|v| v.as_array())
+        .cloned()
+        .ok_or_else(|| "document has no 'keys' array".to_string())
+}
+
+/// Pick the JWKS entry for the token's `kid` (or the first entry when the
+/// token header carries no kid) and build the v11 `DecodingKey` from it.
+/// RS256 is the pinned validation algorithm, so only `kty = "RSA"` entries
+/// with base64url (unpadded) `n`/`e` are usable; every other shape — unknown
+/// kid, EC/HMAC/Ed keys, missing or malformed components — is "no usable
+/// key" and falls through to the fail-closed / claims-only branch below.
+fn jwks_entry_decoding_key(
+    keys: &[serde_json::Value],
+    kid: &Option<String>,
+) -> Option<jsonwebtoken::DecodingKey> {
+    let entry = match kid {
+        Some(k) => keys
+            .iter()
+            .find(|e| e.get("kid").and_then(|v| v.as_str()) == Some(k.as_str())),
+        None => keys.first(),
+    }?;
+    if entry.get("kty").and_then(|v| v.as_str()) != Some("RSA") {
+        return None;
+    }
+    let n = entry.get("n")?.as_str()?;
+    let e = entry.get("e")?.as_str()?;
+    // The same unpadded base64url engine jsonwebtoken's `from_rsa_components`
+    // decodes with.
+    let n = base64::engine::general_purpose::URL_SAFE_NO_PAD.decode(n).ok()?;
+    let e = base64::engine::general_purpose::URL_SAFE_NO_PAD.decode(e).ok()?;
+    Some(jsonwebtoken::DecodingKey::from_rsa_raw_components(&n, &e))
 }
 
 /// Verify the id_token signature (via the provider's JWKS) and standard claims
@@ -1397,16 +1465,8 @@ async fn oidc_verify_id_token(
         .map(|s| s.to_string());
 
     let decoding_key = if let Some(jwks_uri) = jwks_uri {
-        match Jwks::from_jwks_url(&jwks_uri).await {
-            Ok(jwks) => {
-                // Match by kid when present; otherwise take the first key.
-                let entry = if let Some(k) = &kid {
-                    jwks.keys.get(k)
-                } else {
-                    jwks.keys.values().next()
-                };
-                entry.and_then(|j| v11_decoding_key(&j.decoding_key))
-            }
+        match fetch_jwks(&jwks_uri).await {
+            Ok(keys) => jwks_entry_decoding_key(&keys, &kid),
             Err(e) => {
                 warn!("OIDC JWKS fetch/parse failed: {e}");
                 None
@@ -1710,7 +1770,12 @@ async fn oidc_callback(
         Ok(t) => t,
         Err(e) => return user_error_response(e),
     };
-    let _ = save_auth_tokens(&state).await;
+    // Login with an error channel: a failed save is a 500 (like password
+    // login) — otherwise a restart before the next save would resurrect the
+    // token row the SSO session just minted (audit finding 1).
+    if let Err(e) = save_auth_tokens(&state).await {
+        return user_error_response(e.into());
+    }
     // 6) Redirect to the app root.
     let secure = request_scheme(&trusted, &headers, remote) == "https";
     let same_site = cookie_same_site(&state, secure).await;
@@ -1925,5 +1990,357 @@ mod tests {
             public_host(&s.trusted_proxies, &HeaderMap::new(), &rel, Some(remote)),
             ""
         );
+    }
+
+    // -- OIDC id_token verification (ANT-855) --------------------------------
+    //
+    // Drives `oidc_verify_id_token` against a one-shot loopback JWKS server
+    // (same shape as the mock IdP in vreckan-admin's test_oidc.rs). Each test
+    // seeds the discovery cache with a unique issuer so the parallel tests'
+    // cache entries never collide.
+
+    use pkcs8::EncodePrivateKey;
+    use rsa::traits::PublicKeyParts;
+    use rsa::RsaPrivateKey;
+
+    /// Base64url-encode a big-endian byte slice without padding.
+    fn b64u(bytes: &[u8]) -> String {
+        base64::engine::general_purpose::URL_SAFE_NO_PAD.encode(bytes)
+    }
+
+    fn rsa_key() -> RsaPrivateKey {
+        RsaPrivateKey::new(&mut rand::rng(), 2048).unwrap()
+    }
+
+    fn rsa_jwk_entry(key: &RsaPrivateKey, kid: Option<&str>) -> serde_json::Value {
+        let mut entry = serde_json::json!({
+            "kty": "RSA",
+            "use": "sig",
+            "alg": "RS256",
+            "n": b64u(&key.n().to_be_bytes_trimmed_vartime()),
+            "e": b64u(&key.e().to_be_bytes_trimmed_vartime()),
+        });
+        if let Some(k) = kid {
+            entry["kid"] = serde_json::json!(k);
+        }
+        entry
+    }
+
+    /// Sign an id_token (RS256) with the given key. `None` kid for the
+    /// no-kid fallback path. Mirrors the mock IdP in vreckan-admin's
+    /// test_oidc.rs (PEM-based `EncodingKey`).
+    fn sign_id_token(
+        key: &RsaPrivateKey,
+        kid: Option<&str>,
+        claims: &serde_json::Value,
+    ) -> String {
+        let encoding_key = jsonwebtoken::EncodingKey::from_rsa_pem(
+            key.to_pkcs8_pem(pkcs8::LineEnding::LF)
+                .unwrap()
+                .as_bytes(),
+        )
+        .unwrap();
+        let mut header = jsonwebtoken::Header::new(jsonwebtoken::Algorithm::RS256);
+        header.kid = kid.map(|k| k.to_string());
+        jsonwebtoken::encode(&header, claims, &encoding_key).unwrap()
+    }
+
+    /// Accept one connection on a fresh loopback listener, drain the request,
+    /// and write a fixed HTTP response. Returns the address plus the listener
+    /// (held by the test for its lifetime so the port stays bound).
+    fn jwks_server(
+        status: u16,
+        body: String,
+    ) -> (std::net::SocketAddr, std::net::TcpListener) {
+        let listener = std::net::TcpListener::bind("127.0.0.1:0").unwrap();
+        let addr = listener.local_addr().unwrap();
+        let acceptor = listener.try_clone().unwrap();
+        std::thread::spawn(move || {
+            if let Ok((mut stream, _)) = acceptor.accept() {
+                use std::io::{Read, Write};
+                let mut raw = Vec::new();
+                let mut buf = [0u8; 4096];
+                while !raw.windows(4).any(|w| w == b"\r\n\r\n") {
+                    match stream.read(&mut buf) {
+                        Ok(0) | Err(_) => break,
+                        Ok(n) => raw.extend_from_slice(&buf[..n]),
+                    }
+                }
+                let resp = format!(
+                    "HTTP/1.1 {status} X\r\nContent-Type: application/json\r\nContent-Length: {}\r\nConnection: close\r\n\r\n{body}",
+                    body.len()
+                );
+                let _ = stream.write_all(resp.as_bytes());
+            }
+        });
+        (addr, listener)
+    }
+
+    fn verify_cfg(require_signature: bool) -> OidcConfig {
+        OidcConfig {
+            enabled: true,
+            issuer: String::new(),
+            client_id: "vreckan-test-client".into(),
+            client_secret: String::new(),
+            redirect_uri: String::new(),
+            scopes: String::new(),
+            allow_signup: true,
+            state_ttl: 600,
+            admin_groups: String::new(),
+            user_groups: String::new(),
+            require_signature,
+        }
+    }
+
+    /// Seed the discovery cache for a unique issuer so the verify path finds
+    /// the `jwks_uri` without a network round trip (mirrors the authorize
+    /// step having cached discovery).
+    fn seed_discovery(issuer: &str, jwks_uri: &str) -> OidcConfig {
+        let doc = serde_json::json!({
+            "issuer": issuer,
+            "authorization_endpoint": format!("{issuer}/authorize"),
+            "token_endpoint": format!("{issuer}/token"),
+            "jwks_uri": jwks_uri,
+        });
+        oidc_discovery_cache()
+            .lock()
+            .unwrap()
+            .insert(issuer.to_string(), doc);
+        let mut cfg = verify_cfg(true);
+        cfg.issuer = issuer.to_string();
+        cfg
+    }
+
+    fn id_token_claims(issuer: &str) -> serde_json::Value {
+        let now = now_secs() as i64;
+        serde_json::json!({
+            "iss": issuer,
+            "aud": "vreckan-test-client",
+            "sub": "user-1",
+            "iat": now,
+            "exp": now + 3600,
+        })
+    }
+
+    #[tokio::test]
+    async fn verify_id_token_rs256_against_real_jwks() {
+        let key = rsa_key();
+        let issuer = "http://127.0.0.1:1/issuer-rs256";
+        let (addr, _l) = jwks_server(
+            200,
+            serde_json::json!({ "keys": [rsa_jwk_entry(&key, Some("test-key-1"))] })
+                .to_string(),
+        );
+        let cfg = seed_discovery(issuer, &format!("http://{addr}/jwks"));
+        let token = sign_id_token(&key, Some("test-key-1"), &id_token_claims(issuer));
+        let claims = oidc_verify_id_token(&cfg, &token)
+            .await
+            .expect("RS256 verification against the real JWKS must pass");
+        assert_eq!(claims.get("sub").and_then(|v| v.as_str()), Some("user-1"));
+    }
+
+    #[tokio::test]
+    async fn verify_id_token_no_kid_falls_back_to_first_key() {
+        let key = rsa_key();
+        let issuer = "http://127.0.0.1:1/issuer-nokid";
+        let (addr, _l) = jwks_server(
+            200,
+            serde_json::json!({ "keys": [rsa_jwk_entry(&key, None)] }).to_string(),
+        );
+        let cfg = seed_discovery(issuer, &format!("http://{addr}/jwks"));
+        let token = sign_id_token(&key, None, &id_token_claims(issuer));
+        let claims = oidc_verify_id_token(&cfg, &token)
+            .await
+            .expect("a kid-less token must verify against the first JWKS key");
+        assert_eq!(claims.get("sub").and_then(|v| v.as_str()), Some("user-1"));
+    }
+
+    #[tokio::test]
+    async fn verify_id_token_unknown_kid_fails_closed() {
+        let key = rsa_key();
+        let issuer = "http://127.0.0.1:1/issuer-unknownkid";
+        let (addr, _l) = jwks_server(
+            200,
+            serde_json::json!({ "keys": [rsa_jwk_entry(&key, Some("other-key"))] })
+                .to_string(),
+        );
+        let cfg = seed_discovery(issuer, &format!("http://{addr}/jwks"));
+        let token = sign_id_token(&key, Some("test-key-1"), &id_token_claims(issuer));
+        let err = oidc_verify_id_token(&cfg, &token)
+            .await
+            .expect_err("a kid missing from the JWKS must fail closed");
+        assert_eq!(err.0, StatusCode::BAD_GATEWAY);
+        assert!(err.1.contains("JWKS unavailable"));
+    }
+
+    #[tokio::test]
+    async fn verify_id_token_jwks_unreachable_fails_closed() {
+        let key = rsa_key();
+        let issuer = "http://127.0.0.1:1/issuer-unreachable";
+        // A closed port: the fetch errors before any response.
+        let cfg = seed_discovery(issuer, "http://127.0.0.1:1/jwks");
+        let token = sign_id_token(&key, Some("test-key-1"), &id_token_claims(issuer));
+        let err = oidc_verify_id_token(&cfg, &token)
+            .await
+            .expect_err("an unreachable JWKS must fail closed");
+        assert_eq!(err.0, StatusCode::BAD_GATEWAY);
+        assert!(err.1.contains("JWKS unavailable"));
+    }
+
+    #[tokio::test]
+    async fn verify_id_token_jwks_unreachable_claims_only_fallback() {
+        let key = rsa_key();
+        let issuer = "http://127.0.0.1:1/issuer-claims-only";
+        let mut cfg = seed_discovery(issuer, "http://127.0.0.1:1/jwks");
+        cfg.require_signature = false;
+        let token = sign_id_token(&key, Some("test-key-1"), &id_token_claims(issuer));
+        let claims = oidc_verify_id_token(&cfg, &token)
+            .await
+            .expect("with oidc_require_signature off the claims-only fallback applies");
+        assert_eq!(claims.get("sub").and_then(|v| v.as_str()), Some("user-1"));
+    }
+
+    #[tokio::test]
+    async fn verify_id_token_non_rsa_key_fails_closed() {
+        let key = rsa_key();
+        let issuer = "http://127.0.0.1:1/issuer-ec";
+        // The JWKS only offers an EC key: it can never satisfy the pinned
+        // RS256 validation, so it is "no usable key".
+        let (addr, _l) = jwks_server(
+            200,
+            serde_json::json!({
+                "keys": [{
+                    "kty": "EC",
+                    "kid": "test-key-1",
+                    "crv": "P-256",
+                    "x": b64u(b"0123456789abcdef0123456789abcdef"),
+                    "y": b64u(b"0123456789abcdef0123456789abcdef"),
+                }]
+            })
+            .to_string(),
+        );
+        let cfg = seed_discovery(issuer, &format!("http://{addr}/jwks"));
+        let token = sign_id_token(&key, Some("test-key-1"), &id_token_claims(issuer));
+        let err = oidc_verify_id_token(&cfg, &token)
+            .await
+            .expect_err("a non-RSA JWKS entry must fail closed under RS256");
+        assert_eq!(err.0, StatusCode::BAD_GATEWAY);
+        assert!(err.1.contains("JWKS unavailable"));
+    }
+
+    // ------------------------------------------------------------------
+    // Durable auth-token store failure injection (audit findings 1–2)
+    // ------------------------------------------------------------------
+
+    async fn fresh_state(name: &str) -> (std::path::PathBuf, vreckan_core::state::AppState) {
+        let dir = std::env::temp_dir().join(format!(
+            "vreckan-auth-test-{}-{}-{}",
+            std::process::id(),
+            name,
+            std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .unwrap()
+                .as_nanos()
+        ));
+        std::fs::create_dir_all(&dir).unwrap();
+        let db = vreckan_core::db::connect(&format!(
+            "sqlite://{}?mode=rwc",
+            dir.join("vreckan.db").display()
+        ))
+        .await
+        .unwrap();
+        db.init().await.unwrap();
+        (dir, vreckan_core::state::AppState::new(Settings::from_env(), db))
+    }
+
+    fn token_row(token: &str, username: &str, expires_at: f64) -> entities::auth_token::ActiveModel {
+        entities::auth_token::ActiveModel {
+            token: sea_orm::ActiveValue::Set(token.to_string()),
+            username: sea_orm::ActiveValue::Set(username.to_string()),
+            expires_at: sea_orm::ActiveValue::Set(expires_at),
+        }
+    }
+
+    async fn token_count(db: &vreckan_core::db::Db) -> usize {
+        entities::auth_token::Entity::find().all(&db.conn).await.unwrap().len()
+    }
+
+    /// F1: the DELETE + per-row inserts run inside one transaction; a write
+    /// failure at commit time rolls the whole replace back, so the token
+    /// table is the pre-save state (no partially-emptied token table).
+    #[tokio::test]
+    async fn save_auth_tokens_write_failure_rolls_back_the_rewrite() {
+        let (dir, state) = fresh_state("save-auth-tokens-rollback").await;
+        let conn = &state.db.conn;
+        let in_future = now_secs() + 3600.0;
+        entities::auth_token::Entity::insert(token_row("tok-1", "alice", in_future))
+            .exec(conn)
+            .await
+            .unwrap();
+        entities::auth_token::Entity::insert(token_row("tok-2", "bob", in_future))
+            .exec(conn)
+            .await
+            .unwrap();
+        // The in-memory map knows only tok-1: a successful save would delete
+        // tok-2; the failed one must leave both rows in place.
+        state.auth_tokens.write().await.insert(
+            "tok-1".to_string(),
+            vreckan_core::state::AuthTokenRecord {
+                username: "alice".to_string(),
+                expires_at: in_future,
+            },
+        );
+
+        state.db.fail_writes.store(true, std::sync::atomic::Ordering::Relaxed);
+        let err = save_auth_tokens(&state).await.unwrap_err();
+        assert!(err.to_string().contains("simulated write failure"));
+        state.db.fail_writes.store(false, std::sync::atomic::Ordering::Relaxed);
+
+        assert_eq!(
+            token_count(&state.db).await,
+            2,
+            "failed save must not drop token rows"
+        );
+
+        save_auth_tokens(&state).await.unwrap();
+        assert_eq!(
+            token_count(&state.db).await,
+            1,
+            "the converged save applies the (pruned) map"
+        );
+        let rows = entities::auth_token::Entity::find().all(conn).await.unwrap();
+        assert_eq!(rows[0].token, "tok-1");
+
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    /// F2: a failed load must not touch `state.auth_tokens`.
+    #[tokio::test]
+    async fn load_auth_tokens_read_failure_leaves_map_untouched() {
+        let (dir, state) = fresh_state("load-auth-tokens-fail").await;
+        let in_future = now_secs() + 3600.0;
+        entities::auth_token::Entity::insert(token_row("db-token", "alice", in_future))
+            .exec(&state.db.conn)
+            .await
+            .unwrap();
+        state.auth_tokens.write().await.insert(
+            "mem-token".to_string(),
+            vreckan_core::state::AuthTokenRecord {
+                username: "sentinel".to_string(),
+                expires_at: in_future,
+            },
+        );
+
+        state.db.fail_reads.store(true, std::sync::atomic::Ordering::Relaxed);
+        let err = load_auth_tokens(&state).await.unwrap_err();
+        assert!(err.to_string().contains("simulated read failure"));
+        state.db.fail_reads.store(false, std::sync::atomic::Ordering::Relaxed);
+
+        let map = state.auth_tokens.read().await.clone();
+        assert_eq!(map.len(), 1, "failed load must not replace the map");
+        assert!(map.contains_key("mem-token"));
+        assert!(!map.contains_key("db-token"));
+
+        let _ = std::fs::remove_dir_all(&dir);
     }
 }
