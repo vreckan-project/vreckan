@@ -29,6 +29,22 @@
 #               -> KEPT, "young" (24 h grace)
 #   active    : gone from origin but the worktree is the GC run's cwd
 #               -> KEPT, "active" (active-run protection)
+#
+# Volume scenarios (ANT-1002; a fake `docker` CLI stands in for the daemon):
+#   vol-done    : ant-900-sccache, unreferenced, ANT-900 done 2 days ago
+#               -> RECLAIMED, "orphaned volume"
+#   vol-ref     : ant-901-sccache, mounted by a container
+#               -> KEPT, "referenced by container"
+#   vol-active  : ant-902-sccache, unreferenced, ANT-902 in_progress
+#               -> KEPT, "not terminal"
+#   vol-young   : ant-903-sccache, unreferenced, ANT-903 done 2 hours ago
+#               -> KEPT, "terminal only" (< 24 h terminal age)
+#   vol-unknown : ant-904-sccache, unreferenced, no such issue in the API
+#               -> KEPT, "unresolvable" (when in doubt, keep)
+#   vol-noid    : ant-noid-cache, no issue number in the name
+#               -> KEPT, "owning issue not derivable from name"
+#   other-vol   : does not match the ant- prefix
+#               -> absent from the manifest entirely
 
 set -u -o pipefail
 
@@ -73,11 +89,37 @@ mkdir -p "$ORIGINS" "$SCRATCH" "$MANIFESTS" "$WSROOT"
 
 cat > "$FAKE_API" <<'PY'
 import http.server
+import json
 import sys
+from datetime import datetime, timedelta, timezone
+from urllib.parse import urlparse, parse_qs
+
+def ts(delta):
+    # RFC3339 with Z, matching the real API's completedAt/cancelledAt shape.
+    return (datetime.now(timezone.utc) - delta).isoformat().replace("+00:00", "Z")
+
+# Volume-sweep issue fixtures (ANT-1002): the stub answers `?q=ANT-<n>` with
+# the matching issue, everything else (status filters, workspaces) with [].
+# The `id` field matters: the GC script treats a match without an id as
+# "no issue with this identifier".
+ISSUES = {
+    "ANT-900": {"id": "fixture-ant-900", "identifier": "ANT-900", "status": "done",
+                "completedAt": ts(timedelta(days=2)), "cancelledAt": None},
+    "ANT-901": {"id": "fixture-ant-901", "identifier": "ANT-901", "status": "done",
+                "completedAt": ts(timedelta(days=2)), "cancelledAt": None},
+    "ANT-902": {"id": "fixture-ant-902", "identifier": "ANT-902", "status": "in_progress",
+                "completedAt": None, "cancelledAt": None},
+    "ANT-903": {"id": "fixture-ant-903", "identifier": "ANT-903", "status": "done",
+                "completedAt": ts(timedelta(hours=2)), "cancelledAt": None},
+}
 
 class Handler(http.server.BaseHTTPRequestHandler):
     def do_GET(self):
-        body = b"[]"
+        q = parse_qs(urlparse(self.path).query)
+        if "q" in q:
+            body = json.dumps([i for k, i in ISSUES.items() if k == q["q"][0]]).encode()
+        else:
+            body = b"[]"
         self.send_response(200)
         self.send_header("Content-Type", "application/json")
         self.send_header("Content-Length", str(len(body)))
@@ -93,6 +135,85 @@ with open(port_file, "w") as f:
     f.write(str(server.server_address[1]))
 server.serve_forever()
 PY
+
+# Fake `docker` CLI for the volume sweep. State lives in
+# $FAKE_DOCKER_FIXTURE: `fake-volumes` (one name per line, the `volume ls -q`
+# output), `fake-vol-refs/<name>` (non-empty => a container mounts it),
+# `fake-vol-created/<name>` (the CreatedAt; also the existence marker that
+# the volume still exists after `volume rm`).
+FAKE_BIN="$FIXTURE/bin"
+mkdir -p "$FAKE_BIN"
+cat > "$FAKE_BIN/docker" <<'SH'
+#!/usr/bin/env bash
+fix="$FAKE_DOCKER_FIXTURE"
+case "${1:-}" in
+  volume)
+    case "${2:-}" in
+      ls) sed -n 's/^vol://p' "$fix/fake-volumes" ;;
+      inspect)
+        # ... -f {{.CreatedAt}} <name>
+        name="${@: -1}"
+        cat "$fix/fake-vol-created/$name" 2>/dev/null || true
+        ;;
+      rm)
+        name="$3"
+        if [[ -e "$fix/fake-vol-created/$name" ]]; then
+          rm -f "$fix/fake-vol-created/$name"
+          echo "$name" >> "$fix/reclaimed-volumes"
+        else
+          echo "Error: no such volume: $name" >&2
+          exit 1
+        fi
+        ;;
+    esac
+    ;;
+  ps)
+    # ... -aq --filter volume=<name>
+    case "${4:-}" in
+      volume=*)
+        name="${4#volume=}"
+        cat "$fix/fake-vol-refs/$name" 2>/dev/null || true
+        ;;
+    esac
+    ;;
+  system)
+    # ... df -v
+    echo "Local Volumes space usage:"
+    echo
+    echo "VOLUME NAME   LINKS   SIZE"
+    sed -n 's/^vol://p' "$fix/fake-volumes" | while read -r n; do
+      [[ -n "$n" ]] || continue
+      size="$(awk -v n="$n" '$1 == n { print $2; exit }' "$fix/fake-vol-sizes" 2>/dev/null)"
+      echo "$n   0   ${size:-0B}"
+    done
+    ;;
+esac
+exit 0
+SH
+chmod +x "$FAKE_BIN/docker"
+
+# --- volume fixtures (ANT-1002) ---
+VOLREFS="$FIXTURE/fake-vol-refs"
+VOLCREATED="$FIXTURE/fake-vol-created"
+mkdir -p "$VOLREFS" "$VOLCREATED"
+: > "$FIXTURE/fake-volumes"
+: > "$FIXTURE/fake-vol-sizes"
+: > "$FIXTURE/reclaimed-volumes"
+add_fake_volume() { # name size [created] [refs...]
+  local name="$1" size="$2" created="${3:-}"
+  echo "vol:$name" >> "$FIXTURE/fake-volumes"
+  echo "$name $size" >> "$FIXTURE/fake-vol-sizes"
+  [[ -n "$created" ]] && printf '%s' "$created" > "$VOLCREATED/$name"
+  shift $(( $# > 3 ? 3 : $# ))
+  [[ $# -gt 0 ]] && printf '%s\n' "$@" > "$VOLREFS/$name"
+}
+add_fake_volume ant-900-sccache 10.5MB  "$(date -u -d '3 days ago' +%Y-%m-%dT%H:%M:%S.000Z)"
+add_fake_volume ant-901-sccache 5.2MB   "$(date -u -d '3 days ago' +%Y-%m-%dT%H:%M:%S.000Z)" c0ffee01 c0ffee02
+add_fake_volume ant-902-sccache 7.7MB   "$(date -u -d '3 days ago' +%Y-%m-%dT%H:%M:%S.000Z)"
+add_fake_volume ant-903-sccache 1.1MB   "$(date -u -d '3 days ago' +%Y-%m-%dT%H:%M:%S.000Z)"
+add_fake_volume ant-904-sccache 3.3MB   "$(date -u -d '3 days ago' +%Y-%m-%dT%H:%M:%S.000Z)"
+add_fake_volume ant-noid-cache  0.5MB   "$(date -u -d '3 days ago' +%Y-%m-%dT%H:%M:%S.000Z)"
+add_fake_volume other-vol       9.9MB   "$(date -u -d '3 days ago' +%Y-%m-%dT%H:%M:%S.000Z)"
 
 # Each scenario gets its own base repo + bare origin so remote-config
 # mutations (set-url / remote remove) cannot leak between scenarios.
@@ -225,12 +346,14 @@ SUMMARY="$(
   PAPERCLIP_API_KEY=test \
   PAPERCLIP_COMPANY_ID=test \
   PAPERCLIP_RUN_ID=gc-test-run \
+  FAKE_DOCKER_FIXTURE="$FIXTURE" \
     bash "$GC" \
     --workspace-root "$FIXTURE/workspaces" \
     --scratch-root "$SCRATCH" \
     --salvage-dir "$SCRATCH/salvage" \
     --manifest-dir "$MANIFESTS" \
     --cwd "$WT_ACTIVE" \
+    --docker-bin "$FAKE_BIN/docker" \
     2>"$FIXTURE/gc-stderr"
 )" || {
   echo "FAIL: gc script exited non-zero:" >&2
@@ -299,6 +422,60 @@ if grep -q 'API signals: ok' "$MANIFEST"; then
   pass "API signals: ok (stub served both endpoints)"
 else
   fail "API signals not ok: $(grep 'API signals' "$MANIFEST" || echo 'missing')"
+fi
+
+# --- volume sweep assertions (ANT-1002) ---
+# Volume manifest rows use the `volume:<name>` path form.
+vol_reclaimed_rows() { awk '/^## Reclaimed/,/^## Kept/' "$MANIFEST"; }
+vol_kept_rows() { awk '/^## Kept/,/^## Salvage/' "$MANIFEST"; }
+
+expect_volume_reclaimed() { # name reason-substring
+  local name="$1" why="$2" row
+  row="$(vol_reclaimed_rows | grep -F "volume:${name}\`" || true)"
+  if [[ -n "$row" && "$row" == *"$why"* ]] \
+     && grep -qx "$name" "$FIXTURE/reclaimed-volumes" \
+     && [[ ! -e "$VOLCREATED/$name" ]]; then
+    pass "vol ${name}: reclaimed (${why}), fake volume removed"
+  else
+    [[ -n "$row" ]] || row="<absent from Reclaimed section>"
+    fail "vol ${name}: expected RECLAIMED (${why}); manifest row: ${row}"
+  fi
+}
+
+expect_volume_kept() { # name reason-substring
+  local name="$1" why="$2" row
+  row="$(vol_kept_rows | grep -F "volume:${name}\`" || true)"
+  if [[ -n "$row" && "$row" == *"$why"* ]] \
+     && [[ -e "$VOLCREATED/$name" ]]; then
+    pass "vol ${name}: kept (${why}), fake volume intact"
+  else
+    [[ -n "$row" ]] || row="<absent from Kept section>"
+    fail "vol ${name}: expected KEPT (${why}); manifest row: ${row}"
+  fi
+}
+
+expect_volume_reclaimed ant-900-sccache "orphaned volume"
+expect_volume_kept      ant-901-sccache "referenced by container"
+expect_volume_kept      ant-902-sccache "not terminal"
+expect_volume_kept      ant-903-sccache "terminal only"
+expect_volume_kept      ant-904-sccache "unresolvable"
+expect_volume_kept      ant-noid-cache  "owning issue not derivable from name"
+
+# The non-matching volume must not be judged at all.
+if grep -q "volume:other-vol" "$MANIFEST"; then
+  fail "vol other-vol: absent-prefix volume appears in the manifest"
+else
+  pass "vol other-vol: absent from the manifest (prefix not matched)"
+fi
+
+# The reclaimed volume's bytes must be counted in the totals line (the
+# reclaimed ant-900-sccache is 10.5MB = 10,500,000 bytes; worktree reclaims
+# only add to it).
+FREED="$(grep 'Bytes freed:' "$MANIFEST" 2>/dev/null | grep -oE '[0-9]+$' || true)"
+if [[ -n "$FREED" ]] && [[ "$FREED" -ge 10500000 ]]; then
+  pass "totals: reclaimed volume bytes included in Bytes freed (${FREED})"
+else
+  fail "totals: Bytes freed does not include the reclaimed volume: $(grep 'Bytes freed' "$MANIFEST" || echo 'missing')"
 fi
 
 echo
