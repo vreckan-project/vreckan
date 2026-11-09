@@ -809,6 +809,17 @@ impl DockerProvider {
         }
     }
 
+    /// Inspect a container and report its running state. `Some(true)` /
+    /// `Some(false)` is the daemon's verdict; `None` means no liveness signal
+    /// (daemon unreachable, container absent, state missing) — callers must
+    /// treat `None` as "unknown", never as "dead" (ANT-875 finding 4: the
+    /// post-restore session reconcile only yields to a *verified-dead*
+    /// container).
+    pub async fn running_state(&self, instance_id: &str) -> Option<bool> {
+        let ci = self.client.inspect_container(instance_id, None).await.ok()?;
+        Some(ci.state.as_ref().and_then(|s| s.running).unwrap_or(false))
+    }
+
     /// Run a command inside a running container and collect its output.
     /// Returns `(exit_code, combined stdout+stderr)`. `None` when the exec
     /// infrastructure itself fails (daemon error, no output stream), which

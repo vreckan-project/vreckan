@@ -17,10 +17,10 @@ use axum::response::{Html, IntoResponse, Response};
 use axum::routing::{delete, get, post};
 use axum::{Json, Router};
 use base64::Engine;
-use sea_orm::{ColumnTrait, EntityTrait, QueryFilter};
+use sea_orm::{ColumnTrait, EntityTrait, QueryFilter, TransactionTrait};
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
-use tracing::{info, warn};
+use tracing::{error, info, warn};
 
 use vreckan_auth::auth;
 // Re-exported from core after the ANT-812 split: the session-share handlers
@@ -321,14 +321,16 @@ async fn get_validated_path(
 // ---------------------------------------------------------------------------
 
 /// Load public-share metadata from the database into `state.public_shares`.
-pub async fn load_public_shares(state: &AppState) {
-    let rows = match entities::public_share::Entity::find().all(&state.db.conn).await {
-        Ok(rows) => rows,
-        Err(e) => {
-            warn!("Error loading public shares from the database: {e}");
-            return;
-        }
-    };
+///
+/// A SELECT failure is an error, not a warning (audit finding 2): a failed
+/// load must leave `state.public_shares` untouched so a later full-replace
+/// save cannot rewrite the table from an empty/stale map. Malformed rows are
+/// still skipped with a warning — a data-level issue, not a failed load.
+pub async fn load_public_shares(state: &AppState) -> Result<(), sea_orm::DbErr> {
+    if let Some(e) = state.db.fail_reads_error() {
+        return Err(e);
+    }
+    let rows = entities::public_share::Entity::find().all(&state.db.conn).await?;
     let mut shares = HashMap::new();
     for row in rows {
         match serde_json::from_value::<PublicShareMetadata>(row.data) {
@@ -343,28 +345,28 @@ pub async fn load_public_shares(state: &AppState) {
     let count = shares.len();
     *state.public_shares.write().await = shares;
     info!("Loaded {count} public share(s) from the database.");
+    Ok(())
 }
 
 /// Persist the in-memory public-share map to the database (full replace).
-pub async fn save_public_shares(state: &AppState) {
+///
+/// The delete-all + re-insert runs inside a single transaction (audit
+/// finding 1): any failed statement rolls the whole rewrite back, so a
+/// mid-save outage can never leave the table partially emptied, and the
+/// error is surfaced to the caller instead of warn-and-continue. The
+/// `fail_writes` test hook fires at commit time, so a test-armed save proves
+/// the rollback rather than short-circuiting before any statement runs.
+pub async fn save_public_shares(state: &AppState) -> Result<(), sea_orm::DbErr> {
     let shares = state.public_shares.read().await.clone();
-    let conn = &state.db.conn;
+    let txn = state.db.conn.begin().await?;
     // Delete all existing rows.
-    let all = match entities::public_share::Entity::find().all(conn).await {
-        Ok(rows) => rows,
-        Err(e) => {
-            warn!("Failed to save public shares (delete): {e}");
-            return;
-        }
-    };
+    let all = entities::public_share::Entity::find().all(&txn).await?;
     for row in all {
         let am = entities::public_share::ActiveModel {
             share_id: sea_orm::ActiveValue::Set(row.share_id),
             data: sea_orm::ActiveValue::NotSet,
         };
-        if let Err(e) = entities::public_share::Entity::delete(am).exec(conn).await {
-            warn!("Failed to delete public share row: {e}");
-        }
+        entities::public_share::Entity::delete(am).exec(&txn).await?;
     }
     // Re-insert.
     for (share_id, meta) in shares.iter() {
@@ -379,11 +381,14 @@ pub async fn save_public_shares(state: &AppState) {
             share_id: sea_orm::ActiveValue::Set(share_id.clone()),
             data: sea_orm::ActiveValue::Set(data),
         };
-        if let Err(e) = entities::public_share::Entity::insert(am).exec(conn).await {
-            warn!("Failed to insert public share row: {e}");
-        }
+        entities::public_share::Entity::insert(am).exec(&txn).await?;
     }
+    if state.db.fail_writes.load(std::sync::atomic::Ordering::Relaxed) {
+        return Err(vreckan_core::db::Db::simulated_write_failure());
+    }
+    txn.commit().await?;
     info!("Saved {} public share(s) to the database.", shares.len());
+    Ok(())
 }
 
 /// Remove expired shares (file + metadata) and save. Mirrors
@@ -420,7 +425,12 @@ pub async fn cleanup_expired_shares(state: &AppState) {
             shares.remove(id);
         }
     }
-    save_public_shares(state).await;
+    // Background job: the in-memory removal stays authoritative; a failed
+    // save is logged and the next cleanup tick retries the full replace
+    // (audit finding 1).
+    if let Err(e) = save_public_shares(state).await {
+        error!("Expired share cleanup: failed to persist the share map: {e}");
+    }
     info!("Expired share cleanup complete.");
 }
 
@@ -1226,7 +1236,18 @@ async fn create_public_share(
         let mut shares = state.public_shares.write().await;
         shares.insert(share_id.clone(), metadata.clone());
     }
-    save_public_shares(&state).await;
+    // Handler with an error channel: a failed save is a 500, not a silent
+    // warn — the in-memory entry stays (it is authoritative) and the next
+    // share event retries the full replace (audit finding 1).
+    if let Err(e) = save_public_shares(&state).await {
+        return e2ee::encrypt_response(
+            &state,
+            &headers,
+            StatusCode::INTERNAL_SERVER_ERROR,
+            serde_json::json!({ "detail": format!("Failed to persist the file share: {e}") }),
+        )
+        .await;
+    }
     e2ee::encrypt_response(
         &state,
         &headers,
@@ -1355,7 +1376,18 @@ async fn delete_public_share(
         let mut shares = state.public_shares.write().await;
         shares.remove(&share_id);
     }
-    save_public_shares(&state).await;
+    // Handler with an error channel: a failed save is a 500, not a silent
+    // warn — the in-memory removal stays (it is authoritative) and the next
+    // share event retries the full replace (audit finding 1).
+    if let Err(e) = save_public_shares(&state).await {
+        return e2ee::encrypt_response(
+            &state,
+            &headers,
+            StatusCode::INTERNAL_SERVER_ERROR,
+            serde_json::json!({ "detail": format!("Failed to persist the file share deletion: {e}") }),
+        )
+        .await;
+    }
     e2ee::encrypt_response(&state, &headers, StatusCode::NO_CONTENT, Value::Null).await
 }
 
@@ -2689,5 +2721,100 @@ mod tests {
             .map(|r| r.2.as_ref().map(|i| i.name.as_str()))
             .collect();
         assert_eq!(tail, vec![Some("aa.txt"), None]);
+    }
+
+    /// A throwaway SQLite-backed `AppState` for the durable-store tests.
+    async fn fresh_state(name: &str) -> (std::path::PathBuf, AppState) {
+        let dir = tmp_dir(name);
+        let db = vreckan_core::db::connect(&format!(
+            "sqlite://{}?mode=rwc",
+            dir.join("vreckan.db").display()
+        ))
+        .await
+        .unwrap();
+        db.init().await.unwrap();
+        (dir, AppState::new(vreckan_core::settings::Settings::from_env(), db))
+    }
+
+    fn share_row(share_id: &str, owner: &str) -> entities::public_share::ActiveModel {
+        let meta = PublicShareMetadata {
+            owner_username: owner.to_string(),
+            original_filename: format!("{share_id}.txt"),
+            created_at: 1.0,
+            size_bytes: 1,
+            password_hash: None,
+            expiry_timestamp: None,
+        };
+        entities::public_share::ActiveModel {
+            share_id: sea_orm::ActiveValue::Set(share_id.to_string()),
+            data: sea_orm::ActiveValue::Set(serde_json::to_value(&meta).unwrap()),
+        }
+    }
+
+    /// F1: a write failure mid-rewrite must fail the save AND roll the whole
+    /// delete+reinsert back — the table is the pre-save state, not a
+    /// partially-emptied one.
+    #[tokio::test]
+    async fn save_public_shares_write_failure_rolls_back_the_rewrite() {
+        let (dir, state) = fresh_state("save-public-shares-rollback").await;
+        let conn = &state.db.conn;
+        entities::public_share::Entity::insert(share_row("keep-a", "alice")).exec(conn).await.unwrap();
+        entities::public_share::Entity::insert(share_row("keep-b", "bob")).exec(conn).await.unwrap();
+        let meta = PublicShareMetadata {
+            owner_username: "alice".to_string(),
+            original_filename: "keep-a.txt".to_string(),
+            created_at: 2.0,
+            size_bytes: 2,
+            password_hash: None,
+            expiry_timestamp: None,
+        };
+        state.public_shares.write().await.insert("keep-a".to_string(), meta);
+
+        state.db.fail_writes.store(true, std::sync::atomic::Ordering::Relaxed);
+        let err = save_public_shares(&state).await.unwrap_err();
+        assert!(err.to_string().contains("simulated write failure"));
+        state.db.fail_writes.store(false, std::sync::atomic::Ordering::Relaxed);
+
+        let rows = entities::public_share::Entity::find().all(conn).await.unwrap();
+        assert_eq!(rows.len(), 2, "failed save must not drop rows");
+        assert!(rows.iter().any(|r| r.share_id == "keep-b"));
+
+        save_public_shares(&state).await.unwrap();
+        let rows = entities::public_share::Entity::find().all(conn).await.unwrap();
+        assert_eq!(rows.len(), 1);
+        assert_eq!(rows[0].share_id, "keep-a");
+
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    /// F2: a failed load must not touch `state.public_shares`.
+    #[tokio::test]
+    async fn load_public_shares_read_failure_leaves_map_untouched() {
+        let (dir, state) = fresh_state("load-public-shares-fail").await;
+        entities::public_share::Entity::insert(share_row("db-row", "alice"))
+            .exec(&state.db.conn)
+            .await
+            .unwrap();
+        let meta = PublicShareMetadata {
+            owner_username: "sentinel".to_string(),
+            original_filename: "s.txt".to_string(),
+            created_at: 1.0,
+            size_bytes: 1,
+            password_hash: None,
+            expiry_timestamp: None,
+        };
+        state.public_shares.write().await.insert("sentinel".to_string(), meta);
+
+        state.db.fail_reads.store(true, std::sync::atomic::Ordering::Relaxed);
+        let err = load_public_shares(&state).await.unwrap_err();
+        assert!(err.to_string().contains("simulated read failure"));
+        state.db.fail_reads.store(false, std::sync::atomic::Ordering::Relaxed);
+
+        let map = state.public_shares.read().await.clone();
+        assert_eq!(map.len(), 1, "failed load must not replace the map");
+        assert!(map.contains_key("sentinel"));
+        assert!(!map.contains_key("db-row"));
+
+        let _ = std::fs::remove_dir_all(&dir);
     }
 }

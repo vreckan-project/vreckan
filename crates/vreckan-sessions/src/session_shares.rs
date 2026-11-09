@@ -32,10 +32,10 @@ use axum::response::{Html, IntoResponse, Response};
 use axum::routing::{delete, get, post};
 use axum::Router;
 use rand::RngExt;
-use sea_orm::EntityTrait;
+use sea_orm::{EntityTrait, TransactionTrait};
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
-use tracing::{info, warn};
+use tracing::{error, info, warn};
 
 use vreckan_auth::auth;
 use vreckan_collab::collaboration;
@@ -138,14 +138,16 @@ pub struct SessionSharePasswordForm {
 // ---------------------------------------------------------------------------
 
 /// Load session-share metadata from the database into `state.session_shares`.
-pub async fn load_session_shares(state: &AppState) {
-    let rows = match entities::session_share::Entity::find().all(&state.db.conn).await {
-        Ok(rows) => rows,
-        Err(e) => {
-            warn!("Error loading session shares from the database: {e}");
-            return;
-        }
-    };
+///
+/// A SELECT failure is an error, not a warning (audit finding 2): a failed
+/// load must leave `state.session_shares` untouched so a later full-replace
+/// save cannot rewrite the table from an empty/stale map. Malformed rows are
+/// still skipped with a warning — a data-level issue, not a failed load.
+pub async fn load_session_shares(state: &AppState) -> Result<(), sea_orm::DbErr> {
+    if let Some(e) = state.db.fail_reads_error() {
+        return Err(e);
+    }
+    let rows = entities::session_share::Entity::find().all(&state.db.conn).await?;
     let mut shares = HashMap::new();
     for row in rows {
         match serde_json::from_value::<SessionShareMetadata>(row.data) {
@@ -160,27 +162,27 @@ pub async fn load_session_shares(state: &AppState) {
     let count = shares.len();
     *state.session_shares.write().await = shares;
     info!("Loaded {count} session share(s) from the database.");
+    Ok(())
 }
 
 /// Persist the in-memory session-share map to the database (full replace).
-pub async fn save_session_shares(state: &AppState) {
+///
+/// The delete-all + re-insert runs inside a single transaction (audit
+/// finding 1): any failed statement rolls the whole rewrite back, so a
+/// mid-save outage can never leave the table partially emptied, and the
+/// error is surfaced to the caller instead of warn-and-continue. The
+/// `fail_writes` test hook fires at commit time, so a test-armed save proves
+/// the rollback rather than short-circuiting before any statement runs.
+pub async fn save_session_shares(state: &AppState) -> Result<(), sea_orm::DbErr> {
     let shares = state.session_shares.read().await.clone();
-    let conn = &state.db.conn;
-    let all = match entities::session_share::Entity::find().all(conn).await {
-        Ok(rows) => rows,
-        Err(e) => {
-            warn!("Failed to save session shares (delete): {e}");
-            return;
-        }
-    };
+    let txn = state.db.conn.begin().await?;
+    let all = entities::session_share::Entity::find().all(&txn).await?;
     for row in all {
         let am = entities::session_share::ActiveModel {
             share_id: sea_orm::ActiveValue::Set(row.share_id),
             data: sea_orm::ActiveValue::NotSet,
         };
-        if let Err(e) = entities::session_share::Entity::delete(am).exec(conn).await {
-            warn!("Failed to delete session share row: {e}");
-        }
+        entities::session_share::Entity::delete(am).exec(&txn).await?;
     }
     for (share_id, meta) in shares.iter() {
         let data = match serde_json::to_value(meta) {
@@ -194,11 +196,14 @@ pub async fn save_session_shares(state: &AppState) {
             share_id: sea_orm::ActiveValue::Set(share_id.clone()),
             data: sea_orm::ActiveValue::Set(data),
         };
-        if let Err(e) = entities::session_share::Entity::insert(am).exec(conn).await {
-            warn!("Failed to insert session share row: {e}");
-        }
+        entities::session_share::Entity::insert(am).exec(&txn).await?;
     }
+    if state.db.fail_writes.load(std::sync::atomic::Ordering::Relaxed) {
+        return Err(vreckan_core::db::Db::simulated_write_failure());
+    }
+    txn.commit().await?;
     info!("Saved {} session share(s) to the database.", shares.len());
+    Ok(())
 }
 
 fn now_unix_secs() -> f64 {
@@ -431,7 +436,18 @@ async fn create_session_share(
         let mut shares = state.session_shares.write().await;
         shares.insert(share_id.clone(), meta.clone());
     }
-    save_session_shares(&state).await;
+    // Handler with an error channel: a failed save is a 500, not a silent
+    // warn — the in-memory entry stays (it is authoritative) and the next
+    // share event retries the full replace (audit finding 1).
+    if let Err(e) = save_session_shares(&state).await {
+        return e2ee::encrypt_response(
+            &state,
+            &headers,
+            StatusCode::INTERNAL_SERVER_ERROR,
+            serde_json::json!({ "detail": format!("Failed to persist the session share: {e}") }),
+        )
+        .await;
+    }
     e2ee::encrypt_response(
         &state,
         &headers,
@@ -616,7 +632,18 @@ async fn update_session_share(
     // Drop the write guard before the save: the save re-reads the map and
     // tokio locks are not reentrant.
     drop(shares);
-    save_session_shares(&state).await;
+    // Handler with an error channel: a failed save is a 500, not a silent
+    // warn — the in-memory entry stays (it is authoritative) and the next
+    // share event retries the full replace (audit finding 1).
+    if let Err(e) = save_session_shares(&state).await {
+        return e2ee::encrypt_response(
+            &state,
+            &headers,
+            StatusCode::INTERNAL_SERVER_ERROR,
+            serde_json::json!({ "detail": format!("Failed to persist the session share update: {e}") }),
+        )
+        .await;
+    }
     e2ee::encrypt_response(
         &state,
         &headers,
@@ -698,7 +725,18 @@ async fn revoke_session_share(
             meta.revoked = true;
         }
     }
-    save_session_shares(&state).await;
+    // Handler with an error channel: a failed save is a 500, not a silent
+    // warn — the in-memory revocation stays (it is authoritative) and the
+    // next share event retries the full replace (audit finding 1).
+    if let Err(e) = save_session_shares(&state).await {
+        return e2ee::encrypt_response(
+            &state,
+            &headers,
+            StatusCode::INTERNAL_SERVER_ERROR,
+            serde_json::json!({ "detail": format!("Failed to persist the session share revocation: {e}") }),
+        )
+        .await;
+    }
     // The revocation response returns the revoked link's info (including
     // `invited_username`) so the UI can say who just lost access.
     let revoked = state
@@ -1150,7 +1188,12 @@ async fn apply_visit_to_session(
     *state.sessions.write().await.entry(session_id.to_string()).or_insert(Value::Object(
         serde_json::Map::new(),
     )) = session.clone();
-    vreckan_core::state::save_sessions(state).await;
+    // Visit flow: the in-memory session stays authoritative; a failed save is
+    // logged and the next session event retries the full replace (audit
+    // finding 1) — surfacing a 500 here would abort the visitor's promotion.
+    if let Err(e) = vreckan_core::state::save_sessions(state).await {
+        error!("[{session_id}] Failed to persist session after role promotion: {e}");
+    }
     promoted
 }
 
@@ -1325,7 +1368,12 @@ pub async fn grant_session_join_access(
                 .await
                 .entry(session_id.to_string())
                 .or_insert(Value::Object(serde_json::Map::new())) = session.clone();
-            vreckan_core::state::save_sessions(state).await;
+            // Visit flow: the in-memory session stays authoritative; a failed
+            // save is logged and the next session event retries the full
+            // replace (audit finding 1).
+            if let Err(e) = vreckan_core::state::save_sessions(state).await {
+                error!("[{session_id}] Failed to persist session after join grant: {e}");
+            }
         }
         if !is_collab {
             let _ = collaboration::push_token_table(state, session_id, &session).await;
@@ -1419,7 +1467,12 @@ pub async fn strip_share_tokens_for_session(state: &AppState, session_id: &str, 
         *state.sessions.write().await.entry(session_id.to_string()).or_insert(Value::Object(
             serde_json::Map::new(),
         )) = session;
-        vreckan_core::state::save_sessions(state).await;
+        // Visit flow: the in-memory session stays authoritative; a failed
+        // save is logged and the next session event retries the full replace
+        // (audit finding 1).
+        if let Err(e) = vreckan_core::state::save_sessions(state).await {
+            error!("[{session_id}] Failed to persist session after visit token update: {e}");
+        }
     }
     if !tokens.is_empty() {
         let mut map = state.session_share_tokens.write().await;
@@ -1639,7 +1692,12 @@ pub async fn cleanup_expired_session_shares(state: &AppState) {
                 shares.remove(id);
             }
         }
-        save_session_shares(state).await;
+        // Background job: the in-memory removal stays authoritative; a failed
+        // save is logged and the next cleanup tick retries the full replace
+        // (audit finding 1).
+        if let Err(e) = save_session_shares(state).await {
+            error!("Expired session share cleanup: failed to persist the share map: {e}");
+        }
         info!("Expired session share cleanup complete.");
     }
     // Expired join grants (ANT-467) are swept independently of the share
@@ -1785,5 +1843,137 @@ mod participant_tests {
         assert_eq!(visitor["source"], "share");
         assert_eq!(visitor["share_id"], "sh-1");
         assert_eq!(visitor["expiry"], Value::Null);
+    }
+}
+
+#[cfg(test)]
+mod store_tests {
+    use super::*;
+
+    async fn fresh_state(name: &str) -> (std::path::PathBuf, AppState) {
+        let dir = std::env::temp_dir().join(format!(
+            "vreckan-session-shares-test-{}-{}-{}",
+            std::process::id(),
+            name,
+            std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .unwrap()
+                .as_nanos()
+        ));
+        std::fs::create_dir_all(&dir).unwrap();
+        let db = vreckan_core::db::connect(&format!(
+            "sqlite://{}?mode=rwc",
+            dir.join("vreckan.db").display()
+        ))
+        .await
+        .unwrap();
+        db.init().await.unwrap();
+        (dir, AppState::new(vreckan_core::settings::Settings::from_env(), db))
+    }
+
+    fn share_row(share_id: &str, owner: &str) -> entities::session_share::ActiveModel {
+        let meta = SessionShareMetadata {
+            session_id: format!("sess-{share_id}"),
+            owner_username: owner.to_string(),
+            role: "view_only".to_string(),
+            caps: SessionShareCaps {
+                input: false,
+                file_browse: true,
+                file_download: true,
+                file_upload: false,
+            },
+            created_at: 1.0,
+            password_hash: None,
+            expiry_timestamp: None,
+            revoked: false,
+            invited_username: None,
+        };
+        entities::session_share::ActiveModel {
+            share_id: sea_orm::ActiveValue::Set(share_id.to_string()),
+            data: sea_orm::ActiveValue::Set(serde_json::to_value(&meta).unwrap()),
+        }
+    }
+
+    /// F1: a write failure mid-rewrite must fail the save AND roll the whole
+    /// delete+reinsert back — the table is the pre-save state, not a
+    /// partially-emptied one.
+    #[tokio::test]
+    async fn save_session_shares_write_failure_rolls_back_the_rewrite() {
+        let (dir, state) = fresh_state("save-session-shares-rollback").await;
+        let conn = &state.db.conn;
+        entities::session_share::Entity::insert(share_row("keep-a", "alice")).exec(conn).await.unwrap();
+        entities::session_share::Entity::insert(share_row("keep-b", "bob")).exec(conn).await.unwrap();
+        let meta = SessionShareMetadata {
+            session_id: "sess-keep-a".to_string(),
+            owner_username: "alice".to_string(),
+            role: "full".to_string(),
+            caps: SessionShareCaps {
+                input: true,
+                file_browse: true,
+                file_download: true,
+                file_upload: true,
+            },
+            created_at: 2.0,
+            password_hash: None,
+            expiry_timestamp: None,
+            revoked: false,
+            invited_username: None,
+        };
+        state.session_shares.write().await.insert("keep-a".to_string(), meta);
+
+        state.db.fail_writes.store(true, std::sync::atomic::Ordering::Relaxed);
+        let err = save_session_shares(&state).await.unwrap_err();
+        assert!(err.to_string().contains("simulated write failure"));
+        state.db.fail_writes.store(false, std::sync::atomic::Ordering::Relaxed);
+
+        let rows = entities::session_share::Entity::find().all(conn).await.unwrap();
+        assert_eq!(rows.len(), 2, "failed save must not drop rows");
+        assert!(rows.iter().any(|r| r.share_id == "keep-b"));
+
+        save_session_shares(&state).await.unwrap();
+        let rows = entities::session_share::Entity::find().all(conn).await.unwrap();
+        assert_eq!(rows.len(), 1);
+        assert_eq!(rows[0].share_id, "keep-a");
+
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    /// F2: a failed load must not touch `state.session_shares`.
+    #[tokio::test]
+    async fn load_session_shares_read_failure_leaves_map_untouched() {
+        let (dir, state) = fresh_state("load-session-shares-fail").await;
+        entities::session_share::Entity::insert(share_row("db-row", "alice"))
+            .exec(&state.db.conn)
+            .await
+            .unwrap();
+        let meta = SessionShareMetadata {
+            session_id: "sentinel".to_string(),
+            owner_username: "sentinel".to_string(),
+            role: "view_only".to_string(),
+            caps: SessionShareCaps {
+                input: false,
+                file_browse: true,
+                file_download: true,
+                file_upload: false,
+            },
+            created_at: 1.0,
+            password_hash: None,
+            expiry_timestamp: None,
+            revoked: false,
+            invited_username: None,
+        };
+        state.session_shares.write().await.insert("sentinel".to_string(), meta);
+
+        state.db.fail_reads.store(true, std::sync::atomic::Ordering::Relaxed);
+        let err = load_session_shares(&state).await.unwrap_err();
+        assert!(err.to_string().contains("simulated read failure"));
+        state.db.fail_reads.store(false, std::sync::atomic::Ordering::Relaxed);
+
+        let map = state.session_shares.read().await.clone();
+        assert_eq!(map.len(), 1, "failed load must not replace the map");
+        assert!(map.contains_key("sentinel"));
+        assert!(!map.contains_key("db-row"));
+
+        let _ = std::fs::remove_dir_all(&dir);
     }
 }

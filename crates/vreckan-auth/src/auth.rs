@@ -26,9 +26,11 @@ use axum::routing::{get, post, put};
 use axum::{Json, Router};
 use base64::Engine;
 use rand::Rng;
-use sea_orm::{ActiveModelTrait, ActiveValue, ConnectionTrait, DbErr, EntityTrait};
+use sea_orm::{
+    ActiveModelTrait, ActiveValue, ConnectionTrait, DbErr, EntityTrait, TransactionTrait,
+};
 use serde::{Deserialize, Serialize};
-use tracing::{debug, info, warn};
+use tracing::{debug, error, info, warn};
 
 use vreckan_core::entities;
 use vreckan_core::permissions;
@@ -98,8 +100,14 @@ pub async fn revoke_all_tokens_for_user(state: &AppState, username: &str) -> usi
 
 /// Persist the in-memory token store to the database (atomic replace), pruning
 /// expired entries. Mirrors `save_auth_tokens_to_disk`.
+///
+/// The DELETE + per-row inserts run inside a single transaction (audit
+/// finding 1): a mid-rewrite failure used to leave the token table partially
+/// emptied even though the error was propagated; now it rolls the whole
+/// replace back. The `fail_writes` test hook fires at commit time, so a
+/// test-armed save proves the rollback rather than short-circuiting before
+/// any statement runs.
 pub async fn save_auth_tokens(state: &AppState) -> Result<(), DbErr> {
-    let conn = &state.db.conn;
     let snapshot: Vec<(String, String, f64)> = {
         let map = state.auth_tokens.read().await;
         let now = now_secs();
@@ -108,9 +116,12 @@ pub async fn save_auth_tokens(state: &AppState) -> Result<(), DbErr> {
             .map(|(t, v)| (t.clone(), v.username.clone(), v.expires_at))
             .collect()
     };
-    // Replace the whole table: delete all, then insert the snapshot.
+    let conn = &state.db.conn;
+    // Replace the whole table: delete all, then insert the snapshot, inside
+    // one transaction.
+    let txn = conn.begin().await?;
     let backend = conn.get_database_backend();
-    conn.execute_raw(
+    txn.execute_raw(
         sea_orm::Statement::from_string(backend, "DELETE FROM auth_tokens"),
     )
     .await?;
@@ -120,14 +131,25 @@ pub async fn save_auth_tokens(state: &AppState) -> Result<(), DbErr> {
             username: ActiveValue::Set(username),
             expires_at: ActiveValue::Set(expires_at),
         };
-        am.insert(conn).await?;
+        am.insert(&txn).await?;
     }
+    if state.db.fail_writes.load(std::sync::atomic::Ordering::Relaxed) {
+        return Err(vreckan_core::db::Db::simulated_write_failure());
+    }
+    txn.commit().await?;
     Ok(())
 }
 
 /// Load the web-login token store from the database into memory, pruning
 /// expired entries. Called once at startup. Mirrors `load_auth_tokens_from_disk`.
+///
+/// A SELECT failure leaves `state.auth_tokens` untouched (audit finding 2):
+/// the map is never replaced by an empty/stale one, so a later full-replace
+/// save cannot wipe the table from it.
 pub async fn load_auth_tokens(state: &AppState) -> Result<(), DbErr> {
+    if let Some(e) = state.db.fail_reads_error() {
+        return Err(e);
+    }
     let conn = &state.db.conn;
     let rows = entities::auth_token::Entity::find().all(conn).await?;
     let now = now_secs();
@@ -777,7 +799,14 @@ async fn logout(
 ) -> Response {
     if let Some(token) = extract_token(&state, &headers).await {
         revoke_auth_token(&state, &token).await;
-        let _ = save_auth_tokens(&state).await;
+        // Deliberately best-effort (audit finding 1): the token is already
+        // gone from the in-memory map and the cookie is cleared below, so a
+        // 500 would report a logout that effectively happened; a retry skips
+        // the save (no token left to extract), so the stale row is pruned by
+        // the next user's full-replace save instead.
+        if let Err(e) = save_auth_tokens(&state).await {
+            error!("Logout: failed to persist the token table: {e}");
+        }
     }
     let secure = request_scheme(&state.settings, &headers, remote) == "https";
     let same_site = cookie_same_site(&state, secure).await;
@@ -828,7 +857,14 @@ async fn revoke_sessions(
         }
     }
     let revoked = revoke_all_tokens_for_user(&state, &caller).await;
-    let _ = save_auth_tokens(&state).await;
+    // Deliberately best-effort (audit finding 1): the tokens are already
+    // gone from the in-memory map and the cookie is cleared below, so a 500
+    // would report a revocation that effectively happened; a retry skips the
+    // save (no tokens left to revoke), so the stale rows are pruned by the
+    // next user's full-replace save instead.
+    if let Err(e) = save_auth_tokens(&state).await {
+        error!("Self-revoke: failed to persist the token table: {e}");
+    }
     info!(
         "Self-revoke: user '{caller}' revoked {revoked} of their own web token(s)."
     );
@@ -1712,7 +1748,12 @@ async fn oidc_callback(
         Ok(t) => t,
         Err(e) => return user_error_response(e),
     };
-    let _ = save_auth_tokens(&state).await;
+    // Login with an error channel: a failed save is a 500 (like password
+    // login) — otherwise a restart before the next save would resurrect the
+    // token row the SSO session just minted (audit finding 1).
+    if let Err(e) = save_auth_tokens(&state).await {
+        return user_error_response(e.into());
+    }
     // 6) Redirect to the app root.
     let secure = request_scheme(&state.settings, &headers, remote) == "https";
     let same_site = cookie_same_site(&state, secure).await;
@@ -2091,5 +2132,121 @@ mod tests {
             .expect_err("a non-RSA JWKS entry must fail closed under RS256");
         assert_eq!(err.0, StatusCode::BAD_GATEWAY);
         assert!(err.1.contains("JWKS unavailable"));
+    }
+
+    // ------------------------------------------------------------------
+    // Durable auth-token store failure injection (audit findings 1–2)
+    // ------------------------------------------------------------------
+
+    async fn fresh_state(name: &str) -> (std::path::PathBuf, vreckan_core::state::AppState) {
+        let dir = std::env::temp_dir().join(format!(
+            "vreckan-auth-test-{}-{}-{}",
+            std::process::id(),
+            name,
+            std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .unwrap()
+                .as_nanos()
+        ));
+        std::fs::create_dir_all(&dir).unwrap();
+        let db = vreckan_core::db::connect(&format!(
+            "sqlite://{}?mode=rwc",
+            dir.join("vreckan.db").display()
+        ))
+        .await
+        .unwrap();
+        db.init().await.unwrap();
+        (dir, vreckan_core::state::AppState::new(Settings::from_env(), db))
+    }
+
+    fn token_row(token: &str, username: &str, expires_at: f64) -> entities::auth_token::ActiveModel {
+        entities::auth_token::ActiveModel {
+            token: sea_orm::ActiveValue::Set(token.to_string()),
+            username: sea_orm::ActiveValue::Set(username.to_string()),
+            expires_at: sea_orm::ActiveValue::Set(expires_at),
+        }
+    }
+
+    async fn token_count(db: &vreckan_core::db::Db) -> usize {
+        entities::auth_token::Entity::find().all(&db.conn).await.unwrap().len()
+    }
+
+    /// F1: the DELETE + per-row inserts run inside one transaction; a write
+    /// failure at commit time rolls the whole replace back, so the token
+    /// table is the pre-save state (no partially-emptied token table).
+    #[tokio::test]
+    async fn save_auth_tokens_write_failure_rolls_back_the_rewrite() {
+        let (dir, state) = fresh_state("save-auth-tokens-rollback").await;
+        let conn = &state.db.conn;
+        let in_future = now_secs() + 3600.0;
+        entities::auth_token::Entity::insert(token_row("tok-1", "alice", in_future))
+            .exec(conn)
+            .await
+            .unwrap();
+        entities::auth_token::Entity::insert(token_row("tok-2", "bob", in_future))
+            .exec(conn)
+            .await
+            .unwrap();
+        // The in-memory map knows only tok-1: a successful save would delete
+        // tok-2; the failed one must leave both rows in place.
+        state.auth_tokens.write().await.insert(
+            "tok-1".to_string(),
+            vreckan_core::state::AuthTokenRecord {
+                username: "alice".to_string(),
+                expires_at: in_future,
+            },
+        );
+
+        state.db.fail_writes.store(true, std::sync::atomic::Ordering::Relaxed);
+        let err = save_auth_tokens(&state).await.unwrap_err();
+        assert!(err.to_string().contains("simulated write failure"));
+        state.db.fail_writes.store(false, std::sync::atomic::Ordering::Relaxed);
+
+        assert_eq!(
+            token_count(&state.db).await,
+            2,
+            "failed save must not drop token rows"
+        );
+
+        save_auth_tokens(&state).await.unwrap();
+        assert_eq!(
+            token_count(&state.db).await,
+            1,
+            "the converged save applies the (pruned) map"
+        );
+        let rows = entities::auth_token::Entity::find().all(conn).await.unwrap();
+        assert_eq!(rows[0].token, "tok-1");
+
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    /// F2: a failed load must not touch `state.auth_tokens`.
+    #[tokio::test]
+    async fn load_auth_tokens_read_failure_leaves_map_untouched() {
+        let (dir, state) = fresh_state("load-auth-tokens-fail").await;
+        let in_future = now_secs() + 3600.0;
+        entities::auth_token::Entity::insert(token_row("db-token", "alice", in_future))
+            .exec(&state.db.conn)
+            .await
+            .unwrap();
+        state.auth_tokens.write().await.insert(
+            "mem-token".to_string(),
+            vreckan_core::state::AuthTokenRecord {
+                username: "sentinel".to_string(),
+                expires_at: in_future,
+            },
+        );
+
+        state.db.fail_reads.store(true, std::sync::atomic::Ordering::Relaxed);
+        let err = load_auth_tokens(&state).await.unwrap_err();
+        assert!(err.to_string().contains("simulated read failure"));
+        state.db.fail_reads.store(false, std::sync::atomic::Ordering::Relaxed);
+
+        let map = state.auth_tokens.read().await.clone();
+        assert_eq!(map.len(), 1, "failed load must not replace the map");
+        assert!(map.contains_key("mem-token"));
+        assert!(!map.contains_key("db-token"));
+
+        let _ = std::fs::remove_dir_all(&dir);
     }
 }

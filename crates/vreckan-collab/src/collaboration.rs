@@ -23,7 +23,7 @@ use rand::Rng;
 use rand::RngExt;
 use serde::Deserialize;
 use serde_json::Value;
-use tracing::{info, warn};
+use tracing::{error, info, warn};
 
 use vreckan_core::state::AppState;
 use vreckan_core::tokens::opt_tokens_equal;
@@ -297,7 +297,11 @@ async fn collaborative_room(
                 // dropped, so the network push no longer spans the
                 // read-modify-write.
                 push_token_table(&state, &session_id, &committed).await;
-                vreckan_core::state::save_sessions(&state).await;
+                // WS/visit flow: in-memory state is authoritative and the
+                // next session event retries the full replace (audit finding 1).
+                if let Err(e) = vreckan_core::state::save_sessions(&state).await {
+                    error!("[{session_id}] Failed to persist session after collab link commit: {e}");
+                }
             }
         }
         // Redirect with the new viewer token. The Location carries the
@@ -1162,7 +1166,11 @@ async fn handle_assign_slot(
     // later-committed mutation's push cannot overtake this one (ANT-927).
     push_token_table(state, session_id, &session_data).await;
     drop(_push);
-    vreckan_core::state::save_sessions(state).await;
+    // WS/visit flow: in-memory state is authoritative and the next session
+    // event retries the full replace (audit finding 1).
+    if let Err(e) = vreckan_core::state::save_sessions(state).await {
+        error!("[{session_id}] Failed to persist session after gamepad change: {e}");
+    }
 
     for msg in notifications {
         let now_ms = (std::time::SystemTime::now()
@@ -1249,7 +1257,11 @@ async fn handle_assign_mk(state: &AppState, session_id: &str, target_token: Opti
     // later-committed mutation's push cannot overtake this one (ANT-927).
     push_token_table(state, session_id, &session_data).await;
     drop(_push);
-    vreckan_core::state::save_sessions(state).await;
+    // WS/visit flow: in-memory state is authoritative and the next session
+    // event retries the full replace (audit finding 1).
+    if let Err(e) = vreckan_core::state::save_sessions(state).await {
+        error!("[{session_id}] Failed to persist session after collab mutation: {e}");
+    }
     let now_ms = (std::time::SystemTime::now()
         .duration_since(std::time::UNIX_EPOCH)
         .map(|d| d.as_millis())
@@ -1561,7 +1573,11 @@ async fn route_message(
                 s["designated_speaker"] = speaker.map(Value::from).unwrap_or(Value::Null);
             }
             drop(sessions);
-            vreckan_core::state::save_sessions(state).await;
+            // WS flow: in-memory state is authoritative and the next session
+            // event retries the full replace (audit finding 1).
+            if let Err(e) = vreckan_core::state::save_sessions(state).await {
+                error!("[{session_id}] Failed to persist session after speaker designation: {e}");
+            }
             broadcast_state(state, session_id).await;
         }
         "set_username" if !is_controller => {
@@ -1586,7 +1602,11 @@ async fn route_message(
                 }
             }
             drop(sessions);
-            vreckan_core::state::save_sessions(state).await;
+            // WS flow: in-memory state is authoritative and the next session
+            // event retries the full replace (audit finding 1).
+            if let Err(e) = vreckan_core::state::save_sessions(state).await {
+                error!("[{session_id}] Failed to persist session after username change: {e}");
+            }
             broadcast_to_room(
                 state,
                 session_id,
@@ -1887,7 +1907,11 @@ async fn cleanup_disconnect(
             broadcast_to_room(state, session_id, &msg).await;
         }
         if state_changed {
-            vreckan_core::state::save_sessions(state).await;
+            // WS flow: in-memory state is authoritative and the next session
+            // event retries the full replace (audit finding 1).
+            if let Err(e) = vreckan_core::state::save_sessions(state).await {
+                error!("[{session_id}] Failed to persist session after viewer disconnect: {e}");
+            }
         }
         if input_released {
             let sd = state.sessions.read().await.get(session_id).cloned();

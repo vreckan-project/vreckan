@@ -102,13 +102,17 @@ pub async fn build_state_with(
     catalog::load_app_templates(&state).await;
     // Load the app stores (seeds the default "SealSkin Apps" store on first
     // run). Mirrors the lifespan startup.
-    catalog::load_app_stores(&state).await;
+    catalog::load_app_stores(&state)
+        .await
+        .expect("load app stores");
     // Load the installed apps and warm the image-metadata cache (the
     // lifespan startup path, ANT-269). Fresh test databases have no
     // installed apps yet, so the warm-up is a no-op unless a test seeds the
     // `installed_apps` table before calling `build_state_with`; the
     // `fake_provider` / `pull_noop` hooks are honored by the helpers.
-    catalog::load_installed_apps(&state).await;
+    catalog::load_installed_apps(&state)
+        .await
+        .expect("load installed apps");
     catalog::warm_image_metadata(&state).await;
     state
 }
