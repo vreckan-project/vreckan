@@ -37,7 +37,7 @@ use axum::{Json, Router};
 use base64::Engine;
 use pkcs8::{DecodePrivateKey, EncodePrivateKey, LineEnding};
 use rand::Rng;
-use rsa::{Oaep, Pss, RsaPrivateKey, sha2::Sha256};
+use rsa::{Oaep, Pss, PrivateKey, sha2::Sha256};
 use sha2::Digest;
 use serde::{Deserialize, Serialize};
 use spki::EncodePublicKey;
@@ -52,7 +52,7 @@ const X_SESSION_ID: &str = "x-session-id";
 /// The server's RSA private key (loaded once at startup). Mirrors the Python
 /// module global `SERVER_PRIVATE_KEY`. Wrapped in `Arc` so it can be shared
 /// across the (cloned) request handlers.
-static SERVER_KEY: OnceLock<std::sync::Arc<RsaPrivateKey>> = OnceLock::new();
+static SERVER_KEY: OnceLock<std::sync::Arc<PrivateKey>> = OnceLock::new();
 /// The server's RSA public key (SPKI PEM), served to clients. Mirrors
 /// `SERVER_PUBLIC_KEY_PEM`.
 static SERVER_PUBLIC_KEY_PEM: OnceLock<String> = OnceLock::new();
@@ -78,7 +78,7 @@ static SERVER_PUBLIC_KEY_PEM: OnceLock<String> = OnceLock::new();
 pub fn init_server_key(settings: &Settings) -> anyhow::Result<()> {
     let path = std::path::PathBuf::from(&settings.server_private_key_path);
     if !path.exists() {
-        let key = RsaPrivateKey::new(&mut rand::rng(), 2048)?;
+        let key = PrivateKey::new(&mut rand::rng(), 2048)?;
         let pem = key.to_pkcs8_pem(LineEnding::LF)?.to_string();
         if let Some(parent) = path.parent() {
             std::fs::create_dir_all(parent)?;
@@ -110,7 +110,7 @@ pub fn init_server_key(settings: &Settings) -> anyhow::Result<()> {
         }
     }
     let pem = std::fs::read_to_string(&path)?;
-    let key = RsaPrivateKey::from_pkcs8_pem(&pem)?;
+    let key = PrivateKey::from_pkcs8_pem(&pem)?;
     let public_pem = key.to_public_key().to_public_key_pem(LineEnding::LF)?;
     let _ = SERVER_KEY.set(std::sync::Arc::new(key));
     let _ = SERVER_PUBLIC_KEY_PEM.set(public_pem);
@@ -119,7 +119,7 @@ pub fn init_server_key(settings: &Settings) -> anyhow::Result<()> {
 }
 
 /// The loaded server private key (panics if `init_server_key` was not run).
-fn server_key() -> std::sync::Arc<RsaPrivateKey> {
+fn server_key() -> std::sync::Arc<PrivateKey> {
     SERVER_KEY
         .get()
         .cloned()
@@ -175,7 +175,7 @@ pub async fn handshake_initiate() -> impl IntoResponse {
     // helper passes `None` and fails, so use `sign_with_rng`. The 32-byte
     // salt matches the Python `salt_length=32`.
     //
-    // IMPORTANT: `RsaPrivateKey::sign_with_rng` treats its input as an
+    // IMPORTANT: `PrivateKey::sign_with_rng` treats its input as an
     // *already-hashed* digest (rsa crate docs: "Sign the given digest"). The
     // browser's WebCrypto `crypto.subtle.verify(RSA-PSS, SHA-256)` hashes the
     // message itself before verifying, so we must pass SHA256(nonce) here —
@@ -437,7 +437,7 @@ mod tests {
         let dir = tmp_dir("legacy");
         let path = dir.join("server_key.pem");
         // Seed a key left at umask permissions by an older version.
-        let key = RsaPrivateKey::new(&mut rand::rng(), 2048).unwrap();
+        let key = PrivateKey::new(&mut rand::rng(), 2048).unwrap();
         std::fs::write(
             &path,
             key.to_pkcs8_pem(LineEnding::LF).unwrap(),

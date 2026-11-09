@@ -1907,18 +1907,18 @@ mod tests {
 
     use pkcs8::EncodePrivateKey;
     use rsa::traits::PublicKeyParts;
-    use rsa::RsaPrivateKey;
+    use rsa::PrivateKey;
 
     /// Base64url-encode a big-endian byte slice without padding.
     fn b64u(bytes: &[u8]) -> String {
         base64::engine::general_purpose::URL_SAFE_NO_PAD.encode(bytes)
     }
 
-    fn rsa_key() -> RsaPrivateKey {
-        RsaPrivateKey::new(&mut rand::rng(), 2048).unwrap()
+    fn rsa_key() -> PrivateKey {
+        PrivateKey::new(&mut rand::rng(), 2048).unwrap()
     }
 
-    fn rsa_jwk_entry(key: &RsaPrivateKey, kid: Option<&str>) -> serde_json::Value {
+    fn rsa_jwk_entry(key: &PrivateKey, kid: Option<&str>) -> serde_json::Value {
         let mut entry = serde_json::json!({
             "kty": "RSA",
             "use": "sig",
@@ -1936,7 +1936,7 @@ mod tests {
     /// no-kid fallback path. Mirrors the mock IdP in vreckan-admin's
     /// test_oidc.rs (PEM-based `EncodingKey`).
     fn sign_id_token(
-        key: &RsaPrivateKey,
+        key: &PrivateKey,
         kid: Option<&str>,
         claims: &serde_json::Value,
     ) -> String {
