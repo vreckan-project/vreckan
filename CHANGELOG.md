@@ -9,6 +9,47 @@ is committed normally in `vreckan`. The changelog is the authoritative
 record of what shipped in each release — see
 [`docs/release.md`](./docs/release.md) for the conventions.
 
+## 2026-11-09 — v0.11.8: base-image bump + transactional store hardening + cutover-script fixes
+
+- **The build base advanced to the 2026-11-08 10:31 PM MST re-bake**
+  (`vreckan-base-build` `sha256:512581dbc91a…` → `sha256:b6dfcae6d994…`;
+  `.base-image-digest` and the `Dockerfile` build-stage `FROM` re-pointed
+  together, ANT-277). The Rust toolchain is unchanged — 1.99.1, parent
+  `rust:1.99.1-slim` still at `sha256:7eab7ce1…`. What the re-bake brings:
+  the pre-warmed crates.io dependency cache now matches the current
+  `main` `Cargo.lock` — the re-bake was triggered by `axum-server`
+  0.8.0 → 0.9.0 (renovate, PR #165, which adds the transitive `socket2`) —
+  so nightly image builds on `main` only fetch lockfile deltas — and the
+  `apt-get upgrade` security layer was refreshed to the trixie-security
+  state at bake time.
+
+- **Store saves are now transactional and loads are fatal (ANT-875).**
+  A save that fails mid-way no longer leaves partial state behind, a load
+  that finds a broken store fails loudly at startup instead of serving it,
+  and the restore path gains a coverage check plus a post-restore
+  reconcile.
+
+- **`docker compose up` works on fresh deploys again (ANT-877).**
+  The deleted `data-perms` compose service is restored, so fresh-deploy
+  operators no longer hit a compose error at startup.
+
+- **SQLite→Postgres cutover scripts fixed (ANT-876, audit finding 5).**
+  `migrate-sqlite-to-postgres.py` and `verify-cutover.py` now handle JSON
+  passthrough, `session_shares`, a verifier content check, and DSN
+  masking.
+
+- **Session GC gone-gate fixed (ANT-965).**
+  A stale tracking ref short-circuited the gone confirm in
+  `gc-workspace-sessions.sh`; the test fixture's shellcheck 0.11.0
+  SC2329 false positive is silenced (ANT-969).
+
+- **ACME renewal hot-reload now sources from the in-memory bundle
+  (ANT-939, PR #177).** Fixes a cert-reload race.
+
+- **`axum-server` 0.8 → 0.9 (renovate, PR #165).** Minor advance of the
+  server dependency with no API change — the move that triggered the
+  re-bake above.
+
 ## 2026-11-08 — v0.11.7: base-image bump + loud template-schema failures + rsa rc.22
 
 - **The build base advanced to the 2026-11-07 11:39 PM MST re-bake**
