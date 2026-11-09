@@ -17,10 +17,10 @@ use axum::response::{Html, IntoResponse, Response};
 use axum::routing::{delete, get, post};
 use axum::{Json, Router};
 use base64::Engine;
-use sea_orm::{ColumnTrait, EntityTrait, QueryFilter};
+use sea_orm::{ColumnTrait, EntityTrait, QueryFilter, TransactionTrait};
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
-use tracing::{info, warn};
+use tracing::{error, info, warn};
 
 use vreckan_auth::auth;
 // Re-exported from core after the ANT-812 split: the session-share handlers
@@ -42,6 +42,14 @@ pub use vreckan_core::shared::PublicShareMetadata;
 
 /// 2 MiB chunk size for file downloads and backup chunks.
 const CHUNK_SIZE: usize = 2 * 1024 * 1024;
+
+/// Maximum size of a file that can be shared publicly, enforced at creation
+/// (audit finding 15). Shares are anonymous and remote-reachable, and their
+/// download routes read the file from disk — capping the size at creation
+/// bounds how much of the instance a leaked share link can pin. The cap
+/// matches the session proxy's request-body limit, so a shared file can fit
+/// in a single proxied upload of the same size.
+pub const MAX_PUBLIC_SHARE_BYTES: u64 = 1024 * 1024 * 1024;
 
 // ---------------------------------------------------------------------------
 // Request / response models (mirror server/models)
@@ -78,7 +86,7 @@ pub struct FileChunkResponse {
     pub is_last_chunk: bool,
 }
 
-#[derive(Serialize)]
+#[derive(Clone, Serialize)]
 pub struct FileListItem {
     pub name: String,
     pub path: String,
@@ -239,8 +247,11 @@ fn default_manual() -> String {
 // ---------------------------------------------------------------------------
 
 /// Validate a sub-path within a user's home directory, preventing directory
-/// traversal. Returns the resolved full path.
-fn get_validated_path(
+/// traversal. Returns the resolved full path. The fs probes
+/// (`canonicalize`/`exists`) run on tokio's blocking pool so a saturated
+/// disk parks a pool thread instead of a tokio worker (audit finding 14) —
+/// every `/api/files` handler awaits this helper.
+async fn get_validated_path(
     settings: &vreckan_core::settings::Settings,
     username: &str,
     home_dir: &str,
@@ -263,7 +274,7 @@ fn get_validated_path(
     }
 
     let base_dir = Path::new(&settings.storage_path).join(username).join(home_dir);
-    let base_dir = base_dir.canonicalize().map_err(|_| {
+    let base_dir = tokio::fs::canonicalize(&base_dir).await.map_err(|_| {
         (StatusCode::NOT_FOUND, "Home directory not found.".to_string())
     })?;
 
@@ -285,7 +296,7 @@ fn get_validated_path(
     }
 
     let full_path = base_dir.join(&normalized);
-    let full_path = full_path.canonicalize().unwrap_or(full_path);
+    let full_path = tokio::fs::canonicalize(&full_path).await.unwrap_or(full_path);
 
     // Ensure the resolved path is still under the base directory.
     if full_path != base_dir && !full_path.starts_with(&base_dir) {
@@ -295,7 +306,9 @@ fn get_validated_path(
         ));
     }
 
-    if check_existence && !full_path.exists() {
+    // `try_exists` mirrors `Path::exists()` semantics here: a permission
+    // error collapses to `false` (404), as the old sync check did.
+    if check_existence && !tokio::fs::try_exists(&full_path).await.unwrap_or(false) {
         return Err((StatusCode::NOT_FOUND, "Path not found.".to_string()));
     }
 
@@ -308,14 +321,16 @@ fn get_validated_path(
 // ---------------------------------------------------------------------------
 
 /// Load public-share metadata from the database into `state.public_shares`.
-pub async fn load_public_shares(state: &AppState) {
-    let rows = match entities::public_share::Entity::find().all(&state.db.conn).await {
-        Ok(rows) => rows,
-        Err(e) => {
-            warn!("Error loading public shares from the database: {e}");
-            return;
-        }
-    };
+///
+/// A SELECT failure is an error, not a warning (audit finding 2): a failed
+/// load must leave `state.public_shares` untouched so a later full-replace
+/// save cannot rewrite the table from an empty/stale map. Malformed rows are
+/// still skipped with a warning — a data-level issue, not a failed load.
+pub async fn load_public_shares(state: &AppState) -> Result<(), sea_orm::DbErr> {
+    if let Some(e) = state.db.fail_reads_error() {
+        return Err(e);
+    }
+    let rows = entities::public_share::Entity::find().all(&state.db.conn).await?;
     let mut shares = HashMap::new();
     for row in rows {
         match serde_json::from_value::<PublicShareMetadata>(row.data) {
@@ -330,28 +345,28 @@ pub async fn load_public_shares(state: &AppState) {
     let count = shares.len();
     *state.public_shares.write().await = shares;
     info!("Loaded {count} public share(s) from the database.");
+    Ok(())
 }
 
 /// Persist the in-memory public-share map to the database (full replace).
-pub async fn save_public_shares(state: &AppState) {
+///
+/// The delete-all + re-insert runs inside a single transaction (audit
+/// finding 1): any failed statement rolls the whole rewrite back, so a
+/// mid-save outage can never leave the table partially emptied, and the
+/// error is surfaced to the caller instead of warn-and-continue. The
+/// `fail_writes` test hook fires at commit time, so a test-armed save proves
+/// the rollback rather than short-circuiting before any statement runs.
+pub async fn save_public_shares(state: &AppState) -> Result<(), sea_orm::DbErr> {
     let shares = state.public_shares.read().await.clone();
-    let conn = &state.db.conn;
+    let txn = state.db.conn.begin().await?;
     // Delete all existing rows.
-    let all = match entities::public_share::Entity::find().all(conn).await {
-        Ok(rows) => rows,
-        Err(e) => {
-            warn!("Failed to save public shares (delete): {e}");
-            return;
-        }
-    };
+    let all = entities::public_share::Entity::find().all(&txn).await?;
     for row in all {
         let am = entities::public_share::ActiveModel {
             share_id: sea_orm::ActiveValue::Set(row.share_id),
             data: sea_orm::ActiveValue::NotSet,
         };
-        if let Err(e) = entities::public_share::Entity::delete(am).exec(conn).await {
-            warn!("Failed to delete public share row: {e}");
-        }
+        entities::public_share::Entity::delete(am).exec(&txn).await?;
     }
     // Re-insert.
     for (share_id, meta) in shares.iter() {
@@ -366,11 +381,14 @@ pub async fn save_public_shares(state: &AppState) {
             share_id: sea_orm::ActiveValue::Set(share_id.clone()),
             data: sea_orm::ActiveValue::Set(data),
         };
-        if let Err(e) = entities::public_share::Entity::insert(am).exec(conn).await {
-            warn!("Failed to insert public share row: {e}");
-        }
+        entities::public_share::Entity::insert(am).exec(&txn).await?;
     }
+    if state.db.fail_writes.load(std::sync::atomic::Ordering::Relaxed) {
+        return Err(vreckan_core::db::Db::simulated_write_failure());
+    }
+    txn.commit().await?;
     info!("Saved {} public share(s) to the database.", shares.len());
+    Ok(())
 }
 
 /// Remove expired shares (file + metadata) and save. Mirrors
@@ -407,7 +425,12 @@ pub async fn cleanup_expired_shares(state: &AppState) {
             shares.remove(id);
         }
     }
-    save_public_shares(state).await;
+    // Background job: the in-memory removal stays authoritative; a failed
+    // save is logged and the next cleanup tick retries the full replace
+    // (audit finding 1).
+    if let Err(e) = save_public_shares(state).await {
+        error!("Expired share cleanup: failed to persist the share map: {e}");
+    }
     info!("Expired share cleanup complete.");
 }
 
@@ -435,6 +458,42 @@ pub async fn background_share_cleanup_job(state: AppState) {
 // ---------------------------------------------------------------------------
 // /api/files route handlers (all E2EE-encrypted)
 // ---------------------------------------------------------------------------
+
+/// Read one `CHUNK_SIZE` chunk of `path` starting at `chunk_index`.
+/// `download_file_chunk` runs this on the blocking pool via
+/// `spawn_blocking` (audit finding 14) so a saturated disk parks a pool
+/// thread instead of a tokio worker. A missing path or a directory
+/// answers `ErrorKind::NotFound` so the handler keeps its 404; any other
+/// I/O failure propagates the original error (handler answers 500).
+fn read_download_chunk(path: &Path, chunk_index: i64) -> std::io::Result<Vec<u8>> {
+    use std::io::{Read, Seek, SeekFrom};
+    if !path.is_file() {
+        return Err(std::io::Error::new(
+            std::io::ErrorKind::NotFound,
+            "file not found or is a directory",
+        ));
+    }
+    let mut f = std::fs::File::open(path)?;
+    f.seek(SeekFrom::Start((chunk_index as u64) * CHUNK_SIZE as u64))?;
+    let mut buf = vec![0u8; CHUNK_SIZE];
+    let n = f.read(&mut buf)?;
+    buf.truncate(n);
+    Ok(buf)
+}
+
+/// Probe that `path` is a readable regular file (audit finding 14: runs on
+/// the blocking pool via `spawn_blocking` from `launch_from_storage`). A
+/// missing path or a directory answers `ErrorKind::NotFound` so the handler
+/// keeps its 400; any other open failure propagates (handler answers 500).
+fn probe_launch_file(path: &Path) -> std::io::Result<()> {
+    if !path.is_file() {
+        return Err(std::io::Error::new(
+            std::io::ErrorKind::NotFound,
+            "not a regular file",
+        ));
+    }
+    std::fs::File::open(path).map(drop)
+}
 
 /// `GET /api/files/download/chunk/{home_dir}?path=&chunk_index=`
 async fn download_file_chunk(
@@ -469,29 +528,20 @@ async fn download_file_chunk(
         )
         .await;
     }
-    let validated = match get_validated_path(&state.settings, &user.record.username, &home_dir, &q.path, true) {
+    let validated = match get_validated_path(&state.settings, &user.record.username, &home_dir, &q.path, true).await {
         Ok(p) => p,
         Err((s, d)) => {
             return e2ee::encrypt_response(&state, &headers, s, serde_json::json!({ "detail": d })).await
         }
     };
-    if !validated.is_file() {
-        return e2ee::encrypt_response(
-            &state,
-            &headers,
-            StatusCode::NOT_FOUND,
-            serde_json::json!({ "detail": "File not found or is a directory." }),
-        )
-        .await;
-    }
-    let result = std::fs::File::open(&validated).and_then(|mut f| {
-        use std::io::{Read, Seek, SeekFrom};
-        f.seek(SeekFrom::Start((q.chunk_index as u64) * CHUNK_SIZE as u64))?;
-        let mut buf = vec![0u8; CHUNK_SIZE];
-        let n = f.read(&mut buf)?;
-        buf.truncate(n);
-        Ok::<Vec<u8>, std::io::Error>(buf)
-    });
+    let result = match tokio::task::spawn_blocking(move || read_download_chunk(&validated, q.chunk_index))
+        .await
+    {
+        Ok(res) => res,
+        Err(e) => Err(std::io::Error::other(format!(
+            "chunk read task did not finish: {e}"
+        ))),
+    };
     match result {
         Ok(chunk_data) => {
             let is_last = chunk_data.len() < CHUNK_SIZE;
@@ -504,6 +554,15 @@ async fn download_file_chunk(
             )
             .await
         }
+        // A directory (or a file deleted between validation and read) is the
+        // original 404; the error kind comes from `read_download_chunk`.
+        Err(e) if e.kind() == std::io::ErrorKind::NotFound => e2ee::encrypt_response(
+            &state,
+            &headers,
+            StatusCode::NOT_FOUND,
+            serde_json::json!({ "detail": "File not found or is a directory." }),
+        )
+        .await,
         Err(e) => {
             warn!("Error reading chunk for file {}: {e}", q.path);
             e2ee::encrypt_response(
@@ -574,7 +633,7 @@ async fn create_folder(
         )
         .await;
     }
-    let validated = match get_validated_path(&state.settings, &user.record.username, &home_dir, &req.path, true) {
+    let validated = match get_validated_path(&state.settings, &user.record.username, &home_dir, &req.path, true).await {
         Ok(p) => p,
         Err((s, d)) => {
             return e2ee::encrypt_response(&state, &headers, s, serde_json::json!({ "detail": d })).await
@@ -697,9 +756,9 @@ async fn perform_deletion(
         }
     }
     let mut deleted_count = 0usize;
-    let result: Result<(), (StatusCode, String)> = (|| {
+    let result: Result<(), (StatusCode, String)> = async {
         for p in paths_to_delete {
-            let validated = get_validated_path(&state.settings, username, home_dir, p, true)?;
+            let validated = get_validated_path(&state.settings, username, home_dir, p, true).await?;
             if validated.is_dir() {
                 std::fs::remove_dir_all(&validated).map_err(|e| {
                     (StatusCode::INTERNAL_SERVER_ERROR, format!("Failed to delete directory: {e}"))
@@ -712,7 +771,8 @@ async fn perform_deletion(
             deleted_count += 1;
         }
         Ok(())
-    })();
+    }
+    .await;
     let mut tasks = state.deletion_tasks.write().await;
     match result {
         Ok(()) => {
@@ -772,6 +832,13 @@ async fn check_deletion_status(
     }
 }
 
+/// Sort listing rows: directories first, then by lowercase name. A row
+/// whose stat failed (`item == None`) sorts with the files, matching the
+/// old comparator's `is_dir()` (which also read `false` on a failed stat).
+fn sort_listing_rows(rows: &mut [(bool, String, Option<FileListItem>)]) {
+    rows.sort_by(|a, b| b.0.cmp(&a.0).then_with(|| a.1.cmp(&b.1)));
+}
+
 /// `GET /api/files/list/{home_dir}?path=&page=&per_page=`
 async fn list_files(
     State(state): State<AppState>,
@@ -794,13 +861,19 @@ async fn list_files(
                 .into_response()
         }
     };
-    let validated = match get_validated_path(&state.settings, &user.record.username, &home_dir, &q.path, true) {
+    let validated = match get_validated_path(&state.settings, &user.record.username, &home_dir, &q.path, true).await {
         Ok(p) => p,
         Err((s, d)) => {
             return e2ee::encrypt_response(&state, &headers, s, serde_json::json!({ "detail": d })).await
         }
     };
-    if !validated.is_dir() {
+    // Audit finding 14: the is_dir probe is blocking fs — tokio::fs runs it
+    // on the blocking pool (same `metadata().is_dir()` semantics).
+    let is_valid_dir = tokio::fs::metadata(&validated)
+        .await
+        .map(|m| m.is_dir())
+        .unwrap_or(false);
+    if !is_valid_dir {
         return e2ee::encrypt_response(
             &state,
             &headers,
@@ -813,27 +886,65 @@ async fn list_files(
         .join(&user.record.username)
         .join(&home_dir);
 
-    let read_result = std::fs::read_dir(&validated);
-    let all_items: Vec<std::path::PathBuf> = match read_result {
-        Ok(entries) => {
-            let mut v: Vec<std::path::PathBuf> = entries
-                .filter_map(|e| e.ok())
-                .map(|e| e.path())
-                .collect();
-            // Sort: directories first, then by lowercase name.
-            v.sort_by(|a, b| {
-                let a_dir = a.is_dir();
-                let b_dir = b.is_dir();
-                if a_dir != b_dir {
-                    b_dir.cmp(&a_dir)
-                } else {
-                    let a_name = a.file_name().map(|f| f.to_string_lossy().to_lowercase()).unwrap_or_default();
-                    let b_name = b.file_name().map(|f| f.to_string_lossy().to_lowercase()).unwrap_or_default();
-                    a_name.cmp(&b_name)
-                }
+    // Audit finding 14: `read_dir` + the per-entry stats used to run on the
+    // tokio worker (the old sort comparator re-stat'ed entries on every
+    // comparison, so a 50k-entry folder meant ~n log n extra stats). The
+    // whole listing now runs as a single blocking-pool task that stats each
+    // entry exactly once; pagination stays in the async handler.
+    let list_result = tokio::task::spawn_blocking(move || {
+        let is_dir = validated.is_dir();
+        let entries = match std::fs::read_dir(&validated) {
+            Ok(entries) => entries,
+            Err(e) => return (is_dir, Err::<_, std::io::Error>(e)),
+        };
+        let mut rows: Vec<(bool, String, Option<FileListItem>)> = Vec::new();
+        for entry in entries.filter_map(|e| e.ok()) {
+            let item = entry.path();
+            let name = item
+                .file_name()
+                .map(|f| f.to_string_lossy().into_owned())
+                .unwrap_or_default();
+            let stat = item.metadata().ok();
+            let is_dir = stat.as_ref().map(|s| s.is_dir()).unwrap_or(false);
+            let rel = item.strip_prefix(&home_dir_root).unwrap_or(&item);
+            let mut item_path = format!("/{}", rel.to_string_lossy().replace('\\', "/"));
+            if item_path == "/." {
+                item_path = "/".to_string();
+            }
+            let row = stat.map(|stat| FileListItem {
+                name: name.clone(),
+                path: item_path,
+                is_dir,
+                size: stat.len(),
+                mtime: stat
+                    .modified()
+                    .ok()
+                    .and_then(|t| t.duration_since(std::time::UNIX_EPOCH).ok())
+                    .map(|d| d.as_secs_f64())
+                    .unwrap_or(0.0),
             });
-            v
+            rows.push((is_dir, name.to_lowercase(), row));
         }
+        sort_listing_rows(&mut rows);
+        (is_dir, Ok(rows))
+    })
+    .await;
+    let (is_dir, rows_result) = match list_result {
+        Ok((is_dir, rows)) => (is_dir, rows),
+        Err(e) => {
+            return e2ee::encrypt_response(
+                &state,
+                &headers,
+                StatusCode::INTERNAL_SERVER_ERROR,
+                serde_json::json!({
+                    "detail": format!("Error reading directory: list task join failed: {e}")
+                }),
+            )
+            .await
+        }
+    };
+    let all_rows = match rows_result {
+        Ok(rows) => rows,
         Err(e) => {
             return e2ee::encrypt_response(
                 &state,
@@ -844,6 +955,15 @@ async fn list_files(
             .await
         }
     };
+    if !is_dir {
+        return e2ee::encrypt_response(
+            &state,
+            &headers,
+            StatusCode::BAD_REQUEST,
+            serde_json::json!({ "detail": "Path is not a valid directory." }),
+        )
+        .await;
+    }
     if q.page < 1 || q.per_page < 1 || q.per_page > 200 {
         return e2ee::encrypt_response(
             &state,
@@ -853,38 +973,13 @@ async fn list_files(
         )
         .await;
     }
-    let total = all_items.len();
+    let total = all_rows.len();
     let start = (((q.page - 1) * q.per_page) as usize).min(total);
     let end = (start + q.per_page as usize).min(total);
-    let paginated = &all_items[start..end];
-
-    let mut response_items = Vec::new();
-    for item in paginated {
-        let stat = match item.metadata() {
-            Ok(s) => s,
-            Err(_) => continue,
-        };
-        let rel = item.strip_prefix(&home_dir_root).unwrap_or(item);
-        let mut item_path = format!("/{}", rel.to_string_lossy().replace('\\', "/"));
-        if item_path == "/." {
-            item_path = "/".to_string();
-        }
-        response_items.push(FileListItem {
-            name: item
-                .file_name()
-                .map(|f| f.to_string_lossy().into_owned())
-                .unwrap_or_default(),
-            path: item_path,
-            is_dir: item.is_dir(),
-            size: stat.len(),
-            mtime: stat
-                .modified()
-                .ok()
-                .and_then(|t| t.duration_since(std::time::UNIX_EPOCH).ok())
-                .map(|d| d.as_secs_f64())
-                .unwrap_or(0.0),
-        });
-    }
+    let response_items: Vec<FileListItem> = all_rows[start..end]
+        .iter()
+        .filter_map(|row| row.2.clone())
+        .collect();
     e2ee::encrypt_response(
         &state,
         &headers,
@@ -960,7 +1055,7 @@ async fn finalize_upload_to_dir(
             .await
         }
     };
-    let dest_dir = match get_validated_path(&state.settings, &user.record.username, &home_dir, &req.path, true) {
+    let dest_dir = match get_validated_path(&state.settings, &user.record.username, &home_dir, &req.path, true).await {
         Ok(p) => p,
         Err((s, d)) => {
             return e2ee::encrypt_response(&state, &headers, s, serde_json::json!({ "detail": d })).await
@@ -1068,7 +1163,7 @@ async fn create_public_share(
         }
     };
     let username = &user.record.username;
-    let source_path = match get_validated_path(&state.settings, username, &req.home_dir, &req.path, true) {
+    let source_path = match get_validated_path(&state.settings, username, &req.home_dir, &req.path, true).await {
         Ok(p) => p,
         Err((s, d)) => {
             return e2ee::encrypt_response(&state, &headers, s, serde_json::json!({ "detail": d })).await
@@ -1080,6 +1175,24 @@ async fn create_public_share(
             &headers,
             StatusCode::BAD_REQUEST,
             serde_json::json!({ "detail": "Path does not point to a file." }),
+        )
+        .await;
+    }
+    let stat_info = source_path.metadata().ok();
+    let size_bytes = stat_info.map(|s| s.len()).unwrap_or(0);
+    // Cap the share size at creation (audit finding 15): the share link is
+    // anonymous and remote-reachable, so an oversized file is rejected here
+    // rather than buffered in memory on download.
+    if size_bytes > MAX_PUBLIC_SHARE_BYTES {
+        return e2ee::encrypt_response(
+            &state,
+            &headers,
+            StatusCode::PAYLOAD_TOO_LARGE,
+            serde_json::json!({
+                "detail": format!(
+                    "File is {size_bytes} bytes; public shares are limited to {MAX_PUBLIC_SHARE_BYTES} bytes."
+                ),
+            }),
         )
         .await;
     }
@@ -1095,7 +1208,6 @@ async fn create_public_share(
         )
         .await;
     }
-    let stat_info = source_path.metadata().ok();
     let password_hash = req
         .password
         .as_deref()
@@ -1116,7 +1228,7 @@ async fn create_public_share(
             .map(|f| f.to_string_lossy().into_owned())
             .unwrap_or_default(),
         created_at: now,
-        size_bytes: stat_info.map(|s| s.len()).unwrap_or(0),
+        size_bytes,
         password_hash,
         expiry_timestamp,
     };
@@ -1124,7 +1236,18 @@ async fn create_public_share(
         let mut shares = state.public_shares.write().await;
         shares.insert(share_id.clone(), metadata.clone());
     }
-    save_public_shares(&state).await;
+    // Handler with an error channel: a failed save is a 500, not a silent
+    // warn — the in-memory entry stays (it is authoritative) and the next
+    // share event retries the full replace (audit finding 1).
+    if let Err(e) = save_public_shares(&state).await {
+        return e2ee::encrypt_response(
+            &state,
+            &headers,
+            StatusCode::INTERNAL_SERVER_ERROR,
+            serde_json::json!({ "detail": format!("Failed to persist the file share: {e}") }),
+        )
+        .await;
+    }
     e2ee::encrypt_response(
         &state,
         &headers,
@@ -1253,7 +1376,18 @@ async fn delete_public_share(
         let mut shares = state.public_shares.write().await;
         shares.remove(&share_id);
     }
-    save_public_shares(&state).await;
+    // Handler with an error channel: a failed save is a 500, not a silent
+    // warn — the in-memory removal stays (it is authoritative) and the next
+    // share event retries the full replace (audit finding 1).
+    if let Err(e) = save_public_shares(&state).await {
+        return e2ee::encrypt_response(
+            &state,
+            &headers,
+            StatusCode::INTERNAL_SERVER_ERROR,
+            serde_json::json!({ "detail": format!("Failed to persist the file share deletion: {e}") }),
+        )
+        .await;
+    }
     e2ee::encrypt_response(&state, &headers, StatusCode::NO_CONTENT, Value::Null).await
 }
 
@@ -1313,33 +1447,39 @@ async fn launch_from_storage(
             .await
         }
     };
-    let validated = match get_validated_path(&state.settings, &user.record.username, &req.home_dir, &req.path, true) {
+    let validated = match get_validated_path(&state.settings, &user.record.username, &req.home_dir, &req.path, true).await {
         Ok(p) => p,
         Err((s, d)) => {
             return e2ee::encrypt_response(&state, &headers, s, serde_json::json!({ "detail": d })).await
         }
     };
-    if !validated.is_file() {
+    // Probe openability up front so an unreadable file still fails loudly
+    // (same 500 as before; a non-file answers the original 400 through the
+    // `NotFound` mapping); the probe runs on the blocking pool (audit
+    // finding 14), and the file itself is then copied disk-to-disk with a
+    // bounded buffer inside `launch_common` and never sits in memory
+    // (audit finding 15).
+    let probe_path = validated.clone();
+    let probe = match tokio::task::spawn_blocking(move || probe_launch_file(&probe_path)).await {
+        Ok(res) => res,
+        Err(e) => Err(std::io::Error::other(format!(
+            "launch probe join failed: {e}"
+        ))),
+    };
+    if let Err(e) = probe {
+        let (status, detail) = if e.kind() == std::io::ErrorKind::NotFound {
+            (StatusCode::BAD_REQUEST, "Only files can be opened in an application.".to_string())
+        } else {
+            (StatusCode::INTERNAL_SERVER_ERROR, format!("Failed to read file: {e}"))
+        };
         return e2ee::encrypt_response(
             &state,
             &headers,
-            StatusCode::BAD_REQUEST,
-            serde_json::json!({ "detail": "Only files can be opened in an application." }),
+            status,
+            serde_json::json!({ "detail": detail }),
         )
         .await;
     }
-    let file_bytes = match std::fs::read(&validated) {
-        Ok(b) => b,
-        Err(e) => {
-            return e2ee::encrypt_response(
-                &state,
-                &headers,
-                StatusCode::INTERNAL_SERVER_ERROR,
-                serde_json::json!({ "detail": format!("Failed to read file: {e}") }),
-            )
-            .await
-        }
-    };
     let filename = validated
         .file_name()
         .map(|f| f.to_string_lossy().into_owned())
@@ -1353,7 +1493,7 @@ async fn launch_from_storage(
         HashMap::new(),
         req.language.as_deref(),
         req.selected_gpu.as_deref(),
-        Some(file_bytes),
+        Some(vreckan_catalog::catalog::LaunchFileSource::Path(validated)),
         Some(&filename),
         req.open_file_on_launch,
         None,
@@ -2158,6 +2298,54 @@ async fn delete_pinned_behavior(
 // /public/... routes (plaintext — accessed by anonymous downloaders)
 // ---------------------------------------------------------------------------
 
+/// Serve `path` as an octet-stream download, reading it in bounded
+/// `CHUNK_SIZE` chunks from a tokio file handle (audit finding 15): the
+/// file's bytes no longer sit in memory whole. A missing or unreadable file
+/// answers 404; a readable file carries its on-disk size as
+/// `Content-Length` (stat on the blocking pool, audit finding 14).
+async fn stream_download_response(path: &Path, filename: &str) -> Response {
+    let stream = futures_util::stream::unfold(
+        (None::<tokio::fs::File>, path.to_path_buf()),
+        |(state, path): (Option<tokio::fs::File>, PathBuf)| async move {
+            let mut file = match state {
+                Some(f) => f,
+                None => match tokio::fs::File::open(&path).await {
+                    Ok(f) => f,
+                    Err(_) => {
+                        return Some((
+                            Err(std::io::Error::new(
+                                std::io::ErrorKind::NotFound,
+                                "file disappeared",
+                            )),
+                            (None, path),
+                        ))
+                    }
+                },
+            };
+            let mut buf = vec![0u8; CHUNK_SIZE];
+            match tokio::io::AsyncReadExt::read(&mut file, &mut buf).await {
+                Ok(0) => None,
+                Ok(n) => Some((Ok(Bytes::copy_from_slice(&buf[..n])), (Some(file), path))),
+                Err(e) => Some((Err(e), (None, path))),
+            }
+        },
+    );
+    let len = tokio::fs::metadata(path).await.ok().map(|m| m.len());
+    let mut builder = Response::builder()
+        .status(StatusCode::OK)
+        .header(header::CONTENT_TYPE, "application/octet-stream")
+        .header(header::CONTENT_DISPOSITION, format!("attachment; filename=\"{filename}\""));
+    if let Some(len) = len {
+        builder = builder.header(header::CONTENT_LENGTH, len);
+    }
+    // `std::io::Error` satisfies `Into<Box<dyn Error + Send + Sync>>` (the
+    // bound `Body::from_stream` requires), so the io stream is forwarded as-is
+    // and the file's bytes never sit in memory whole (audit finding 15).
+    builder
+        .body(axum::body::Body::from_stream(stream))
+        .unwrap_or_else(|e| (StatusCode::INTERNAL_SERVER_ERROR, e.to_string()).into_response())
+}
+
 /// `GET /public/download/{token}` — stream the shared file.
 async fn download_shared_file(
     State(state): State<AppState>,
@@ -2192,20 +2380,16 @@ async fn download_shared_file(
         return (StatusCode::NOT_FOUND, "Shared file not found.").into_response();
     };
     let file_path = Path::new(&state.settings.public_storage_path).join(&token_data.share_id);
-    if !file_path.exists() {
+    // Audit finding 14: the existence probe is blocking fs — tokio::fs runs
+    // it on the blocking pool (same `metadata().is_file()` semantics).
+    let is_file = tokio::fs::metadata(&file_path)
+        .await
+        .map(|m| m.is_file())
+        .unwrap_or(false);
+    if !is_file {
         return (StatusCode::NOT_FOUND, "Shared file not found on disk.").into_response();
     }
-    let data = match std::fs::read(&file_path) {
-        Ok(d) => d,
-        Err(_) => return (StatusCode::NOT_FOUND, "Shared file not found on disk.").into_response(),
-    };
-    let disposition = format!("attachment; filename=\"{}\"", metadata.original_filename);
-    Response::builder()
-        .status(StatusCode::OK)
-        .header(header::CONTENT_TYPE, "application/octet-stream")
-        .header(header::CONTENT_DISPOSITION, disposition)
-        .body(axum::body::Body::from(data))
-        .unwrap_or_else(|e| (StatusCode::INTERNAL_SERVER_ERROR, e.to_string()).into_response())
+    stream_download_response(&file_path, &metadata.original_filename).await
 }
 
 
@@ -2235,20 +2419,16 @@ async fn access_public_share_get(
         return render_password_page(&format!("/public/{share_id}"), &share_id, "", StatusCode::OK);
     }
     let file_path = Path::new(&state.settings.public_storage_path).join(&share_id);
-    if !file_path.exists() {
+    // Audit finding 14: the existence probe is blocking fs — tokio::fs runs
+    // it on the blocking pool (same `metadata().is_file()` semantics).
+    let is_file = tokio::fs::metadata(&file_path)
+        .await
+        .map(|m| m.is_file())
+        .unwrap_or(false);
+    if !is_file {
         return (StatusCode::NOT_FOUND, "Shared file not found on disk.").into_response();
     }
-    let data = match std::fs::read(&file_path) {
-        Ok(d) => d,
-        Err(_) => return (StatusCode::NOT_FOUND, "Shared file not found on disk.").into_response(),
-    };
-    let disposition = format!("attachment; filename=\"{}\"", metadata.original_filename);
-    Response::builder()
-        .status(StatusCode::OK)
-        .header(header::CONTENT_TYPE, "application/octet-stream")
-        .header(header::CONTENT_DISPOSITION, disposition)
-        .body(axum::body::Body::from(data))
-        .unwrap_or_else(|e| (StatusCode::INTERNAL_SERVER_ERROR, e.to_string()).into_response())
+    stream_download_response(&file_path, &metadata.original_filename).await
 }
 
 /// `POST /public/{share_id}` — submit the share password.
@@ -2281,7 +2461,29 @@ async fn access_public_share_post(
         )
             .into_response();
     };
-    if user_manager::verify_share_password(hash, &form.password) {
+    // Brute-force protection (ANT-884, audit finding 13): a locked-out share
+    // is refused before the ~100-300 ms / ~19 MiB Argon2 verification runs,
+    // and the verification itself runs on a blocking thread so a burst of
+    // guesses cannot pin the tokio worker threads (which serve every other
+    // request, including the health probe).
+    let max_attempts = state.settings.share_password_max_attempts;
+    let window_secs = state.settings.share_password_lockout_seconds.max(1) as f64;
+    if user_manager::check_share_password_lockout(&state, &share_id, now, window_secs, max_attempts).await
+    {
+        return render_password_page(
+            &format!("/public/{share_id}"),
+            &share_id,
+            "Too many failed password attempts; try again in a few minutes.",
+            StatusCode::TOO_MANY_REQUESTS,
+        );
+    }
+    let hash = hash.clone();
+    let password = form.password.clone();
+    let ok = tokio::task::spawn_blocking(move || user_manager::verify_share_password(&hash, &password))
+        .await
+        .unwrap_or(false);
+    if ok {
+        user_manager::clear_share_password_attempts(&state, &share_id).await;
         let token = vreckan_catalog::catalog::random_token(32);
         {
             let mut tokens = state.download_tokens.write().await;
@@ -2300,6 +2502,7 @@ async fn access_public_share_post(
             .body(axum::body::Body::empty())
             .unwrap_or_else(|e| (StatusCode::INTERNAL_SERVER_ERROR, e.to_string()).into_response())
     } else {
+        user_manager::record_share_password_failure(&state, &share_id, now, window_secs, max_attempts).await;
         render_password_page(
             &format!("/public/{share_id}"),
             &share_id,
@@ -2410,5 +2613,208 @@ mod tests {
             "fresh upload dir must land 0700"
         );
         std::fs::remove_dir_all(&dir).ok();
+    }
+
+    #[test]
+    fn read_download_chunk_reads_requested_chunk() {
+        let dir = tmp_dir("chunk-read");
+        let path = dir.join("f.bin");
+        let mut data = Vec::new();
+        for i in 0..((2 * CHUNK_SIZE + 7) as u64) {
+            data.push((i % 251) as u8);
+        }
+        std::fs::write(&path, &data).unwrap();
+        // One `read()` per call: a chunk returns at most `CHUNK_SIZE` bytes,
+        // so the tail (7 bytes past the second full chunk) arrives as its
+        // own chunk — the client re-requests the next index for it.
+        let c0 = read_download_chunk(&path, 0).unwrap();
+        assert_eq!(c0, data[..CHUNK_SIZE]);
+        assert_eq!(c0.len(), CHUNK_SIZE);
+        let c1 = read_download_chunk(&path, 1).unwrap();
+        assert_eq!(c1, data[CHUNK_SIZE..2 * CHUNK_SIZE]);
+        assert_eq!(c1.len(), CHUNK_SIZE);
+        let c2 = read_download_chunk(&path, 2).unwrap();
+        assert_eq!(c2, data[2 * CHUNK_SIZE..]);
+        assert!(c2.len() < CHUNK_SIZE, "partial last chunk must be shorter");
+        let c3 = read_download_chunk(&path, 3).unwrap();
+        assert!(c3.is_empty(), "past-EOF chunk must be empty (is_last_chunk)");
+        std::fs::remove_dir_all(&dir).ok();
+    }
+
+    #[test]
+    fn read_download_chunk_dir_or_missing_is_not_found() {
+        let dir = tmp_dir("chunk-notfound");
+        let d = dir.join("adir");
+        std::fs::create_dir_all(&d).unwrap();
+        let e = read_download_chunk(&d, 0).unwrap_err();
+        assert_eq!(e.kind(), std::io::ErrorKind::NotFound);
+        let e = read_download_chunk(&dir.join("missing.bin"), 0).unwrap_err();
+        assert_eq!(e.kind(), std::io::ErrorKind::NotFound);
+        std::fs::remove_dir_all(&dir).ok();
+    }
+
+    #[test]
+    fn probe_launch_file_dir_or_missing_is_not_found() {
+        let dir = tmp_dir("launch-probe");
+        let d = dir.join("adir");
+        std::fs::create_dir_all(&d).unwrap();
+        let f = dir.join("f.bin");
+        std::fs::write(&f, b"x").unwrap();
+        assert_eq!(
+            probe_launch_file(&d).unwrap_err().kind(),
+            std::io::ErrorKind::NotFound
+        );
+        assert_eq!(
+            probe_launch_file(&dir.join("missing")).unwrap_err().kind(),
+            std::io::ErrorKind::NotFound
+        );
+        probe_launch_file(&f).unwrap();
+        std::fs::remove_dir_all(&dir).ok();
+    }
+
+    fn row(is_dir: bool, name: &str) -> (bool, String, Option<FileListItem>) {
+        (
+            is_dir,
+            name.to_lowercase(),
+            Some(FileListItem {
+                name: name.to_string(),
+                path: format!("/{name}"),
+                is_dir,
+                size: 0,
+                mtime: 0.0,
+            }),
+        )
+    }
+
+    #[test]
+    fn listing_rows_sort_dirs_first_then_case_insensitive_name() {
+        let mut rows = vec![
+            row(false, "b.txt"),
+            row(true, "Zeta"),
+            row(false, "A.txt"),
+            row(true, "alpha"),
+            row(false, "a.txt"),
+        ];
+        sort_listing_rows(&mut rows);
+        let names: Vec<String> = rows
+            .iter()
+            .map(|r| r.2.as_ref().unwrap().name.clone())
+            .collect();
+        assert_eq!(names, vec!["alpha", "Zeta", "A.txt", "a.txt", "b.txt"]);
+    }
+
+    #[test]
+    fn listing_rows_with_failed_stat_sort_with_files() {
+        // A row whose stat failed is `(false, _, None)` — it must sort with
+        // the files, not the directories (the old `is_dir()` also read
+        // `false` on a failed stat).
+        let mut rows = vec![
+            (false, "zz.txt".to_lowercase(), None),
+            row(true, "adir"),
+            row(false, "aa.txt"),
+        ];
+        sort_listing_rows(&mut rows);
+        assert!(rows[0].0, "directories must still sort first");
+        let tail: Vec<Option<&str>> = rows
+            .iter()
+            .skip(1)
+            .map(|r| r.2.as_ref().map(|i| i.name.as_str()))
+            .collect();
+        assert_eq!(tail, vec![Some("aa.txt"), None]);
+    }
+
+    /// A throwaway SQLite-backed `AppState` for the durable-store tests.
+    async fn fresh_state(name: &str) -> (std::path::PathBuf, AppState) {
+        let dir = tmp_dir(name);
+        let db = vreckan_core::db::connect(&format!(
+            "sqlite://{}?mode=rwc",
+            dir.join("vreckan.db").display()
+        ))
+        .await
+        .unwrap();
+        db.init().await.unwrap();
+        (dir, AppState::new(vreckan_core::settings::Settings::from_env(), db))
+    }
+
+    fn share_row(share_id: &str, owner: &str) -> entities::public_share::ActiveModel {
+        let meta = PublicShareMetadata {
+            owner_username: owner.to_string(),
+            original_filename: format!("{share_id}.txt"),
+            created_at: 1.0,
+            size_bytes: 1,
+            password_hash: None,
+            expiry_timestamp: None,
+        };
+        entities::public_share::ActiveModel {
+            share_id: sea_orm::ActiveValue::Set(share_id.to_string()),
+            data: sea_orm::ActiveValue::Set(serde_json::to_value(&meta).unwrap()),
+        }
+    }
+
+    /// F1: a write failure mid-rewrite must fail the save AND roll the whole
+    /// delete+reinsert back — the table is the pre-save state, not a
+    /// partially-emptied one.
+    #[tokio::test]
+    async fn save_public_shares_write_failure_rolls_back_the_rewrite() {
+        let (dir, state) = fresh_state("save-public-shares-rollback").await;
+        let conn = &state.db.conn;
+        entities::public_share::Entity::insert(share_row("keep-a", "alice")).exec(conn).await.unwrap();
+        entities::public_share::Entity::insert(share_row("keep-b", "bob")).exec(conn).await.unwrap();
+        let meta = PublicShareMetadata {
+            owner_username: "alice".to_string(),
+            original_filename: "keep-a.txt".to_string(),
+            created_at: 2.0,
+            size_bytes: 2,
+            password_hash: None,
+            expiry_timestamp: None,
+        };
+        state.public_shares.write().await.insert("keep-a".to_string(), meta);
+
+        state.db.fail_writes.store(true, std::sync::atomic::Ordering::Relaxed);
+        let err = save_public_shares(&state).await.unwrap_err();
+        assert!(err.to_string().contains("simulated write failure"));
+        state.db.fail_writes.store(false, std::sync::atomic::Ordering::Relaxed);
+
+        let rows = entities::public_share::Entity::find().all(conn).await.unwrap();
+        assert_eq!(rows.len(), 2, "failed save must not drop rows");
+        assert!(rows.iter().any(|r| r.share_id == "keep-b"));
+
+        save_public_shares(&state).await.unwrap();
+        let rows = entities::public_share::Entity::find().all(conn).await.unwrap();
+        assert_eq!(rows.len(), 1);
+        assert_eq!(rows[0].share_id, "keep-a");
+
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    /// F2: a failed load must not touch `state.public_shares`.
+    #[tokio::test]
+    async fn load_public_shares_read_failure_leaves_map_untouched() {
+        let (dir, state) = fresh_state("load-public-shares-fail").await;
+        entities::public_share::Entity::insert(share_row("db-row", "alice"))
+            .exec(&state.db.conn)
+            .await
+            .unwrap();
+        let meta = PublicShareMetadata {
+            owner_username: "sentinel".to_string(),
+            original_filename: "s.txt".to_string(),
+            created_at: 1.0,
+            size_bytes: 1,
+            password_hash: None,
+            expiry_timestamp: None,
+        };
+        state.public_shares.write().await.insert("sentinel".to_string(), meta);
+
+        state.db.fail_reads.store(true, std::sync::atomic::Ordering::Relaxed);
+        let err = load_public_shares(&state).await.unwrap_err();
+        assert!(err.to_string().contains("simulated read failure"));
+        state.db.fail_reads.store(false, std::sync::atomic::Ordering::Relaxed);
+
+        let map = state.public_shares.read().await.clone();
+        assert_eq!(map.len(), 1, "failed load must not replace the map");
+        assert!(map.contains_key("sentinel"));
+        assert!(!map.contains_key("db-row"));
+
+        let _ = std::fs::remove_dir_all(&dir);
     }
 }

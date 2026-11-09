@@ -674,7 +674,7 @@ async fn test_stop_session_broadcasts_session_ended_to_room() {
 
     // Stopping the session must reach the live room as a `session_ended`
     // message (not a dead iframe).
-    vreckan_catalog::catalog::stop_session(&sc.state, &sid).await;
+    vreckan_catalog::catalog::stop_session(&sc.state, &sid).await.unwrap();
 
     let mut saw_session_ended = false;
     loop {

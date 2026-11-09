@@ -21,7 +21,7 @@ mod common;
 
 use common::{build_state, SecureClient, TempDir};
 use http::StatusCode;
-use sea_orm::{EntityTrait};
+use sea_orm::EntityTrait;
 use serde_json::json;
 use vreckan_catalog::catalog;
 
@@ -67,8 +67,10 @@ async fn builtin_templates(sc: &mut SecureClient) {
     // DELETE handler's `default_app_templates_path`) still points at the
     // original path. Rebuild the router from the updated state so the handlers
     // see the new path (preserving the auth cookie from the earlier login).
+    // `.0` unwraps the crate's TestClient newtype down to the shared client
+    // the `http` field holds (ANT-853).
     let cookie = sc.http.auth_cookie.clone();
-    sc.http = common::TestClient::new(sc.state.clone());
+    sc.http = common::TestClient::new(sc.state.clone()).0;
     sc.http.auth_cookie = cookie;
 }
 
@@ -128,7 +130,9 @@ async fn test_create_template() {
     assert_eq!(status, StatusCode::CREATED, "{:?}", body);
     assert_eq!(
         body,
-        Some(json!({ "name": "My Template", "settings": { "TITLE": "X" }, "provenance": "custom" }))
+        Some(
+            json!({ "name": "My Template", "settings": { "TITLE": "X" }, "provenance": "custom" })
+        )
     );
     let (status, templates) = sc.call("GET", "/api/admin/apps/templates", None).await;
     assert_eq!(status, StatusCode::OK);
@@ -199,7 +203,11 @@ async fn test_create_template_malformed_body() {
     sc.http.login("admin", "admin1234").await;
     sc.handshake().await;
     let (status, body) = sc
-        .call("POST", "/api/admin/apps/templates", Some(&json!({ "settings": {} })))
+        .call(
+            "POST",
+            "/api/admin/apps/templates",
+            Some(&json!({ "settings": {} })),
+        )
         .await;
     assert_eq!(status, StatusCode::UNPROCESSABLE_ENTITY);
     assert!(body.unwrap()["detail"].as_str().unwrap().contains("name"));
@@ -227,7 +235,10 @@ async fn test_create_template_overrides_existing() {
         )
         .await;
     assert_eq!(status, StatusCode::CREATED, "{:?}", body);
-    assert_eq!(body.as_ref().unwrap()["settings"], json!({ "TITLE": "Two" }));
+    assert_eq!(
+        body.as_ref().unwrap()["settings"],
+        json!({ "TITLE": "Two" })
+    );
     let (_status, templates) = sc.call("GET", "/api/admin/apps/templates", None).await;
     let entry = templates
         .as_ref()
@@ -246,7 +257,9 @@ async fn test_delete_template_unknown() {
     let mut sc = SecureClient::new(build_state(_root.path()).await);
     sc.http.login("admin", "admin1234").await;
     sc.handshake().await;
-    let (status, body) = sc.call("DELETE", "/api/admin/apps/templates/Ghost", None).await;
+    let (status, body) = sc
+        .call("DELETE", "/api/admin/apps/templates/Ghost", None)
+        .await;
     assert_eq!(status, StatusCode::NOT_FOUND);
     assert_eq!(body.unwrap()["detail"], "Template 'Ghost' not found.");
 }
@@ -298,7 +311,9 @@ async fn test_list_templates_with_builtin() {
     assert_eq!(status, StatusCode::OK, "{:?}", body);
     assert_eq!(
         body,
-        Some(json!([ { "name": "Built-In", "settings": { "TITLE": "Built In" }, "provenance": "default" } ]))
+        Some(
+            json!([ { "name": "Built-In", "settings": { "TITLE": "Built In" }, "provenance": "default" } ])
+        )
     );
 }
 
@@ -309,7 +324,9 @@ async fn test_delete_builtin_template_protected() {
     sc.http.login("admin", "admin1234").await;
     sc.handshake().await;
     builtin_templates(&mut sc).await;
-    let (status, body) = sc.call("DELETE", "/api/admin/apps/templates/Built-In", None).await;
+    let (status, body) = sc
+        .call("DELETE", "/api/admin/apps/templates/Built-In", None)
+        .await;
     assert_eq!(status, StatusCode::FORBIDDEN);
     assert_eq!(
         body.unwrap()["detail"],
@@ -325,7 +342,9 @@ async fn test_builtin_template_override_and_restore() {
     sc.handshake().await;
     builtin_templates(&mut sc).await;
     // A pure built-in cannot be deleted ...
-    let (status, _body) = sc.call("DELETE", "/api/admin/apps/templates/Built-In", None).await;
+    let (status, _body) = sc
+        .call("DELETE", "/api/admin/apps/templates/Built-In", None)
+        .await;
     assert_eq!(status, StatusCode::FORBIDDEN);
     // ... but it can be overridden by a user template with the same name.
     let (status, _) = sc
@@ -338,13 +357,17 @@ async fn test_builtin_template_override_and_restore() {
     assert_eq!(status, StatusCode::CREATED);
     // Once a user override exists, deletion is allowed — and the built-in
     // (from the bundled file) takes effect again.
-    let (status, _) = sc.call("DELETE", "/api/admin/apps/templates/Built-In", None).await;
+    let (status, _) = sc
+        .call("DELETE", "/api/admin/apps/templates/Built-In", None)
+        .await;
     assert_eq!(status, StatusCode::NO_CONTENT);
     let (status, templates) = sc.call("GET", "/api/admin/apps/templates", None).await;
     assert_eq!(status, StatusCode::OK);
     assert_eq!(
         templates,
-        Some(json!([ { "name": "Built-In", "settings": { "TITLE": "Built In" }, "provenance": "default" } ]))
+        Some(
+            json!([ { "name": "Built-In", "settings": { "TITLE": "Built In" }, "provenance": "default" } ])
+        )
     );
 }
 
@@ -500,7 +523,9 @@ async fn test_save_schema_replaces_whole_schema() {
         .await;
     assert_eq!(status, StatusCode::OK, "{:?}", body);
     assert_eq!(body, Some(json!({ "ok": true })));
-    let (status, schema) = sc.call("GET", "/api/admin/apps/templates/schema", None).await;
+    let (status, schema) = sc
+        .call("GET", "/api/admin/apps/templates/schema", None)
+        .await;
     assert_eq!(status, StatusCode::OK);
     let settings_list = schema.as_ref().unwrap()["settings"].as_array().unwrap();
     // The save is a wholesale replacement: every seeded setting is gone.
@@ -529,10 +554,10 @@ async fn test_save_schema_builtin_default_tracks_yaml() {
         )
         .await;
     assert_eq!(status, StatusCode::OK, "{:?}", body);
-    let (_status, schema) = sc.call("GET", "/api/admin/apps/templates/schema", None).await;
-    let entry = schema
-        .as_ref()
-        .unwrap()["settings"]
+    let (_status, schema) = sc
+        .call("GET", "/api/admin/apps/templates/schema", None)
+        .await;
+    let entry = schema.as_ref().unwrap()["settings"]
         .as_array()
         .unwrap()
         .iter()
@@ -558,10 +583,10 @@ async fn test_save_schema_empty_current_becomes_null() {
         )
         .await;
     assert_eq!(status, StatusCode::OK, "{:?}", body);
-    let (_status, schema) = sc.call("GET", "/api/admin/apps/templates/schema", None).await;
-    let entry = schema
-        .as_ref()
-        .unwrap()["settings"]
+    let (_status, schema) = sc
+        .call("GET", "/api/admin/apps/templates/schema", None)
+        .await;
+    let entry = schema.as_ref().unwrap()["settings"]
         .as_array()
         .unwrap()
         .iter()
@@ -584,10 +609,10 @@ async fn test_save_schema_custom_setting_keeps_admin_default() {
         )
         .await;
     assert_eq!(status, StatusCode::OK, "{:?}", body);
-    let (_status, schema) = sc.call("GET", "/api/admin/apps/templates/schema", None).await;
-    let entry = schema
-        .as_ref()
-        .unwrap()["settings"]
+    let (_status, schema) = sc
+        .call("GET", "/api/admin/apps/templates/schema", None)
+        .await;
+    let entry = schema.as_ref().unwrap()["settings"]
         .as_array()
         .unwrap()
         .iter()
@@ -612,10 +637,10 @@ async fn test_save_schema_select_options_filtered() {
         )
         .await;
     assert_eq!(status, StatusCode::OK, "{:?}", body);
-    let (_status, schema) = sc.call("GET", "/api/admin/apps/templates/schema", None).await;
-    let entry = schema
-        .as_ref()
-        .unwrap()["settings"]
+    let (_status, schema) = sc
+        .call("GET", "/api/admin/apps/templates/schema", None)
+        .await;
+    let entry = schema.as_ref().unwrap()["settings"]
         .as_array()
         .unwrap()
         .iter()
@@ -636,7 +661,10 @@ async fn test_save_schema_db_write_failure_returns_500() {
     sc.http.login("admin", "admin1234").await;
     sc.handshake().await;
     // Simulate a configuration-database outage for the write path.
-    sc.state.db.fail_writes.store(true, std::sync::atomic::Ordering::Relaxed);
+    sc.state
+        .db
+        .fail_writes
+        .store(true, std::sync::atomic::Ordering::Relaxed);
     let (status, body) = sc
         .call(
             "POST",

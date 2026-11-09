@@ -580,7 +580,7 @@ async fn expire_join(state: &AppState, sid: &str, token: &str) {
     }
     // Outside the write guard: `save_sessions` re-locks the map read-only
     // (tokio locks are not reentrant).
-    vreckan_catalog::catalog::save_sessions(state).await;
+    vreckan_catalog::catalog::save_sessions(state).await.unwrap();
     let mut map = state.session_share_tokens.write().await;
     if let Some(record) = map.get_mut(token) {
         record.expiry = Some(now);
@@ -741,7 +741,7 @@ async fn test_rejoin_backfills_ttl_for_pre_085_grants() {
     }
     // Outside the write guard: `save_sessions` re-locks the map read-only
     // (tokio locks are not reentrant).
-    vreckan_catalog::catalog::save_sessions(&owner.state).await;
+    vreckan_catalog::catalog::save_sessions(&owner.state).await.unwrap();
     // Scoped: the re-join handler below takes the map's write lock, and a
     // guard held here would deadlock it (tokio locks are not reentrant).
     {

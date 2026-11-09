@@ -9,6 +9,225 @@ is committed normally in `vreckan`. The changelog is the authoritative
 record of what shipped in each release — see
 [`docs/release.md`](./docs/release.md) for the conventions.
 
+## 2026-11-09 — v0.11.8: base-image bump + transactional store hardening + cutover-script fixes
+
+- **The build base advanced to the 2026-11-08 10:31 PM MST re-bake**
+  (`vreckan-base-build` `sha256:512581dbc91a…` → `sha256:b6dfcae6d994…`;
+  `.base-image-digest` and the `Dockerfile` build-stage `FROM` re-pointed
+  together, ANT-277). The Rust toolchain is unchanged — 1.99.1, parent
+  `rust:1.99.1-slim` still at `sha256:7eab7ce1…`. What the re-bake brings:
+  the pre-warmed crates.io dependency cache now matches the current
+  `main` `Cargo.lock` — the re-bake was triggered by `axum-server`
+  0.8.0 → 0.9.0 (renovate, PR #165, which adds the transitive `socket2`) —
+  so nightly image builds on `main` only fetch lockfile deltas — and the
+  `apt-get upgrade` security layer was refreshed to the trixie-security
+  state at bake time.
+
+- **Store saves are now transactional and loads are fatal (ANT-875).**
+  A save that fails mid-way no longer leaves partial state behind, a load
+  that finds a broken store fails loudly at startup instead of serving it,
+  and the restore path gains a coverage check plus a post-restore
+  reconcile.
+
+- **`docker compose up` works on fresh deploys again (ANT-877).**
+  The deleted `data-perms` compose service is restored, so fresh-deploy
+  operators no longer hit a compose error at startup.
+
+- **SQLite→Postgres cutover scripts fixed (ANT-876, audit finding 5).**
+  `migrate-sqlite-to-postgres.py` and `verify-cutover.py` now handle JSON
+  passthrough, `session_shares`, a verifier content check, and DSN
+  masking.
+
+- **Session GC gone-gate fixed (ANT-965).**
+  A stale tracking ref short-circuited the gone confirm in
+  `gc-workspace-sessions.sh`; the test fixture's shellcheck 0.11.0
+  SC2329 false positive is silenced (ANT-969).
+
+- **ACME renewal hot-reload now sources from the in-memory bundle
+  (ANT-939, PR #177).** Fixes a cert-reload race.
+
+- **`axum-server` 0.8 → 0.9 (renovate, PR #165).** Minor advance of the
+  server dependency with no API change — the move that triggered the
+  re-bake above.
+
+## 2026-11-08 — v0.11.7: base-image bump + loud template-schema failures + rsa rc.22
+
+- **The build base advanced to the 2026-11-07 11:39 PM MST re-bake**
+  (`vreckan-base-build` `sha256:a38d1cd2258e…` → `sha256:512581dbc91a…`;
+  `.base-image-digest` and the `Dockerfile` build-stage `FROM` re-pointed
+  together, ANT-277). The Rust toolchain is unchanged — 1.99.1, parent
+  `rust:1.99.1-slim` still at `sha256:7eab7ce1…`. What the re-bake brings:
+  the pre-warmed crates.io dependency cache now matches the current
+  `main` `Cargo.lock` (the cache still held the 0.11.4-era lock from
+  `3fff4f2`) — rsa rc.22, the new `vreckan-test-support` workspace
+  member, and the pruned test-harness dependencies are pre-fetched, so
+  nightly image builds on `main` only fetch lockfile deltas — and the
+  `apt-get upgrade` security layer was refreshed to the trixie-security
+  state at bake time.
+
+- **Template-schema load failures are now loud (ANT-914).**
+  `load_template_schema` returns `Result<(), String>` instead of
+  early-returning behind `warn!` calls that can be swallowed: a transient
+  SQLite lock that left the schema at its empty initial value now fails
+  startup (like the other required core-store loaders) instead of serving
+  an empty schema to admin; a missing or unparseable YAML baseline is an
+  error, not a silent empty vec; a partial seed is reported as a failure,
+  not a servable schema; and a post-save reload failure returns 500 (the
+  save itself is persisted).
+
+- **`rsa` advanced to 0.10.0-rc.22 (renovate #146; ANT-917 lock repair).**
+  Patch-level RC advance of the crypto dependency; no API changes.
+
+- **Collab pushes are now recorded in commit order (ANT-927).**
+  The collab paths that commit and then push (slot/MK assignment, viewer
+  invite-join, viewer disconnect) acquire a per-session token-table push
+  lock before the sessions write lock, so the last-write-wins container
+  endpoint records pushes in commit order — the CI flake was the shadow
+  of a real, if transient, out-of-order push. The ACME renewal test is
+  gated on persisted visibility with bounded retries.
+
+## 2026-11-07 — v0.11.6: base-image bump + runtime zlib1g refresh — clears the PR scan gate (ANT-932)
+
+- **The build base advanced to the 2026-11-07 8:16 AM MST re-bake**
+  (`vreckan-base-build` `sha256:1c676e219b49…` → `sha256:a38d1cd2258e…`;
+  `.base-image-digest` and the `Dockerfile` build-stage `FROM` re-pointed
+  together, ANT-277). This is the first bake built with the `apt-get upgrade`
+  layer added to `vreckan-base-build` (vreckan-workflow PR #47, ANT-932),
+  which refreshes the pre-existing `rust:1.99.1-slim` parent packages against
+  the Debian trixie security repo on every bake — most importantly `zlib1g`
+  `1:1.3.dfsg+really1.3.1-1+b1` → `1:1.3.dfsg+really1.3.1-1+deb13u1`,
+  fixing CVE-2026-76844 (path traversal) and CVE-2026-85091 (heap overflow in
+  `gz_vacate`), both HIGH. Docker had not yet re-cut the
+  `rust:1.99.1-slim` tag with the trixie zlib fix as of 2026-11-07 (the tag
+  still sat at `sha256:7eab7ce1…`), so the upgrade layer was the only path to
+  the fix without waiting on upstream. Verified in the new image: `zlib1g` at
+  `deb13u1`, the pinned Rust toolchain unchanged at 1.99.1, and the bake's
+  rustup-component and mold end-to-end smoke checks green.
+
+- **The runtime stage now carries the patched `zlib1g` explicitly.** The
+  Trivy step of the `VRECKAN: Scan (Rust)` check scans the *final* image —
+  the digest-pinned `debian:trixie-slim` runtime stage — not the
+  `vreckan-base-build` build stage, so the base advance alone could not clear
+  the gate (run 885 on this branch stayed Scan-red for exactly that reason,
+  while PR #167's identical runtime fix went green in run 882). The runtime
+  `apt-get install` now lists `zlib1g` explicitly, so every rebuild resolves
+  `1:1.3.dfsg+really1.3.1-1+deb13u1` from the trixie-security repo at build
+  time. This is the same hunk Bobby landed on PR #167 (commit `b50f693`,
+  verified locally with trivy v0.76: 0 HIGH/CRITICAL findings), folded into
+  this release so the approved PR passes its own scan gate.
+
+- **Operator-visible effect:** since ~5:05 AM MST on 2026-11-07, the Trivy
+  step of the `VRECKAN: Scan (Rust)` check was red on every vreckan PR (and on
+  the main-branch CI dispatches) because of those two HIGH `zlib1g`
+  advisories, and the `main-protection` ruleset made every open PR
+  unmergeable. Both stages now carry the fix — the build base via the
+  re-bake, the runtime via the explicit install — so any PR branch synced
+  onto this commit rebuilds green and the check goes back to passing.
+
+- No other source changes since v0.11.5 — a base-bump-plus-one-Dockerfile-line
+  release in the established pattern (v0.10.1, v0.10.2, v0.10.5, v0.10.7,
+  v0.11.1, v0.11.3, v0.11.4). PR #167 landed first as v0.11.5 (merged
+  11:52 AM MST, tag + GitHub Release cut by bump-and-tag), which is where the
+  runtime `zlib1g` hunk already lives in main; under the
+  whichever-merges-first rule this branch therefore re-cuts from 0.11.5 to
+  0.11.6 so the base advance ships under its own tag.
+
+## 2026-11-07 — v0.11.5: dependency consolidation — lock 592 → 581, websocket stack compiles once, shared test-support crate
+
+- **The lockfile drops 12 packages and gains 1 (592 → 581)** (ANT-849).
+  The dead direct deps `axum-reverse-proxy` and `axum-extra` (zero source
+  references) are removed along with the `cookie` 0.18 and
+  `tungstenite`/`tokio-tungstenite` 0.28 copies they pulled (ANT-852), the
+  0.30 tungstenite pair is gone with the websocket stack collapsed 3→1 onto
+  axum's 0.29 (ANT-854), and the duplicate `jsonwebtoken` 10.4.0 copy plus
+  the `jwks` crate are removed (ANT-855). The single addition is the new
+  `vreckan-test-support` dev crate (ANT-853). Operator-visible effect: the
+  websocket stack compiles once instead of three times and one copy of
+  jsonwebtoken is gone, so expect the compile-time and binary-size savings
+  from those.
+
+- **JWT verification no longer depends on the `jwks` crate** (ANT-855).
+  `vreckan-auth` hand-rolls the JWKS fetch on reqwest against jsonwebtoken
+  11: RS256 pinned (not header-trusted), per-`kid` fail-closed, same
+  aud/exp/iss semantics as before. The crypto-equivalence review (ANT-863)
+  passed clean. Note for operators tracking advisories: the v10-era crypto
+  family (including `crypto-bigint` 0.5.5) remains in the tree via
+  jsonwebtoken 11's `rust_crypto` feature until upstream adopts p256/p384
+  0.14, so the RUSTSEC-2026-0387 allowances stand (ANT-546).
+
+- **The test harness de-duplicates**: the five drifted
+  `tests/common/mod.rs` copies (~2,900 lines across admin, auth, catalog,
+  files, sessions) now share one `vreckan-test-support` dev crate
+  (~2,500 duplicated lines removed) (ANT-853). Test behavior is unchanged;
+  the full workspace suite is green, and the websocket 0.29 regression
+  (ANT-862) passed.
+
+## 2026-11-07 — v0.11.4: base-image bump + bounded memory on the anonymous/proxy paths (audit findings 15 & 18)
+
+- **The build base advanced to the 2026-11-06 10:47 PM MST re-bake** (`vreckan-base-build`
+  `sha256:32264d2a0ec2…` → `sha256:1c676e219b49…`; `.base-image-digest` and the
+  `Dockerfile` build-stage `FROM` re-pointed together, ANT-277). The re-bake
+  moved the upstream `rust` base digest (`sha256:4195a351…` →
+  `sha256:7eab7ce1…`) and refreshed the warm crates.io/git dependency cache
+  against the current nine-crate lockfile; the pinned Rust toolchain stays at
+  1.99.1. Built on gitea-worker02 by the daily re-bake cron, which has been
+  healthy since the ANT-841 workflow fix.
+
+- **Memory is now bounded on the anonymous and proxy request paths**
+  (ANT-886, audit finding 15): public shares are capped at 1 GiB, share
+  downloads stream instead of fully buffering, the app-launch copy runs
+  disk-to-disk rather than through process memory, and the Selkies proxy
+  streams request bodies. An operator moving large files through the app
+  catalog or session proxy no longer has to keep them resident in RAM.
+
+- **`recreate_session` no longer holds the catalog write lock across its
+  container work** (audit finding 18): the lock is dropped while the
+  recreate path waits on Docker, so one slow container recreate can no
+  longer serialize other catalog operations.
+
+- **Loose CORS stays the default, now recorded as accepted risk**
+  (ANT-880, audit finding 9): the empty-allowlist behavior is documented as
+  a known, accepted trade-off; the allowlist remains optional for operators
+  who want strict mode.
+
+- **Docs/site freshness pass** (ANT-870, plus the v0.11.3 sync from
+  ANT-886): table counts, app-pages Join/badge and `#groups` anchor,
+  api.html sync (CORS payload, logo section, crate layout, 19 permissions),
+  site.css contrast, compose-knob env rows, setup current-release →
+  v0.11.3, and the pin examples + public-share 1 GiB cap docs.
+
+## 2026-11-06 — v0.11.3: base-image bump + docs/site sync to the v0.11.2 release
+
+- **The build base advanced to the 2026-11-05 re-bake** (`vreckan-base-build`
+  `sha256:f33243e8e60c…` → `sha256:32264d2a0ec2…`; `.base-image-digest` and the
+  `Dockerfile` build-stage `FROM` re-pointed together, ANT-277). The re-bake
+  moved the upstream `rust` base digest (`sha256:9daf2b24…` →
+  `sha256:4195a351…`) and refreshed the warm crates.io/git dependency cache
+  against the v0.11.2 nine-crate Phase-3 tree; the pinned Rust toolchain stays
+  at 1.99.1. It was built from the ANT-841 workflow fix (change-check syntax +
+  the workspace-following sparse checkout), so the daily re-bake cron is
+  healthy again after failing on that syntax error since 2026-11-03.
+
+- **The runtime stage's `debian:trixie-slim` is now digest-pinned** (it had
+  been a bare tag since the multi-stage Dockerfile landed in ANT-3). The pin
+  takes the 2026-11-04 manifest (`sha256:a72b4433de1c…`, `apt` 3.0.4), which
+  clears **CVE-2026-109518** (HIGH, on-path attack via `apt`/`libapt-pkg`,
+  fixed in 3.0.4): the 2026-11-05 nightly had still resolved the 2026-10-27
+  manifest (`apt` 3.0.3) before Debian flipped the tag, and the finding held
+  that nightly's push. The pin makes the runtime base reproducible going
+  forward, matching the digest convention the site image base has followed
+  since ANT-317/ANT-358.
+
+- **No code changes since v0.11.2** — this release carries the docs/site
+  sync batch only:
+  - The site ops page gained the previously missing
+    "Pull concurrency & rate-limit retries" section (ops §3.4, the ANT-668
+    drift; ANT-834).
+  - Docs and site were synced to v0.11.2: the nine-crate workspace layout,
+    the aws-lc-rs crypto unification, and stale ops fixes (ANT-832).
+  - `port-status.md` gained the v0.11.2 (Phase 3) status entry with the
+    post-split crate paths (ANT-831).
+
 ## 2026-11-04 — v0.11.2: Phase 3 — apps-cluster dissolution, crypto unification, per-crate test suite (ANT-662 P3)
 
 The single consolidated Phase 3 PR, per the board's single-PR direction

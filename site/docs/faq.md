@@ -41,7 +41,7 @@ description: Answers to the most common questions about running and using Vrecka
 
   <div class="faq-item">
     <h2>SQLite, PostgreSQL, or MySQL?</h2>
-    <p>All three are supported: <code>sqlite</code> is the built-in default (ideal for development and single-user setups), <code>postgres</code> is what the bundled <code>docker-compose.yml</code> uses out of the box (it ships a <code>postgres:16</code> service) — the right choice for production deployments with multiple users — and <code>mysql</code> (MariaDB works too) points at a server you run yourself. Switch backends with <code>VRECKAN_DB_BACKEND</code> (or a full <code>VRECKAN_DATABASE_URL</code> override); the same 13-table schema is created and migrated idempotently on every start, so backends are interchangeable for a fresh database.</p>
+    <p>All three are supported: <code>sqlite</code> is the built-in default (ideal for development and single-user setups), <code>postgres</code> is what the bundled <code>docker-compose.yml</code> uses out of the box (it ships a <code>postgres:16</code> service) — the right choice for production deployments with multiple users — and <code>mysql</code> (MariaDB works too) points at a server you run yourself. Switch backends with <code>VRECKAN_DB_BACKEND</code> (or a full <code>VRECKAN_DATABASE_URL</code> override); the same 14-table schema is created and migrated idempotently on every start, so backends are interchangeable for a fresh database.</p>
   </div>
 
   <div class="faq-item">

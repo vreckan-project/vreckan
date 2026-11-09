@@ -19,8 +19,14 @@ Run it in two places (see ``docs/cutover.md``):
 
 A table absent from the SQLite source is expected to be empty in Postgres
 (the migration creates missing tables empty) and reads as ``OK``. A table
-absent from Postgres fails the check — the migration creates all 13, so
+absent from Postgres fails the check — the migration creates all 14, so
 absence usually means the DSN points at the wrong database.
+
+Beyond row counts, the verifier samples every JSON column (up to ten rows
+per table; small tables are checked in full) and fails if a non-null cell
+does not parse as a JSON object or array. Row counts alone cannot catch
+content corruption such as double-serialized JSON (a quoted JSON string in
+the column still counts as one row).
 
 The SQLite side uses the stdlib; the Postgres side needs ``psycopg2``
 (already required for a real migration run). Self-signed TLS is accepted
@@ -39,32 +45,36 @@ Usage
         --postgres 'postgres://vreckan:vreckan@localhost:5432/vreckan' \\
         --health-url https://localhost/api/health
 
-Exit codes: 0 = all tables match (and health OK when checked);
-1 = a count mismatch or health failure; 2 = usage error.
+Exit codes: 0 = all tables match and JSON content is sound (and health OK
+when checked); 1 = a count mismatch, a JSON content failure, or a health
+failure; 2 = usage error.
 """
 
 from __future__ import annotations
 
 import argparse
 import os
+import re
 import sqlite3
 import ssl
 import sys
 import urllib.error
 import urllib.request
-from typing import List, Optional
+from typing import Dict, List, Optional
 
 # Imported lazily inside count_postgres_tables(): the count-only paths work
 # without it, mirroring the migration script's lazy import.
 try:
     import psycopg2  # type: ignore  # noqa: F401
+    from psycopg2 import sql  # type: ignore  # noqa: F401
     _PSYCOPG2 = True
 except ImportError:
     psycopg2 = None  # type: ignore
+    sql = None  # type: ignore
     _PSYCOPG2 = False
 
 # Mirrors the table list in `migrate-sqlite-to-postgres.py` (and the
-# `TABLE_ORDER` map in `src/db.rs`).
+# `TABLE_ORDER` map in `crates/vreckan-core/src/db.rs`).
 TABLE_ORDER: List[str] = [
     "users",
     "groups",
@@ -72,14 +82,49 @@ TABLE_ORDER: List[str] = [
     "volume_mounts",
     "app_stores",
     "installed_apps",
-    "sessions",
-    "auth_tokens",
-    "public_shares",
     "app_templates",
     "template_schema_settings",
     "pinned_behaviors",
     "app_settings",
+    "public_shares",
+    "session_shares",
+    "sessions",
+    "auth_tokens",
 ]
+
+# JSON-typed columns per table (mirrors `json_columns` in
+# `crates/vreckan-core/src/db.rs`). The content spot-check validates these.
+JSON_COLUMNS: Dict[str, List[str]] = {
+    "users": ["settings", "sso_groups", "roles", "permissions", "groups"],
+    "groups": ["settings", "roles", "permissions"],
+    "roles": ["permissions"],
+    "installed_apps": ["data"],
+    "sessions": ["data"],
+    "public_shares": ["data"],
+    "session_shares": ["data"],
+    "app_templates": ["settings"],
+    "template_schema_settings": ["options"],
+    "pinned_behaviors": ["data"],
+}
+
+# Bound for the content spot-check: tables with at most this many rows are
+# checked in full, larger tables sample the first this-many rows.
+SPOT_CHECK_SAMPLE = 10
+
+
+_DSN_USERINFO_RE = re.compile(r"//[^@/]+@")
+
+
+def mask_dsn(dsn: str) -> str:
+    """Mask the ``user:pass`` userinfo in a DSN's netloc for logging.
+
+    Mirrors ``mask_dsn`` in ``migrate-sqlite-to-postgres.py``: replaces only
+    the userinfo component (``//user:pass@``) so the host, port, and database
+    name stay readable. The earlier ``"://***:***@"`` replace *inserted* the
+    mask before the real ``user:pass@`` and left the password in stdout and
+    cron logs on every run (ANT-876).
+    """
+    return _DSN_USERINFO_RE.sub("//***:***@", dsn, count=1) if "@" in dsn else dsn
 
 
 def count_sqlite_tables(path: str) -> List[Optional[int]]:
@@ -126,6 +171,71 @@ def count_postgres_tables(dsn: str) -> List[Optional[int]]:
         pg.close()
 
 
+def spot_check_json(dsn: str, postgres_counts: List[Optional[int]]) -> bool:
+    """Sample the JSON columns of every present Postgres table and assert
+    each non-null value is a JSON object or array.
+
+    Row counts cannot catch content corruption: a cell stored as a quoted
+    JSON string (double serialization) or as another scalar still counts as
+    one row. This schema's JSON columns always hold an object or array, so
+    any other shape is a mismatch. Tables with at most ``SPOT_CHECK_SAMPLE``
+    rows are checked in full; larger tables sample the first
+    ``SPOT_CHECK_SAMPLE`` rows. Returns True when every sampled value is
+    sound.
+
+    The check is server-side (``json_typeof``) rather than a client-side
+    ``json.loads``: psycopg2's json typecaster already unwraps one level, so
+    a double-serialized cell would read back as an ordinary object and hide
+    the corruption.
+    """
+    pg = psycopg2.connect(dsn)
+    try:
+        cur = pg.cursor()
+        sound = True
+        print(f"JSON content spot-check (up to {SPOT_CHECK_SAMPLE} rows per table):")
+        for table in TABLE_ORDER:
+            cols = JSON_COLUMNS.get(table)
+            if not cols or postgres_counts[TABLE_ORDER.index(table)] is None:
+                continue
+            # raw ::text for the failure preview, json_typeof for the verdict
+            pairs = [
+                sql.SQL("{}::text, json_typeof({})").format(
+                    sql.Identifier(c), sql.Identifier(c)
+                )
+                for c in cols
+            ]
+            select = sql.SQL("SELECT {} FROM {} LIMIT {}").format(
+                sql.SQL(", ").join(pairs),
+                sql.Identifier(table),
+                sql.Literal(SPOT_CHECK_SAMPLE),
+            )
+            cur.execute(select)
+            bad = 0
+            checked = 0
+            first_bad = None
+            for row in cur.fetchall():
+                for i, col in enumerate(cols):
+                    raw, typeof = row[2 * i], row[2 * i + 1]
+                    if raw is None or typeof is None:
+                        continue
+                    checked += 1
+                    if typeof not in ("object", "array"):
+                        bad += 1
+                        if first_bad is None:
+                            preview = str(raw)[:60].replace("\n", " ")
+                            first_bad = (table, col, typeof, preview)
+            disp = "OK" if bad == 0 else f"{bad} BAD of {checked} sampled"
+            if bad:
+                sound = False
+            print(f"  {table:28s} {', '.join(cols):28s} {disp}")
+            if first_bad:
+                t, c, typeof, p = first_bad
+                print(f"    e.g. {t}.{c} = {p!r} (json_typeof {typeof}, not object/array)")
+        return sound
+    finally:
+        pg.close()
+
+
 def check_health(url: str) -> bool:
     """GET the health endpoint; return True on HTTP 200."""
     ctx = ssl.create_default_context()
@@ -168,8 +278,7 @@ def run(args: argparse.Namespace) -> int:
         return 2
 
     print(f"Source SQLite : {sqlite_path}")
-    shown = pg_dsn.replace("://", "://***:***@", 1) if "://" in pg_dsn else pg_dsn
-    print(f"Target Postgres: {shown}")
+    print(f"Target Postgres: {mask_dsn(pg_dsn)}")
 
     sqlite_counts = count_sqlite_tables(sqlite_path)
     postgres_counts = count_postgres_tables(pg_dsn)
@@ -188,7 +297,7 @@ def run(args: argparse.Namespace) -> int:
             total_postgres += p
         # A table absent from SQLite is fine — the migration creates it
         # empty. A table absent from Postgres is not: the migration creates
-        # all 13, so absence means the DSN points at the wrong database.
+        # all 14, so absence means the DSN points at the wrong database.
         s_eff = 0 if s is None else s
         p_eff = 0 if p is None else p
         if p is None or s_eff != p_eff:
@@ -199,10 +308,16 @@ def run(args: argparse.Namespace) -> int:
         print(f"  {table:28s} {s_disp:>8s} {p_disp:>10s}  {status}")
     print(f"  {'total':28s} {total_sqlite:>8d} {total_postgres:>10d}")
 
-    if not ok:
-        print("\nVerification FAILED: at least one table's row count differs.")
+    content_ok = spot_check_json(pg_dsn, postgres_counts)
+
+    if not ok or not content_ok:
+        if not ok:
+            print("\nVerification FAILED: at least one table's row count differs.")
+        if not content_ok:
+            print("Verification FAILED: at least one JSON column holds a value "
+                  "that is not a JSON object or array.")
         return 1
-    print("\nAll table row counts match.")
+    print("\nAll table row counts match and sampled JSON content is sound.")
 
     if args.health_url:
         if not check_health(args.health_url):

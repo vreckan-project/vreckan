@@ -38,6 +38,7 @@ use vreckan_core::db::Db;
 use vreckan_core::entities;
 use vreckan_core::permissions;
 use vreckan_core::settings::Settings;
+use vreckan_core::state::AppState;
 
 // ---------------------------------------------------------------------------
 // Error type
@@ -1182,15 +1183,24 @@ pub async fn delete_person(
             "User or admin '{username}' not found."
         )));
     }
-    let user_storage_path = std::path::Path::new(&settings.storage_path).join(username);
-    if user_storage_path.is_dir() {
-        std::fs::remove_dir_all(&user_storage_path).map_err(|e| {
-            UserError::Validation(format!("Failed to delete storage for '{username}': {e}"))
-        })?;
-        info!("Deleted storage for '{username}'.");
-    }
+    // Delete the DB row before the storage tree (audit finding 12). If the row
+    // delete fails (e.g. a locked database), the account survives with its
+    // files intact and the delete is cleanly retryable. Removing the storage
+    // first would leave a live account with no files the instant the row write
+    // fails — the data would already be destroyed on the retry.
     db_delete_user_row(&db.conn, username).await?;
     info!("Deleted user or admin '{username}'.");
+    // Now drop the storage tree. A failure here is logged but does not fail the
+    // delete: the account no longer exists, and a leftover directory is a
+    // harmless orphan (cleaned up separately), not destroyed user data.
+    let user_storage_path = std::path::Path::new(&settings.storage_path).join(username);
+    if user_storage_path.is_dir() {
+        if let Err(e) = std::fs::remove_dir_all(&user_storage_path) {
+            warn!("Failed to delete storage for '{username}': {e} (account already removed)");
+        } else {
+            info!("Deleted storage for '{username}'.");
+        }
+    }
     Ok(())
 }
 
@@ -1660,6 +1670,87 @@ pub fn verify_share_password(stored_hash: &str, password: &str) -> bool {
         let submitted = hex::encode(hasher.finalize());
         constant_time_eq(submitted.as_bytes(), stored_hash.as_bytes())
     }
+}
+
+/// Brute-force protection for the anonymous share-password routes
+/// (`POST /public/{share_id}`, `POST /share/{share_id}`) (ANT-884, audit
+/// finding 13). Returns `true` when the share must refuse this guess
+/// *without* running the (expensive) hash verification: it is either
+/// currently locked out, or this guess has just exhausted its failure budget
+/// and the lockout now starts. The budget is per share — the anonymous routes
+/// carry no caller identity, so a leaked link is the attacker's only stable
+/// handle. Mirrors the login limiter's window semantics: the window resets
+/// rather than compounds, and `max_attempts == 0` disables the limiter.
+pub async fn check_share_password_lockout(
+    state: &AppState,
+    share_id: &str,
+    now: f64,
+    window_secs: f64,
+    max_attempts: i64,
+) -> bool {
+    if max_attempts <= 0 {
+        return false;
+    }
+    let mut map = state.share_password_attempts.write().await;
+    // Opportunistic prune so the map stays bounded on long-lived servers.
+    if map.len() > 4096 {
+        map.retain(|_, w| w.locked_until > now || now - w.window_start < window_secs);
+    }
+    let w = map.entry(share_id.to_string()).or_default();
+    if w.window_start == 0.0 || now - w.window_start > window_secs {
+        w.fails = 0;
+        w.window_start = now;
+    }
+    if w.locked_until > now {
+        return true;
+    }
+    if w.fails >= max_attempts as u32 {
+        w.locked_until = now + window_secs;
+        warn!(
+            "share password rate limit: {} locked out for {}s after {} failed guesses",
+            share_id,
+            window_secs as i64,
+            w.fails
+        );
+        return true;
+    }
+    false
+}
+
+/// Record a failed share-password guess, starting (and logging) a lockout
+/// once the share's failure count reaches the configured maximum.
+pub async fn record_share_password_failure(
+    state: &AppState,
+    share_id: &str,
+    now: f64,
+    window_secs: f64,
+    max_attempts: i64,
+) {
+    if max_attempts <= 0 {
+        return;
+    }
+    let mut map = state.share_password_attempts.write().await;
+    let w = map.entry(share_id.to_string()).or_default();
+    if w.window_start == 0.0 {
+        w.window_start = now;
+    }
+    w.fails += 1;
+    if w.fails >= max_attempts as u32 {
+        w.locked_until = now + window_secs;
+        warn!(
+            "share password rate limit: {} locked out for {}s after {} failed guesses",
+            share_id,
+            window_secs as i64,
+            w.fails
+        );
+    }
+}
+
+/// Clear a share's failure accounting after a successful password
+/// verification — a correct guess resets the budget (mirrors the login
+/// limiter clearing the pair on success).
+pub async fn clear_share_password_attempts(state: &AppState, share_id: &str) {
+    state.share_password_attempts.write().await.remove(share_id);
 }
 
 /// Remove the web-login password for a user/admin, if present.

@@ -378,32 +378,40 @@ pub async fn acme_persist_cert(state: &AppState, rec: &AcmeCertRecord) {
     let _ = db.set_app_setting("VRECKAN_ACME_CERT_EXPIRES", &expires).await;
 }
 
-/// Swap the running TLS listener to serve the certificate currently persisted
-/// in the config DB, without re-binding the socket or restarting the process.
+/// Swap the running TLS listener to the given in-memory cert/key bundle,
+/// without re-binding the socket or restarting the process.
 ///
-/// The listener's [`RustlsConfig`](axum_server::tls_rustls::RustlsConfig) is an
-/// `Arc<ArcSwap<ServerConfig>>`; `reload_from_pem` stores a fresh `ServerConfig`
-/// and every *new* TLS handshake serves it. In-flight connections keep the
-/// previous certificate until they close. The config DB is the source of truth:
-/// the cert/key are read back from it here, not from memory or disk. Returns
-/// `true` when a cert was read from the DB and the swap performed, `false` when
-/// no listener is attached or no cert is persisted yet.
-pub async fn reload_served_cert(state: &AppState) -> bool {
+/// For the issuance/renewal paths this avoids re-reading the bundle from the
+/// config DB: the just-issued PEMs are already in hand, and a DB re-read can
+/// land on a pooled SQLite connection still carrying a pre-write WAL snapshot
+/// (the ANT-328/ANT-770 visibility-race family), which would silently
+/// re-apply the *old* cert to the listener (ANT-939).
+///
+/// The listener's [`RustlsConfig`](axum_server::tls_rustls::RustlsConfig) is
+/// an `Arc<ArcSwap<ServerConfig>>`; `reload_from_pem` stores a fresh
+/// `ServerConfig` and every *new* TLS handshake serves it. In-flight
+/// connections keep the previous certificate until they close. Returns
+/// `true` when the swap performed, `false` when no listener is attached or the
+/// bundle is empty.
+pub async fn reload_served_cert_from_pem(
+    state: &AppState,
+    cert_pem: &str,
+    key_pem: &str,
+) -> bool {
     let Some(config) = state.tls_config.clone() else {
+        tracing::debug!("TLS hot-reload skipped: no listener attached yet");
         return false;
     };
-    let Some(rec) = acme_cert_record(state).await else {
-        return false;
-    };
-    if rec.cert_pem.trim().is_empty() || rec.key_pem.trim().is_empty() {
+    if cert_pem.trim().is_empty() || key_pem.trim().is_empty() {
+        warn!("TLS hot-reload skipped: empty cert or key PEM");
         return false;
     }
     match config
-        .reload_from_pem(rec.cert_pem.as_bytes().to_vec(), rec.key_pem.as_bytes().to_vec())
+        .reload_from_pem(cert_pem.as_bytes().to_vec(), key_pem.as_bytes().to_vec())
         .await
     {
         Ok(()) => {
-            info!("hot-reloaded the served TLS certificate from the config DB");
+            info!("hot-reloaded the served TLS certificate from the in-memory bundle");
             true
         }
         Err(e) => {
@@ -411,6 +419,42 @@ pub async fn reload_served_cert(state: &AppState) -> bool {
             false
         }
     }
+}
+
+/// Swap the running TLS listener to serve the certificate currently persisted
+/// in the config DB, without re-binding the socket or restarting the process.
+///
+/// Intended for the admin/restart paths, where no in-memory bundle is in hand
+/// and the config DB is the source of truth (the cert/key are read back from
+/// it, not from memory or disk). The issuance/renewal paths use
+/// [`reload_served_cert_from_pem`] instead, so the just-persisted bundle is
+/// not re-read. Returns `true` when a cert was read from the DB and the swap
+/// performed, `false` when no listener is attached or no cert is persisted yet.
+pub async fn reload_served_cert(state: &AppState) -> bool {
+    // Defense in depth for the same pool-visibility race family as ANT-939:
+    // a read can land on a pooled SQLite connection still carrying a pre-write
+    // WAL snapshot (ANT-328/ANT-770), i.e. the record from *before* the write
+    // this reload follows — and each of the record's five fields can land on
+    // a different pooled connection, so a single read can be torn. Settle
+    // briefly and re-read; when the reads disagree, prefer the later one — a
+    // later snapshot approximates the most recent committed state. A torn
+    // re-read (a field invisible) falls back to the complete first read.
+    // Bounded to a single retry.
+    let first = acme_cert_record(state).await;
+    tokio::time::sleep(std::time::Duration::from_millis(250)).await;
+    let rec = match (first, acme_cert_record(state).await) {
+        (Some(a), Some(b)) if a.cert_pem == b.cert_pem && a.key_pem == b.key_pem => a,
+        (Some(_), Some(b)) => {
+            warn!(
+                "TLS hot-reload re-read a different ACME cert from the config DB (stale pooled read); using the later read"
+            );
+            b
+        }
+        (Some(a), None) => a,
+        (None, Some(b)) => b,
+        (None, None) => return false,
+    };
+    reload_served_cert_from_pem(state, &rec.cert_pem, &rec.key_pem).await
 }
 
 /// Build the `cert_status` JSON body from a resolved expiry. `cert`/`key`
@@ -621,9 +665,11 @@ async fn run_acme_issue(state: &AppState, cfg: &AcmeConfig, status: &Value) -> V
             )
             .await;
             // Hot-reload: serve the freshly issued cert from the running TLS
-            // listener in place (no restart). No-op before the listener is
+            // listener in place (no restart). Sourced from the in-memory
+            // bundle, not re-read from the DB, so a stale pooled read cannot
+            // re-apply the old cert (ANT-939). No-op before the listener is
             // attached (the startup path) when `tls_config` is still `None`.
-            let _ = reload_served_cert(state).await;
+            let _ = reload_served_cert_from_pem(state, cert_pem, key_pem).await;
         }
     }
     let status = cert_status(state, &domains).await;
@@ -726,8 +772,10 @@ async fn run_acme_renew(state: &AppState, cfg: &AcmeConfig, status: &Value) -> V
             )
             .await;
             // Hot-reload: serve the renewed cert from the running TLS listener
-            // in place (no restart), sourcing it from the config DB.
-            let _ = reload_served_cert(state).await;
+            // in place (no restart). Sourced from the in-memory bundle, not
+            // re-read from the DB, so a stale pooled read cannot re-apply the
+            // old cert (ANT-939).
+            let _ = reload_served_cert_from_pem(state, cert_pem, key_pem).await;
         }
     }
     let status = cert_status(state, &domains).await;
