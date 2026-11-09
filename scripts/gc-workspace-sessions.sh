@@ -8,6 +8,11 @@
 #   2. Orphaned worktrees: worktrees whose `.git` pointer is broken (its base
 #      repo is gone) or whose branch is merged into main / gone from the
 #      remotes — under agent workspaces and under the scratch root.
+#   3. Orphaned named docker volumes (ANT-1002): volumes whose name matches
+#      --volume-prefix (default ant-) on the docker daemon, with no container
+#      (running or exited) mounting them, whose owning Paperclip issue
+#      (ant-945-sccache -> ANT-945) has been terminal (done/cancelled) for
+#      --volume-terminal-hours (default 24).
 #
 # Safety model (hard constraints from ANT-716):
 #   - The current run's own workspace (--cwd) is never reclaimed.
@@ -17,6 +22,8 @@
 #   - Anything with uncommitted work is salvaged first: `git diff` + untracked
 #     files go to a patch under --salvage-dir; the patch path is listed in the
 #     manifest.
+#   - Volumes keep-and-record on any doubt: referenced by a container, owning
+#     issue not terminal or not queryable, API/docker unreachable.
 #
 # Output: a markdown manifest under --manifest-dir (durable) plus a short
 # machine-readable summary on stdout. Exit 0 on a completed sweep (even a
@@ -40,6 +47,9 @@ RUN_ID="${PAPERCLIP_RUN_ID:-}"
 CURRENT_CWD="$(pwd -P)"
 DRY_RUN=0
 SCAN_MAXDEPTH=4                          # how deep to scan for .git pointer files
+DOCKER_BIN="docker"                      # docker CLI used by the volume sweep
+VOLUME_PREFIX="ant-"                     # volume name prefix swept (ANT-1002)
+VOLUME_TERMINAL_HOURS=24                 # owning issue must be terminal this long
 
 usage() {
   cat <<'EOF'
@@ -56,6 +66,11 @@ Options:
   --company-id ID       company id (default $PAPERCLIP_COMPANY_ID)
   --run-id ID           current run id (default $PAPERCLIP_RUN_ID)
   --cwd PATH            current run's workspace cwd (default $PWD)
+  --docker-bin BIN      docker CLI for the volume sweep (default docker)
+  --volume-prefix P     volume name prefix to sweep (default ant-)
+  --volume-terminal-hours N
+                        owning issue must be terminal this long to reclaim
+                        (default 24)
   --dry-run             report what would be reclaimed without deleting
   -h, --help            this help
 EOF
@@ -72,8 +87,11 @@ while [[ $# -gt 0 ]]; do
     --api-key)        API_KEY="$2"; shift 2 ;;
     --company-id)     COMPANY_ID="$2"; shift 2 ;;
     --run-id)         RUN_ID="$2"; shift 2 ;;
-    --cwd)            CURRENT_CWD="$(realpath -m "$2")"; shift 2 ;;
-    --dry-run)        DRY_RUN=1; shift ;;
+     --cwd)            CURRENT_CWD="$(realpath -m "$2")"; shift 2 ;;
+     --docker-bin)     DOCKER_BIN="$2"; shift 2 ;;
+     --volume-prefix)  VOLUME_PREFIX="$2"; shift 2 ;;
+     --volume-terminal-hours) VOLUME_TERMINAL_HOURS="$2"; shift 2 ;;
+     --dry-run)        DRY_RUN=1; shift ;;
     -h|--help)        usage; exit 0 ;;
     *) echo "unknown argument: $1" >&2; usage; exit 1 ;;
   esac
@@ -97,6 +115,7 @@ SALVAGE_FILE="$TMP/salvage-list"   # newline list of salvage artifact paths
 touch "$SALVAGE_FILE"
 API_OK=0
 API_NOTE="not attempted"
+VOLUME_NOTE="not attempted"
 RECLAIM_COUNT=0
 KEEP_COUNT=0
 
@@ -650,6 +669,169 @@ sweep_worktrees() {
   scan_worktree_pointers "$SCRATCH_ROOT" "scratch"
 }
 
+# --------------------------------------- orphaned ant-* volume sweep (3/3) --
+# Query the owning issue for a volume name. Echoes "<verdict>|<detail>" where
+# verdict is one of: terminal|<ISO timestamp>, not-terminal|<status>,
+# no-timestamp, unknown (API unreachable or no issue with that identifier).
+query_issue_verdict() {
+  local key="$1" base url out id status ts
+  if [[ -z "$API_URL" || -z "$API_KEY" || -z "$COMPANY_ID" ]]; then
+    echo "unknown|env vars not set"
+    return 0
+  fi
+  base="${API_URL%/}"; base="${base%/api}"
+  url="${base}/api/companies/${COMPANY_ID}/issues?q=$(printf '%s' "$key" | jq -rn --arg s "$key" '$s|@uri')&limit=100"
+  if ! out="$(curl -sS --max-time 60 -H "Authorization: Bearer $API_KEY" "$url" 2>/dev/null)" ||
+     ! jq -e 'type == "array"' >/dev/null 2>&1 <<<"$out"; then
+    echo "unknown|API unreachable or non-array response"
+    return 0
+  fi
+  IFS='|' read -r id status ts <<<"$(jq -r --arg k "$key" \
+    '[.[] | select(.identifier == $k)][0] | [ (.id // ""), (.status // ""), ((.completedAt // .cancelledAt) // "") ] | join("|")' \
+    <<<"$out" 2>/dev/null)"
+  if [[ -z "$id" ]]; then
+    echo "unknown|no issue with identifier ${key}"
+    return 0
+  fi
+  case "$status" in
+    done|cancelled)
+      if [[ -n "$ts" ]]; then echo "terminal|$ts"; else echo "no-timestamp|"; fi
+      ;;
+    *) echo "not-terminal|$status" ;;
+  esac
+  return 0
+}
+
+# Human size string for a volume from the `docker system df -v` table; empty
+# when the volume is not in the table.
+volume_size_str() {
+  awk -v n="$1" '$1 == n { print $NF; exit }' "$TMP/vol-df" 2>/dev/null
+}
+
+# Convert a docker size string (100B / 10.82MB / 4.736GB / 1.2GiB) to whole
+# bytes; echoes nothing when unparseable.
+size_to_bytes() {
+  local num unit
+  [[ "$1" =~ ^([0-9]+(\.[0-9]+)?)\s*([A-Za-z]*)$ ]] || return 0
+  num="${BASH_REMATCH[1]}"; unit="${BASH_REMATCH[3]}"
+  awk -v n="$num" -v u="$unit" 'BEGIN {
+    m = 1
+    if      (u == "kB" || u == "KB" || u == "K")    m = 1000
+    else if (u == "MB" || u == "M")                m = 1e6
+    else if (u == "GB" || u == "G")                m = 1e9
+    else if (u == "TB" || u == "T")                m = 1e12
+    else if (u == "kiB" || u == "KiB" || u == "Ki") m = 1024
+    else if (u == "MiB" || u == "Mi")              m = 1024 * 1024
+    else if (u == "GiB" || u == "Gi")              m = 1024 * 1024 * 1024
+    else if (u == "TiB" || u == "Ti")              m = 1024 * 1024 * 1024 * 1024
+    else if (u != "B" && u != "")                 m = 0
+    if (m > 0) printf "%d", n * m
+  }'
+}
+
+# Whole days since the volume was created, from `docker volume inspect`;
+# empty when unreadable.
+volume_age_days() {
+  local created
+  created="$("$DOCKER_BIN" volume inspect -f '{{.CreatedAt}}' "$1" 2>/dev/null)" || created=""
+  [[ -n "$created" ]] || return 0
+  echo $(( (NOW - $(date -d "$created" +%s 2>/dev/null || echo "$NOW")) / 86400 ))
+}
+
+# Reclaim a named docker volume that no container (running or exited) mounts
+# and whose owning issue has been terminal for long enough. The volume name
+# carries the owner: ant-945-sccache -> ANT-945. Every doubt path keeps the
+# volume and records why. $1 = volume name.
+consider_volume() {
+  local name="$1" refs size_h size_b age key verdict term_ts hours
+  refs="$("$DOCKER_BIN" ps -aq --filter "volume=$name" 2>/dev/null || true)"
+  size_h="$(volume_size_str "$name")"
+  size_b="$(size_to_bytes "$size_h")"
+  age="$(volume_age_days "$name")"
+
+  if [[ -n "$refs" ]]; then
+    add_kept "volume:$name" "${size_b:-${size_h:-?}}" "${age}d" \
+      "referenced by container(s): $(echo "$refs" | tr '\n' ' ')"
+    return 0
+  fi
+  if [[ ! "$name" =~ ^ant-([0-9]+) ]]; then
+    add_kept "volume:$name" "${size_b:-${size_h:-?}}" "${age}d" \
+      "owning issue not derivable from name; kept"
+    return 0
+  fi
+  key="ANT-${BASH_REMATCH[1]}"
+
+  local verdict_file="$TMP/vol-issue-$key"
+  if [[ ! -f "$verdict_file" ]]; then
+    query_issue_verdict "$key" > "$verdict_file"
+  fi
+  IFS='|' read -r verdict term_ts < "$verdict_file"
+
+  case "$verdict" in
+    unknown)
+      add_kept "volume:$name" "${size_b:-${size_h:-?}}" "${age}d" \
+        "owning issue ${key} unresolvable (${term_ts}); kept when in doubt"
+      return 0
+      ;;
+    not-terminal)
+      add_kept "volume:$name" "${size_b:-${size_h:-?}}" "${age}d" \
+        "owning issue ${key} not terminal (status: ${term_ts}); kept"
+      return 0
+      ;;
+    no-timestamp)
+      add_kept "volume:$name" "${size_b:-${size_h:-?}}" "${age}d" \
+        "owning issue ${key} terminal but no terminal timestamp; kept when in doubt"
+      return 0
+      ;;
+  esac
+
+  hours=$(( (NOW - $(date -d "$term_ts" +%s 2>/dev/null || echo "$NOW")) / 3600 ))
+  if (( hours < VOLUME_TERMINAL_HOURS )); then
+    add_kept "volume:$name" "${size_b:-${size_h:-?}}" "${age}d" \
+      "owning issue ${key} terminal only ${hours}h (< ${VOLUME_TERMINAL_HOURS}h); kept"
+    return 0
+  fi
+
+  if (( DRY_RUN == 0 )); then
+    if "$DOCKER_BIN" volume rm "$name" 2>/dev/null; then
+      add_reclaimed "volume:$name" "${size_b:-${size_h:-?}}" "${age}d" \
+        "orphaned volume (owning issue ${key} terminal ${hours}h)" ""
+      if [[ -n "$size_b" ]]; then
+        BYTES_FREED=$((BYTES_FREED + size_b))
+      fi
+      log "reclaimed volume ${name} (${size_h:-?} bytes, ${key} terminal ${hours}h)"
+    else
+      add_kept "volume:$name" "${size_b:-${size_h:-?}}" "${age}d" "volume rm failed; kept"
+    fi
+  else
+    add_reclaimed "volume:$name" "${size_b:-${size_h:-?}}" "${age}d" \
+      "DRY-RUN: orphaned volume (owning issue ${key} terminal ${hours}h)" ""
+  fi
+  return 0
+}
+
+sweep_volumes() {
+  local name
+  if ! command -v "$DOCKER_BIN" >/dev/null 2>&1; then
+    VOLUME_NOTE="skipped (${DOCKER_BIN} not found)"
+    return 0
+  fi
+  if ! "$DOCKER_BIN" volume ls -q > "$TMP/vols" 2>"$TMP/vol-ls.err"; then
+    VOLUME_NOTE="skipped (volume ls failed: $(head -c 120 "$TMP/vol-ls.err" 2>/dev/null))"
+    return 0
+  fi
+  "$DOCKER_BIN" system df -v > "$TMP/vol-df" 2>/dev/null || true
+  local scanned=0
+  while IFS= read -r name; do
+    [[ -n "$name" ]] || continue
+    case "$name" in
+      "$VOLUME_PREFIX"*) scanned=$((scanned + 1)); consider_volume "$name" ;;
+    esac
+  done < "$TMP/vols"
+  VOLUME_NOTE="ok (${scanned} ${VOLUME_PREFIX}* volumes scanned)"
+  return 0
+}
+
 # ---------------------------------------------------------------- manifest --
 write_manifest() {
   mkdir -p "$MANIFEST_DIR"
@@ -666,6 +848,7 @@ write_manifest() {
     echo "- Scratch root: ${SCRATCH_ROOT}"
     echo "- TTL: ${TTL_DAYS} days; worktree grace: ${GRACE_HOURS}h"
     echo "- API signals: ${API_NOTE}"
+    echo "- Volumes (${DOCKER_BIN}, prefix ${VOLUME_PREFIX}, terminal ${VOLUME_TERMINAL_HOURS}h): ${VOLUME_NOTE}"
     echo
     echo "## Reclaimed (${RECLAIM_COUNT})"
     echo
@@ -706,6 +889,7 @@ write_manifest() {
 collect_api_signals
 sweep_sessions
 sweep_worktrees
+sweep_volumes
 write_manifest
 
 {
