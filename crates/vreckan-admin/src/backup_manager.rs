@@ -400,28 +400,90 @@ fn safe_extract(archive_path: &Path, root: &Path) -> Result<(), BackupError> {
 }
 
 /// Restore the database (if the archive carried a dump) and refresh the
-/// durable in-memory state. Active sessions / auth tokens are deliberately NOT
-/// reloaded so a restore does not disrupt currently-connected users. Mirrors
-/// `_reload_state`.
-async fn reload_state(state: &AppState) {
+/// durable in-memory state. The session map is NOT reloaded wholesale —
+/// connected users must keep their sessions — but it IS reconciled against
+/// the restored table with container-verified liveness, so the two stores
+/// agree before any later restart (audit finding 4). Mirrors `_reload_state`.
+///
+/// The loaders are fallible (audit finding 2): a failure surfaces as a
+/// `BackupError` to the admin restore endpoint (400 + detail) instead of
+/// warn-and-continue. A failed database restore rolls its whole transaction
+/// back, so the database is untouched and the reload is skipped entirely
+/// (the in-memory state still matches it). A loader that fails part-way
+/// leaves the already-reloaded maps fresh and the not-yet-reloaded ones
+/// stale — the error is still surfaced, and the next restore or startup
+/// retries the full reload.
+async fn reload_state(state: &AppState) -> Result<(), BackupError> {
     let root = data_root(&state.settings);
     let dump_path = root.join(DB_DUMP_ARCNAME);
     if dump_path.exists() {
-        if let Err(e) = state.db.restore(dump_path.to_str().unwrap_or("")).await {
-            warn!("Backup restore: could not restore database: {e}");
-        } else {
-            info!("Backup restore: restored configuration database.");
-        }
+        state.db
+            .restore(dump_path.to_str().unwrap_or(""))
+            .await
+            .map_err(|e| {
+                BackupError(format!(
+                    "could not restore the configuration database: {e}"
+                ))
+            })?;
+        info!("Backup restore: restored configuration database.");
         let _ = std::fs::remove_file(&dump_path);
     }
     // Volume mounts are read directly from the DB (no in-memory cache), so no
     // reload is needed for them.
-    let _ = user_manager::load_users_and_groups(&state.db, &state.settings).await;
-    catalog::load_installed_apps(state).await;
+    user_manager::load_users_and_groups(&state.db, &state.settings)
+        .await
+        .map_err(|e| {
+            BackupError(format!(
+                "could not reload users/groups after restore: {e}"
+            ))
+        })?;
+    catalog::load_installed_apps(state)
+        .await
+        .map_err(|e| {
+            BackupError(format!(
+                "could not reload installed apps after restore: {e}"
+            ))
+        })?;
+    // The original reload skipped the app stores as well — a full-replace
+    // store left stale here would be wiped by the next store edit (audit
+    // finding 2), so it gets the same fallible reload.
+    catalog::load_app_stores(state)
+        .await
+        .map_err(|e| {
+            BackupError(format!(
+                "could not reload app stores after restore: {e}"
+            ))
+        })?;
+    // `load_app_templates` is a merge loader (built-ins from disk, user rows
+    // from the DB) with per-key persistence — no full-replace wipe window —
+    // so it stays best-effort.
     catalog::load_app_templates(state).await;
-    files::load_public_shares(state).await;
-    session_shares::load_session_shares(state).await;
+    files::load_public_shares(state)
+        .await
+        .map_err(|e| {
+            BackupError(format!(
+                "could not reload public shares after restore: {e}"
+            ))
+        })?;
+    session_shares::load_session_shares(state)
+        .await
+        .map_err(|e| {
+            BackupError(format!(
+                "could not reload session shares after restore: {e}"
+            ))
+        })?;
+    // Reconcile the session map with the restored table (audit finding 4):
+    // verified-dead live sessions yield to the backup's rows, live or
+    // no-signal sessions are kept, restored-only sessions resurrect.
+    catalog::reconcile_sessions_after_restore(state)
+        .await
+        .map_err(|e| {
+            BackupError(format!(
+                "could not reconcile the session map after restore: {e}"
+            ))
+        })?;
     info!("Backup restore: reloaded in-memory configuration.");
+    Ok(())
 }
 
 /// Restore from a stored backup archive. Mirrors `restore_from_stored`.
@@ -429,7 +491,10 @@ pub async fn restore_from_stored(state: &AppState, name: &str) -> Result<Value, 
     let path = resolve_backup(&state.settings, name)?;
     let root = data_root(&state.settings);
     safe_extract(&path, &root)?;
-    reload_state(state).await;
+    // A failure here means the extracted files are in place but the
+    // database / in-memory reload did not complete — the endpoint reports
+    // 400 + detail so the admin knows the restore is partial (audit finding 2).
+    reload_state(state).await?;
     info!("Restored configuration from stored backup {name}");
     Ok(serde_json::json!({ "source": name, "restored": true }))
 }
@@ -449,7 +514,10 @@ pub async fn restore_from_bytes(state: &AppState, data: &[u8]) -> Result<Value, 
     })();
     let _ = std::fs::remove_file(&tmp);
     let value = result?;
-    reload_state(state).await;
+    // A failure here means the extracted files are in place but the
+    // database / in-memory reload did not complete — the endpoint reports
+    // 400 + detail so the admin knows the restore is partial (audit finding 2).
+    reload_state(state).await?;
     info!("Restored configuration from uploaded archive ({} bytes)", data.len());
     Ok(value)
 }

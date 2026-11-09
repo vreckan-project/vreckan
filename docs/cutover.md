@@ -28,7 +28,7 @@ image gets published.
 | 3 | Start the Postgres service and wait for healthy | ~30 s |
 | 4 | Migration dry-run | seconds |
 | 5 | Migration (real run) | seconds–minutes |
-| 6 | Verify row counts | seconds |
+| 6 | Verify row counts + JSON content | seconds |
 | 7 | Start the Rust service against Postgres | a few minutes (image pull) |
 | 8 | Post-cutover health check + smoke test | a few minutes |
 | 9 | Rollback (only if step 6–8 checks fail) | a few minutes |
@@ -174,7 +174,7 @@ per-table row counts. Properties that make this step low-risk:
 - **idempotent** — if it fails, fix the cause and re-run; the snapshot
   from step 1 is still your rollback.
 
-## Step 6 — Verify row counts
+## Step 6 — Verify row counts + JSON content
 
 ```bash
 VRECKAN_SQLITE_PATH=./vreckan-data/vreckan.db \
@@ -184,10 +184,13 @@ python3 scripts/verify-cutover.py
 
 This independently recounts every table in the original SQLite database and
 in Postgres and prints a side-by-side table, exiting non-zero on any
-mismatch. Expect every line to read `OK`, with totals matching the step 1
-baseline. If a table differs, the migration transaction likely rolled back
-or you pointed at the wrong database — fix and re-run step 5, then verify
-again.
+mismatch. It also spot-checks the JSON columns (up to ten sampled rows per
+table; small tables in full) and exits non-zero if a non-null cell is not a
+JSON object or array — row counts alone cannot catch a double-serialized or
+otherwise malformed JSON cell. Expect every line to read `OK`, with totals
+matching the step 1 baseline. If a table differs, the migration transaction
+likely rolled back or you pointed at the wrong database — fix and re-run
+step 5, then verify again.
 
 ## Step 7 — Start the Rust service against Postgres
 
@@ -223,9 +226,9 @@ python3 scripts/verify-cutover.py \
     --health-url https://<your-server>/api/health
 ```
 
-The script re-verifies the row counts and then GETs `/api/health`
-(self-signed TLS accepted), exiting non-zero unless the server answers
-HTTP 200.
+The script re-verifies the row counts, re-runs the JSON content spot-check,
+and then GETs `/api/health` (self-signed TLS accepted), exiting non-zero
+unless the server answers HTTP 200.
 
 Then smoke-test like a user:
 

@@ -16,8 +16,6 @@
 //! These tests are skipped (not failed) when no Postgres server is reachable
 //! and no Docker daemon is available, so the suite stays runnable anywhere.
 
-mod common;
-
 use std::collections::HashMap;
 use std::sync::{Mutex, OnceLock};
 use std::time::Duration;
@@ -1051,9 +1049,9 @@ async fn test_pg_sessions_roundtrip() {
         "s-pg".to_string(),
         serde_json::json!({ "instance_id": "ctr-pg", "username": "admin" }),
     );
-    vreckan_catalog::catalog::save_sessions(&state).await;
+    vreckan_catalog::catalog::save_sessions(&state).await.unwrap();
     state.sessions.write().await.clear();
-    vreckan_catalog::catalog::load_sessions(&state).await;
+    vreckan_catalog::catalog::load_sessions(&state).await.unwrap();
 
     let sessions = state.sessions.read().await.clone();
     assert_eq!(

@@ -43,13 +43,17 @@ uuid = { workspace = true }
 # re-homed per crate in ANT-810 so each test binary links only the crates
 # it exercises, and the dissolved `vreckan-apps` tests landed here in
 # ANT-821 (launch, docker-launch, user-sessions, auto-update, the ANT-443/
-# ANT-470 token-table tests, the Postgres DB tests). The dev-deps are the
-# external crates the tests + the shared harness use, trimmed from the old
+# ANT-470 token-table tests, the Postgres DB tests). The shared harness
+# lives in `vreckan-test-support` (ANT-853); the dev-deps below are the
+# external crates the test files themselves reference, trimmed from the old
 # root [dev-dependencies].
 [dev-dependencies]
+# The shared test harness (ANT-853): the per-crate `tests/common` shim
+# re-exports it. It depends on core/acme/auth, which this crate already
+# links, so no new link closure is introduced.
+vreckan-test-support = { path = "../vreckan-test-support" }
 aes-gcm = { workspace = true }
 http = { workspace = true }
-http-body-util = { workspace = true }
 # `atexit` hook for the throwaway postgres fixture teardown on normal exit
 # (the `OnceLock` static never drops its contained value) — ANT-901. Already
 # locked transitively (0.2.x), so no new crate is fetched.

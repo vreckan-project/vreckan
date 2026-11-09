@@ -1389,8 +1389,8 @@ async fn test_vreckan_apps_to_sealskin_migration() {
 
     // First start after the rename (the main.rs load order: installed apps
     // first, then the stores, which is when the migration runs).
-    vreckan_catalog::catalog::load_installed_apps(&state).await;
-    vreckan_catalog::catalog::load_app_stores(&state).await;
+    vreckan_catalog::catalog::load_installed_apps(&state).await.unwrap();
+    vreckan_catalog::catalog::load_app_stores(&state).await.unwrap();
     // The store row is renamed; the in-memory listing carries the rename.
     let rows = vreckan_core::entities::app_store::Entity::find()
         .all(conn)
@@ -1425,7 +1425,7 @@ async fn test_vreckan_apps_to_sealskin_migration() {
 
     // Simulated restart: the second load is a no-op (no double-rename, and
     // the state stays stable).
-    vreckan_catalog::catalog::load_app_stores(&state).await;
+    vreckan_catalog::catalog::load_app_stores(&state).await.unwrap();
     let rows = vreckan_core::entities::app_store::Entity::find()
         .all(conn)
         .await

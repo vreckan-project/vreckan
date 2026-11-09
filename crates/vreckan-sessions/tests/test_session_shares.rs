@@ -872,6 +872,67 @@ async fn test_password_page_flow() {
     assert_eq!(resp.status, StatusCode::BAD_REQUEST);
 }
 
+/// ANT-884 (audit finding 13): the anonymous /share entry gets the same
+/// per-share guess budget + lockout as /public — the 6th guess is refused
+/// before the Argon2 verification runs, and the lockout elapses.
+#[tokio::test]
+async fn test_share_password_lockout() {
+    let _root = TempDir::new();
+    let sc = admin_client(_root.path()).await;
+    let (upstream, _u) = spawn_http_upstream().await;
+    let (sid, _access) = seed_plain_session(&sc.state, &upstream).await;
+
+    let (status, body) = sc
+        .call(
+            "POST",
+            &format!("/api/sessions/{sid}/shares"),
+            Some(&json!({ "role": "view_only", "password": "letmein" })),
+        )
+        .await;
+    assert_eq!(status, StatusCode::OK, "create: {body:?}");
+    let share_id = body
+        .expect("body")
+        .get("share_id")
+        .and_then(|v| v.as_str())
+        .unwrap()
+        .to_string();
+
+    assert_eq!(sc.state.settings.share_password_max_attempts, 5);
+    for i in 0..5 {
+        let resp = sc.http.post_form(&format!("/share/{share_id}"), "nope").await;
+        assert_eq!(resp.status, StatusCode::UNAUTHORIZED, "guess {i}");
+    }
+    // The 6th guess is refused before verification runs — even though it is
+    // the correct password.
+    let resp = sc.http.post_form(&format!("/share/{share_id}"), "letmein").await;
+    assert_eq!(resp.status, StatusCode::TOO_MANY_REQUESTS, "locked out");
+    let html = String::from_utf8_lossy(&resp.body);
+    assert!(
+        html.contains("Too many failed password attempts"),
+        "lockout page: {html}"
+    );
+
+    // Age the lockout entry past the window (in production the wall clock
+    // elapses instead): the correct password works again.
+    let now = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .unwrap()
+        .as_secs_f64();
+    {
+        let mut map = sc.state.share_password_attempts.write().await;
+        let w = map.get_mut(&share_id).expect("lockout entry must exist");
+        w.window_start = now - 2.0 * sc.state.settings.share_password_lockout_seconds as f64;
+        w.locked_until = now - 1.0;
+    }
+    let resp = sc.http.post_form(&format!("/share/{share_id}"), "letmein").await;
+    assert_eq!(resp.status, StatusCode::SEE_OTHER, "lockout elapsed");
+    let loc = location(&resp);
+    assert!(
+        loc.starts_with(&format!("/api/apps/session/{sid}/?token=")),
+        "redirect: {loc}"
+    );
+}
+
 /// ANT-322 F5: the public-entry 303 carries the visitor's per-visit token,
 /// so it must not be storable by a caching proxy.
 #[tokio::test]
@@ -1492,7 +1553,7 @@ async fn test_session_share_load_save_roundtrip() {
 
     // Wipe the in-memory map, reload from the database: the share survives.
     sc.state.session_shares.write().await.clear();
-    vreckan_sessions::session_shares::load_session_shares(&sc.state).await;
+    vreckan_sessions::session_shares::load_session_shares(&sc.state).await.unwrap();
     let reloaded = sc
         .state
         .session_shares
@@ -1554,7 +1615,7 @@ async fn test_session_share_legacy_row_deserializes_as_generic() {
         .unwrap();
     }
     sc.state.session_shares.write().await.clear();
-    vreckan_sessions::session_shares::load_session_shares(&sc.state).await;
+    vreckan_sessions::session_shares::load_session_shares(&sc.state).await.unwrap();
     let shares = sc.state.session_shares.read().await;
     let legacy = shares.get(&legacy_id).expect("legacy row loads");
     assert_eq!(

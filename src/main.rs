@@ -94,25 +94,46 @@ async fn main() -> anyhow::Result<()> {
     // editable template schema, persisted sessions, the self-container
     // inspection (path-prefix map + network discovery), the installed apps and
     // app stores, the app templates, and GPU detection.
-    catalog::load_template_schema(&state).await;
-    catalog::load_sessions(&state).await;
+    //
+    // The template schema is a core store (the admin template editor serves
+    // it verbatim): a failed load/seed fails startup instead of leaving the
+    // editor silently empty (ANT-914).
+    catalog::load_template_schema(&state)
+        .await
+        .map_err(anyhow::Error::msg)?;
+    // The remaining durable-store loads are fatal (audit finding 2): a failed
+    // load must fail the boot instead of leaving an empty/stale map that the
+    // next full-replace save would rewrite over the whole table — the same
+    // fail-closed shape as `load_auth_tokens`, `load_users_and_groups`, and
+    // `load_template_schema` above.
+    catalog::load_sessions(&state)
+        .await
+        .map_err(anyhow::Error::msg)?;
     // Sweep ephemeral (cleanroom) sessions: a previous run that was hard-
     // killed (kill -9) left its containers running with the `no` restart
     // policy — the daemon resurrects them on restart, so this run reaps
     // them (ANT-378). Best effort; a down daemon is logged, never fatal.
     catalog::reap_ephemeral_sessions(&state).await;
     catalog::inspect_self_container(&state).await;
-    catalog::load_installed_apps(&state).await;
+    catalog::load_installed_apps(&state)
+        .await
+        .map_err(anyhow::Error::msg)?;
     // Warm the in-memory image-metadata cache so the installed-apps table
     // shows each image's real identity right after a restart instead of
     // "unknown" (ANT-266/ANT-269). Best-effort: a down Docker daemon is
     // logged and the apps stay "unknown"; never fails startup.
     catalog::warm_image_metadata(&state).await;
-    catalog::load_app_stores(&state).await;
+    catalog::load_app_stores(&state)
+        .await
+        .map_err(anyhow::Error::msg)?;
     catalog::load_app_templates(&state).await;
     catalog::detect_gpus(&state).await;
-    files::load_public_shares(&state).await;
-    session_shares::load_session_shares(&state).await;
+    files::load_public_shares(&state)
+        .await
+        .map_err(anyhow::Error::msg)?;
+    session_shares::load_session_shares(&state)
+        .await
+        .map_err(anyhow::Error::msg)?;
 
     // Build the TLS listener config before the renewal job starts, so both the
     // background renewal job and the admin Issue/Renew path can reload it in

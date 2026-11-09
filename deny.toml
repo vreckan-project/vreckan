@@ -45,6 +45,12 @@ ignore = [
   # unsafe-libyaml 0.2.11 — archived/unmaintained. Transitive dep of
   # serde_yaml (itself marked +deprecated); tracked for removal, low risk.
   { id = "RUSTSEC-2024-0449", reason = "unsafe-libyaml archived; transitive dep of serde_yaml (+deprecated)" },
+  # pin-utils 0.1.1 — archived/unmaintained (rust-lang team archived the repo
+  # 2026-10-01; RUSTSEC-2026-0441 informational, landed in the advisory DB
+  # 2026-11-05). Macros-only pinning helper; the only instance in this tree is
+  # transitive via aws-smithy-http (aws-sdk stack) <- acmex, which has no
+  # in-tree replacement. Accepted until the aws-sdk subtree changes.
+  { id = "RUSTSEC-2026-0441", reason = "pin-utils archived 2026-10-01; macros-only, transitive via aws-sdk (aws-smithy-http); no in-tree replacement" },
   # The crates whose advisories used to require ignores in the acmex subtree
   # (h2 0.3, hickory 0.25, rustls 0.21, rustls-webpki 0.101 — RUSTSEC-2026-0258/
   # 0118/0119/0346/0349/0098/0099/0104) are gone: pinning acmex to the upstream
