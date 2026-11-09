@@ -1,4 +1,4 @@
-FROM repo.vreckanproject.com/vreckan/vreckan-base-build@sha256:32264d2a0ec2fff95b463e0767d9c6166fca31f1a8199966f3b6a1ad0d9ae3be AS build
+FROM repo.vreckanproject.com/vreckan/vreckan-base-build@sha256:512581dbc91afe68b96bb90fb1cf8134d40c88cd704a47286b3849832a23ff04 AS build
 WORKDIR /app
 ENV RUSTC_WRAPPER=sccache
 ENV SCCACHE_DIR=/sccache
@@ -11,6 +11,7 @@ COPY crates/vreckan-sessions/Cargo.toml crates/vreckan-sessions/Cargo.toml
 COPY crates/vreckan-catalog/Cargo.toml crates/vreckan-catalog/Cargo.toml
 COPY crates/vreckan-files/Cargo.toml crates/vreckan-files/Cargo.toml
 COPY crates/vreckan-admin/Cargo.toml crates/vreckan-admin/Cargo.toml
+COPY crates/vreckan-test-support/Cargo.toml crates/vreckan-test-support/Cargo.toml
 RUN cargo fetch
 COPY src ./src
 COPY crates ./crates
@@ -39,10 +40,17 @@ RUN --mount=type=cache,id=sccache,target=/sccache \
 # 2026-11-04 manifest (apt 3.0.4) makes the rebuild reproducible and
 # clears the trip.
 FROM debian:trixie-slim@sha256:a72b4433de1cf7d6bae0c4cee74d0547f58601a643b3375f070c51600d63b6b2
+# zlib1g is installed explicitly (not left as a transitive dep) so the
+# runtime tracks the Debian security fix for CVE-2026-76844 + CVE-2026-85091
+# (zlib heap-buffer overflow, published 2026-11-07), fixed in
+# 1:1.3.dfsg+really1.3.1-1+deb13u1. The digest-pinned trixie-slim base above
+# predates that update, so apt resolves the patch from trixie-security at
+# build time (ANT-849 unblock; base-image security track).
 RUN apt-get update -y && \
     DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends \
       ca-certificates \
-      libssl3t64 && \
+      libssl3t64 \
+      zlib1g && \
     apt-get clean && \
     rm -rf /var/lib/apt/lists/*
 

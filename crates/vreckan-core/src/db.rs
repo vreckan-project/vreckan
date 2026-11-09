@@ -64,6 +64,11 @@ pub struct Db {
     /// (lets tests exercise the DB-error paths without a second backend).
     /// Production code leaves it `false`.
     pub fail_writes: std::sync::Arc<std::sync::atomic::AtomicBool>,
+    /// Symmetric read hook for `fail_writes`: when `true`, the durable-store
+    /// loaders report a simulated outage before issuing their SELECT, so
+    /// tests can exercise the fatal-load paths without a second backend.
+    /// Production code leaves it `false`.
+    pub fail_reads: std::sync::Arc<std::sync::atomic::AtomicBool>,
 }
 
 /// Detect the backend from a sqlx URL scheme.
@@ -165,6 +170,7 @@ pub async fn connect(url: &str) -> Result<Db, sea_orm::DbErr> {
         conn,
         dialect,
         fail_writes: std::sync::Arc::new(std::sync::atomic::AtomicBool::new(false)),
+        fail_reads: std::sync::Arc::new(std::sync::atomic::AtomicBool::new(false)),
     })
 }
 
@@ -213,9 +219,7 @@ impl Db {
     /// Insert or update a single `app_settings` row.
     pub async fn set_app_setting(&self, key: &str, value: &str) -> Result<(), sea_orm::DbErr> {
         if self.fail_writes.load(std::sync::atomic::Ordering::Relaxed) {
-            return Err(sea_orm::DbErr::Custom(
-                "simulated write failure (test hook)".to_string(),
-            ));
+            return Err(Self::simulated_write_failure());
         }
         let am = entities::app_setting::ActiveModel {
             key: ActiveValue::Set(key.to_string()),
@@ -231,6 +235,25 @@ impl Db {
             .build(self.conn.get_database_backend());
         self.conn.execute_raw(stmt).await?;
         Ok(())
+    }
+
+    /// A simulated-outage error for the `fail_writes` test hook, shared by
+    /// `set_app_setting` and the transactional store saves (which check it at
+    /// commit time, i.e. after their statements have run inside the open
+    /// transaction, so the failed save rolls the whole rewrite back).
+    pub fn simulated_write_failure() -> sea_orm::DbErr {
+        sea_orm::DbErr::Custom("simulated write failure (test hook)".to_string())
+    }
+
+    /// `Some` with a simulated-outage error when the `fail_reads` test hook is
+    /// armed; the durable-store loaders consult this before their SELECT so
+    /// tests can exercise the fatal-load paths without a second backend.
+    pub fn fail_reads_error(&self) -> Option<sea_orm::DbErr> {
+        self.fail_reads
+            .load(std::sync::atomic::Ordering::Relaxed)
+            .then(|| {
+                sea_orm::DbErr::Custom("simulated read failure (test hook)".to_string())
+            })
     }
 
     /// The placeholder `dump()` writes into the `value` column of a secret
@@ -344,6 +367,17 @@ impl Db {
     /// old or the new state, never a partially-restored one. Unknown columns in
     /// the dump (e.g. from a different schema version) are ignored.
     ///
+    /// Before the transaction opens, every table in [`TABLE_ORDER`] must have a
+    /// valid JSON-array entry in the dump, or the restore aborts with the
+    /// offending table names: a table that exists in the live schema but is
+    /// absent from (or malformed in) the dump — an older build's archive or a
+    /// hand-trimmed one — would otherwise be `DELETE`d and left empty while the
+    /// restore still reports success (audit finding 3). The one exemption is
+    /// `auth_tokens` with no entry at all: new-style dumps exclude it (live
+    /// session tokens), so a missing entry means the live token table is left
+    /// untouched (logged); older dumps always carry the key and restore the
+    /// snapshot as-is.
+    ///
     /// A secret `app_settings` row whose dumped value is [`Db::REDACTED_VALUE`]
     /// is skipped: the archive only records that the key existed, so the live
     /// value must be re-entered after restore. Older dumps that carry the
@@ -355,18 +389,44 @@ impl Db {
             .map_err(|e| sea_orm::DbErr::Custom(e.to_string()))?;
         let tables = data.get("tables").cloned().unwrap_or(serde_json::json!({}));
 
+        // Coverage check: every live table needs a valid array entry before any
+        // DELETE runs, so an older or trimmed dump cannot silently empty tables
+        // the admin never intended to touch.
+        let mut incomplete = Vec::new();
+        for table in TABLE_ORDER {
+            match tables.get(table) {
+                Some(v) if v.as_array().is_some() => {}
+                None if table == "auth_tokens" => {
+                    info!(
+                        "Restore from {source_path}: no auth_tokens entry; \
+                         leaving the live token table untouched."
+                    );
+                }
+                _ => incomplete.push(table),
+            }
+        }
+        if !incomplete.is_empty() {
+            return Err(sea_orm::DbErr::Custom(format!(
+                "restore aborted before any table was modified: the dump has no \
+                 valid array entry for table(s) {}; restoring would empty them \
+                 without re-populating",
+                incomplete.join(", ")
+            )));
+        }
+
         let backend = self.conn.get_database_backend();
         let txn = self.conn.begin().await?;
         for table in TABLE_ORDER {
-            let has_entry = tables.get(table).is_some();
-            // New-style dumps exclude `auth_tokens` (live session tokens); a
-            // missing entry means the live token table must be left untouched.
-            // Older dumps always carry the key, restoring the snapshot as-is.
-            if table == "auth_tokens" && !has_entry {
+            // Reached only because the coverage check above passed: every table
+            // has an array entry except `auth_tokens`, which is skipped when
+            // the dump carries no entry for it (live-token semantics).
+            if table == "auth_tokens" && tables.get(table).is_none() {
                 continue;
             }
             txn.execute_raw(Statement::from_string(backend, format!("DELETE FROM {table}")))
                 .await?;
+            // The coverage check above guarantees an array entry here (the
+            // entry-less `auth_tokens` exemption is skipped above).
             if let Some(rows) = tables.get(table).and_then(|v| v.as_array()) {
                 for row in rows {
                     if table == "app_settings"
@@ -774,6 +834,185 @@ mod tests {
         }
         stop.store(true, Ordering::Relaxed);
         writer.await.unwrap();
+        std::fs::remove_dir_all(&dir).ok();
+    }
+
+    async fn fresh_db_at(dir: &std::path::Path) -> Db {
+        let db = connect(&format!(
+            "sqlite://{}?mode=rwc",
+            dir.join("vreckan.db").display()
+        ))
+        .await
+        .unwrap();
+        db.init().await.unwrap();
+        db
+    }
+
+    async fn session_count(db: &Db) -> usize {
+        entities::session_record::Entity::find().all(&db.conn).await.unwrap().len()
+    }
+
+    async fn session_share_count(db: &Db) -> usize {
+        entities::session_share::Entity::find().all(&db.conn).await.unwrap().len()
+    }
+
+    /// Write a dump file, rewrite the chosen table entry to the given JSON
+    /// value (`null` removes the entry), and return the path.
+    async fn dump_with_table(db: &Db, dir: &std::path::Path, table: &str, entry: serde_json::Value) -> String {
+        let path = dir.join(format!("{table}.dump.json")).to_string_lossy().into_owned();
+        db.dump(&path).await.unwrap();
+        let mut data: serde_json::Value =
+            serde_json::from_str(&std::fs::read_to_string(&path).unwrap()).unwrap();
+        let tables = data.get_mut("tables").unwrap().as_object_mut().unwrap();
+        match entry {
+            serde_json::Value::Null => {
+                tables.remove(table);
+            }
+            other => {
+                tables.insert(table.to_string(), other);
+            }
+        }
+        std::fs::write(&path, data.to_string()).unwrap();
+        path
+    }
+
+    /// F3: a dump that is missing a table's entry must abort the restore
+    /// BEFORE any DELETE runs — the live table keeps its rows (an older
+    /// build's or a hand-trimmed archive must not silently empty a table it
+    /// never carried).
+    #[tokio::test]
+    async fn restore_aborts_when_dump_entry_is_missing() {
+        let dir = tmp_dir("restore-missing");
+        let db = fresh_db_at(&dir).await;
+        entities::session_record::Entity::insert(entities::session_record::ActiveModel {
+            session_id: sea_orm::ActiveValue::Set("keep-me".to_string()),
+            data: sea_orm::ActiveValue::Set(serde_json::json!({ "v": 1 })),
+        })
+        .exec(&db.conn)
+        .await
+        .unwrap();
+        assert_eq!(session_count(&db).await, 1);
+
+        let path = dump_with_table(&db, &dir, "sessions", serde_json::Value::Null).await;
+        let err = db.restore(&path).await.unwrap_err();
+        assert!(
+            err.to_string().contains("sessions"),
+            "error must name the incomplete table: {err}"
+        );
+        assert_eq!(
+            session_count(&db).await,
+            1,
+            "aborted restore must not touch the live table"
+        );
+        std::fs::remove_dir_all(&dir).ok();
+    }
+
+    /// F3: same, for the audit's "trimmed archive where the entry is {}"
+    /// case — a present-but-non-array entry is incomplete too.
+    #[tokio::test]
+    async fn restore_aborts_when_dump_entry_is_not_an_array() {
+        let dir = tmp_dir("restore-not-array");
+        let db = fresh_db_at(&dir).await;
+        entities::session_share::Entity::insert(entities::session_share::ActiveModel {
+            share_id: sea_orm::ActiveValue::Set("keep-me".to_string()),
+            data: sea_orm::ActiveValue::Set(serde_json::json!({ "v": 1 })),
+        })
+        .exec(&db.conn)
+        .await
+        .unwrap();
+        assert_eq!(session_share_count(&db).await, 1);
+
+        let path = dump_with_table(&db, &dir, "session_shares", serde_json::json!({})).await;
+        let err = db.restore(&path).await.unwrap_err();
+        assert!(
+            err.to_string().contains("session_shares"),
+            "error must name the incomplete table: {err}"
+        );
+        assert_eq!(
+            session_share_count(&db).await,
+            1,
+            "aborted restore must not touch the live table"
+        );
+        std::fs::remove_dir_all(&dir).ok();
+    }
+
+    /// F3: the one exemption — new-style dumps carry no `auth_tokens` entry,
+    /// and restore must leave the live token table untouched while
+    /// restoring everything else.
+    #[tokio::test]
+    async fn restore_leaves_auth_tokens_alone_when_entry_is_missing() {
+        let dir = tmp_dir("restore-auth-tokens");
+        let db = fresh_db_at(&dir).await;
+        entities::auth_token::Entity::insert(entities::auth_token::ActiveModel {
+            token: sea_orm::ActiveValue::Set("live-token".to_string()),
+            username: sea_orm::ActiveValue::Set("admin".to_string()),
+            expires_at: sea_orm::ActiveValue::Set(
+                (std::time::SystemTime::now()
+                    .duration_since(std::time::UNIX_EPOCH)
+                    .unwrap()
+                    .as_secs_f64())
+                    + 3600.0,
+            ),
+        })
+        .exec(&db.conn)
+        .await
+        .unwrap();
+        assert_eq!(
+            entities::auth_token::Entity::find().all(&db.conn).await.unwrap().len(),
+            1
+        );
+
+        // A dump excludes auth_tokens entirely (new-style dump semantics).
+        let path = dump_with_table(&db, &dir, "sessions", serde_json::Value::Array(vec![])).await;
+        let tables: serde_json::Value =
+            serde_json::from_str(&std::fs::read_to_string(&path).unwrap()).unwrap();
+        assert!(
+            tables["tables"].get("auth_tokens").is_none(),
+            "sanity: dumps must exclude auth_tokens"
+        );
+        db.restore(&path).await.unwrap();
+        assert_eq!(
+            entities::auth_token::Entity::find().all(&db.conn).await.unwrap().len(),
+            1,
+            "restore must not touch the live token table"
+        );
+        std::fs::remove_dir_all(&dir).ok();
+    }
+
+    /// F3 sanity: a complete dump still restores end-to-end — the sessions
+    /// table is replaced by the dump's rows (rows added after the dump are
+    /// gone, dump rows are back).
+    #[tokio::test]
+    async fn restore_round_trip_replaces_table_contents() {
+        let dir = tmp_dir("restore-round-trip");
+        let db = fresh_db_at(&dir).await;
+        for id in ["s1", "s2"] {
+            entities::session_record::Entity::insert(entities::session_record::ActiveModel {
+                session_id: sea_orm::ActiveValue::Set(id.to_string()),
+                data: sea_orm::ActiveValue::Set(serde_json::json!({ "id": id })),
+            })
+            .exec(&db.conn)
+            .await
+            .unwrap();
+        }
+        let path = dir.join("full.dump.json").to_string_lossy().into_owned();
+        db.dump(&path).await.unwrap();
+
+        // The live table gains a third row after the dump was taken.
+        entities::session_record::Entity::insert(entities::session_record::ActiveModel {
+            session_id: sea_orm::ActiveValue::Set("s3".to_string()),
+            data: sea_orm::ActiveValue::Set(serde_json::json!({ "id": "s3" })),
+        })
+        .exec(&db.conn)
+        .await
+        .unwrap();
+        assert_eq!(session_count(&db).await, 3);
+
+        db.restore(&path).await.unwrap();
+        let rows = entities::session_record::Entity::find().all(&db.conn).await.unwrap();
+        let ids: Vec<_> = rows.iter().map(|r| r.session_id.clone()).collect();
+        assert_eq!(ids.len(), 2, "restore must replace, not merge: {ids:?}");
+        assert!(!ids.contains(&"s3".to_string()));
         std::fs::remove_dir_all(&dir).ok();
     }
 }

@@ -1,16 +1,53 @@
-//! Test harness for the vreckan-admin integration tests (ANT-810).
+//! Shared integration-test harness for the vreckan domain crates (ANT-853;
+//! merges the five drifted per-crate `tests/common` copies from ANT-810 into
+//! one dev-only crate).
 //!
-//! Per-crate copy of the former root-level `tests/common` harness (the
-//! suite was split so each test binary links only the crates it
-//! exercises). The server reads every `VRECKAN_*` environment variable at
-//! startup and builds its database at startup, so each test gets a
-//! throwaway directory tree and a fresh SQLite database. The `TestClient`
-//! drives the real axum router directly (via `tower::ServiceExt::oneshot`,
-//! no real socket), and the `SecureClient` additionally logs in as the
-//! bootstrap admin and performs the E2EE handshake, mirroring the browser
-//! client's crypto. The admin tests drive the full app router
-//! (`vreckan_admin::app::router`), so this harness keeps the complete
-//! lifespan seeding.
+//! The server reads every `VRECKAN_*` environment variable at startup and
+//! builds its database at startup, so each test gets a throwaway directory
+//! tree and a fresh SQLite database. [`TestClient`] drives the axum router
+//! directly (via `tower::ServiceExt::oneshot`, no real socket), and
+//! [`SecureClient`] additionally logs in as the bootstrap admin and performs
+//! the E2EE handshake, mirroring the browser client's crypto.
+//!
+//! ## What is shared (this crate)
+//!
+//! `test_settings`, `connect_db`, the state-construction base
+//! ([`build_state_base`]), the router frame ([`compose_router`] — the index/
+//! health handlers, the E2EE handshake nest, the auth nest, the static
+//! catch-all, and the security-headers/CORS layers, mirroring
+//! `vreckan_admin::app::router`), [`RawResponse`], [`TestClient`],
+//! [`SecureClient`], [`TempDir`], and the [`DEAD_URL`] constant.
+//!
+//! ## What stays crate-local (per-crate `tests/common.rs` shims)
+//!
+//! Each domain crate keeps a thin `tests/common.rs` that re-exports this
+//! crate (so the test files' `mod common;` call sites are unchanged) and
+//! holds the per-crate deltas:
+//!
+//! - **vreckan-auth**: no deltas — the shared frame with no extra domain
+//!   routes, and the state builder skips the catalog warm-up (the auth tests
+//!   never touch app-store/template state; the binaries link only
+//!   `vreckan-auth` + `vreckan-acme` + `vreckan-core`).
+//! - **vreckan-sessions**: the router splices the session-share,
+//!   session-proxy, catalog, and collaboration routes; the state builder
+//!   runs the full lifespan seeding including the catalog warm-up.
+//! - **vreckan-catalog**: the router splices the catalog, session-proxy,
+//!   session-share, and collaboration routes; full lifespan seeding.
+//! - **vreckan-files**: the router splices the files and public-share
+//!   routes; full lifespan seeding.
+//! - **vreckan-admin**: the router is the real app router
+//!   (`vreckan_admin::app::router`); complete lifespan seeding.
+//!
+//! The shared link closure is `vreckan-core` + `vreckan-acme` +
+//! `vreckan-auth` only — every one of the five domain crates already links
+//! all three, so dev-depending on this crate introduces no new link
+//! closure. `http-body-util` (used only by the HTTP test client) moved here
+//! from the root package in ANT-853.
+//!
+//! The per-crate `TestClient`/`SecureClient` wrappers call
+//! [`TestClient::new`] / [`SecureClient::new`] with their crate-local
+//! router, so the `TestClient::new(state)` / `SecureClient::new(state)`
+//! signatures in the test files are unchanged.
 
 #![allow(dead_code)]
 
@@ -19,33 +56,39 @@ use std::path::PathBuf;
 
 use aes_gcm::aead::{Aead, KeyInit, Payload};
 use aes_gcm::{Aes256Gcm, Nonce};
+use axum::extract::{Path, State};
+use axum::middleware;
+use axum::response::{Html, IntoResponse};
+use axum::routing::{any, get};
 use base64::Engine;
 use http::header;
 use http::{Request, StatusCode};
 use pkcs8::DecodePublicKey;
-use rsa::{Oaep, RsaPublicKey, sha2::Sha256};
+use rsa::{sha2::Sha256, Oaep, RsaPublicKey};
 use serde_json::Value;
 use tower::ServiceExt;
 
 use vreckan_acme::e2ee;
-use vreckan_admin::app;
-use vreckan_catalog::catalog;
+use vreckan_auth::auth;
 use vreckan_core::db;
+use vreckan_core::security;
 use vreckan_core::settings::Settings;
 use vreckan_core::state::AppState;
-use vreckan_auth::user_manager;
+use vreckan_core::static_files;
 
 /// A dead local port: any store URL pointed here fails instantly with a
 /// connection refusal instead of hanging on a real network fetch.
 pub const DEAD_URL: &str = "http://127.0.0.1:9/";
 
-/// The repository root. The harness lives in `crates/vreckan-admin/tests/
-/// common`, so two levels up is the checkout root (ANT-810): integration
-/// tests run with the process CWD at the *crate* directory, so repo-relative
+/// The repository root. The crate lives in `crates/vreckan-test-support`,
+/// so two levels up is the checkout root: integration tests run with the
+/// process CWD at the *consuming crate's* directory, so repo-relative
 /// resources (the bundled template schema, the web client under
-/// `server/static`) must resolve from here, not from the CWD.
+/// `server/static`) must resolve from here, not from the CWD (ANT-810).
 fn repo_root() -> PathBuf {
-    PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("..").join("..")
+    PathBuf::from(env!("CARGO_MANIFEST_DIR"))
+        .join("..")
+        .join("..")
 }
 
 /// Build a `Settings` pointed at a throwaway directory tree, mirroring the
@@ -68,14 +111,17 @@ pub fn test_settings(root: &std::path::Path) -> Settings {
     // against the repository root, not the test process CWD (the crate
     // directory, ANT-810); CI may override the location with
     // VRECKAN_TEST_TEMPLATE_SCHEMA_PATH.
-    s.template_schema_path = std::env::var("VRECKAN_TEST_TEMPLATE_SCHEMA_PATH")
-        .unwrap_or_else(|_| {
+    s.template_schema_path =
+        std::env::var("VRECKAN_TEST_TEMPLATE_SCHEMA_PATH").unwrap_or_else(|_| {
             repo_root()
                 .join("server/template_schema.yml")
                 .to_string_lossy()
                 .to_string()
         });
-    s.database_url = format!("sqlite://{}?mode=rwc", root.join("test.db").to_string_lossy());
+    s.database_url = format!(
+        "sqlite://{}?mode=rwc",
+        root.join("test.db").to_string_lossy()
+    );
     s.oidc_enabled = false;
     s.oidc_admin_groups = String::new();
     s.oidc_user_groups = String::new();
@@ -86,29 +132,33 @@ pub fn test_settings(root: &std::path::Path) -> Settings {
 
 /// Connect to (and initialise) a fresh SQLite database under `root`.
 pub async fn connect_db(root: &std::path::Path) -> vreckan_core::db::Db {
-    let url = format!("sqlite://{}?mode=rwc", root.join("test.db").to_string_lossy());
+    let url = format!(
+        "sqlite://{}?mode=rwc",
+        root.join("test.db").to_string_lossy()
+    );
     let d = db::connect(&url).await.expect("connect db");
     d.init().await.expect("init db");
     d
 }
 
-/// Build a fresh `AppState` for a test: throwaway dirs, fresh DB, bootstrap
-/// admin + roles seeded (mirrors the Python lifespan startup).
-pub async fn build_state(root: &std::path::Path) -> AppState {
-    build_state_with(root, |_| {}).await
-}
-
-/// Like `build_state`, but lets the test mutate the `Settings` before the
-/// state is built (e.g. to flip a policy flag).
-pub async fn build_state_with(
+/// The shared half of the state construction: throwaway dirs from
+/// [`test_settings`] (with the test's mutation applied), the persistent data
+/// directories created, a fresh DB, and `AppState::new`. Lifespan *seeding*
+/// (users/groups, the E2EE server key, the catalog warm-up) is crate-local —
+/// each per-crate `tests/common.rs` runs it on top of this base (ANT-853),
+/// because the shared link closure must stay `vreckan-core` +
+/// `vreckan-acme` + `vreckan-auth` (the `vreckan-auth` crate skips the
+/// catalog warm-up entirely).
+pub async fn build_state_base(
     root: &std::path::Path,
     mutate: impl FnOnce(&mut vreckan_core::settings::Settings),
 ) -> AppState {
     // The web client under `server/static` is addressed through the
     // `VRECKAN_STATIC_DIR` override: integration tests run with the CWD at
-    // the crate directory, so `static_files::static_dir`'s CWD-relative
-    // `server/static` default would miss the checkout root (ANT-810). Every
-    // test in a binary sets the same value, so a once-guard suffices.
+    // the consuming crate's directory, so `static_files::static_dir`'s
+    // CWD-relative `server/static` default would miss the checkout root
+    // (ANT-810). Every test in a binary sets the same value, so a
+    // once-guard suffices.
     static STATIC_DIR_SET: std::sync::OnceLock<()> = std::sync::OnceLock::new();
     STATIC_DIR_SET.get_or_init(|| {
         if std::env::var_os("VRECKAN_STATIC_DIR").is_none() {
@@ -132,37 +182,59 @@ pub async fn build_state_with(
         std::fs::create_dir_all(p).ok();
     }
     let db = connect_db(root).await;
-    let state = AppState::new(settings, db);
-    // Mirror the lifespan startup: bootstrap admin + roles, then load the
-    // durable stores.
-    user_manager::load_users_and_groups(&state.db, &state.settings)
-        .await
-        .expect("load users/groups");
-    // Initialise the E2EE server key (a process-wide OnceLock, so only the
-    // first call actually loads/generates it).
-    e2ee::init_server_key(&state.settings).expect("init server key");
-    // Seed the template schema from the bundled YAML baseline (mirrors the
-    // lifespan startup).
-    catalog::load_template_schema(&state).await;
-    // Load application templates (built-in YAML + DB overrides; seeds a blank
-    // "Default" template when none exist). Mirrors the lifespan startup.
-    catalog::load_app_templates(&state).await;
-    // Load the app stores (seeds the default "SealSkin Apps" store on first
-    // run). Mirrors the lifespan startup.
-    catalog::load_app_stores(&state).await;
-    // Load the installed apps and warm the image-metadata cache (the
-    // lifespan startup path, ANT-269). Fresh test databases have no
-    // installed apps yet, so the warm-up is a no-op unless a test seeds the
-    // `installed_apps` table before calling `build_state_with`; the
-    // `fake_provider` / `pull_noop` hooks are honored by the helpers.
-    catalog::load_installed_apps(&state).await;
-    catalog::warm_image_metadata(&state).await;
-    state
+    AppState::new(settings, db)
 }
 
-/// The axum router for a test (the real app router, state-bound).
-pub fn router(state: AppState) -> axum::Router {
-    app::router(state)
+/// The shared router frame for a test: the same route composition as
+/// `vreckan_admin::app::router` minus every app domain and the admin nest —
+/// the index and health handlers, the E2EE handshake nest, the auth nest,
+/// and the static catch-all, with the app router's security-headers/CORS
+/// layers (ANT-810). `extend` splices the consuming crate's domain routes
+/// into the frame *before* the layers and state binding, in the production
+/// nest/merge order, so route precedence is unchanged for every route the
+/// tests hit. A crate whose tests need no domain routes passes `|r| r`.
+pub fn compose_router(
+    state: AppState,
+    extend: impl FnOnce(axum::Router<AppState>) -> axum::Router<AppState>,
+) -> axum::Router {
+    let base = axum::Router::<AppState>::new()
+        .route("/", get(index))
+        .route("/api/health", get(health))
+        .nest("/api/handshake", e2ee::handshake_router())
+        .nest("/api/auth", auth::auth_router())
+        // Registered after the explicit API routes so it never shadows them.
+        .route("/{*path}", any(serve_static));
+    extend(base)
+        .layer(middleware::from_fn_with_state(
+            state.clone(),
+            security::cors,
+        ))
+        .layer(middleware::from_fn_with_state(
+            state.clone(),
+            security::add_security_headers,
+        ))
+        .with_state(state)
+}
+
+/// Serve `index.html` with the JS cache-busting version injected (copied
+/// from `vreckan_admin::app` so the static catch-all resolves web-client
+/// pages like `/join/...` without linking the admin crate).
+pub async fn index() -> impl IntoResponse {
+    match static_files::index_html() {
+        Some(html) => ([(header::CACHE_CONTROL, "no-cache")], Html(html)).into_response(),
+        None => (StatusCode::NOT_FOUND, "<h1>Vreckan Server</h1>").into_response(),
+    }
+}
+
+/// Liveness probe (copied from `vreckan_admin::app`).
+pub async fn health(State(state): State<AppState>) -> impl IntoResponse {
+    let sessions = state.sessions.read().await.len();
+    (StatusCode::OK, format!("ok ({} session(s))", sessions))
+}
+
+/// Catch-all static asset handler (copied from `vreckan_admin::app`).
+pub async fn serve_static(Path(path): Path<String>) -> impl IntoResponse {
+    static_files::serve(&path)
 }
 
 /// A raw HTTP response from the router.
@@ -184,7 +256,10 @@ impl RawResponse {
     }
 }
 
-/// A test client that drives the real axum router directly.
+/// A test client that drives the given axum router directly. Per-crate
+/// wrappers build this with their crate-local router (see
+/// [`compose_router`]) so the `new(state)` call sites in the test files
+/// stay unchanged (ANT-853).
 pub struct TestClient {
     router: axum::Router,
     /// The auth cookie value (set by login), sent on subsequent requests.
@@ -192,9 +267,9 @@ pub struct TestClient {
 }
 
 impl TestClient {
-    pub fn new(state: AppState) -> Self {
+    pub fn new(router: axum::Router) -> Self {
         Self {
-            router: router(state),
+            router,
             auth_cookie: None,
         }
     }
@@ -255,12 +330,7 @@ impl TestClient {
             req.extensions_mut()
                 .insert(axum::extract::ConnectInfo(addr));
         }
-        let resp = self
-            .router
-            .clone()
-            .oneshot(req)
-            .await
-            .expect("router call");
+        let resp = self.router.clone().oneshot(req).await.expect("router call");
         let status = resp.status();
         let headers = resp.headers().clone();
         let body = http_body_util::BodyExt::collect(resp.into_body())
@@ -279,7 +349,11 @@ impl TestClient {
     }
 
     /// GET with extra headers (e.g. an explicit `Authorization` header).
-    pub async fn get_with(&self, url: &str, extra_headers: &HashMap<String, String>) -> RawResponse {
+    pub async fn get_with(
+        &self,
+        url: &str,
+        extra_headers: &HashMap<String, String>,
+    ) -> RawResponse {
         self.request("GET", url, None, None, extra_headers).await
     }
 
@@ -306,7 +380,8 @@ impl TestClient {
     }
 
     pub async fn delete(&self, url: &str) -> RawResponse {
-        self.request("DELETE", url, None, None, &HashMap::new()).await
+        self.request("DELETE", url, None, None, &HashMap::new())
+            .await
     }
 
     /// POST a `password` form field (the public-share entry form).
@@ -353,6 +428,9 @@ impl TestClient {
 }
 
 /// A logged-in, E2EE-capable test client (mirrors the browser client).
+/// Per-crate wrappers build this with their crate-local router (see
+/// [`compose_router`]) so the `new(state)` call sites in the test files
+/// stay unchanged (ANT-853).
 pub struct SecureClient {
     pub http: TestClient,
     pub state: AppState,
@@ -361,9 +439,9 @@ pub struct SecureClient {
 }
 
 impl SecureClient {
-    pub fn new(state: AppState) -> Self {
+    pub fn new(router: axum::Router, state: AppState) -> Self {
         Self {
-            http: TestClient::new(state.clone()),
+            http: TestClient::new(router),
             state,
             session_id: None,
             aes_key: None,
@@ -387,7 +465,10 @@ impl SecureClient {
             .expect("server_public_key")
             .to_string();
         // 2) Initiate: nonce + RSA-PSS signature (we trust the server here).
-        let _init = self.http.post_json("/api/handshake/initiate", &Value::Null).await;
+        let _init = self
+            .http
+            .post_json("/api/handshake/initiate", &Value::Null)
+            .await;
         // 3) Wrap a fresh AES-256 key with RSA-OAEP.
         let pub_key = RsaPublicKey::from_public_key_pem(&pem).expect("parse SPKI");
         let mut aes_key = [0u8; 32];
@@ -403,7 +484,12 @@ impl SecureClient {
                 &serde_json::json!({ "encrypted_session_key": b64 }),
             )
             .await;
-        assert_eq!(resp.status, StatusCode::OK, "handshake failed: {:?}", resp.body);
+        assert_eq!(
+            resp.status,
+            StatusCode::OK,
+            "handshake failed: {:?}",
+            resp.body
+        );
         self.session_id = resp
             .json()
             .get("session_id")
@@ -435,7 +521,13 @@ impl SecureClient {
             let mut nonce = Nonce::default();
             nonce.copy_from_slice(&iv);
             let ct = cipher
-                .encrypt(&nonce, Payload { msg: body.to_string().as_bytes(), aad })
+                .encrypt(
+                    &nonce,
+                    Payload {
+                        msg: body.to_string().as_bytes(),
+                        aad,
+                    },
+                )
                 .expect("encrypt");
             let payload = serde_json::json!({
                 "iv": base64::engine::general_purpose::STANDARD.encode(iv),
@@ -449,7 +541,13 @@ impl SecureClient {
         let has_content = content.is_some();
         let resp = self
             .http
-            .request(method, url, content, has_content.then_some("application/json"), &headers)
+            .request(
+                method,
+                url,
+                content,
+                has_content.then_some("application/json"),
+                &headers,
+            )
             .await;
         if resp.status == StatusCode::NO_CONTENT || resp.body.is_empty() {
             return (resp.status, None);
@@ -458,13 +556,23 @@ impl SecureClient {
         if let Some(ct) = payload.get("ciphertext").and_then(|v| v.as_str()) {
             if let (Some(key), Some(sid)) = (&self.aes_key, &self.session_id) {
                 let iv_b64 = payload.get("iv").and_then(|v| v.as_str()).unwrap_or("");
-                let iv = base64::engine::general_purpose::STANDARD.decode(iv_b64).unwrap();
-                let ct_b = base64::engine::general_purpose::STANDARD.decode(ct).unwrap();
+                let iv = base64::engine::general_purpose::STANDARD
+                    .decode(iv_b64)
+                    .unwrap();
+                let ct_b = base64::engine::general_purpose::STANDARD
+                    .decode(ct)
+                    .unwrap();
                 let cipher = Aes256Gcm::new_from_slice(key).expect("aes");
                 let mut nonce = Nonce::default();
                 nonce.copy_from_slice(&iv);
                 let plain = cipher
-                    .decrypt(&nonce, Payload { msg: &ct_b, aad: sid.as_bytes() })
+                    .decrypt(
+                        &nonce,
+                        Payload {
+                            msg: &ct_b,
+                            aad: sid.as_bytes(),
+                        },
+                    )
                     .expect("decrypt");
                 return (resp.status, Some(serde_json::from_slice(&plain).unwrap()));
             }
@@ -482,7 +590,13 @@ impl SecureClient {
         let mut nonce = Nonce::default();
         nonce.copy_from_slice(&[7u8; 12]);
         let ct = cipher
-            .encrypt(&nonce, Payload { msg: body.to_string().as_bytes(), aad: sid.as_bytes() })
+            .encrypt(
+                &nonce,
+                Payload {
+                    msg: body.to_string().as_bytes(),
+                    aad: sid.as_bytes(),
+                },
+            )
             .expect("encrypt");
         let iv = vec![7u8; iv_len];
         let payload = serde_json::json!({
@@ -531,11 +645,18 @@ impl TempDir {
     }
 }
 
+impl Default for TempDir {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 impl Drop for TempDir {
     fn drop(&mut self) {
         let _ = std::fs::remove_dir_all(&self.0);
     }
 }
 
-// Re-export for convenience in test files.
+// Re-export for convenience in test files (kept from the per-crate
+// harnesses, ANT-853).
 pub use rand::Rng;

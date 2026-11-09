@@ -1,0 +1,166 @@
+//! Test harness for the vreckan-sessions integration tests (ANT-810;
+//! re-homed from the dissolved `vreckan-apps` crate in ANT-821 after
+//! ANT-812 split it into per-domain crates; the shared plumbing was
+//! extracted to `vreckan-test-support` in ANT-853).
+//!
+//! The test router is the shared frame (`vreckan_test_support::
+//! compose_router`, mirroring `vreckan_admin::app::router` minus the admin
+//! nest and the `vreckan-files` domain) spliced with the session-share and
+//! session-proxy routes plus the catalog routes the session flows depend
+//! on (join, my-sessions) and the collaboration room — all in the
+//! production nest/merge order. Keeping `vreckan-admin` out of the link
+//! closure keeps each test binary from dragging in the whole program.
+//! Everything the five former per-crate copies shared is re-exported from
+//! the shared crate below so the test files' `mod common;` call sites are
+//! unchanged; what stays here is crate-local: the router composition, the
+//! lifespan seeding, and the client wrappers.
+//!
+//! Regression note (ANT-914): these test binaries run without a logging
+//! subscriber, so `tracing` `warn!`/`error!` calls in library code are
+//! invisible here. Test code must never rely on log visibility to surface
+//! a failure — assert state directly, or `expect`/`unwrap` on the error
+//! the code under test returns.
+
+#![allow(dead_code)]
+
+pub use vreckan_test_support::*;
+
+use vreckan_acme::e2ee;
+use vreckan_auth::user_manager;
+use vreckan_catalog::catalog;
+use vreckan_collab::collaboration;
+use vreckan_core::settings::Settings;
+use vreckan_core::state::AppState;
+use vreckan_sessions::session_proxy;
+use vreckan_sessions::session_shares;
+
+/// The axum router for a test: the shared frame with the session and
+/// collaboration routes (plus the catalog routes the session flows depend
+/// on) spliced in the production nest/merge order (so route precedence is
+/// unchanged for every route the tests hit) — minus the `/api/admin` nest
+/// (ANT-810) and the `vreckan-files` domain (ANT-821 re-homing), since
+/// these tests exercise only the session and collaboration routes.
+pub fn router(state: AppState) -> axum::Router {
+    vreckan_test_support::compose_router(state, |r| {
+        r.nest("/api", catalog::catalog_router())
+            .nest("/api/apps/session", session_proxy::session_proxy_router())
+            .nest("/api", session_shares::owner_router())
+            .merge(session_shares::public_router())
+            .merge(collaboration::room_router())
+    })
+}
+
+/// Build a fresh `AppState` for a test: throwaway dirs, fresh DB, bootstrap
+/// admin + roles seeded (mirrors the Python lifespan startup).
+pub async fn build_state(root: &std::path::Path) -> AppState {
+    build_state_with(root, |_| {}).await
+}
+
+/// Like `build_state`, but lets the test mutate the `Settings` before the
+/// state is built (e.g. to flip a policy flag). The shared half of the
+/// construction lives in `vreckan_test_support::build_state_base`; the
+/// lifespan seeding below is crate-local (ANT-853).
+pub async fn build_state_with(
+    root: &std::path::Path,
+    mutate: impl FnOnce(&mut Settings),
+) -> AppState {
+    let state = vreckan_test_support::build_state_base(root, mutate).await;
+    // Mirror the lifespan startup: bootstrap admin + roles, then load the
+    // durable stores.
+    user_manager::load_users_and_groups(&state.db, &state.settings)
+        .await
+        .expect("load users/groups");
+    // Initialise the E2EE server key (a process-wide OnceLock, so only the
+    // first call actually loads/generates it).
+    e2ee::init_server_key(&state.settings).expect("init server key");
+    // Seed the template schema from the bundled YAML baseline (mirrors the
+    // lifespan startup). `expect` (not a swallowed warn): a transient
+    // SQLite lock under parallel-suite load used to leave the initial
+    // empty schema in place silently (ANT-914).
+    catalog::load_template_schema(&state)
+        .await
+        .expect("load template schema");
+    // Assert the baseline actually seeded: the bundled
+    // `server/template_schema.yml` is non-empty, so an empty settings list
+    // here means the seed silently no-opped. (The guard is scoped so it
+    // drops before `state` is returned.)
+    {
+        let schema = state.template_schema.read().await;
+        assert!(
+            !schema["settings"]
+                .as_array()
+                .map(Vec::is_empty)
+                .unwrap_or(true),
+            "template schema did not seed from the bundled baseline"
+        );
+    }
+    // Load application templates (built-in YAML + DB overrides; seeds a blank
+    // "Default" template when none exist). Mirrors the lifespan startup.
+    catalog::load_app_templates(&state).await;
+    // Load the app stores (seeds the default "SealSkin Apps" store on first
+    // run). Mirrors the lifespan startup.
+    catalog::load_app_stores(&state)
+        .await
+        .expect("load app stores");
+    // Load the installed apps and warm the image-metadata cache (the
+    // lifespan startup path, ANT-269). Fresh test databases have no
+    // installed apps yet, so the warm-up is a no-op unless a test seeds the
+    // `installed_apps` table before calling `build_state_with`; the
+    // `fake_provider` / `pull_noop` hooks are honored by the helpers.
+    catalog::load_installed_apps(&state)
+        .await
+        .expect("load installed apps");
+    catalog::warm_image_metadata(&state).await;
+    state
+}
+
+/// A test client that drives this crate's router (see [`router`]) — wraps
+/// the shared client so the `new(state)` call sites in the test files are
+/// unchanged (ANT-853).
+pub struct TestClient(pub vreckan_test_support::TestClient);
+
+impl TestClient {
+    pub fn new(state: AppState) -> Self {
+        Self(vreckan_test_support::TestClient::new(router(state)))
+    }
+}
+
+impl std::ops::Deref for TestClient {
+    type Target = vreckan_test_support::TestClient;
+    fn deref(&self) -> &Self::Target {
+        &self.0
+    }
+}
+
+impl std::ops::DerefMut for TestClient {
+    fn deref_mut(&mut self) -> &mut Self::Target {
+        &mut self.0
+    }
+}
+
+/// A logged-in, E2EE-capable test client for this crate's router (see
+/// [`router`]) — wraps the shared client so the `new(state)` call sites in
+/// the test files are unchanged (ANT-853).
+pub struct SecureClient(pub vreckan_test_support::SecureClient);
+
+impl SecureClient {
+    pub fn new(state: AppState) -> Self {
+        Self(vreckan_test_support::SecureClient::new(
+            router(state.clone()),
+            state,
+        ))
+    }
+}
+
+impl std::ops::Deref for SecureClient {
+    type Target = vreckan_test_support::SecureClient;
+    fn deref(&self) -> &Self::Target {
+        &self.0
+    }
+}
+
+impl std::ops::DerefMut for SecureClient {
+    fn deref_mut(&mut self) -> &mut Self::Target {
+        &mut self.0
+    }
+}
