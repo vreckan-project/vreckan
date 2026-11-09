@@ -22,7 +22,7 @@ use http::StatusCode;
 use jsonwebtoken::{Algorithm, EncodingKey, Header};
 use sea_orm::ConnectionTrait;
 use pkcs8::EncodePrivateKey;
-use rsa::{RsaPrivateKey, traits::PublicKeyParts};
+use rsa::{PrivateKey, traits::PublicKeyParts};
 use serde_json::{json, Value};
 use std::collections::HashMap;
 use std::sync::{Arc, Mutex};
@@ -40,9 +40,9 @@ fn b64u(bytes: &[u8]) -> String {
 /// `test_oidc.rs`). Only the discovery endpoint is exercised by the SSO
 /// "test connection" test here, but the full mock is reused for consistency.
 struct MockIdp {
-    jwk_key: RsaPrivateKey,
+    jwk_key: PrivateKey,
     kid: String,
-    sign_key: Arc<Mutex<RsaPrivateKey>>,
+    sign_key: Arc<Mutex<PrivateKey>>,
     serve_jwks_uri: Arc<Mutex<bool>>,
     codes: Arc<Mutex<HashMap<String, Value>>>,
     issuer: String,
@@ -53,7 +53,7 @@ struct MockIdp {
 
 impl MockIdp {
     fn new() -> Self {
-        let jwk_key = RsaPrivateKey::new(&mut rand::rng(), 2048).unwrap();
+        let jwk_key = PrivateKey::new(&mut rand::rng(), 2048).unwrap();
         let sign_key = Arc::new(Mutex::new(jwk_key.clone()));
         Self {
             jwk_key,
@@ -159,7 +159,7 @@ fn content_length(raw: &[u8]) -> Option<usize> {
 }
 
 /// Sign an id_token (RS256) with the given key and kid.
-fn sign_id_token(key: &RsaPrivateKey, kid: &str, claims: &Value) -> String {
+fn sign_id_token(key: &PrivateKey, kid: &str, claims: &Value) -> String {
     let encoding_key = EncodingKey::from_rsa_pem(
         key.to_pkcs8_pem(pkcs8::LineEnding::LF)
             .unwrap()
@@ -173,9 +173,9 @@ fn sign_id_token(key: &RsaPrivateKey, kid: &str, claims: &Value) -> String {
 
 /// Handle a single connection: read the request, route it, write the response.
 async fn handle_conn(
-    jwk_key: RsaPrivateKey,
+    jwk_key: PrivateKey,
     kid: String,
-    sign_key: Arc<Mutex<RsaPrivateKey>>,
+    sign_key: Arc<Mutex<PrivateKey>>,
     serve_jwks_uri: Arc<Mutex<bool>>,
     codes: Arc<Mutex<HashMap<String, Value>>>,
     issuer: String,
