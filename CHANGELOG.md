@@ -9,6 +9,63 @@ is committed normally in `vreckan`. The changelog is the authoritative
 record of what shipped in each release — see
 [`docs/release.md`](./docs/release.md) for the conventions.
 
+## 2026-11-10 — v0.11.9: base-image bump + trusted-proxies fix + backup/restore hardening
+
+- **The build base advanced to the 2026-11-09 10:31 PM MST re-bake**
+  (`vreckan-base-build` `sha256:b6dfcae6d994…` → `sha256:e0d35b6196fa…`;
+  `.base-image-digest` and the `Dockerfile` build-stage `FROM` re-pointed
+  together, ANT-277). The Rust toolchain is unchanged — 1.99.1, parent
+  `rust:1.99.1-slim` still at `sha256:f6c4a35d…`. What the re-bake brings:
+  the pre-warmed crates.io dependency cache now matches the current
+  `main` `Cargo.lock` — the re-bake was triggered by `rsa`
+  0.10.0-rc.22 → 0.10.0 (renovate, PR #186, which also moves the
+  transitive `crypto-bigint` 0.7.10 → 0.7.11) — so nightly image builds
+  on `main` only fetch lockfile deltas — and the `apt-get upgrade`
+  security layer was refreshed to the trixie-security state at bake time.
+
+- **Trusted-proxy settings saved on the admin SSO page take effect again
+  (ANT-879, PR #154).** The trusted-proxy gate (client IP, request
+  scheme, public host) and the OIDC/session redirect resolvers read only
+  the startup env snapshot, so a value saved through the admin UI was a
+  silent no-op — breaking the OIDC redirect-URI scheme and letting a
+  proxy-wide login lockout escape the per-IP limiter. `trusted_proxies`
+  now resolves the effective DB-over-env value per call (mirroring
+  `cors_config`), and `X-Forwarded-Host` is gated on the trusted-proxy
+  check like `X-Forwarded-Proto` (ANT-346).
+
+- **Backups are a single point in time, and restore guards against a live
+  server (ANT-888, PR #157, audit finding 17).** The dump now reads every
+  table inside one transaction (Postgres pinned to REPEATABLE READ) and
+  commits before the file is written, so the archive is a true
+  point-in-time snapshot and a failed dump leaves no file behind; the
+  extract streams the archive from disk in two passes instead of reading
+  it into memory; a crashed restore no longer strands a stale
+  `db_dump.json` or `.restore_tmp_*.tar.gz` temps that the next restore
+  would re-apply; and `backup-postgres.sh` restore now refuses while the
+  vreckan server is running (`pg_restore --clean` would drop and
+  recreate tables a live server re-fills mid-restore) — `--force`
+  overrides.
+
+- **`acme_renew_check_hours` is clamped to 1–24h (ANT-878, PR #152,
+  audit finding 7).** An out-of-range value saved through the settings
+  API or effective config is clamped instead of flowing into the renewal
+  scheduler, so a bad setting no longer breaks the ACME renewal cadence.
+
+- **`rsa` 0.10.0-rc.22 → 0.10.0 (renovate, PR #186) and the deprecated
+  alias rename (ANT-1008, PR #189, landed via #190).** The RC-era
+  `RsaPrivateKey`/`RsaPublicKey` type aliases, deprecated by 0.10.0, are
+  renamed to `PrivateKey`/`PublicKey` across the workspace (including the
+  `importRsaPublicKey` JS helper) — zero behavioral delta.
+
+- **RUSTSEC-2026-0459 allowlisted pending upstream (ANT-982).**
+  `libsqlite3-sys` 0.37.0 (CVE-2026-119375) is accepted in `deny.toml`
+  until the upstream fix lands.
+
+- **Daily GC reclaims orphaned `ant-*` volumes (ANT-1002).**
+  `gc-workspace-sessions.sh` gains a third sweep: named `ant-*` volumes
+  with no container references are reclaimed once the owning issue has
+  been terminal for 24h+, keep-and-record on any doubt.
+
 ## 2026-11-09 — v0.11.8: base-image bump + transactional store hardening + cutover-script fixes
 
 - **The build base advanced to the 2026-11-08 10:31 PM MST re-bake**
