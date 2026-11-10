@@ -1948,6 +1948,12 @@ pub async fn probe_selkies_capability(
         .timeout(std::time::Duration::from_secs(3))
         .build()
         .unwrap_or_default();
+    // Accepted risk (code-scanning #78, rust/cleartext-transmission): cleartext
+    // HTTP GET to the locally-launched app container over the host Docker
+    // bridge, not an external/untrusted network. Carries `session_id` (+ optional
+    // Basic auth); exposure is bounded to host-level (same-host) attackers.
+    // Upgrading to loopback TLS / a sidecar is a separate future follow-up, not
+    // part of this release.
     let mut req = client.get(&url);
     if let (Some(user), Some(pass)) = (
         session.get("custom_user").and_then(|v| v.as_str()),
