@@ -1529,6 +1529,11 @@ async fn create_meta_app(
         )
         .await;
     };
+    // ANT-1061: the new id is a locally generated UUID v4 (`random_uuid`), not
+    // taken from the request body, so it is input-independent and inherently
+    // path-safe (a UUID is `[0-9a-f-]{36}`, which the allowlist admits). No
+    // input-derived id reaches this sink. The containment guard below is
+    // defense-in-depth, consistent with the other icon sinks.
     let new_app_id = catalog::random_uuid();
     let home_template_name = format!("meta_{new_app_id}");
     let mut logo_url = base_app.logo.clone();
@@ -1536,7 +1541,9 @@ async fn create_meta_app(
         match base64::engine::general_purpose::STANDARD.decode(&req.logo) {
             Ok(icon_data) => {
                 let icon_path = format!("{}/{}.png", state.settings.app_icons_path, new_app_id);
-                if std::fs::write(&icon_path, &icon_data).is_ok() {
+                if std::path::Path::new(&icon_path).starts_with(&state.settings.app_icons_path)
+                    && std::fs::write(&icon_path, &icon_data).is_ok()
+                {
                     logo_url = format!("/api/app_icon/{new_app_id}");
                     info!("Saved custom icon for new meta app {new_app_id}");
                 } else {
@@ -1718,6 +1725,32 @@ async fn get_available_apps(
         )
         .await;
     }
+    // ANT-1061 (code-scanning #5/#85/#88): validate the store inputs before any
+    // fetch or filesystem touch. `url` is SSRF-checked (http/https + an
+    // explicit host allowlist — see `validate_store_url`) and `store_name` is
+    // char-allowlisted so it cannot escape the cache directory via a `..`/`/`
+    // sequence.
+    if let Err(detail) = validate_store_url(&q.url) {
+        return e2ee::encrypt_response(
+            &state,
+            &headers,
+            StatusCode::BAD_REQUEST,
+            serde_json::json!({ "detail": detail }),
+        )
+        .await;
+    }
+    if !valid_store_name(&q.store_name) {
+        return e2ee::encrypt_response(
+            &state,
+            &headers,
+            StatusCode::BAD_REQUEST,
+            serde_json::json!({ "detail": format!(
+                "Invalid store name '{}': only ASCII letters, digits, '_', '-', and spaces are allowed.",
+                q.store_name
+            ) }),
+        )
+        .await;
+    }
     let cache_file = format!("{}/{}.yml", state.settings.app_store_cache_path, q.store_name);
     // If a cache exists and we're not refreshing, try to serve it (read +
     // parse). A failure to read OR parse falls through to a fresh fetch
@@ -1747,6 +1780,63 @@ async fn get_available_apps(
         Ok(apps) => e2ee::encrypt_response(&state, &headers, StatusCode::OK, apps).await,
         Err((s, d)) => e2ee::encrypt_response(&state, &headers, s, serde_json::json!({ "detail": d })).await,
     }
+}
+
+/// Hosts permitted for app-store catalog fetches (ANT-1061, code-scanning #5,
+/// the SSRF finding).
+///
+/// An app-store catalog is a YAML file of available apps. The hosts we consider
+/// legitimate are the official SealSkin apps catalog (the default store's
+/// `app_resource_path`, served from GitHub raw) and GitHub-hosted community
+/// catalogs. Loopback (`localhost` / `127.0.0.1`) is permitted so a local test
+/// store server — and a self-hosted catalog on the same host — can be fetched.
+/// Everything else is rejected, which is what closes the SSRF vector: an
+/// `admin.stores` user can no longer point the server at an arbitrary host
+/// such as the cloud metadata endpoint `http://169.254.169.254/`.
+const ALLOWED_STORE_HOSTS: &[&str] = &[
+    "raw.githubusercontent.com",
+    "github.com",
+    "localhost",
+    "127.0.0.1",
+];
+
+/// Validate an app-store catalog URL (ANT-1061, code-scanning #5): it must
+/// parse as a URL, use `http`/`https`, and have its host in
+/// [`ALLOWED_STORE_HOSTS`]. Returns the rejection reason on failure so the
+/// caller can surface a clear 400.
+fn validate_store_url(url: &str) -> Result<(), String> {
+    let parsed = url::Url::parse(url).map_err(|e| {
+        format!("App store URL '{url}' is not a valid URL: {e}")
+    })?;
+    if parsed.scheme() != "http" && parsed.scheme() != "https" {
+        return Err(format!(
+            "App store URL must use http or https (got '{}://').",
+            parsed.scheme()
+        ));
+    }
+    let host = parsed.host_str().unwrap_or("");
+    if !ALLOWED_STORE_HOSTS.contains(&host) {
+        return Err(format!(
+            "App store host '{host}' is not in the allowlist of app-store hosts ({}).",
+            ALLOWED_STORE_HOSTS.join(", ")
+        ));
+    }
+    Ok(())
+}
+
+/// Validate an app-store name for the cache filename (ANT-1061,
+/// code-scanning #85/#88). Store names are display names — the default
+/// "SealSkin Apps" contains a space — so they use a slightly looser allowlist
+/// than `app.id` (`is_safe_path_segment`): ASCII letters, digits, `_`, `-` and
+/// a space are allowed. Everything else (notably `/` and `.`) is rejected,
+/// which closes the path-injection: a name containing a `/` (or a `..`
+/// component) could otherwise escape the cache directory through
+/// `{cache_dir}/{name}.yml`.
+fn valid_store_name(store_name: &str) -> bool {
+    !store_name.is_empty()
+        && store_name
+            .chars()
+            .all(|c| c.is_ascii_alphanumeric() || c == '_' || c == '-' || c == ' ')
 }
 
 /// Fetch an app store's YAML from its URL and cache it. Returns the text.
@@ -1996,6 +2086,25 @@ async fn install_app(
             .await
         }
     };
+    // ANT-1061 (code-scanning #83/#86/#87/#89): `app.id` is spliced into a
+    // filesystem path at every icon sink (update/delete/create_meta writes,
+    // the app-list read in collaboration, and get_app_icon). It used to be
+    // stored with only a conflict check — no character validation — so a
+    // stored id could contain `/`, `..`, or be absolute and escape the icon
+    // directory. Reject non-conforming ids at install so legacy-style bad ids
+    // never enter the set.
+    if !catalog::is_safe_path_segment(&app.id) {
+        return e2ee::encrypt_response(
+            &state,
+            &headers,
+            StatusCode::UNPROCESSABLE_ENTITY,
+            serde_json::json!({ "detail": format!(
+                "Invalid app ID '{}': only ASCII letters, digits, '_' and '-' are allowed.",
+                app.id
+            ) }),
+        )
+        .await;
+    }
     {
         let apps = state.installed_apps.read().await;
         if apps.contains_key(&app.id) {
@@ -2116,7 +2225,13 @@ async fn update_installed_app(
         match base64::engine::general_purpose::STANDARD.decode(&app_update.logo) {
             Ok(icon_data) => {
                 let icon_path = format!("{}/{}.png", state.settings.app_icons_path, app_id);
-                if std::fs::write(&icon_path, &icon_data).is_ok() {
+                // ANT-1061 (#86): containment guard — defense-in-depth for a
+                // legacy non-conforming id (install now rejects them, but a
+                // pre-existing row could still carry one). A path that does not
+                // sit inside the icon directory is skipped, not written.
+                if std::path::Path::new(&icon_path).starts_with(&state.settings.app_icons_path)
+                    && std::fs::write(&icon_path, &icon_data).is_ok()
+                {
                     app_update.logo = format!("/api/app_icon/{app_id}");
                     info!("Updated and saved custom icon for app {app_id}");
                 } else {
@@ -2211,7 +2326,12 @@ async fn delete_installed_app(
     };
     if app_to_delete.is_meta_app {
         let icon_path = format!("{}/{}.png", state.settings.app_icons_path, app_id);
-        if std::path::Path::new(&icon_path).exists() {
+        // ANT-1061 (#87/#89): containment guard — only remove the icon if it
+        // sits inside the icon directory (defense-in-depth for a legacy
+        // non-conforming id that could otherwise name a file elsewhere).
+        if std::path::Path::new(&icon_path).starts_with(&state.settings.app_icons_path)
+            && std::path::Path::new(&icon_path).exists()
+        {
             let _ = std::fs::remove_file(&icon_path);
         }
         if let Some(template_name) = &app_to_delete.home_template_name {

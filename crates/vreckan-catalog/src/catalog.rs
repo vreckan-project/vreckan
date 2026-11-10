@@ -43,7 +43,7 @@ use vreckan_auth::user_manager;
 use vreckan_core::shared::GpuInfo;
 pub use vreckan_core::shared::{
     AvailableAppProviderConfig, AppStore, EnvVar, InstalledApp, InstalledAppProviderConfig,
-    SelkiesProbe, default_true,
+    SelkiesProbe, default_true, is_safe_path_segment,
 };
 
 // ---------------------------------------------------------------------------
@@ -182,6 +182,18 @@ pub async fn load_installed_apps(state: &AppState) -> Result<(), sea_orm::DbErr>
     for row in rows {
         match serde_json::from_value::<InstalledApp>(row.data) {
             Ok(app) => {
+                // ANT-1061 (#83/#86/#87/#89): legacy non-conforming id. New
+                // installs are rejected at `install_app`, but a pre-existing
+                // row can still carry one. We quarantine (keep) rather than
+                // drop: every icon sink is containment-guarded, so a bad id is
+                // inert, and the admin can still see and delete the app. The
+                // warning is logged loudly so ops notices the legacy data.
+                if !is_safe_path_segment(&app.id) {
+                    warn!(
+                        "Quarantining installed app '{}' with a non-conforming id (allowed: ASCII letters, digits, '_', '-'). Kept for admin visibility; its icon access is containment-guarded and new installs reject this id.",
+                        app.id
+                    );
+                }
                 apps.insert(app.id.clone(), app);
             }
             Err(e) => warn!("Skipping malformed installed app row '{}': {e}", row.id),
@@ -3421,10 +3433,7 @@ async fn get_app_icon(
         }
     };
     let _ = &user;
-    if !app_id
-        .chars()
-        .all(|c| c.is_ascii_alphanumeric() || c == '_' || c == '-')
-    {
+    if !is_safe_path_segment(&app_id) {
         return e2ee::encrypt_response(
             &state,
             &headers,

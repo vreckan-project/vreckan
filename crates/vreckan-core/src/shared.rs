@@ -335,6 +335,23 @@ pub fn random_uuid() -> String {
     uuid::Uuid::from_bytes(bytes).to_string()
 }
 
+/// True when `segment` is safe to splice into a filesystem path: it is
+/// non-empty and contains only ASCII letters, digits, `_` and `-` — no `/`,
+/// no `.`, no control or other non-ASCII bytes, so it can never traverse out
+/// of its parent directory via a `..`/`/` sequence.
+///
+/// This is the shared path-traversal allowlist (ANT-1061, code-scanning
+/// #5/#85/#88 and #83/#86/#87/#89) for every sink built from an
+/// `app.id` or an app-store name: the app-icon filename, the app-store cache
+/// filename, and the autostart-script cache filename. It mirrors the
+/// allowlist already applied to the icon path in `get_app_icon`.
+pub fn is_safe_path_segment(segment: &str) -> bool {
+    !segment.is_empty()
+        && segment
+            .chars()
+            .all(|c| c.is_ascii_alphanumeric() || c == '_' || c == '-')
+}
+
 /// Pins the bounded 7-type extraction (ANT-773): every type the issue
 /// names must be `pub` in `vreckan-core` (not just reachable through a
 /// `pub use` re-export somewhere), so the no-`core -> apps`/`core ->
@@ -369,5 +386,36 @@ mod ant773_invariant {
         let room = RoomConnections::default();
         assert!(room.controller.is_none());
         assert!(room.viewers.is_empty());
+    }
+}
+
+#[cfg(test)]
+mod ant1061_safe_path_segment {
+    use super::is_safe_path_segment;
+
+    #[test]
+    fn accepts_safe_ids_and_rejects_traversal() {
+        // Safe: ASCII alnum plus `_`/`-`. UUIDs (what `create_meta_app`
+        // generates) and the `app-1`/`firefox` test ids all land here.
+        assert!(is_safe_path_segment("firefox"));
+        assert!(is_safe_path_segment("app-1"));
+        assert!(is_safe_path_segment("app_1"));
+        assert!(is_safe_path_segment("1234ABCD"));
+        assert!(is_safe_path_segment("abc-123_DEF"));
+        assert!(is_safe_path_segment("123e4567-e89b-12d3-a456-426614174000"));
+
+        // Unsafe: empty, traversal, absolute, embedded dots, spaces,
+        // non-ASCII, and control bytes.
+        assert!(!is_safe_path_segment(""));
+        assert!(!is_safe_path_segment(".."));
+        assert!(!is_safe_path_segment("../x"));
+        assert!(!is_safe_path_segment("a/b"));
+        assert!(!is_safe_path_segment("/abs"));
+        assert!(!is_safe_path_segment("a..b"));
+        assert!(!is_safe_path_segment("bad..id"));
+        assert!(!is_safe_path_segment("a b"));
+        assert!(!is_safe_path_segment("café"));
+        assert!(!is_safe_path_segment("a\tb"));
+        assert!(!is_safe_path_segment("a\nb"));
     }
 }

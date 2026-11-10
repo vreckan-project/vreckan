@@ -1743,9 +1743,22 @@ async fn send_app_list(
         if logo_src.starts_with("/api/app_icon/") {
             let icon_path = std::path::Path::new(&state.settings.app_icons_path)
                 .join(format!("{}.png", app.id));
-            if let Ok(bytes) = std::fs::read(&icon_path) {
-                let b64 = base64::engine::general_purpose::STANDARD.encode(&bytes);
-                logo_src = format!("data:image/png;base64,{b64}");
+            // ANT-1061 (#83): containment guard — only read the icon if it sits
+            // inside the icon directory (defense-in-depth for a legacy
+            // non-conforming app.id that could otherwise name a file elsewhere
+            // and leak its bytes into the app list). The `starts_with` prefix
+            // check mirrors the sanitizer CodeQL recognizes in `get_app_icon`
+            // (catalog.rs:3431); the `is_safe_path_segment` id check closes the
+            // gap `starts_with` has for an absolute base dir (a `..`/`/` id
+            // still prefixes the base literally), which is the case install-time
+            // validation rejects going forward.
+            if vreckan_core::shared::is_safe_path_segment(&app.id)
+                && icon_path.starts_with(&state.settings.app_icons_path)
+            {
+                if let Ok(bytes) = std::fs::read(&icon_path) {
+                    let b64 = base64::engine::general_purpose::STANDARD.encode(&bytes);
+                    logo_src = format!("data:image/png;base64,{b64}");
+                }
             }
         }
         user_apps.push(serde_json::json!({
@@ -2645,5 +2658,56 @@ mod tests {
             Some(BOB882),
             "the stored mk owner must be the full token: {session:?}"
         );
+    }
+
+    // Defense-in-depth for code-scanning #83: a legacy installed app whose id
+    // is non-conforming (contains `..`) must not leak a file from outside the
+    // icon directory into the app list. The containment guard at the read sink
+    // skips the out-of-dir path, so the logo stays the raw reference rather
+    // than being inlined from the secret file.
+    #[tokio::test]
+    async fn ant1061_send_app_list_skips_icon_outside_dir() {
+        let ts = TestState::new().await;
+        let mut state = ts.state.clone();
+        let icons = ts.dir.join("icons");
+        std::fs::create_dir_all(&icons).unwrap();
+        state.settings.app_icons_path = icons.to_string_lossy().to_string();
+        // A file a `../` id could name from outside the icon directory.
+        std::fs::write(ts.dir.join("escape.png"), b"secret-bytes").unwrap();
+
+        let legacy: vreckan_core::shared::InstalledApp = serde_json::from_value(serde_json::json!({
+            "id": "../escape",
+            "name": "Legacy",
+            "logo": "/api/app_icon/../escape",
+            "users": ["all"],
+            "provider_config": { "image": "lscr.io/linuxserver/firefox:latest", "port": 3000 }
+        }))
+        .unwrap();
+        state
+            .installed_apps
+            .write()
+            .await
+            .insert(legacy.id.clone(), legacy);
+
+        let (tx, mut rx) = tokio::sync::mpsc::channel::<Message>(16);
+        let session_data = serde_json::json!({ "username": "admin", "provider_app_id": "" });
+        send_app_list(&state, "s", &session_data, &tx).await;
+        drop(tx);
+
+        let frame = rx.recv().await.expect("app_list frame");
+        let text = match frame {
+            Message::Text(t) => t,
+            other => panic!("expected a Text app_list frame, got {other:?}"),
+        };
+        let v: Value = serde_json::from_str(&text).unwrap();
+        let legacy_row = v["apps"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .find(|a| a["id"] == "../escape")
+            .expect("legacy app present in the list");
+        // The guard skipped the out-of-dir read: the logo is the raw
+        // reference, not the inlined bytes of the secret file.
+        assert_eq!(legacy_row["logo"], "/api/app_icon/../escape");
     }
 }
