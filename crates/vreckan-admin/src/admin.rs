@@ -2221,30 +2221,18 @@ async fn update_installed_app(
         )
         .await;
     }
-    // ANT-1061 (#86): early-exit guard on the raw path id, mirroring
-    // get_app_icon (the CodeQL-recognized taint-kill form — the guard runs
-    // before the id is spliced into a path, so the derived icon_path is clean).
-    // A non-conforming legacy id can no longer be updated; new installs reject
-    // it at the door.
-    if !catalog::is_safe_path_segment(&app_id) {
-        return e2ee::encrypt_response(
-            &state,
-            &headers,
-            StatusCode::UNPROCESSABLE_ENTITY,
-            serde_json::json!({ "detail": "Invalid application ID." }),
-        )
-        .await;
-    }
     if !app_update.logo.is_empty() && !app_update.logo.starts_with("/api/app_icon/") {
         match base64::engine::general_purpose::STANDARD.decode(&app_update.logo) {
             Ok(icon_data) => {
-                let icon_path = format!("{}/{}.png", state.settings.app_icons_path, app_id);
-                // ANT-1061 (#86): app_id was validated above (the taint-kill);
-                // starts_with is belt-and-suspenders containment so a path that
-                // escapes the icon dir is skipped, not written.
-                if std::path::Path::new(&icon_path).starts_with(&state.settings.app_icons_path)
-                    && std::fs::write(&icon_path, &icon_data).is_ok()
-                {
+                // ANT-1061 (#86): routed through the get_app_icon-mirroring
+                // guarded helper (is_safe_path_segment + starts_with taint-kill
+                // in the same function), so a non-conforming/escaping legacy id
+                // is skipped, not written.
+                if vreckan_core::shared::write_app_icon(
+                    &state.settings.app_icons_path,
+                    &app_id,
+                    &icon_data,
+                ) {
                     app_update.logo = format!("/api/app_icon/{app_id}");
                     info!("Updated and saved custom icon for app {app_id}");
                 } else {
@@ -2337,31 +2325,12 @@ async fn delete_installed_app(
         )
         .await;
     };
-    // ANT-1061 (#87/#89): early-exit guard on the raw path id, mirroring
-    // get_app_icon (the CodeQL-recognized taint-kill form — the guard runs
-    // before the id is spliced into a path, so the derived icon_path is clean).
-    // A non-conforming legacy id can no longer be deleted via this endpoint
-    // (the admin UI still lists it for out-of-band cleanup); new installs
-    // reject it at the door.
-    if !catalog::is_safe_path_segment(&app_id) {
-        return e2ee::encrypt_response(
-            &state,
-            &headers,
-            StatusCode::UNPROCESSABLE_ENTITY,
-            serde_json::json!({ "detail": "Invalid application ID." }),
-        )
-        .await;
-    }
     if app_to_delete.is_meta_app {
-        let icon_path = format!("{}/{}.png", state.settings.app_icons_path, app_id);
-        // ANT-1061 (#87/#89): app_id was validated above (the taint-kill);
-        // starts_with is belt-and-suspenders containment so a path that
-        // escapes the icon dir is not removed.
-        if std::path::Path::new(&icon_path).starts_with(&state.settings.app_icons_path)
-            && std::path::Path::new(&icon_path).exists()
-        {
-            let _ = std::fs::remove_file(&icon_path);
-        }
+        // ANT-1061 (#87/#89): routed through the get_app_icon-mirroring guarded
+        // helper (is_safe_path_segment + starts_with taint-kill in the same
+        // function), so a non-conforming/escaping legacy id's icon is skipped,
+        // not removed — while the app row itself is still deleted below.
+        let _ = vreckan_core::shared::remove_app_icon(&state.settings.app_icons_path, &app_id);
         if let Some(template_name) = &app_to_delete.home_template_name {
             let template_dir_path = format!("{}/{}", state.settings.home_templates_path, template_name);
             if std::path::Path::new(&template_dir_path).is_dir() {

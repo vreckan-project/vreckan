@@ -1741,24 +1741,16 @@ async fn send_app_list(
         }
         let mut logo_src = app.logo.clone();
         if logo_src.starts_with("/api/app_icon/") {
-            // ANT-1061 (#83): negation guard mirroring get_app_icon (the
-            // CodeQL-recognized taint-kill form): past this branch app.id is
-            // clean before it is spliced into a path. A legacy non-conforming
-            // id skips the read (logo_src stays its original URL — no leak);
-            // the app entry below is still pushed either way.
-            if !vreckan_core::shared::is_safe_path_segment(&app.id) {
-                // skip: non-conforming legacy id, leave logo_src as the URL
-            } else {
-                let icon_path = std::path::Path::new(&state.settings.app_icons_path)
-                    .join(format!("{}.png", app.id));
-                // Belt-and-suspenders containment: skip the read if the derived
-                // path somehow escapes the icon directory.
-                if icon_path.starts_with(&state.settings.app_icons_path) {
-                    if let Ok(bytes) = std::fs::read(&icon_path) {
-                        let b64 = base64::engine::general_purpose::STANDARD.encode(&bytes);
-                        logo_src = format!("data:image/png;base64,{b64}");
-                    }
-                }
+            // ANT-1061 (#83): routed through the get_app_icon-mirroring guarded
+            // helper (is_safe_path_segment + starts_with taint-kill in the same
+            // function), so a legacy non-conforming id skips the read (logo_src
+            // stays its original URL — no leak); the app entry below is still
+            // pushed either way.
+            if let Some(bytes) =
+                vreckan_core::shared::read_app_icon(&state.settings.app_icons_path, &app.id)
+            {
+                let b64 = base64::engine::general_purpose::STANDARD.encode(&bytes);
+                logo_src = format!("data:image/png;base64,{b64}");
             }
         }
         user_apps.push(serde_json::json!({
