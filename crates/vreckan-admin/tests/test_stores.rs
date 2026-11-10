@@ -471,6 +471,86 @@ async fn test_available_apps_poisoned_cache_refetches() {
 }
 
 // ---------------------------------------------------------------------------
+// ANT-1061: app-store input hardening (code-scanning #5/#85/#88)
+// ---------------------------------------------------------------------------
+
+#[tokio::test]
+async fn test_available_apps_ssrf_rejects_link_local_metadata() {
+    let _root = TempDir::new();
+    let state = build_state(_root.path()).await;
+    let sc = admin_client(state).await;
+    // The classic cloud-metadata SSRF target: not in the host allowlist, so
+    // it is rejected before any fetch is attempted.
+    let (status, body) = sc
+        .call("GET", "/api/admin/apps/available?url=http://169.254.169.254/latest/meta-data/&store_name=Meta", None)
+        .await;
+    assert_eq!(status, StatusCode::BAD_REQUEST, "{body:?}");
+    assert!(body.unwrap()["detail"].as_str().unwrap().contains("not in the allowlist"));
+}
+
+#[tokio::test]
+async fn test_available_apps_ssrf_rejects_disallowed_host() {
+    let _root = TempDir::new();
+    let state = build_state(_root.path()).await;
+    let sc = admin_client(state).await;
+    // A real public host that is not in the app-store allowlist.
+    let (status, body) = sc
+        .call("GET", "/api/admin/apps/available?url=http://example.com/apps.yml&store_name=Ex", None)
+        .await;
+    assert_eq!(status, StatusCode::BAD_REQUEST, "{body:?}");
+    assert!(body.unwrap()["detail"].as_str().unwrap().contains("not in the allowlist"));
+}
+
+#[tokio::test]
+async fn test_available_apps_ssrf_rejects_non_http_scheme() {
+    let _root = TempDir::new();
+    let state = build_state(_root.path()).await;
+    let sc = admin_client(state).await;
+    // An allowlisted host but the wrong scheme: rejected at the scheme check
+    // (the host check alone would let ftp:// through).
+    let (status, body) = sc
+        .call("GET", "/api/admin/apps/available?url=ftp://raw.githubusercontent.com/x/y.yml&store_name=Ftp", None)
+        .await;
+    assert_eq!(status, StatusCode::BAD_REQUEST, "{body:?}");
+    assert!(body.unwrap()["detail"].as_str().unwrap().contains("must use http or https"));
+}
+
+#[tokio::test]
+async fn test_available_apps_store_name_rejects_path_traversal() {
+    let _root = TempDir::new();
+    let state = build_state(_root.path()).await;
+    let sc = admin_client(state).await;
+    // A store name that would escape the cache dir via a `..`/`/` sequence is
+    // rejected with a clear 400, never reaching the filesystem.
+    for bad in ["..", "a/b", "a..b"] {
+        let url = format!(
+            "/api/admin/apps/available?url={}&store_name={}",
+            quote(STORE_URL),
+            quote(bad)
+        );
+        let (status, body) = sc.call("GET", &url, None).await;
+        let body = body.expect("response body");
+        let detail = body["detail"].as_str().unwrap_or("");
+        assert_eq!(status, StatusCode::BAD_REQUEST, "store_name {bad}: detail={detail}");
+        assert!(detail.contains("Invalid store name"), "{bad}: detail={detail}");
+    }
+    // A space-containing name (the default store is "SealSkin Apps") is
+    // accepted: it passes the allowlist and reaches the (dead-URL) fetch.
+    let url = format!(
+        "/api/admin/apps/available?url={}&store_name=Test%20Store",
+        quote(STORE_URL)
+    );
+    let (status, body) = sc.call("GET", &url, None).await;
+    let body = body.expect("response body");
+    let detail = body["detail"].as_str().unwrap_or("");
+    assert_eq!(status, StatusCode::BAD_REQUEST, "{body:?}");
+    assert!(
+        detail.starts_with("Failed to fetch app store from URL"),
+        "space store name must reach the fetch, not be rejected: {detail}"
+    );
+}
+
+// ---------------------------------------------------------------------------
 // Installed apps: error paths (happy paths live in test_api_smoke)
 // ---------------------------------------------------------------------------
 
@@ -486,6 +566,34 @@ async fn test_install_app_malformed_body() {
         .await;
     assert_eq!(status, StatusCode::UNPROCESSABLE_ENTITY);
     assert!(resp.unwrap()["detail"].as_str().unwrap().starts_with("Invalid request body"));
+}
+
+#[tokio::test]
+async fn test_install_app_rejects_non_conforming_id() {
+    let _root = TempDir::new();
+    let state = build_state(_root.path()).await;
+    let sc = admin_client(state).await;
+    sc.state.pull_noop.store(true, std::sync::atomic::Ordering::Relaxed);
+    // Each of these used to be stored as-is (only a conflict check); now they
+    // are rejected at install so they never reach an icon-path sink.
+    for bad_id in ["../evil", "a/b", "/abs", "bad..id"] {
+        let body = install_body(bad_id, "Firefox", "lscr.io/linuxserver/firefox:latest");
+        let (status, resp) = sc.call("POST", "/api/admin/apps/installed", Some(&body)).await;
+        let resp = resp.expect("response body");
+        let detail = resp["detail"].as_str().unwrap_or("");
+        assert_eq!(
+            status,
+            StatusCode::UNPROCESSABLE_ENTITY,
+            "id {bad_id}: detail={detail}"
+        );
+        assert!(detail.contains("Invalid app ID"), "{bad_id}: detail={detail}");
+        let apps = sc.state.installed_apps.read().await;
+        assert!(!apps.contains_key(bad_id), "id {bad_id} must not be stored");
+    }
+    // A conforming id still installs: the fix does not over-reject.
+    let ok = install_body("good-app", "Firefox", "lscr.io/linuxserver/firefox:latest");
+    let (status, resp) = sc.call("POST", "/api/admin/apps/installed", Some(&ok)).await;
+    assert_eq!(status, StatusCode::CREATED, "{resp:?}");
 }
 
 #[tokio::test]

@@ -335,6 +335,73 @@ pub fn random_uuid() -> String {
     uuid::Uuid::from_bytes(bytes).to_string()
 }
 
+/// True when `segment` is safe to splice into a filesystem path: it is
+/// non-empty and contains only ASCII letters, digits, `_` and `-` — no `/`,
+/// no `.`, no control or other non-ASCII bytes, so it can never traverse out
+/// of its parent directory via a `..`/`/` sequence.
+///
+/// This is the shared path-traversal allowlist (ANT-1061, code-scanning
+/// #5/#85/#88 and #83/#86/#87/#89) for every sink built from an
+/// `app.id` or an app-store name: the app-icon filename, the app-store cache
+/// filename, and the autostart-script cache filename. It mirrors the
+/// allowlist already applied to the icon path in `get_app_icon`.
+pub fn is_safe_path_segment(segment: &str) -> bool {
+    !segment.is_empty()
+        && segment
+            .chars()
+            .all(|c| c.is_ascii_alphanumeric() || c == '_' || c == '-')
+}
+
+/// Read an installed app's icon if `app_id` is a safe path segment and the
+/// derived path stays inside `icons_dir`. The guard order mirrors
+/// `get_app_icon` — the CodeQL-recognized taint-kill form for
+/// `rust/path-injection`: `is_safe_path_segment` runs on the raw id BEFORE the
+/// path is derived, then a standalone negation `starts_with` containment check
+/// runs on the derived path, and the read happens in the fall-through. Returns
+/// `None` if either guard fails or the read errors (a legacy non-conforming id
+/// is inert, not fatal).
+pub fn read_app_icon(icons_dir: &str, app_id: &str) -> Option<Vec<u8>> {
+    if !is_safe_path_segment(app_id) {
+        return None;
+    }
+    let icon_path = format!("{icons_dir}/{app_id}.png");
+    if !std::path::Path::new(&icon_path).starts_with(icons_dir) {
+        return None;
+    }
+    std::fs::read(&icon_path).ok()
+}
+
+/// Write an installed app's icon under the same `get_app_icon` guard order.
+/// Returns `true` only if the file was actually written inside the icon
+/// directory.
+pub fn write_app_icon(icons_dir: &str, app_id: &str, data: &[u8]) -> bool {
+    if !is_safe_path_segment(app_id) {
+        return false;
+    }
+    let icon_path = format!("{icons_dir}/{app_id}.png");
+    if !std::path::Path::new(&icon_path).starts_with(icons_dir) {
+        return false;
+    }
+    std::fs::write(&icon_path, data).is_ok()
+}
+
+/// Remove an installed app's icon under the same `get_app_icon` guard order
+/// (plus an existence check). Returns `true` only if a file inside the icon
+/// directory was removed.
+pub fn remove_app_icon(icons_dir: &str, app_id: &str) -> bool {
+    if !is_safe_path_segment(app_id) {
+        return false;
+    }
+    let icon_path = format!("{icons_dir}/{app_id}.png");
+    if !std::path::Path::new(&icon_path).starts_with(icons_dir) {
+        return false;
+    }
+    if !std::path::Path::new(&icon_path).exists() {
+        return false;
+    }
+    std::fs::remove_file(&icon_path).is_ok()
+}
+
 /// Pins the bounded 7-type extraction (ANT-773): every type the issue
 /// names must be `pub` in `vreckan-core` (not just reachable through a
 /// `pub use` re-export somewhere), so the no-`core -> apps`/`core ->
@@ -369,5 +436,85 @@ mod ant773_invariant {
         let room = RoomConnections::default();
         assert!(room.controller.is_none());
         assert!(room.viewers.is_empty());
+    }
+}
+
+#[cfg(test)]
+mod ant1061_safe_path_segment {
+    use super::is_safe_path_segment;
+
+    #[test]
+    fn accepts_safe_ids_and_rejects_traversal() {
+        // Safe: ASCII alnum plus `_`/`-`. UUIDs (what `create_meta_app`
+        // generates) and the `app-1`/`firefox` test ids all land here.
+        assert!(is_safe_path_segment("firefox"));
+        assert!(is_safe_path_segment("app-1"));
+        assert!(is_safe_path_segment("app_1"));
+        assert!(is_safe_path_segment("1234ABCD"));
+        assert!(is_safe_path_segment("abc-123_DEF"));
+        assert!(is_safe_path_segment("123e4567-e89b-12d3-a456-426614174000"));
+
+        // Unsafe: empty, traversal, absolute, embedded dots, spaces,
+        // non-ASCII, and control bytes.
+        assert!(!is_safe_path_segment(""));
+        assert!(!is_safe_path_segment(".."));
+        assert!(!is_safe_path_segment("../x"));
+        assert!(!is_safe_path_segment("a/b"));
+        assert!(!is_safe_path_segment("/abs"));
+        assert!(!is_safe_path_segment("a..b"));
+        assert!(!is_safe_path_segment("bad..id"));
+        assert!(!is_safe_path_segment("a b"));
+        assert!(!is_safe_path_segment("café"));
+        assert!(!is_safe_path_segment("a\tb"));
+        assert!(!is_safe_path_segment("a\nb"));
+    }
+}
+
+#[cfg(test)]
+mod ant1061_icon_helpers {
+    use super::{read_app_icon, remove_app_icon, write_app_icon};
+
+    fn fresh_dir(tag: &str) -> std::path::PathBuf {
+        let dir = std::env::temp_dir().join(format!("ant1061-icons-{tag}-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&dir);
+        std::fs::create_dir_all(&dir).unwrap();
+        dir
+    }
+
+    #[test]
+    fn conforming_id_round_trips_inside_dir() {
+        let icons = fresh_dir("roundtrip");
+        let base = icons.to_string_lossy().to_string();
+        assert!(write_app_icon(&base, "firefox", b"PNGDATA"));
+        assert_eq!(read_app_icon(&base, "firefox"), Some(b"PNGDATA".to_vec()));
+        assert!(remove_app_icon(&base, "firefox"));
+        assert_eq!(read_app_icon(&base, "firefox"), None);
+        let _ = std::fs::remove_dir_all(&icons);
+    }
+
+    #[test]
+    fn non_conforming_id_is_inert() {
+        let icons = fresh_dir("nonconforming");
+        let base = icons.to_string_lossy().to_string();
+        // A `../` id is rejected before the path is derived: no write, read,
+        // or remove happens (the legacy row is inert, not an escape).
+        assert!(!write_app_icon(&base, "../escape", b"X"));
+        assert_eq!(read_app_icon(&base, "../escape"), None);
+        assert!(!remove_app_icon(&base, "../escape"));
+        let _ = std::fs::remove_dir_all(&icons);
+    }
+
+    #[test]
+    fn traversal_id_cannot_reach_a_sibling_file() {
+        let icons = fresh_dir("escaping");
+        let base = icons.to_string_lossy().to_string();
+        // A secret file the traversal could name from outside the icon dir.
+        let secret = icons.parent().unwrap().join("escape.png");
+        std::fs::write(&secret, b"secret-bytes").unwrap();
+        assert_eq!(read_app_icon(&base, "../escape"), None);
+        assert!(!remove_app_icon(&base, "../escape"));
+        assert!(secret.exists(), "sibling file must be untouched");
+        let _ = std::fs::remove_dir_all(&icons);
+        let _ = std::fs::remove_file(&secret);
     }
 }
