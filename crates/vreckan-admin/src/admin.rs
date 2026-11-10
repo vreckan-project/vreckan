@@ -1012,9 +1012,12 @@ async fn test_sso_connection(
     };
     // Prefer the configured redirect_uri (DB-over-env); otherwise derive it
     // from the request's public base URL (mirrors the Python `_oidc_redirect_uri`).
+    // Both proxy headers are gated on the effective (DB-over-env) trusted-
+    // proxy list (ANT-879).
     let redirect_uri = if cfg.redirect_uri.trim().is_empty() {
-        let scheme = auth::request_scheme(&state.settings, &headers, remote);
-        let host = auth::public_host(&headers, &uri);
+        let trusted = state.settings.effective_trusted_proxies(&state.db).await;
+        let scheme = auth::request_scheme(&trusted, &headers, remote);
+        let host = auth::public_host(&trusted, &headers, &uri, remote);
         format!("{scheme}://{host}/api/auth/oidc/callback")
     } else {
         cfg.redirect_uri.trim().to_string()

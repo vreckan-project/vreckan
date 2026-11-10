@@ -223,18 +223,20 @@ pub async fn cookie_same_site(state: &AppState, secure: bool) -> &'static str {
 }
 
 /// The request's effective scheme. The `X-Forwarded-Proto` header (set by a
-/// reverse proxy) is honored only when the direct TCP peer is a configured
-/// trusted proxy (`trusted_proxies`; ANT-346 — the same gate as `client_ip`
-/// for `X-Forwarded-For`): a client reaching the origin port directly can
-/// otherwise set or omit the header at will and flip the `Secure` attribute
-/// on its own session cookie. Otherwise the actual connection scheme applies,
-/// which is always `https` (the server always terminates TLS).
+/// reverse proxy) is honored only when the direct TCP peer matches the
+/// effective `trusted_proxies` list (DB-over-env; ANT-346 — the same gate as
+/// `client_ip` for `X-Forwarded-For`): a client reaching the origin port
+/// directly can otherwise set or omit the header at will and flip the
+/// `Secure` attribute on its own session cookie. Otherwise the actual
+/// connection scheme applies, which is always `https` (the server always
+/// terminates TLS). `trusted_proxies` is the *effective* value resolved by the
+/// caller (ANT-879), not the startup env snapshot.
 pub fn request_scheme<'h>(
-    settings: &Settings,
+    trusted_proxies: &str,
     headers: &'h axum::http::HeaderMap,
     remote: Option<std::net::SocketAddr>,
 ) -> &'h str {
-    if peer_is_trusted_proxy(settings, remote) {
+    if peer_is_trusted_proxy(trusted_proxies, remote) {
         if let Some(v) = headers.get(axum::http::HeaderName::from_static("x-forwarded-proto")) {
             if let Ok(s) = v.to_str() {
                 return s;
@@ -520,20 +522,20 @@ impl<S: Send + Sync> axum::extract::FromRequestParts<S> for RemoteAddr {
     }
 }
 
-/// Whether the direct TCP peer is one of the configured trusted reverse
-/// proxies (`trusted_proxies`; ANT-276, the same control as H4 for
-/// `X-Forwarded-Proto`). Only then are `X-Forwarded-*` headers honoured: a
-/// client reaching the server directly can otherwise rotate the headers at
-/// will. Public so the remaining H4 call sites can reuse the same gate.
+/// Whether the direct TCP peer matches the effective `trusted_proxies` list
+/// (DB-over-env; ANT-276, the same control as H4 for `X-Forwarded-Proto`).
+/// Only then are `X-Forwarded-*` headers honoured: a client reaching the
+/// server directly can otherwise rotate the headers at will. `trusted_proxies`
+/// is the effective value resolved by the caller (ANT-879), not the startup
+/// env snapshot. Public so the remaining H4 call sites can reuse the same gate.
 pub fn peer_is_trusted_proxy(
-    settings: &Settings,
+    trusted_proxies: &str,
     remote: Option<std::net::SocketAddr>,
 ) -> bool {
     let Some(ip) = remote.map(|a| a.ip()) else {
         return false;
     };
-    settings
-        .trusted_proxies
+    trusted_proxies
         .split(',')
         .map(str::trim)
         .filter(|e| !e.is_empty())
@@ -585,17 +587,18 @@ fn ip_in_network(ip: std::net::IpAddr, network: std::net::IpAddr, prefix: u8) ->
 }
 
 /// The client's IP for login rate limiting: the leftmost `X-Forwarded-For`
-/// entry when the direct peer is a configured trusted proxy (the proxy
-/// appends the entry, so the client cannot forge it), otherwise the direct
-/// connection address, then to a shared `"unknown"` bucket (unproxied local
-/// clients and test harnesses). An XFF header from an untrusted peer is
-/// ignored: a rotating value would defeat the per-IP lockout (ANT-276).
+/// entry when the direct peer matches the effective `trusted_proxies` list
+/// (DB-over-env; the proxy appends the entry, so the client cannot forge it),
+/// otherwise the direct connection address, then to a shared `"unknown"`
+/// bucket (unproxied local clients and test harnesses). An XFF header from an
+/// untrusted peer is ignored: a rotating value would defeat the per-IP
+/// lockout (ANT-276).
 fn client_ip(
-    settings: &Settings,
+    trusted_proxies: &str,
     headers: &HeaderMap,
     remote: Option<std::net::SocketAddr>,
 ) -> String {
-    if peer_is_trusted_proxy(settings, remote) {
+    if peer_is_trusted_proxy(trusted_proxies, remote) {
         if let Some(v) = headers.get(axum::http::HeaderName::from_static("x-forwarded-for")) {
             if let Ok(s) = v.to_str() {
                 if let Some(first) = s.split(',').next() {
@@ -656,7 +659,10 @@ async fn login(
     RemoteAddr(remote): RemoteAddr,
     Json(req): Json<LoginRequest>,
 ) -> Response {
-    let ip = client_ip(&state.settings, &headers, remote);
+    // Effective (DB-over-env) trusted-proxy list, so a value saved on the
+    // admin SSO page gates the rate limiter immediately (ANT-879).
+    let trusted = state.settings.effective_trusted_proxies(&state.db).await;
+    let ip = client_ip(&trusted, &headers, remote);
     // Lowercase the username in the key: 'Admin' and 'admin' are the same
     // account for lockout-budget purposes (ANT-276).
     let key = format!("{ip}:{}", req.username.to_ascii_lowercase());
@@ -777,7 +783,7 @@ async fn login(
         user.permissions.clone()
     };
     let me = me_response(&state, &user, &effective, perms).await;
-    let secure = request_scheme(&state.settings, &headers, remote) == "https";
+    let secure = request_scheme(&trusted, &headers, remote) == "https";
     let same_site = cookie_same_site(&state, secure).await;
     let cookie = auth_cookie(&state.settings, Some(&token), secure, same_site);
     (
@@ -808,7 +814,8 @@ async fn logout(
             error!("Logout: failed to persist the token table: {e}");
         }
     }
-    let secure = request_scheme(&state.settings, &headers, remote) == "https";
+    let trusted = state.settings.effective_trusted_proxies(&state.db).await;
+    let secure = request_scheme(&trusted, &headers, remote) == "https";
     let same_site = cookie_same_site(&state, secure).await;
     let cookie = auth_cookie(&state.settings, None, secure, same_site);
     (
@@ -868,7 +875,8 @@ async fn revoke_sessions(
     info!(
         "Self-revoke: user '{caller}' revoked {revoked} of their own web token(s)."
     );
-    let secure = request_scheme(&state.settings, &headers, remote) == "https";
+    let trusted = state.settings.effective_trusted_proxies(&state.db).await;
+    let secure = request_scheme(&trusted, &headers, remote) == "https";
     let same_site = cookie_same_site(&state, secure).await;
     let cookie = auth_cookie(&state.settings, None, secure, same_site);
     (
@@ -1094,14 +1102,25 @@ fn oidc_effective_issuer(cfg: &OidcConfig) -> String {
 }
 
 /// Resolve the public host for a request, in priority order:
-/// `X-Forwarded-Host` (set by a reverse proxy), then the URI authority
-/// (the HTTP/2 `:authority` pseudo-header, which hyper stores in the URI
-/// rather than as a `Host` header), then the `Host` header (HTTP/1.1).
-/// Reading only the `Host` header returns empty under HTTP/2, which is why
-/// derived redirect URLs were coming out as `https:///...`.
-pub fn public_host(headers: &HeaderMap, uri: &Uri) -> String {
-    if let Some(v) = headers.get("x-forwarded-host").and_then(|v| v.to_str().ok()) {
-        return v.to_string();
+/// `X-Forwarded-Host` (set by a reverse proxy) — honoured only when the
+/// direct TCP peer matches the effective `trusted_proxies` list, the same
+/// gate as `request_scheme` for `X-Forwarded-Proto` (ANT-346; an unproxied
+/// client can otherwise point derived redirect URLs at an attacker-chosen
+/// host, ANT-879) — then the URI authority (the HTTP/2 `:authority`
+/// pseudo-header, which hyper stores in the URI rather than as a `Host`
+/// header), then the `Host` header (HTTP/1.1). Reading only the `Host`
+/// header returns empty under HTTP/2, which is why derived redirect URLs
+/// were coming out as `https:///...`.
+pub fn public_host(
+    trusted_proxies: &str,
+    headers: &HeaderMap,
+    uri: &Uri,
+    remote: Option<std::net::SocketAddr>,
+) -> String {
+    if peer_is_trusted_proxy(trusted_proxies, remote) {
+        if let Some(v) = headers.get("x-forwarded-host").and_then(|v| v.to_str().ok()) {
+            return v.to_string();
+        }
     }
     if let Some(authority) = uri.authority() {
         return authority.as_str().to_string();
@@ -1114,16 +1133,17 @@ pub fn public_host(headers: &HeaderMap, uri: &Uri) -> String {
 }
 
 /// Derive the public base URL for a request (scheme + host), honoring
-/// reverse-proxy headers (`X-Forwarded-Proto` / `Host`) when present. The
-/// scheme is trusted only from a configured trusted proxy (ANT-346).
+/// reverse-proxy headers (`X-Forwarded-Proto` / `X-Forwarded-Host`) only from
+/// a trusted proxy (ANT-346). `trusted_proxies` is the effective value
+/// resolved by the caller (ANT-879), not the startup env snapshot.
 fn oidc_base_url(
-    settings: &Settings,
+    trusted_proxies: &str,
     headers: &HeaderMap,
     uri: &Uri,
     remote: Option<std::net::SocketAddr>,
 ) -> String {
-    let scheme = request_scheme(settings, headers, remote);
-    let host = public_host(headers, uri);
+    let scheme = request_scheme(trusted_proxies, headers, remote);
+    let host = public_host(trusted_proxies, headers, uri, remote);
     format!("{scheme}://{host}")
 }
 
@@ -1131,7 +1151,7 @@ fn oidc_base_url(
 /// otherwise derive it from the request's public base URL.
 fn oidc_redirect_uri(
     cfg: &OidcConfig,
-    settings: &Settings,
+    trusted_proxies: &str,
     headers: &HeaderMap,
     uri: &Uri,
     remote: Option<std::net::SocketAddr>,
@@ -1142,7 +1162,7 @@ fn oidc_redirect_uri(
     }
     format!(
         "{}/api/auth/oidc/callback",
-        oidc_base_url(settings, headers, uri, remote)
+        oidc_base_url(trusted_proxies, headers, uri, remote)
     )
 }
 
@@ -1569,12 +1589,13 @@ async fn oidc_authorize(
     // prompt=login makes the IdP force a *second* full re-authentication after
     // the first one, which is bad UX and can push the round-trip past the state
     // TTL so the callback fails the CSRF check.
+    let trusted = state.settings.effective_trusted_proxies(&state.db).await;
     let params = vec![
         ("response_type".to_string(), "code".to_string()),
         ("client_id".to_string(), cfg.client_id.clone()),
         (
             "redirect_uri".to_string(),
-            oidc_redirect_uri(&cfg, &state.settings, &headers, &uri, remote),
+            oidc_redirect_uri(&cfg, &trusted, &headers, &uri, remote),
         ),
         (
             "scope".to_string(),
@@ -1625,7 +1646,8 @@ async fn oidc_callback(
     }
     let cfg = oidc_config(&state).await;
     let issuer = oidc_effective_issuer(&cfg);
-    let redirect_uri = oidc_redirect_uri(&cfg, &state.settings, &headers, &uri, remote);
+    let trusted = state.settings.effective_trusted_proxies(&state.db).await;
+    let redirect_uri = oidc_redirect_uri(&cfg, &trusted, &headers, &uri, remote);
 
     // 2) Exchange the authorization code for tokens.
     let discovery = match oidc_discovery(&issuer).await {
@@ -1755,7 +1777,7 @@ async fn oidc_callback(
         return user_error_response(e.into());
     }
     // 6) Redirect to the app root.
-    let secure = request_scheme(&state.settings, &headers, remote) == "https";
+    let secure = request_scheme(&trusted, &headers, remote) == "https";
     let same_site = cookie_same_site(&state, secure).await;
     let cookie = auth_cookie(&state.settings, Some(&token), secure, same_site);
     (
@@ -1801,7 +1823,7 @@ mod tests {
     fn xff_ignored_when_no_trusted_proxy_configured() {
         let s = settings_with_proxies("");
         let remote = SocketAddr::new(IpAddr::V4(Ipv4Addr::new(1, 2, 3, 4)), 1234);
-        assert_eq!(client_ip(&s, &xff("9.9.9.9"), Some(remote)), "1.2.3.4");
+        assert_eq!(client_ip(&s.trusted_proxies, &xff("9.9.9.9"), Some(remote)), "1.2.3.4");
     }
 
     #[test]
@@ -1809,16 +1831,16 @@ mod tests {
         let remote = SocketAddr::new(IpAddr::V4(Ipv4Addr::new(10, 1, 2, 3)), 1234);
         // Exact-IP entry matching the direct peer.
         let s = settings_with_proxies("10.1.2.3");
-        assert_eq!(client_ip(&s, &xff("9.9.9.9"), Some(remote)), "9.9.9.9");
+        assert_eq!(client_ip(&s.trusted_proxies, &xff("9.9.9.9"), Some(remote)), "9.9.9.9");
         // CIDR covering the direct peer; leftmost entry wins.
         let s = settings_with_proxies("10.0.0.0/8");
         assert_eq!(
-            client_ip(&s, &xff("9.9.9.9, 10.1.2.3"), Some(remote)),
+            client_ip(&s.trusted_proxies, &xff("9.9.9.9, 10.1.2.3"), Some(remote)),
             "9.9.9.9"
         );
         // A different, untrusted peer: XFF falls back to the direct address.
         let other = SocketAddr::new(IpAddr::V4(Ipv4Addr::new(203, 0, 113, 7)), 1234);
-        assert_eq!(client_ip(&s, &xff("9.9.9.9"), Some(other)), "203.0.113.7");
+        assert_eq!(client_ip(&s.trusted_proxies, &xff("9.9.9.9"), Some(other)), "203.0.113.7");
     }
 
     #[test]
@@ -1826,37 +1848,37 @@ mod tests {
         // Empty list never matches.
         let s = settings_with_proxies("");
         let v4 = SocketAddr::new(IpAddr::V4(Ipv4Addr::new(10, 0, 0, 1)), 1);
-        assert!(!peer_is_trusted_proxy(&s, Some(v4)));
+        assert!(!peer_is_trusted_proxy(&s.trusted_proxies, Some(v4)));
         // No direct peer (test harnesses) never matches.
-        assert!(!peer_is_trusted_proxy(&s, None));
+        assert!(!peer_is_trusted_proxy(&s.trusted_proxies, None));
         // Bare IP, whitespace-tolerant list, CIDR.
         let s = settings_with_proxies(" 10.0.0.1 , 192.168.1.0/24 ");
-        assert!(peer_is_trusted_proxy(&s, Some(v4)));
+        assert!(peer_is_trusted_proxy(&s.trusted_proxies, Some(v4)));
         let v4b = SocketAddr::new(IpAddr::V4(Ipv4Addr::new(192, 168, 1, 55)), 1);
-        assert!(peer_is_trusted_proxy(&s, Some(v4b)));
+        assert!(peer_is_trusted_proxy(&s.trusted_proxies, Some(v4b)));
         let v4c = SocketAddr::new(IpAddr::V4(Ipv4Addr::new(192, 168, 2, 55)), 1);
-        assert!(!peer_is_trusted_proxy(&s, Some(v4c)));
+        assert!(!peer_is_trusted_proxy(&s.trusted_proxies, Some(v4c)));
         // IPv6: exact and /128 CIDR.
         let v6 = SocketAddr::new(IpAddr::V6(Ipv6Addr::new(0, 0, 0, 0, 0, 0, 0, 1)), 1);
         let s6 = settings_with_proxies("::1/128, ::1");
-        assert!(peer_is_trusted_proxy(&s6, Some(v6)));
+        assert!(peer_is_trusted_proxy(&s6.trusted_proxies, Some(v6)));
         // Version mismatch never matches.
-        assert!(!peer_is_trusted_proxy(&settings_with_proxies("127.0.0.1/32"), Some(v6)));
+        assert!(!peer_is_trusted_proxy(&settings_with_proxies("127.0.0.1/32").trusted_proxies, Some(v6)));
         // /0 matches every v4 peer.
         let s0 = settings_with_proxies("0.0.0.0/0");
-        assert!(peer_is_trusted_proxy(&s0, Some(v4c)));
+        assert!(peer_is_trusted_proxy(&s0.trusted_proxies, Some(v4c)));
         // Malformed entries never match.
         let s_bad = settings_with_proxies("10.0.0.0/129, 10.0.0.0.0/8, notanip");
-        assert!(!peer_is_trusted_proxy(&s_bad, Some(v4)));
+        assert!(!peer_is_trusted_proxy(&s_bad.trusted_proxies, Some(v4)));
     }
 
     #[test]
     fn xff_with_empty_leading_entry_falls_back() {
         let remote = SocketAddr::new(IpAddr::V4(Ipv4Addr::new(10, 1, 2, 3)), 1234);
         let s = settings_with_proxies("10.1.2.3");
-        assert_eq!(client_ip(&s, &xff(", 9.9.9.9"), Some(remote)), "10.1.2.3");
+        assert_eq!(client_ip(&s.trusted_proxies, &xff(", 9.9.9.9"), Some(remote)), "10.1.2.3");
         // No remote at all: shared unknown bucket.
-        assert_eq!(client_ip(&s, &xff("9.9.9.9"), None), "unknown");
+        assert_eq!(client_ip(&s.trusted_proxies, &xff("9.9.9.9"), None), "unknown");
     }
 
     #[test]
@@ -1864,9 +1886,9 @@ mod tests {
         let s = settings_with_proxies("10.0.0.0/8");
         let remote = SocketAddr::new(IpAddr::V4(Ipv4Addr::new(10, 1, 2, 3)), 1234);
         // No header at all: the actual connection scheme (always TLS here).
-        assert_eq!(request_scheme(&s, &HeaderMap::new(), Some(remote)), "https");
+        assert_eq!(request_scheme(&s.trusted_proxies, &HeaderMap::new(), Some(remote)), "https");
         // No direct peer (direct-router test harnesses): same fallback.
-        assert_eq!(request_scheme(&Settings::from_env(), &HeaderMap::new(), None), "https");
+        assert_eq!(request_scheme("", &HeaderMap::new(), None), "https");
     }
 
     #[test]
@@ -1875,12 +1897,12 @@ mod tests {
         // a direct client cannot flip the scheme with it (ANT-346).
         let s = settings_with_proxies("");
         let remote = SocketAddr::new(IpAddr::V4(Ipv4Addr::new(203, 0, 113, 7)), 1234);
-        assert_eq!(request_scheme(&s, &xfp("http"), Some(remote)), "https");
+        assert_eq!(request_scheme(&s.trusted_proxies, &xfp("http"), Some(remote)), "https");
         // A configured list that does not cover the peer behaves the same.
         let s2 = settings_with_proxies("10.0.0.1");
-        assert_eq!(request_scheme(&s2, &xfp("http"), Some(remote)), "https");
+        assert_eq!(request_scheme(&s2.trusted_proxies, &xfp("http"), Some(remote)), "https");
         // No direct peer at all: the gate fails closed.
-        assert_eq!(request_scheme(&s2, &xfp("http"), None), "https");
+        assert_eq!(request_scheme(&s2.trusted_proxies, &xfp("http"), None), "https");
     }
 
     #[test]
@@ -1888,14 +1910,86 @@ mod tests {
         let remote = SocketAddr::new(IpAddr::V4(Ipv4Addr::new(10, 1, 2, 3)), 1234);
         // Exact-IP entry matching the direct peer.
         let s = settings_with_proxies("10.1.2.3");
-        assert_eq!(request_scheme(&s, &xfp("http"), Some(remote)), "http");
+        assert_eq!(request_scheme(&s.trusted_proxies, &xfp("http"), Some(remote)), "http");
         // CIDR covering the direct peer.
         let s = settings_with_proxies("10.0.0.0/8");
-        assert_eq!(request_scheme(&s, &xfp("http"), Some(remote)), "http");
-        assert_eq!(request_scheme(&s, &xfp("https"), Some(remote)), "https");
+        assert_eq!(request_scheme(&s.trusted_proxies, &xfp("http"), Some(remote)), "http");
+        assert_eq!(request_scheme(&s.trusted_proxies, &xfp("https"), Some(remote)), "https");
         // A different, untrusted peer: the header falls back to https.
         let other = SocketAddr::new(IpAddr::V4(Ipv4Addr::new(203, 0, 113, 7)), 1234);
-        assert_eq!(request_scheme(&s, &xfp("http"), Some(other)), "https");
+        assert_eq!(request_scheme(&s.trusted_proxies, &xfp("http"), Some(other)), "https");
+    }
+
+    fn xfh(value: &str) -> HeaderMap {
+        let mut h = HeaderMap::new();
+        h.insert(
+            axum::http::HeaderName::from_static("x-forwarded-host"),
+            value.parse().unwrap(),
+        );
+        h
+    }
+
+    #[test]
+    fn public_host_honours_xfh_only_from_trusted_peer() {
+        let s = settings_with_proxies("10.1.2.3");
+        let remote = SocketAddr::new(IpAddr::V4(Ipv4Addr::new(10, 1, 2, 3)), 1234);
+        let h = xfh("public.example.com");
+        // Trusted peer: the proxy-set header wins (relative URI, no
+        // authority to fall back to).
+        let rel = "/api/auth/oidc/callback".parse::<Uri>().unwrap();
+        assert_eq!(
+            public_host(&s.trusted_proxies, &h, &rel, Some(remote)),
+            "public.example.com"
+        );
+        // Untrusted peer: the attacker-rotatable header is ignored and the
+        // fallback chain applies (ANT-879 — same gate as X-Forwarded-Proto).
+        let other = SocketAddr::new(IpAddr::V4(Ipv4Addr::new(203, 0, 113, 7)), 1234);
+        let uri_auth = "https://origin.example.com/api/auth/oidc/callback"
+            .parse::<Uri>()
+            .unwrap();
+        assert_eq!(
+            public_host(&s.trusted_proxies, &h, &uri_auth, Some(other)),
+            "origin.example.com"
+        );
+        // No direct peer (test harnesses): the gate fails closed.
+        assert_eq!(
+            public_host(&s.trusted_proxies, &h, &uri_auth, None),
+            "origin.example.com"
+        );
+        // No trusted proxies configured at all: fail closed.
+        let none = settings_with_proxies("");
+        assert_eq!(
+            public_host(&none.trusted_proxies, &h, &uri_auth, Some(remote)),
+            "origin.example.com"
+        );
+    }
+
+    #[test]
+    fn public_host_fallback_order() {
+        let remote = SocketAddr::new(IpAddr::V4(Ipv4Addr::new(10, 1, 2, 3)), 1234);
+        let s = settings_with_proxies("10.1.2.3");
+        let host_only = || {
+            let mut h = HeaderMap::new();
+            h.insert(header::HOST, "host-header.example.com".parse().unwrap());
+            h
+        };
+        // The URI authority (the HTTP/2 `:authority`) beats the Host header.
+        let uri = "https://authority.example.com/path".parse::<Uri>().unwrap();
+        assert_eq!(
+            public_host(&s.trusted_proxies, &host_only(), &uri, Some(remote)),
+            "authority.example.com"
+        );
+        // Relative URI (no authority): falls back to the Host header.
+        let rel = "/path".parse::<Uri>().unwrap();
+        assert_eq!(
+            public_host(&s.trusted_proxies, &host_only(), &rel, Some(remote)),
+            "host-header.example.com"
+        );
+        // Neither: empty string (the caller formats around it).
+        assert_eq!(
+            public_host(&s.trusted_proxies, &HeaderMap::new(), &rel, Some(remote)),
+            ""
+        );
     }
 
     // -- OIDC id_token verification (ANT-855) --------------------------------
