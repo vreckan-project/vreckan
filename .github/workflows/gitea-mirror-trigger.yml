@@ -354,9 +354,15 @@ jobs:
             REF_OBJ=$(jq -r '.object.sha' /tmp/tag-ref.json)
             REF_TYPE=$(jq -r '.object.type' /tmp/tag-ref.json)
             if [ "$REF_TYPE" = "tag" ]; then
+              # /git/tags/{sha} returns the RAW object shape
+              # ({object: {sha, type}}), not the repo-tag shape ({commit: {sha}}).
               REF_OBJ=$(curl -sS -H "Authorization: Bearer $GH_TOKEN" \
                 "https://api.github.com/repos/${{ github.repository }}/git/tags/${REF_OBJ}" \
-                | jq -r '.commit.sha')
+                | jq -r '.object.sha')
+            fi
+            if [ "$REF_OBJ" = "null" ] || [ -z "$REF_OBJ" ]; then
+              echo "ERROR: could not dereference tag ${TAG} to a commit (ref object type: ${REF_TYPE})" >&2
+              exit 1
             fi
             echo "tag_commit=${REF_OBJ}" >> "$GITHUB_OUTPUT"
             echo "Tag ${TAG} already exists (${REF_OBJ}) — this push takes the bump path."
