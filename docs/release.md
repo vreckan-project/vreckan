@@ -35,14 +35,18 @@ by a concurrency group) decides which path this push takes from the current
   unreleased changes on an already-released version — the common case). The
   job runs `scripts/bump-version.sh patch`, commits the
   `VERSION`/`Cargo.toml`/`Cargo.lock` rewrite as vreckan-ci[bot], and lands
-  the commit on `main` in two stages: first it pushes it to a staging
-  branch `release/bump-<new>` (whose push mirrors the branch and dispatches
-  the Gitea build, which posts the `VRECKAN: Smoke/Test/Scan (Rust)` commit
-  statuses that the `main` branch rules require on every commit pushed to
-  `main` — a fresh bot commit has none of them yet, so a direct push is
-  rejected), then, once those checks are green, it pushes the commit to
-  `main`. That push re-runs the job and takes the tag path, so the release
-  is cut automatically. **The loop terminates**: at most one bot commit per
+  the commit on `main` through a pull request: first it pushes the commit
+  to a staging branch `release/bump-<new>` (whose push mirrors the branch
+  and dispatches the Gitea build, which posts the `VRECKAN:
+  Smoke/Test/Scan/i18n Parity (Rust)` commit statuses on the PR head — a
+  fresh bot commit has none of them yet, so a direct push to `main` is
+  rejected), then it opens a PR against `main` and polls the PR merge
+  state. The merge state reflects the whole `main` protection ruleset —
+  the four Gitea commit statuses plus CodeQL and code quality (CodeQL only
+  runs on PRs and default-branch pushes, so a PR is the only ruleset-
+  compatible landing) — and once it is clean the job merges the PR via the
+  API. That merge push re-runs the job and takes the tag path, so the
+  release is cut automatically. **The loop terminates**: at most one bot commit per
   push, because the bump commit's own run sees a version whose tag does not
   exist. If `main` moves under the run (back-to-back merges), the bump
   re-derives from the new tip and retries once (re-staging the fresh

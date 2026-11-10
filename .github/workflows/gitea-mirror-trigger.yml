@@ -735,25 +735,25 @@ jobs:
         # exists, so this push's changes are unreleased on a released
         # version. Bump the patch (scripts/bump-version.sh is the single
         # place version math lives), commit the VERSION/Cargo.toml/
-        # Cargo.lock rewrite as vreckan-ci[bot], then land it on main in
-        # two stages:
-        #   1. Push the bump commit to a staging branch release/bump-<new>.
-        #      That push mirrors the branch and dispatches the Gitea build,
-        #      which posts the three VRECKAN statuses the main-protection
-        #      ruleset requires on every commit pushed to main — a fresh
-        #      bot commit has none of them yet, so a direct push to main
-        #      is rejected (GH013).
-        #   2. Wait for those statuses to go green on the bump commit,
-        #      then push it to main. That push re-runs this job and takes
-        #      the tag path (loop terminates: at most one bot commit per
-        #      push, because the bump commit's own run sees a version whose
-        #      tag does not exist).
+        # Cargo.lock rewrite as vreckan-ci[bot], then land it on main via a
+        # short-lived PR (release/bump-<new> -> main). The PR — not a
+        # direct push — is the only rules-compatible landing: the
+        # main-protection ruleset requires the four VRECKAN commit statuses
+        # (posted by the Gitea build the PR run dispatches, against the PR
+        # head) AND CodeQL / code-quality results — CodeQL only runs for
+        # PRs and default-branch pushes, so a direct push of a fresh
+        # staging commit can never satisfy it (GH013: "Code scanning is
+        # waiting for results from CodeQL"). Once the PR is mergeable the
+        # bot merges it; the merge push re-runs this job and takes the tag
+        # path (loop terminates: at most one bot commit per push, because
+        # the bump commit's own run sees a version whose tag does not
+        # exist). If main moves or a conflicting bump lands while the PR
+        # waits, the bump re-derives from the new tip and re-stages, so
+        # back-to-back merges get distinct sequential numbers.
         # Release notes: when the push range added no CHANGELOG section,
         # its commit subjects ride in the bump commit's message body — the
         # bump commit's own run (tag path) carries them into the GitHub
         # Release, because that run's push range is only the bump commit.
-        # On non-fast-forward (main moved under the run), re-derive from
-        # the new tip and retry once (re-staging the fresh commit).
         if: steps.exists.outputs.exists == 'true'
         env:
           GH_TOKEN: ${{ steps.apptoken.outputs.token }}
@@ -761,9 +761,13 @@ jobs:
           set -euo pipefail
           TAG="${{ steps.version.outputs.tag }}"
           TAG_COMMIT="${{ steps.exists.outputs.tag_commit }}"
-          # The contexts the main-protection ruleset requires (Gitea posts
-          # them as commit statuses on whatever commit it builds).
-          REQUIRED_CHECKS=("VRECKAN: Smoke (Rust)" "VRECKAN: Test (Rust)" "VRECKAN: Scan (Rust)")
+          API="https://api.github.com/repos/${GITHUB_REPOSITORY}"
+          AUTH=(-H "Authorization: Bearer $GH_TOKEN" -H "Accept: application/vnd.github+json")
+          # The contexts the main-protection ruleset requires as commit
+          # statuses (Gitea posts them on whatever commit it builds — for
+          # a PR, the head). CodeQL + code quality are NOT statuses; they
+          # surface in the PR merge state, which is what we poll.
+          REQUIRED_CHECKS=("VRECKAN: Smoke (Rust)" "VRECKAN: Test (Rust)" "VRECKAN: Scan (Rust)" "VRECKAN: i18n Parity (Rust)")
           git config user.name "vreckan-ci[bot]"
           git config user.email "bot@vreckanproject.com"
           # Notes range base = the commit the existing tag points at.
@@ -787,19 +791,20 @@ jobs:
             git log --no-merges --reverse --format='- %s' "$1".."${GITHUB_SHA}"
           }
           NOTES="$(compose_notes "$TAG_COMMIT")"
-          # Poll the bump commit's combined status until every required
-          # check is green. Failure/error states fail fast (the Gitea run
-          # linked from the status has the log); a 25-minute timeout covers
-          # the dispatch + build + post cycle with wide margin (observed
-          # build runs finish in ~4 minutes).
+          # Poll the head commit's combined status until every required
+          # VRECKAN check is green. Failure/error states fail fast (the
+          # Gitea run linked from the status has the log). The Gitea build
+          # dispatched by the PR run posts these; observed wall time is
+          # ~4 min warm and up to ~50 min when the shared runner is
+          # starved, so the budget is generous.
           wait_for_checks() {
-            local sha="$1" deadline=$(( $(date +%s) + 1500 )) state ctx ok
-            echo "Waiting for the required checks on ${sha:0:8} (posted by the Gitea build for ${BUMP_BRANCH})"
+            local sha="$1" deadline=$(( $(date +%s) + 3600 )) state ctx ok
+            echo "Waiting for the required checks on ${sha:0:8} (posted by the Gitea build for PR #${PR_NUM:-?})"
             while :; do
               ok=0
               for ctx in "${REQUIRED_CHECKS[@]}"; do
-                state=$(curl -sS -H "Authorization: Bearer $GH_TOKEN" \
-                  "https://api.github.com/repos/${GITHUB_REPOSITORY}/commits/${sha}/status" \
+                state=$(curl -sS --max-time 30 "${AUTH[@]}" \
+                  "${API}/commits/${sha}/status" \
                   | jq -r --arg c "$ctx" '[.statuses[]? | select(.context == $c) | .state] | first // "expected"')
                 case "$state" in
                   success) ok=$((ok+1)) ;;
@@ -813,10 +818,41 @@ jobs:
                 return 0
               fi
               if [ "$(date +%s)" -ge "$deadline" ]; then
-                echo "ERROR: timed out (25m) waiting for required checks on ${sha:0:8} — if the Gitea build ran but never posted, re-dispatch build-test-rust.yml with branch=${BUMP_BRANCH} sha=${sha}, then re-run this job" >&2
+                echo "ERROR: timed out (60m) waiting for required checks on ${sha:0:8} — if the Gitea build ran but never posted, re-dispatch build-test-rust.yml with branch=${BUMP_BRANCH} sha=${sha}, then re-run this job" >&2
                 return 1
               fi
-              sleep 20
+              sleep 30
+            done
+          }
+          # Wait for the PR to become mergeable. The merge state is GitHub's
+          # verdict on the WHOLE ruleset (required statuses + CodeQL +
+          # code quality), so it is the single correct gate:
+          #   CLEAN  -> merge
+          #   BEHIND -> main moved under us (or a conflicting bump landed
+          #           and DIRTY-conflicted on the version files) -> the
+          #           caller re-derives from the new tip and re-stages
+          #   UNSTABLE -> a required check failed -> fail the job
+          #   BLOCKED/other -> checks still running -> keep waiting
+          wait_for_mergeable() {
+            local pr="$1" deadline=$(( $(date +%s) + 3600 )) state last=""
+            while :; do
+              state=$(curl -sS --max-time 30 "${AUTH[@]}" "${API}/pulls/${pr}" | jq -r .merge_state_status)
+              if [ "$state" != "$last" ]; then
+                echo "PR #${pr} merge state: ${state}"
+                last="$state"
+              fi
+              case "$state" in
+                CLEAN) echo "PR #${pr} is mergeable — every ruleset check is green"; return 0 ;;
+                BEHIND|DIRTY) return 3 ;;
+                UNSTABLE)
+                  echo "ERROR: PR #${pr} is unstable — a required check (VRECKAN/CodeQL/code quality) failed; the run logs have the detail" >&2
+                  return 1 ;;
+              esac
+              if [ "$(date +%s)" -ge "$deadline" ]; then
+                echo "ERROR: timed out (60m) waiting for PR #${pr} to become mergeable (last state: ${state}) — re-run this job to continue waiting" >&2
+                return 1
+              fi
+              sleep 30
             done
           }
           try_push() {
@@ -836,35 +872,66 @@ jobs:
             # Same extraheader override as the tag push: actions/checkout
             # writes a read-only GITHUB_TOKEN extraheader that would 403
             # the push otherwise; the app token (Contents: write) must win.
-            # --force: a retried bump (non-FF on main) replaces the staging
-            # commit, and a re-run of this job is a no-op re-stage.
+            # --force: a retried bump (main moved / conflicting bump)
+            # replaces the staging commit, and a re-run of this job is a
+            # no-op re-stage.
             git -c http.https://github.com/.extraheader= push \
               "https://x-access-token:${GH_TOKEN}@github.com/${GITHUB_REPOSITORY}.git" "+HEAD:refs/heads/${BUMP_BRANCH}"
-            echo "Staged bump commit ${BUMP_SHA:0:8} on ${BUMP_BRANCH} — waiting for its required checks before touching main"
-            wait_for_checks "$BUMP_SHA"
-            if git -c http.https://github.com/.extraheader= push \
-              "https://x-access-token:${GH_TOKEN}@github.com/${GITHUB_REPOSITORY}.git" "HEAD:refs/heads/main"; then
-              echo "Pushed per-push bump commit to main — the next run cuts tag v${new} and releases it"
+            echo "Staged bump commit ${BUMP_SHA:0:8} on ${BUMP_BRANCH}"
+            # Open the PR for the staging branch (or find the open one —
+            # a re-run or a concurrent cycle may have opened it already).
+            PR_NUM=$(curl -sS --max-time 30 "${AUTH[@]}" \
+              "${API}/pulls?head=${GITHUB_REPOSITORY}/${BUMP_BRANCH}&state=open" | jq -r '.[0].number // empty')
+            if [ -z "$PR_NUM" ]; then
+              PR_NUM=$(curl -sS --max-time 30 -X POST "${AUTH[@]}" -H "Content-Type: application/json" \
+                -d "$(printf '{"base":"main","head":"%s","title":"chore(release): bump to %s (per-push release)","body":"Per-push patch release (ANT-1050): the tag for the previous version already exists, so this push cuts the next patch. Merged automatically by `bump-and-tag` once every required check (Gitea build statuses + CodeQL + code quality) is green. The release notes ride in this commit message."}' "${BUMP_BRANCH}" "${new}")" \
+                "${API}/pulls" | jq -r .number)
+            fi
+            echo "Bump PR #${PR_NUM} open — waiting for it to become mergeable, then merging"
+            local wrc=0
+            wait_for_mergeable "$PR_NUM" || wrc=$?
+            if [ "$wrc" = "3" ]; then
+              echo "PR #${PR_NUM} is behind/dirty — main moved (or a conflicting bump landed), re-deriving from the new tip" >&2
+              return 3
+            fi
+            if [ "$wrc" != "0" ]; then
+              return "$wrc"
+            fi
+            local mcode
+            mcode=$(curl -sS --max-time 60 -o /tmp/merge-resp.json -w '%{http_code}' \
+              -X PUT "${AUTH[@]}" -H "Content-Type: application/json" \
+              -d '{"merge_method":"merge"}' "${API}/pulls/${PR_NUM}/merge")
+            if [ "$mcode" = "200" ] || [ "$mcode" = "202" ]; then
+              echo "Merged PR #${PR_NUM} — the merge push re-runs this job and cuts tag v${new}"
               return 0
             fi
-            echo "Bump push to main was non-fast-forward — main moved, re-deriving from the new tip" >&2
+            echo "ERROR: merge of PR #${PR_NUM} returned HTTP ${mcode}: $(cat /tmp/merge-resp.json)" >&2
             return 1
           }
-          if ! try_push; then
+          # One re-derive+re-stage on BEHIND/DIRTY (main moved under the
+          # PR, or a concurrent bump conflicted on the version files):
+          # recompute the bump against the new tip — the new version also
+          # covers whatever landed while this run was in flight. Any other
+          # failure ends the job; re-run it to continue.
+          rc=0
+          try_push || rc=$?
+          if [ "$rc" = "3" ]; then
             git fetch origin main
             git reset --hard origin/main
-            # Recompose against the new tip: the new version also covers
-            # whatever landed while this run was in flight.
             NOTES="$(compose_notes "$TAG_COMMIT")"
-            try_push
+            rc=0
+            try_push || rc=$?
           fi
-          # Best-effort: drop the staging branch from GitHub (it has served
-          # its purpose once main carries the commit). The mirror branch
-          # is swept by the daily cleanup routine.
+          if [ "$rc" != "0" ]; then
+            echo "ERROR: per-push bump failed (rc=${rc}) — re-run this job to continue; the staging branch ${BUMP_BRANCH:-?} and its PR (if any) are safe to reuse" >&2
+            exit "$rc"
+          fi
+          # Best-effort: drop the staging branch from GitHub (the merge may
+          # have removed it already). The mirror branch is swept by the
+          # daily cleanup routine.
           git -c http.https://github.com/.extraheader= push \
             "https://x-access-token:${GH_TOKEN}@github.com/${GITHUB_REPOSITORY}.git" \
             --delete "refs/heads/${BUMP_BRANCH}" || true
-
       - name: Create tag + push to GitHub
         if: steps.exists.outputs.exists == 'false'
         env:
@@ -949,12 +1016,14 @@ jobs:
           #  1. This push added a CHANGELOG.md section (an explicit
           #     release PR) → the newest CHANGELOG section, which per
           #     docs/release.md ships in the same PR as the VERSION bump.
-          #  2. Otherwise (a per-push bump commit, whose push range is only
-          #     itself) → the commit message with the bump subject stripped:
-          #     the bump path composed the release content's commit subjects
-          #     into this message, so they surface here as the notes.
-          #     Falls back to the plain subject when no subjects were
-          #     carried (nothing unreleased after the previous tag).
+          #  2. Otherwise (a per-push bump) → the bump commit's message
+          #     with the bump subject stripped: the bump path composed the
+          #     release content's commit subjects into that message, so
+          #     they surface here as the notes. With the PR-based landing
+          #     the tip is a merge commit (empty body) and the bump commit
+          #     is its second parent. Falls back to the plain subject when
+          #     no subjects were carried (nothing unreleased after the
+          #     previous tag).
           ZERO="0000000000000000000000000000000000000000"
           BASE="${{ github.event.before }}"
           if [ "$BASE" = "$ZERO" ] || ! git cat-file -e "${BASE}^{commit}" 2>/dev/null; then
@@ -971,7 +1040,14 @@ jobs:
               echo "Release ${TAG}" > /tmp/release-notes.md
             fi
           else
-            MSG="$(git log -1 --format=%B "${GITHUB_SHA}")"
+            # The tip is a merge commit only on the PR-based landing; its
+            # body is empty and the notes live on the second parent (the
+            # bump commit). A direct tip (legacy/dry runs) is read as-is.
+            if [ "$(git cat-file -p "${GITHUB_SHA}" 2>/dev/null | grep -c '^parent ')" -ge 2 ]; then
+              MSG="$(git log -1 --format=%B "${GITHUB_SHA}^2")"
+            else
+              MSG="$(git log -1 --format=%B "${GITHUB_SHA}")"
+            fi
             NOTES="$(printf '%s\n' "$MSG" | sed '1,/^$/d' | sed '1{/^chore(release): bump to /d}')"
             if [ -z "$NOTES" ]; then
               NOTES="${MSG%%$'\n'*}"
