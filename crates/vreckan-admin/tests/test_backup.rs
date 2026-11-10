@@ -760,3 +760,104 @@ async fn test_db_dump_restore_preserves_live_auth_tokens() {
     );
     let _ = std::fs::remove_file(&dump_path);
 }
+
+// ---------------------------------------------------------------------------
+// Audit finding 17: stale restore temp state
+// ---------------------------------------------------------------------------
+
+/// A gzip tarball whose only member is `hello.txt` — notably no
+/// `db_dump.json`, so a restore of it must not touch the database.
+fn plain_file_archive() -> Vec<u8> {
+    let src = TempDir::new();
+    let file = src.path().join("hello.txt");
+    std::fs::write(&file, b"hello").unwrap();
+    let mut buf: Vec<u8> = Vec::new();
+    {
+        let mut gz = flate2::write::GzEncoder::new(&mut buf, flate2::Compression::default());
+        {
+            let mut builder = tar::Builder::new(&mut gz);
+            builder
+                .append_path_with_name(&file, "hello.txt")
+                .unwrap();
+            builder.finish().unwrap();
+        }
+        gz.try_finish().unwrap();
+    }
+    buf
+}
+
+/// A crashed restore leaves its `db_dump.json` in the data root. The next
+/// restore — even one whose archive carries no dump of its own — must clear
+/// it instead of silently re-restoring the database from it.
+#[tokio::test]
+async fn test_restore_clears_stale_db_dump_json() {
+    let _root = TempDir::new();
+    let mut sc = SecureClient::new(build_state(_root.path()).await);
+    sc.http.login("admin", "admin1234").await;
+    sc.handshake().await;
+    // Simulate the crash: the previous restore's dump is stranded in the
+    // data root. It carries a row the live database does not have, so if the
+    // stale dump were re-applied the row would reappear and the assertion
+    // below would fail.
+    let dump_path = sc.state.settings.data_root.clone() + "/db_dump.json";
+    std::fs::write(
+        &dump_path,
+        serde_json::json!({
+            "version": 1,
+            "tables": { "app_settings": [ { "key": "stale_marker", "value": "STALE" } ] }
+        })
+        .to_string(),
+    )
+    .unwrap();
+    // Restore an archive with no db_dump.json member.
+    backup_manager::restore_from_bytes(&sc.state, &plain_file_archive())
+        .await
+        .unwrap();
+    assert!(
+        !std::path::Path::new(&dump_path).exists(),
+        "stale db_dump.json must be cleared before the restore extracts"
+    );
+    assert_eq!(
+        sc.state.db.get_app_setting("stale_marker").await.unwrap(),
+        None,
+        "the stale dump must not be re-applied to the live database"
+    );
+}
+
+/// A crashed upload restore strands its `.restore_tmp_*.tar.gz` in the
+/// backups dir. The next restore removes stranded temps older than the
+/// stale threshold but leaves a young one (a concurrent in-flight restore's
+/// temp file) in place.
+#[tokio::test]
+async fn test_restore_clears_stale_upload_tmp_files() {
+    use filetime::{set_file_times, FileTime};
+    use std::time::{Duration, SystemTime};
+
+    let _root = TempDir::new();
+    let mut sc = SecureClient::new(build_state(_root.path()).await);
+    sc.http.login("admin", "admin1234").await;
+    sc.handshake().await;
+    let backup_dir =
+        std::path::PathBuf::from(sc.state.settings.backups_path.clone());
+    std::fs::create_dir_all(&backup_dir).unwrap();
+    let stale = backup_dir.join(".restore_tmp_stale.tar.gz");
+    let fresh = backup_dir.join(".restore_tmp_fresh.tar.gz");
+    for p in [&stale, &fresh] {
+        std::fs::write(p, plain_file_archive()).unwrap();
+    }
+    // Backdate the stale one past the one-hour threshold.
+    let past = SystemTime::now() - Duration::from_secs(2 * 60 * 60);
+    set_file_times(&stale, FileTime::from_system_time(past), FileTime::from_system_time(past))
+        .unwrap();
+
+    backup_manager::restore_from_bytes(&sc.state, &plain_file_archive())
+        .await
+        .unwrap();
+
+    assert!(!stale.exists(), "stranded temp older than the threshold must be removed");
+    assert!(
+        fresh.exists(),
+        "a young temp file (an in-flight restore's) must be left alone"
+    );
+    let _ = std::fs::remove_file(&fresh);
+}

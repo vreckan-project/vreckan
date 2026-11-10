@@ -838,6 +838,10 @@ fn file_cap_detail(cap: FileCap) -> &'static str {
 async fn initial_session_auth(
     State(state): State<AppState>,
     Path(session_id): Path<String>,
+    // Infallible: `None` on routers without `ConnectInfo`. Needed so the
+    // redirect host honours `X-Forwarded-Host` only from a trusted proxy
+    // (same gate as the auth flow; ANT-879).
+    vreckan_auth::auth::RemoteAddr(remote): vreckan_auth::auth::RemoteAddr,
     parts: Parts,
     body: Body,
 ) -> Response {
@@ -892,18 +896,18 @@ async fn initial_session_auth(
             .into_response();
     }
 
-    // Honor a TLS-terminating reverse proxy for the redirect scheme.
-    let scheme = parts
-        .headers
-        .get("x-forwarded-proto")
-        .and_then(|v| v.to_str().ok())
-        .unwrap_or("https");
+    // Honor a TLS-terminating reverse proxy for the redirect scheme and the
+    // public host of the redirect target. Both forwarded headers are honoured
+    // only when the direct TCP peer matches the effective (DB-over-env)
+    // trusted-proxy list — the same gate as the auth flow (ANT-879).
+    let trusted = state.settings.effective_trusted_proxies(&state.db).await;
+    let scheme = vreckan_auth::auth::request_scheme(&trusted, &parts.headers, remote);
     // The redirect must be an *absolute* URL (scheme + host + path). Python
     // builds it from `request.url` (which carries the host and the full path);
     // here we take the public host from the request. Under HTTP/2 the host
     // arrives in the `:authority` pseudo-header (stored in the URI), not a
     // `Host` header, so we resolve it via the shared `public_host` helper.
-    let host = vreckan_auth::auth::public_host(&parts.headers, &parts.uri);
+    let host = vreckan_auth::auth::public_host(&trusted, &parts.headers, &parts.uri, remote);
     // This router is nested under `/api/apps/session` (see `app.rs`), so
     // `parts.uri.path()` is the path *after* that prefix is stripped
     // (e.g. `/{session_id}/`). Re-prepend the prefix to rebuild the full
