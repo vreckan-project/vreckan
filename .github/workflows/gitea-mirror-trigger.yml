@@ -104,8 +104,11 @@ on:
   pull_request:
     branches: [main]
   # The /allow-ci opt-in fires on the comment itself (ANT-1053). GitHub
-  # loads this workflow from the BASE branch for pull_request/issue_comment
-  # events, so the gate only goes live once merged to main.
+  # resolves pull_request workflows from the merge ref (PR head merged
+  # into base) and issue_comment workflows from the default branch, so
+  # for PRs that do not themselves modify this file the gate goes live
+  # only once merged to main (this PR's own runs already used it — the
+  # merge ref contains the new file).
   issue_comment:
     types: [created]
   workflow_dispatch:
