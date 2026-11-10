@@ -36,14 +36,20 @@
 #        don't touch site/ cost nothing (the diff check is a local git call).
 #     4. When a PR is closed (merged or dismissed), deletes its Gitea
 #        `pr/<number>` mirror branch so the mirror doesn't accumulate dead
-#        branches (ANT-296). Dismissed PRs close via a pull_request run, but
-#        for MERGED PRs GitHub coalesces the close event into the push-to-main
-#        run (the run's event is `push` and no separate pull_request run is
-#        created), so the step also runs on pushes to main and recovers the
-#        PR number from the merge. On a pull_request close, steps 1–2 are
-#        skipped: dispatching a Gitea build for a branch we are about to
-#        delete would race the deletion (the build clones the branch by name);
-#        a merged PR is covered by the same run's main mirror + build anyway.
+#        branches (ANT-296). For MERGED PRs GitHub coalesces the close
+#        event into the push-to-main run (the run's event is `push` and no
+#        separate pull_request run is created), so the step also runs on
+#        pushes to main and recovers the PR number from the merge. A
+#        DISMISSED PR gets no close run at all — GitHub deletes the PR's
+#        merge ref (the source pull_request workflows resolve from) when
+#        the PR closes, so no run can be created (verified 2026-11-10: two
+#        close attempts + four historical dismissed PRs all produced none;
+#        a reopen recreates the merge ref and DOES produce a run). The
+#        daily branch-sweep leg (routine c6c4011f rule 4) is the cleanup
+#        path for dismissed-PR branches. If a pull_request close run ever
+#        does fire, steps 1–2 are skipped on it: dispatching a Gitea build
+#        for a branch we are about to delete would race the deletion (the
+#        build clones the branch by name).
 #
 #   bump-and-tag  (push to main only)
 #     Per-push versioning (ANT-1050): every push to main becomes a release.
@@ -497,24 +503,34 @@ jobs:
           ./scripts/trigger-gitea.sh
 
       - name: Delete Gitea PR mirror branch
-        # PR closed — merged or dismissed; either way the mirror branch is
-        # dead and should go (ANT-296). Two entry paths:
-        #   pull_request/closed — a dismissed PR (or a merged PR if GitHub
-        #     did not coalesce the events); the number comes from the event.
-        #   push to main — when a PR is merged, GitHub coalesces the close
-        #     event into this push run (event is `push`, no separate
-        #     pull_request run), so the number is recovered from the merge:
-        #     the merge-commit subject locally first (fast, no network, the
-        #     common case), then the GitHub API (covers squash/rebase, where
-        #     the subject is the PR title, not "Merge pull request #N").
-        #     Ordinary (non-PR) pushes are a no-op.
+        # PR closed — the mirror branch is dead and should go (ANT-296).
+        # Entry paths:
+        #   push to main — the path that actually fires for merged PRs:
+        #     GitHub coalesces the close event into this push run (event is
+        #     `push`, no separate pull_request run), so the number is
+        #     recovered from the merge: the merge-commit subject locally
+        #     first (fast, no network, the common case), then the GitHub
+        #     API (covers squash/rebase, where the subject is the PR
+        #     title, not "Merge pull request #N"). Ordinary (non-PR)
+        #     pushes are a no-op.
+        #   pull_request/closed — fires only when GitHub still resolves a
+        #     run for the close. Dismissed-PR closes usually get NO run at
+        #     all: the merge ref that pull_request workflows resolve from
+        #     is deleted when the PR closes (verified 2026-11-10, ANT-1056
+        #     — two close attempts plus four historical dismissed PRs,
+        #     while a reopen, which recreates the merge ref, did fire a
+        #     run). Dismissed-PR branches that never get a close run are
+        #     swept by the daily cleanup leg (routine c6c4011f rule 4).
+        #     When a close run does fire, the number comes from the event.
         # Idempotent: a 404 means the branch was never mirrored (gated-out
         # non-member PRs never reach the mirror step), was already deleted
         # by the other entry path, or was swept by the daily cleanup job —
-        # a no-op. Traced with the gate (ANT-1053): a tagged-then-closed PR
-        # re-see the member tag in pr-gate on the `closed` action, so the
-        # job runs and deletes cleanly; an untagged closed PR is skipped
-        # here, but its mirror branch never existed in the first place.
+        # a no-op. Traced with the gate (ANT-1053): an untagged closed PR
+        # is skipped here — and usually produces no close run at all —
+        # but its mirror branch never existed in the first place; a
+        # tagged-then-closed PR re-see the member tag in pr-gate on the
+        # `closed` action when a close run does fire, so it deletes
+        # cleanly.
         if: >-
           (github.event_name == 'pull_request' && github.event.action == 'closed')
           || (github.event_name == 'push' && github.ref == 'refs/heads/main')
