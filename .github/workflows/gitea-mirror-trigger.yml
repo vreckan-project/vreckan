@@ -26,9 +26,21 @@
 #   bump-and-tag  (push to main only)
 #     1. Reads the current VERSION from the repo.
 #     2. If the tag v<VERSION> doesn't exist yet, creates it, pushes it to
-#        GitHub, and mirrors it to Gitea. The Gitea "Release" workflow then
-#        fires on the tag push and builds + pushes the container image.
-#     3. In the same tag-creation case, creates the user-facing GitHub
+#        GitHub, and mirrors it to Gitea.
+#     3. In the same tag-creation case, dispatches release-rust.yml in
+#        vreckan/vreckan-workflow with `tag=v<VERSION>` so the release image
+#        is built + pushed to the registries. The dispatch is the release
+#        trigger: Gitea Actions has no cross-repo event routing, so a tag
+#        push to the MIRROR repo cannot fire a workflow that lives in the
+#        workflow repo — the mirror has no .gitea/workflows/ of its own
+#        (ANT-1050). A dispatch failure is non-fatal here: the v0.10.1
+#        orphaned-Release incident (10-30, ANT-703/ANT-714 — a mid-job
+#        failure skipped the Release step and the re-run short-circuited at
+#        "tag exists") shows a step failure must not strand the /releases
+#        entry. The daily freshness run's "tag without image" early warning
+#        (ANT-1050) is the detection path; a manual release-rust dispatch
+#        is the recovery.
+#     4. In the same tag-creation case, creates the user-facing GitHub
 #        Release entry (/releases) with the newest CHANGELOG.md section as
 #        the notes. Before this step, neither side of the pipeline created
 #        the /releases entry — v0.6.2 had to be published by hand (ANT-128).
@@ -357,6 +369,33 @@ jobs:
           # (both push the same commit, so it's a no-op for them).
           git push gitea "$TAG" "HEAD:refs/heads/main"
           echo "Mirrored tag ${TAG} + main to Gitea"
+
+      - name: Trigger Gitea release
+        # The deterministic release trigger (ANT-1050). The tag is already in
+        # the mirror (step above), so release-rust.yml's fetch step can clone
+        # it. The dispatch ref names a branch of the WORKFLOW repo (always
+        # main) so Gitea can read the workflow file; the tag itself rides in
+        # the `tag` input. Non-fatal on failure (continue-on-error): the
+        # Release step below must still run, and the freshness run's early
+        # warning flags a tag that never got an image.
+        if: steps.exists.outputs.exists == 'false'
+        continue-on-error: true
+        env:
+          GITEA_URL: ${{ secrets.GITEA_URL }}
+          GITEA_REPO: ${{ secrets.GITEA_REPO }}
+          GITEA_TOKEN: ${{ secrets.GITEA_TOKEN }}
+          GITEA_WORKFLOW_REPO: vreckan/vreckan-workflow
+          GITEA_WORKFLOW: release-rust.yml
+          GITEA_REF: "refs/heads/main"
+          RELEASE_TAG: ${{ steps.version.outputs.tag }}
+        run: |
+          set -uo pipefail
+          chmod +x scripts/trigger-gitea.sh
+          if GITEA_INPUTS="$(printf '{"tag":"%s"}' "$RELEASE_TAG")" ./scripts/trigger-gitea.sh; then
+            echo "Dispatched release-rust.yml for ${RELEASE_TAG}"
+          else
+            echo "ERROR: release dispatch for ${RELEASE_TAG} failed — the tag is cut but no release run was started. The freshness run's tag-without-image check will flag it; recover with a manual workflow_dispatch of release-rust.yml (tag=${RELEASE_TAG})."
+          fi
 
       - name: Create GitHub Release
         # Only when the tag was just created above. Root cause of the missing

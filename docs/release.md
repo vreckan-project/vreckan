@@ -35,10 +35,18 @@ release notes and the image tag always agree.
    GitHub App installation token, creates and pushes the annotated tag
    `v<VERSION>`, and mirrors the tag (plus the commit as `main`) to the Gitea
    mirror repo.
-3. **Gitea Release workflow** (in the `vreckan/vreckan-workflow` repo) fires
-   on the tag push to the mirror: builds the image on the self-hosted runner
-    and pushes it to **GHCR** (`ghcr.io/vreckan-project/vreckan`) and the
-   **Gitea registry**, with the versioned tag and `latest`.
+3. **Gitea Release workflow** (in the `vreckan/vreckan-workflow` repo) is
+   dispatched by step 2: `bump-and-tag` posts a `workflow_dispatch` of
+   `release-rust.yml` with the `tag` input (Gitea Actions has no cross-repo
+   event routing, so a tag push to the mirror cannot fire a workflow in the
+   workflow repo — the trigger has been dormant since the workflow left the
+   mirror's tree, ANT-1050). The workflow clones the tag from the mirror,
+   builds the image on the self-hosted runner, and pushes it to **GHCR**
+   (`ghcr.io/vreckan-project/vreckan`) and the **Gitea registry**, with the
+   versioned tag and `latest`. If the dispatch ever fails, recover with a
+   manual `workflow_dispatch` of `release-rust.yml` (required `tag` input) —
+   the guard inside the workflow skips the rebuild if the tag's image is
+   already published at the tag's commit.
 4. **Post-release check.** Verify the tag exists on GitHub, the image tags
    are present in the registry, and the compose file's
    `ghcr.io/...:latest` reference resolves. If anything slipped, cut a
