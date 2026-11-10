@@ -236,7 +236,7 @@ function progressItem(filename) {
   const item = document.createElement("div");
   item.className = "fm-progress-item";
   item.innerHTML = `
-    <div class="fm-progress-label"><span>${filename}</span><span class="pct">0%</span></div>
+    <div class="fm-progress-label"><span>${escModal(filename)}</span><span class="pct">0%</span></div>
     <div class="fm-progress-track"><div class="fm-progress-fill"></div></div>`;
   wrap.appendChild(item);
   return {
@@ -540,7 +540,7 @@ function renderShares() {
     const meta = document.createElement("div");
     meta.className = "share-meta";
     meta.innerHTML = `
-      <span>${s.original_filename}</span>
+      <span>${escModal(s.original_filename)}</span>
       <span class="muted">${formatBytes(s.size_bytes)} · ${t("files.createdWord")} ${new Date(s.created_at).toLocaleString()}${
         s.expiry_timestamp ? " · " + t("files.expiresWord") + " " + new Date(s.expiry_timestamp * 1000).toLocaleString() : ""
       }${s.has_password ? " · 🔒" : ""}</span>`;
