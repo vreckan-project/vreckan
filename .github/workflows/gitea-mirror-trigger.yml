@@ -24,9 +24,11 @@
 #        a merged PR is covered by the same run's main mirror + build anyway.
 #
 #   bump-and-tag  (push to main only)
+#     Per-push versioning (ANT-1050): every push to main becomes a release.
 #     1. Reads the current VERSION from the repo.
-#     2. If the tag v<VERSION> doesn't exist yet, creates it, pushes it to
-#        GitHub, and mirrors it to Gitea.
+#     2. Tag v<VERSION> does NOT exist (a version-bump PR just landed, or the
+#        bump commit's own run) → TAG PATH: create the tag, push it to
+#        GitHub, and mirror it to Gitea.
 #     3. In the same tag-creation case, dispatches release-rust.yml in
 #        vreckan/vreckan-workflow with `tag=v<VERSION>` so the release image
 #        is built + pushed to the registries. The dispatch is the release
@@ -41,11 +43,29 @@
 #        (ANT-1050) is the detection path; a manual release-rust dispatch
 #        is the recovery.
 #     4. In the same tag-creation case, creates the user-facing GitHub
-#        Release entry (/releases) with the newest CHANGELOG.md section as
-#        the notes. Before this step, neither side of the pipeline created
-#        the /releases entry — v0.6.2 had to be published by hand (ANT-128).
-#     A version only gets tagged when VERSION actually changes (a version-bump
-#     PR is merged); ordinary pushes are a quick no-op.
+#        Release entry (/releases). Notes: the newest CHANGELOG.md section
+#        when this push added one (an explicit release PR), otherwise the
+#        push range's commit subjects — for a bump commit's run that range
+#        is the bump commit itself, whose message body carries the subjects
+#        of the release's actual content (composed by the bump path).
+#        Before this step, neither side of the pipeline created the
+#        /releases entry — v0.6.2 had to be published by hand (ANT-128).
+#     5. Tag v<VERSION> ALREADY EXISTS (this push carries unreleased changes
+#        on an already-released version — the common case now) → BUMP PATH:
+#        run scripts/bump-version.sh patch (the single place version math
+#        lives), commit the VERSION/Cargo.toml/Cargo.lock rewrite as
+#        vreckan-ci[bot], push to main. That push re-runs this job; the new
+#        version's tag does not exist, so its run takes the tag path and the
+#        release is cut. The loop terminates — at most one bot commit per
+#        push. On a non-fast-forward push (main moved under the run), the
+#        bump re-derives from the new main tip and retries once, so
+#        back-to-back merges get distinct sequential numbers instead of
+#        racing for the same tag.
+#     The job is serialized by a concurrency group (cancel-in-progress:
+#     false), so queued pushes each run in order. Consequence: every merge
+#     to main — including docs-only and dependency PRs — is a patch release
+#     and, via the deployment's :latest tracking, a production deploy; minor
+#     and major bumps remain explicit PR decisions (see docs/release.md).
 #
 # The jobs are independent (no `needs`), so a tag no-op never masks a build
 # failure and vice-versa.
@@ -261,8 +281,12 @@ jobs:
           ./scripts/trigger-gitea.sh
 
   bump-and-tag:
-    # Only meaningful on a push to main (a merged version-bump). Skipped for
-    # PRs and manual dispatches.
+    # Only meaningful on a push to main. Skipped for PRs and manual
+    # dispatches. Serialized (queue, never cancel): back-to-back pushes must
+    # each run in order so the tag check and the bump push never race.
+    concurrency:
+      group: bump-and-tag-main
+      cancel-in-progress: false
     if: github.event_name == 'push' && github.ref == 'refs/heads/main'
     runs-on: ubuntu-latest
     steps:
@@ -318,15 +342,103 @@ jobs:
         run: |
           set -euo pipefail
           TAG="${{ steps.version.outputs.tag }}"
-          CODE=$(curl -sS -o /dev/null -w '%{http_code}' \
+          CODE=$(curl -sS -o /tmp/tag-ref.json -w '%{http_code}' \
             -H "Authorization: Bearer $GH_TOKEN" \
             "https://api.github.com/repos/${{ github.repository }}/git/ref/tags/${TAG}")
           if [ "$CODE" = "200" ]; then
             echo "exists=true" >> "$GITHUB_OUTPUT"
-            echo "Tag ${TAG} already exists — skipping."
+            # Dereference the tag to its commit (an annotated tag's ref
+            # points at the tag object first) — the bump path needs it as
+            # the notes range base: every commit after the last release is
+            # unreleased content of the new version.
+            REF_OBJ=$(jq -r '.object.sha' /tmp/tag-ref.json)
+            REF_TYPE=$(jq -r '.object.type' /tmp/tag-ref.json)
+            if [ "$REF_TYPE" = "tag" ]; then
+              REF_OBJ=$(curl -sS -H "Authorization: Bearer $GH_TOKEN" \
+                "https://api.github.com/repos/${{ github.repository }}/git/tags/${REF_OBJ}" \
+                | jq -r '.commit.sha')
+            fi
+            echo "tag_commit=${REF_OBJ}" >> "$GITHUB_OUTPUT"
+            echo "Tag ${TAG} already exists (${REF_OBJ}) — this push takes the bump path."
           else
             echo "exists=false" >> "$GITHUB_OUTPUT"
             echo "Tag ${TAG} does not exist — will create."
+          fi
+
+      - name: Bump patch version + push (per-push release)
+        # The bump path (ANT-1050): the tag for the current VERSION already
+        # exists, so this push's changes are unreleased on a released
+        # version. Bump the patch (scripts/bump-version.sh is the single
+        # place version math lives), commit the VERSION/Cargo.toml/
+        # Cargo.lock rewrite as vreckan-ci[bot], push to main. That push
+        # re-runs this job and takes the tag path (loop terminates: at most
+        # one bot commit per push, because the bump commit's own run sees a
+        # version whose tag does not exist). Release notes: when the push
+        # range added no CHANGELOG section, its commit subjects ride in the
+        # bump commit's message body — the bump commit's own run (tag path)
+        # carries them into the GitHub Release, because that run's push
+        # range is only the bump commit. On non-fast-forward (main moved
+        # under the run), re-derive from the new tip and retry once.
+        if: steps.exists.outputs.exists == 'true'
+        env:
+          GH_TOKEN: ${{ steps.apptoken.outputs.token }}
+        run: |
+          set -euo pipefail
+          TAG="${{ steps.version.outputs.tag }}"
+          TAG_COMMIT="${{ steps.exists.outputs.tag_commit }}"
+          git config user.name "vreckan-ci[bot]"
+          git config user.email "bot@vreckanproject.com"
+          # Notes range base = the commit the existing tag points at.
+          compose_notes() {
+            # $1 = range base. Stdout carries only the note lines (they are
+            # captured into the commit message). Explicit release PRs add a
+            # CHANGELOG section in their range — the tag path's notes read
+            # the file then, so no subjects need carrying. Otherwise carry
+            # the range's commit subjects (the new release's content). The
+            # diff is captured to a variable before the grep: under
+            # pipefail, grep -q on a piped diff can die of SIGPIPE and flip
+            # a match into a miss.
+            local diff
+            diff=$(git diff "$1" HEAD -- CHANGELOG.md)
+            if printf '%s\n' "$diff" | grep -q '^+## '; then
+              echo "Push range adds a CHANGELOG section — the tag path's notes read it directly" >&2
+              return 0
+            fi
+            # --no-merges: the merge commit's own subject adds nothing the
+            # branch commits' subjects don't already say.
+            git log --no-merges --reverse --format='- %s' "$1".."${GITHUB_SHA}"
+          }
+          NOTES="$(compose_notes "$TAG_COMMIT")"
+          try_push() {
+            local new
+            new=$(./scripts/bump-version.sh patch)
+            {
+              echo "chore(release): bump to ${new} (per-push release)"
+              if [ -n "$NOTES" ]; then
+                echo
+                echo "$NOTES"
+              fi
+            } > /tmp/bump-commit-msg
+            git add VERSION Cargo.toml Cargo.lock
+            git commit -F /tmp/bump-commit-msg
+            # Same extraheader override as the tag push: actions/checkout
+            # writes a read-only GITHUB_TOKEN extraheader that would 403
+            # the push otherwise; the app token (Contents: write) must win.
+            if git -c http.https://github.com/.extraheader= push \
+              "https://x-access-token:${GH_TOKEN}@github.com/${{ github.repository }}.git" "HEAD:refs/heads/main"; then
+              echo "Pushed per-push bump commit — the next run cuts tag v${new} and releases it"
+              return 0
+            fi
+            echo "Bump push was non-fast-forward — main moved, re-deriving from the new tip" >&2
+            return 1
+          }
+          if ! try_push; then
+            git fetch origin main
+            git reset --hard origin/main
+            # Recompose against the new tip: the new version also covers
+            # whatever landed while this run was in flight.
+            NOTES="$(compose_notes "$TAG_COMMIT")"
+            try_push
           fi
 
       - name: Create tag + push to GitHub
@@ -409,13 +521,41 @@ jobs:
         run: |
           set -euo pipefail
           TAG="${{ steps.version.outputs.tag }}"
-          # Release notes = the newest CHANGELOG.md section (the entry for
-          # this release; per docs/release.md it ships in the same PR as the
-          # VERSION bump, so it is present in this checkout at tag time).
-          awk '/^## /{if (found) exit; found=1} found' CHANGELOG.md > /tmp/release-notes.md
-          if [ ! -s /tmp/release-notes.md ]; then
-            echo "WARNING: no changelog section found — using fallback notes" >&2
-            echo "Release ${TAG}" > /tmp/release-notes.md
+          # Release notes, two sources (per-push versioning, ANT-1050):
+          #  1. This push added a CHANGELOG.md section (an explicit
+          #     release PR) → the newest CHANGELOG section, which per
+          #     docs/release.md ships in the same PR as the VERSION bump.
+          #  2. Otherwise (a per-push bump commit, whose push range is only
+          #     itself) → the commit message with the bump subject stripped:
+          #     the bump path composed the release content's commit subjects
+          #     into this message, so they surface here as the notes.
+          #     Falls back to the plain subject when no subjects were
+          #     carried (nothing unreleased after the previous tag).
+          ZERO="0000000000000000000000000000000000000000"
+          BASE="${{ github.event.before }}"
+          if [ "$BASE" = "$ZERO" ] || ! git cat-file -e "${BASE}^{commit}" 2>/dev/null; then
+            # First push to main (or a force-push from off-history): range
+            # against the empty tree so any added section still counts.
+            BASE=$(git hash-object -t tree /dev/null)
+          fi
+          # Capture the diff before the grep: under pipefail, grep -q on a
+          # piped diff can die of SIGPIPE and flip a match into a miss.
+          if printf '%s\n' "$(git diff "$BASE" HEAD -- CHANGELOG.md)" | grep -q '^+## '; then
+            awk '/^## /{if (found) exit; found=1} found' CHANGELOG.md > /tmp/release-notes.md
+            if [ ! -s /tmp/release-notes.md ]; then
+              echo "WARNING: no changelog section found — using fallback notes" >&2
+              echo "Release ${TAG}" > /tmp/release-notes.md
+            fi
+          else
+            MSG="$(git log -1 --format=%B "${GITHUB_SHA}")"
+            NOTES="$(printf '%s\n' "$MSG" | sed '1,/^$/d' | sed '1{/^chore(release): bump to /d}')"
+            if [ -z "$NOTES" ]; then
+              NOTES="${MSG%%$'\n'*}"
+              case "$NOTES" in
+                chore\(release\):*) NOTES="Release ${TAG}" ;;
+              esac
+            fi
+            printf '%s\n' "$NOTES" > /tmp/release-notes.md
           fi
           # `gh` is preinstalled on ubuntu-latest and resolves GITHUB_REPOSITORY
           # from the Actions context. --target pins the release to the tagged
