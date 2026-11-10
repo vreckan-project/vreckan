@@ -15,8 +15,12 @@ COPY crates/vreckan-test-support/Cargo.toml crates/vreckan-test-support/Cargo.to
 RUN cargo fetch
 COPY src ./src
 COPY crates ./crates
+# The release build sets CARGO_BUILD_JOBS explicitly so it does NOT inherit
+# the base image's baked CARGO_BUILD_JOBS=4 default (ANT-1040): that cap is
+# the right default for a shared dev host (paperclip01), but this build runs
+# on the CI runner, where it should use all available cores as before.
 RUN --mount=type=cache,id=sccache,target=/sccache \
-    cargo build --release
+    CARGO_BUILD_JOBS="$(nproc)" cargo build --release
 
 FROM build AS test
 # The integration suite lives in the per-crate tests/ directories (ANT-810),
