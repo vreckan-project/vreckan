@@ -113,6 +113,66 @@ env:
   GATE_ORG: "vreckan-project"
 
 jobs:
+  # TEMPORARY diagnostic (ANT-1056, remove before merge): answers three
+  # questions the real gate cannot answer from a PR branch, because
+  # pull_request/issue_comment load the workflow from the base branch:
+  #   1. Does a dependent job with ALL needs skipped still run when its
+  #      if uses always()? (the dispatch run of the gated job below was
+  #      fully skipped, suggesting needs-skip propagates)
+  #   2. What does the mirror-and-trigger if expression evaluate to on
+  #      workflow_dispatch?
+  #   3. Can the GITHUB_TOKEN (with the gate's permission block) call the
+  #      org-membership / comments / pulls endpoints?
+  zz-diag:
+    needs: [pr-gate, zz-diag-needs-probe]
+    if: always() && github.event_name == 'workflow_dispatch'
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      pull-requests: read
+      issues: read
+    steps:
+      - name: Dump expression values + probe token
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          echo "### event_name: ${{ github.event_name }}"
+          echo "### clause1 (pr): ${{ github.event_name == 'pull_request' && needs.zz-diag-needs-probe.outputs.run-ci == 'true' }}"
+          echo "### clause4 (dispatch): ${{ github.event_name == 'workflow_dispatch' }}"
+          echo "### full if expr: ${{ (github.event_name == 'pull_request' && needs.zz-diag-needs-probe.outputs.run-ci == 'true') || (github.event_name == 'issue_comment' && needs.zz-diag-needs-probe.outputs.trigger == 'true') || (github.event_name == 'push' && github.ref == 'refs/heads/main') || github.event_name == 'workflow_dispatch' }}"
+          echo "### needs status (zz-diag's own): pr-gate=${{ needs.pr-gate.result }} zz-diag-needs-probe=${{ needs.zz-diag-needs-probe.result }}"
+          echo "### membership probe (token with contents/pull-requests/issues: read)"
+          for login in antitux 2GT-Rich vreckan-ci%5Bbot%5D Paperclip definitely-not-a-member-xyz; do
+            code=$(curl -sS -o /tmp/zz-member.json -w '%{http_code}' \
+              -H "Authorization: Bearer $GITHUB_TOKEN" -H "Accept: application/vnd.github+json" \
+              "https://api.github.com/orgs/vreckan-project/members/${login}")
+            echo "  members/${login} -> HTTP ${code} $(head -c 100 /tmp/zz-member.json | tr -d '\n')"
+          done
+          echo "### comments probe"
+          code=$(curl -sS -o /tmp/zz-comments.json -w '%{http_code}' \
+            -H "Authorization: Bearer $GITHUB_TOKEN" -H "Accept: application/vnd.github+json" \
+            "https://api.github.com/repos/vreckan-project/vreckan/issues/194/comments?per_page=5")
+          echo "  issues/194/comments -> HTTP ${code} count=$(python3 -c "import json; d=json.load(open('/tmp/zz-comments.json')); print(len(d) if isinstance(d, list) else d.get('message'))" 2>/dev/null)"
+          echo "### pulls probe"
+          code=$(curl -sS -o /tmp/zz-pr.json -w '%{http_code}' \
+            -H "Authorization: Bearer $GITHUB_TOKEN" -H "Accept: application/vnd.github+json" \
+            "https://api.github.com/repos/vreckan-project/vreckan/pulls/194")
+          echo "  pulls/194 -> HTTP ${code} state=$(python3 -c "import json; d=json.load(open('/tmp/zz-pr.json')); print(d.get('state') or d.get('message'))" 2>/dev/null)"
+
+  # TEMPORARY (ANT-1056): pr-gate stand-in so zz-diag has a skipped need to
+  # observe propagation through. Removed before merge.
+  zz-diag-needs-probe:
+    if: github.event_name == 'pull_request'
+    runs-on: ubuntu-latest
+    outputs:
+      run-ci: ${{ steps.x.outputs.run-ci }}
+      trigger: ${{ steps.x.outputs.trigger }}
+    steps:
+      - id: x
+        run: |
+          echo "run-ci=true" >> "$GITHUB_OUTPUT"
+          echo "trigger=false" >> "$GITHUB_OUTPUT"
+
   pr-gate:
     # Runs on every pull_request action against main (ANT-1053). No
     # checkout: a few seconds of runner time is the entire cost of a
@@ -347,10 +407,11 @@ jobs:
     # carries the gate permissions above), so no fork PR is left behind.
     needs: [pr-gate, allow-ci]
     if: >-
+      always() && (
       (github.event_name == 'pull_request' && needs.pr-gate.outputs.run-ci == 'true')
       || (github.event_name == 'issue_comment' && needs.allow-ci.outputs.trigger == 'true')
       || (github.event_name == 'push' && github.ref == 'refs/heads/main')
-      || github.event_name == 'workflow_dispatch'
+      || github.event_name == 'workflow_dispatch')
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v7
