@@ -18,8 +18,9 @@ deferred to a future pipeline fix.
 
 - **App-store input is now validated, closing an admin-gated SSRF and the
   store-cache path traversal (CodeQL #5, #85, #88; ANT-1057).** The
-  app-store browse handler now validates `store_name` against an
-  `A-Za-z0-9_-` allowlist and restricts the store-fetch `url` to
+  app-store browse handler now validates `store_name` to a character
+  allowlist (ASCII letters, digits, `_`, `-`, and space — the default
+  store is "SealSkin Apps") and restricts the store-fetch `url` to
   `http`/`https` on allowlisted hosts. Previously a user with
   `admin.stores` could point the server's fetch at any host or scheme —
   the scan's one critical-rated finding, e.g. a cloud metadata endpoint —
