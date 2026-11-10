@@ -33,12 +33,27 @@
 #                            `docker exec` — no Postgres client needed on the
 #                            host. When no such container is present the host
 #                            `pg_dump`/`pg_restore` are used instead.
+#   VRECKAN_SERVER_CONTAINER  name of the compose vreckan server container
+#                            (default: vreckan-http). `restore` checks it and
+#                            refuses while the server is running.
+#   VRECKAN_HEALTH_URL        URL of the server's GET /api/health endpoint.
+#                            Authoritative for the running-server check when
+#                            the server container is not present (or set
+#                            VRECKAN_SERVER_CONTAINER to an empty string to
+#                            skip the container probe).
 #
 # Usage:
 #   scripts/backup-postgres.sh backup          write a dated dump
 #   scripts/backup-postgres.sh restore FILE    restore a dump (a path, or a
 #                                               name inside VRECKAN_BACKUP_DIR);
-#                                               stop the vreckan server first;
+#                                               refuses while the vreckan
+#                                               server is running (detected
+#                                               via VRECKAN_SERVER_CONTAINER /
+#                                               VRECKAN_HEALTH_URL) — with
+#                                               --clean, pg_restore drops and
+#                                               recreates tables the live
+#                                               server is writing to;
+#                                               --force restores anyway;
 #                                               --no-clean restores over
 #                                               existing objects (default:
 #                                               --clean --if-exists)
@@ -54,6 +69,8 @@ RETENTION="${VRECKAN_BACKUP_RETENTION:-14}"
 PG_CONTAINER="${VRECKAN_POSTGRES_CONTAINER:-vreckan-postgres}"
 CONTAINER_EXPLICIT=0
 [[ -n "${VRECKAN_POSTGRES_CONTAINER+x}" ]] && CONTAINER_EXPLICIT=1
+SERVER_CONTAINER="${VRECKAN_SERVER_CONTAINER:-vreckan-http}"
+HEALTH_URL="${VRECKAN_HEALTH_URL:-}"
 DUMP_PREFIX="vreckan-postgres"
 
 [[ "$RETENTION" =~ ^[0-9]+$ ]] || die "VRECKAN_BACKUP_RETENTION must be a non-negative integer (got '$RETENTION')"
@@ -180,6 +197,42 @@ require_running() {
   fi
 }
 
+# Detect whether the vreckan application server is up, setting the globals
+# SERVER_STATE (running|stopped|unknown) and SERVER_STATE_VIA (which probe
+# was decisive, for the log/die message). Called directly, not via command
+# substitution, so the globals survive the call. The server container is
+# authoritative when it exists; an explicit VRECKAN_HEALTH_URL is
+# authoritative when set; with neither probe available the state is unknown
+# (audit finding 17: a `pg_restore --clean` over a live server drops and
+# recreates tables the server re-fills mid-restore, leaving a half-restored
+# database — so restore refuses a detectably running server).
+SERVER_STATE=unknown
+SERVER_STATE_VIA=""
+server_state() {
+  local state
+  if command -v docker >/dev/null 2>&1 && [[ -n "$SERVER_CONTAINER" ]]; then
+    if state="$(docker inspect -f '{{.State.Status}}' "$SERVER_CONTAINER" 2>/dev/null)"; then
+      SERVER_STATE_VIA="container '$SERVER_CONTAINER'"
+      if [[ "$state" == "running" ]]; then
+        SERVER_STATE=running
+      else
+        SERVER_STATE=stopped
+      fi
+      return
+    fi
+  fi
+  if [[ -n "$HEALTH_URL" ]]; then
+    SERVER_STATE_VIA="health endpoint $HEALTH_URL"
+    if command -v curl >/dev/null 2>&1 && curl -fsS -o /dev/null --max-time 5 "$HEALTH_URL" 2>/dev/null; then
+      SERVER_STATE=running
+    else
+      SERVER_STATE=stopped
+    fi
+    return
+  fi
+  SERVER_STATE=unknown
+}
+
 # ---------------------------------------------------------------------------
 # backup
 # ---------------------------------------------------------------------------
@@ -230,15 +283,35 @@ rotate_dumps() {
 # restore FILE [--no-clean]
 # ---------------------------------------------------------------------------
 do_restore() {
-  local file="${1:-}" noclean="${2:-0}" clean="--clean --if-exists"
-  [[ -n "$file" ]] || die "usage: backup-postgres.sh restore FILE [--no-clean]"
+  local file="${1:-}" noclean="${2:-0}" force="${3:-0}" clean="--clean --if-exists"
+  [[ -n "$file" ]] || die "usage: backup-postgres.sh restore FILE [--no-clean] [--force]"
   [[ -f "$file" ]] || file="$BACKUP_DIR/$file"
   [[ -f "$file" ]] || die "no such dump: $file (see 'backup-postgres.sh list')"
   [[ "$noclean" == "1" ]] && clean=""
 
   require_running
   log "restore: $file -> postgres://$user@${host}:${port}/${dbname} ($([[ -n "$clean" ]] && echo 'clean' || echo 'no-clean'))"
-  log "restore: tip — stop the vreckan server first; it re-syncs the schema on startup"
+
+  # Refuse a detectably running server: --clean drops and recreates the
+  # dumped objects, and a live server re-inserts rows into them mid-restore,
+  # so a failure leaves the database half-restored (audit finding 17). When
+  # the server cannot be detected the check stays advisory, as before.
+  server_state
+  case "$SERVER_STATE" in
+    running)
+      if [[ "$force" == "1" ]]; then
+        log "restore: vreckan server appears to be running ($SERVER_STATE_VIA) — proceeding because --force was given"
+      else
+        die "the vreckan server appears to be running ($SERVER_STATE_VIA) — stop it first (it re-syncs the schema on startup), then re-run; or pass --force to restore anyway"
+      fi
+      ;;
+    stopped)
+      log "restore: vreckan server detected as stopped ($SERVER_STATE_VIA)"
+      ;;
+    *)
+      log "restore: could not detect the vreckan server state (set VRECKAN_SERVER_CONTAINER or VRECKAN_HEALTH_URL to make this check authoritative); tip — stop the server first, it re-syncs the schema on startup"
+      ;;
+  esac
 
   if (( USE_CONTAINER )); then
     local stage="vreckan-restore-$$.dump"
@@ -283,13 +356,15 @@ case "$cmd" in
     shift
     file=""
     noclean=0
+    force=0
     for a in "$@"; do
       case "$a" in
         --no-clean) noclean=1;;
+        --force) force=1;;
         *) file="$a";;
       esac
     done
-    do_restore "$file" "$noclean"
+    do_restore "$file" "$noclean" "$force"
     ;;
   list)
     do_list
