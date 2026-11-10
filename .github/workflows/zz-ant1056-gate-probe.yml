@@ -1,0 +1,58 @@
+# TEMPORARY (ANT-1056) — pre-merge probe for the CI gate's GITHUB_TOKEN
+# capabilities. Deleted before merge; never lands on main.
+#
+# pull_request/issue_comment events load the workflow from the BASE
+# branch, so a PR-branch job cannot be exercised from the PR itself.
+# workflow_dispatch is branch-selectable, so this file (on the PR branch)
+# lets us dispatch the EXACT permission block + probe calls the gate jobs
+# will use, and see the real HTTP codes before the gate goes live.
+name: ANT-1056 gate probe (temporary)
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  pull-requests: read
+  issues: read
+
+jobs:
+  probe:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Probe membership + comments endpoints with the gate token
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          set -uo pipefail
+          echo "### PROBE: token identity"
+          curl -sS -H "Authorization: Bearer $GITHUB_TOKEN" \
+            -H "Accept: application/vnd.github+json" \
+            https://api.github.com/user > /tmp/probe-user.json || true
+          python3 -c "import json; d=json.load(open('/tmp/probe-user.json')); print('  /user ->', d.get('login') or d.get('message'), '(type:', d.get('type'), ')')" 2>/dev/null || cat /tmp/probe-user.json
+
+          echo "### PROBE: org membership endpoint (GET /orgs/vreckan-project/members/<login>)"
+          for login in antitux 2GT-Rich vreckan-ci%5Bbot%5D Paperclip definitely-not-a-member-xyz; do
+            code=$(curl -sS -o /tmp/probe-member.json -w '%{http_code}' \
+              -H "Authorization: Bearer $GITHUB_TOKEN" \
+              -H "Accept: application/vnd.github+json" \
+              "https://api.github.com/orgs/vreckan-project/members/${login}")
+            body=$(head -c 120 /tmp/probe-member.json | tr -d '\n')
+            echo "  ${login} -> HTTP ${code}  body: ${body:-<empty>}"
+          done
+
+          echo "### PROBE: issue comments endpoint (GET /repos/vreckan-project/vreckan/issues/194/comments)"
+          code=$(curl -sS -o /tmp/probe-comments.json -w '%{http_code}' \
+            -H "Authorization: Bearer $GITHUB_TOKEN" \
+            -H "Accept: application/vnd.github+json" \
+            "https://api.github.com/repos/vreckan-project/vreckan/issues/194/comments?per_page=5")
+          count=$(python3 -c "import json; d=json.load(open('/tmp/probe-comments.json')); print(len(d) if isinstance(d, list) else d.get('message'))" 2>/dev/null || echo '?')
+          echo "  comments -> HTTP ${code}  count/err: ${count}"
+
+          echo "### PROBE: pulls endpoint (GET /repos/vreckan-project/vreckan/pulls/194)"
+          code=$(curl -sS -o /tmp/probe-pr.json -w '%{http_code}' \
+            -H "Authorization: Bearer $GITHUB_TOKEN" \
+            -H "Accept: application/vnd.github+json" \
+            "https://api.github.com/repos/vreckan-project/vreckan/pulls/194")
+          state=$(python3 -c "import json; d=json.load(open('/tmp/probe-pr.json')); print(d.get('state') or d.get('message'))" 2>/dev/null || echo '?')
+          echo "  pulls/194 -> HTTP ${code}  state/err: ${state}"
