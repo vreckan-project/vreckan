@@ -135,19 +135,43 @@ jobs:
       - name: Dump expression values + probe token
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GH_APP_ID: ${{ secrets.GH_APP_ID }}
+          GH_APP_KEY: ${{ secrets.GH_APP_KEY }}
         run: |
           echo "### event_name: ${{ github.event_name }}"
           echo "### clause1 (pr): ${{ github.event_name == 'pull_request' && needs.zz-diag-needs-probe.outputs.run-ci == 'true' }}"
           echo "### clause4 (dispatch): ${{ github.event_name == 'workflow_dispatch' }}"
           echo "### full if expr: ${{ (github.event_name == 'pull_request' && needs.zz-diag-needs-probe.outputs.run-ci == 'true') || (github.event_name == 'issue_comment' && needs.zz-diag-needs-probe.outputs.trigger == 'true') || (github.event_name == 'push' && github.ref == 'refs/heads/main') || github.event_name == 'workflow_dispatch' }}"
           echo "### needs status (zz-diag's own): pr-gate=${{ needs.pr-gate.result }} zz-diag-needs-probe=${{ needs.zz-diag-needs-probe.result }}"
-          echo "### membership probe (token with contents/pull-requests/issues: read)"
-          for login in antitux 2GT-Rich vreckan-ci%5Bbot%5D Paperclip definitely-not-a-member-xyz; do
+          echo "### membership probe WITH GITHUB_TOKEN (expected broken: 302)"
+          for login in antitux vreckan-ci%5Bbot%5D; do
             code=$(curl -sS -o /tmp/zz-member.json -w '%{http_code}' \
               -H "Authorization: Bearer $GITHUB_TOKEN" -H "Accept: application/vnd.github+json" \
               "https://api.github.com/orgs/vreckan-project/members/${login}")
-            echo "  members/${login} -> HTTP ${code} $(head -c 100 /tmp/zz-member.json | tr -d '\n')"
+            echo "  GITHUB_TOKEN members/${login} -> HTTP ${code}"
           done
+          echo "### membership probe WITH vreckan-ci APP token (minted, the real gate path)"
+          APP_TOKEN=""
+          NOW=$(date +%s)
+          HEADER=$(echo -n '{"alg":"RS256","typ":"JWT"}' | base64 -w0 | sed 's/=//g; s/+/-/g; s/\//_/g')
+          PAYLOAD=$(printf '{"iat":%d,"exp":%d,"iss":%s}' "$((NOW-60))" "$((NOW+540))" "$GH_APP_ID" | base64 -w0 | sed 's/=//g; s/+/-/g; s/\//_/g')
+          printf '%s' "$GH_APP_KEY" > /tmp/zz-app-key.pem
+          SIG=$(printf '%s.%s' "$HEADER" "$PAYLOAD" | openssl dgst -sha256 -sign /tmp/zz-app-key.pem | base64 -w0 | sed 's/=//g; s/+/-/g; s/\//_/g')
+          JWT="${HEADER}.${PAYLOAD}.${SIG}"
+          APP_TOKEN=$(curl -sS -X POST -H "Authorization: Bearer $JWT" -H "Accept: application/vnd.github+json" \
+            "https://api.github.com/app/installations/$(curl -sS -H "Authorization: Bearer $JWT" -H "Accept: application/vnd.github+json" "https://api.github.com/repos/${{ github.repository }}/installation" | python3 -c 'import json,sys; print(json.load(sys.stdin).get("id",""))')/access_tokens" \
+            | python3 -c 'import json,sys; print(json.load(sys.stdin).get("token",""))' 2>/dev/null || true)
+          if [ -z "$APP_TOKEN" ]; then
+            echo "  APP TOKEN MINT FAILED"
+          else
+            echo "  app token minted OK"
+            for login in antitux 2GT-Rich vreckan-ci%5Bbot%5D Paperclip definitely-not-a-member-xyz; do
+              code=$(curl -sS -o /tmp/zz-member.json -w '%{http_code}' \
+                -H "Authorization: Bearer $APP_TOKEN" -H "Accept: application/vnd.github+json" \
+                "https://api.github.com/orgs/vreckan-project/members/${login}")
+              echo "  APP_TOKEN members/${login} -> HTTP ${code} $(head -c 100 /tmp/zz-member.json | tr -d '\n')"
+            done
+          fi
           echo "### comments probe"
           code=$(curl -sS -o /tmp/zz-comments.json -w '%{http_code}' \
             -H "Authorization: Bearer $GITHUB_TOKEN" -H "Accept: application/vnd.github+json" \
@@ -196,6 +220,8 @@ jobs:
         id: gate
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GH_APP_ID: ${{ secrets.GH_APP_ID }}
+          GH_APP_KEY: ${{ secrets.GH_APP_KEY }}
           ORG: ${{ env.GATE_ORG }}
           REPO: ${{ github.repository }}
           PR_NUM: ${{ github.event.number }}
@@ -206,16 +232,39 @@ jobs:
           set -uo pipefail
           echo "=== CI gate (ANT-1053): PR #${PR_NUM} [action: ${ACTION}] by ${AUTHOR} ==="
 
+          # The org-membership endpoint answers 302 (login redirect) for
+          # GITHUB_TOKEN on known users — it cannot distinguish members
+          # from non-members with that token (verified 2026-11-10, ANT-1056
+          # dispatch probe). The vreckan-ci app installation token answers
+          # 204/404 correctly, so the probe mints one (same secrets the
+          # bump-and-tag job uses — no new secrets). Comment and PR fetches
+          # below use GITHUB_TOKEN, which works fine for those. If the mint
+          # fails, the probe fails open (treated as member).
+          APP_TOKEN=""
+          NOW=$(date +%s)
+          HEADER=$(echo -n '{"alg":"RS256","typ":"JWT"}' | base64 -w0 | sed 's/=//g; s/+/-/g; s/\//_/g')
+          PAYLOAD=$(printf '{"iat":%d,"exp":%d,"iss":%s}' "$((NOW-60))" "$((NOW+540))" "$GH_APP_ID" | base64 -w0 | sed 's/=//g; s/+/-/g; s/\//_/g')
+          printf '%s' "$GH_APP_KEY" > /tmp/gate-app-key.pem
+          SIG=$(printf '%s.%s' "$HEADER" "$PAYLOAD" | openssl dgst -sha256 -sign /tmp/gate-app-key.pem | base64 -w0 | sed 's/=//g; s/+/-/g; s/\//_/g')
+          JWT="${HEADER}.${PAYLOAD}.${SIG}"
+          APP_TOKEN=$(curl -sS -X POST -H "Authorization: Bearer $JWT" -H "Accept: application/vnd.github+json" \
+            "https://api.github.com/app/installations/$(curl -sS -H "Authorization: Bearer $JWT" -H "Accept: application/vnd.github+json" "https://api.github.com/repos/${REPO}/installation" | python3 -c 'import json,sys; print(json.load(sys.stdin).get("id",""))')/access_tokens" \
+            | python3 -c 'import json,sys; print(json.load(sys.stdin).get("token",""))' 2>/dev/null || true)
+          if [ -z "$APP_TOKEN" ]; then
+            echo "WARN: vreckan-ci app token mint failed — membership probe will fail open" >&2
+          fi
+
           # Membership probe: 204 = member, 404 = non-member. Any other
-          # code (403/5xx) FAILS OPEN (treated as member) with a warning —
-          # the gate is a cost/automation filter, not a security boundary,
+          # code (302/403/5xx) FAILS OPEN (treated as member) with a warning
+          # — the gate is a cost/automation filter, not a security boundary,
           # and a transient API error must not block an internal PR.
           check_member() {
             local login="$1" enc code
             # Bot logins contain "[bot]", which must be URL-encoded.
             enc="$(python3 -c 'import sys, urllib.parse; print(urllib.parse.quote(sys.argv[1], safe=""))' "$login")"
+            local tok="${APP_TOKEN:-$GITHUB_TOKEN}"
             code=$(curl -sS -o /tmp/gate-member.json -w '%{http_code}' \
-              -H "Authorization: Bearer $GITHUB_TOKEN" \
+              -H "Authorization: Bearer $tok" \
               -H "Accept: application/vnd.github+json" \
               "https://api.github.com/orgs/${ORG}/members/${enc}")
             case "$code" in
@@ -315,6 +364,8 @@ jobs:
         id: allow
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GH_APP_ID: ${{ secrets.GH_APP_ID }}
+          GH_APP_KEY: ${{ secrets.GH_APP_KEY }}
           ORG: ${{ env.GATE_ORG }}
           REPO: ${{ github.repository }}
           ISSUE_NUM: ${{ github.event.issue.number }}
@@ -371,11 +422,26 @@ jobs:
           fi
 
           # Membership of the COMMENT author (not the PR author — the
-          # author is precisely the non-member in the opt-in case).
-          # 204 = member, 404 = non-member, anything else fails OPEN.
+          # author is precisely the non-member in the opt-in case). The
+          # probe uses the vreckan-ci app installation token (204/404; the
+          # GITHUB_TOKEN 302-redirects on this endpoint — see pr-gate).
+          # Anything other than 204/404 fails OPEN (treated as member).
+          APP_TOKEN=""
+          NOW=$(date +%s)
+          HEADER=$(echo -n '{"alg":"RS256","typ":"JWT"}' | base64 -w0 | sed 's/=//g; s/+/-/g; s/\//_/g')
+          PAYLOAD=$(printf '{"iat":%d,"exp":%d,"iss":%s}' "$((NOW-60))" "$((NOW+540))" "$GH_APP_ID" | base64 -w0 | sed 's/=//g; s/+/-/g; s/\//_/g')
+          printf '%s' "$GH_APP_KEY" > /tmp/allow-ci-app-key.pem
+          SIG=$(printf '%s.%s' "$HEADER" "$PAYLOAD" | openssl dgst -sha256 -sign /tmp/allow-ci-app-key.pem | base64 -w0 | sed 's/=//g; s/+/-/g; s/\//_/g')
+          JWT="${HEADER}.${PAYLOAD}.${SIG}"
+          APP_TOKEN=$(curl -sS -X POST -H "Authorization: Bearer $JWT" -H "Accept: application/vnd.github+json" \
+            "https://api.github.com/app/installations/$(curl -sS -H "Authorization: Bearer $JWT" -H "Accept: application/vnd.github+json" "https://api.github.com/repos/${REPO}/installation" | python3 -c 'import json,sys; print(json.load(sys.stdin).get("id",""))')/access_tokens" \
+            | python3 -c 'import json,sys; print(json.load(sys.stdin).get("token",""))' 2>/dev/null || true)
+          if [ -z "$APP_TOKEN" ]; then
+            echo "WARN: vreckan-ci app token mint failed — membership probe will fail open" >&2
+          fi
           enc="$(python3 -c 'import sys, urllib.parse; print(urllib.parse.quote(sys.argv[1], safe=""))' "$COMMENTOR")"
           code=$(curl -sS -o /tmp/allow-ci-member.json -w '%{http_code}' \
-            -H "Authorization: Bearer $GITHUB_TOKEN" \
+            -H "Authorization: Bearer ${APP_TOKEN:-$GITHUB_TOKEN}" \
             -H "Accept: application/vnd.github+json" \
             "https://api.github.com/orgs/${ORG}/members/${enc}")
           case "$code" in
