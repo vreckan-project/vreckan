@@ -1,9 +1,31 @@
 # Gitea Mirror + Trigger — the GitHub-side "vLLM pattern" leg.
 #
-# One workflow, two independent jobs, so a push to main shows a SINGLE run
-# (not two) while keeping the two concerns clearly separated:
+# One workflow, three jobs. The two pipeline jobs (mirror-and-trigger,
+# bump-and-tag) stay independent, so a push to main shows a SINGLE run
+# (not two) while keeping the two concerns clearly separated; the third job
+# pair is the CI gate (ANT-1053, board-approved 2026-11-10):
 #
-#   mirror-and-trigger  (push to main + pull_request)
+#   pr-gate  (pull_request only) — decides whether a PR runs the pipeline:
+#     org members run CI; non-members skip it UNLESS an org member has
+#     commented `/allow-ci` on the PR. Re-evaluated on every pull_request
+#     action (opened/synchronize/reopened/closed), so a tagged PR also
+#     starts building on the author's next push. No checkout step: a few
+#     seconds of runner time is the entire cost of a skipped PR.
+#   allow-ci  (issue_comment only) — the immediate opt-in: a member
+#     `/allow-ci` comment on an open PR targeting main mirrors + dispatches
+#     the Gitea build right away. No checkout.
+#
+#   GATE RULE — the default: non-member PRs do NOT trigger CI (members:
+#   yes). The gate is a cost/automation filter, not a security boundary,
+#   and a transient membership-API error FAILS OPEN (CI runs). Two
+#   caveats: (a) membership is the single default rule — if a bot account
+#   is ever ADDED to the vreckan-project org, its PRs start triggering CI
+#   again; (b) `/allow-ci` on a member-authored PR re-runs CI (an intended
+#   manual re-run). The tag string is the ALLOW_CI_TAG constant below —
+#   renaming the command is a one-line change there (docs/ops.md §3.3
+#   mirrors this documentation).
+#
+#   mirror-and-trigger  (push to main + gated pull_request + gated issue_comment)
 #     1. Mirrors the current branch to the Gitea mirror repo (vreckan/vreckan).
 #        For PRs, the code is mirrored to a `pr/<number>` branch.
 #     2. Dispatches the Gitea build workflow in vreckan/vreckan-workflow so the
@@ -14,14 +36,20 @@
 #        don't touch site/ cost nothing (the diff check is a local git call).
 #     4. When a PR is closed (merged or dismissed), deletes its Gitea
 #        `pr/<number>` mirror branch so the mirror doesn't accumulate dead
-#        branches (ANT-296). Dismissed PRs close via a pull_request run, but
-#        for MERGED PRs GitHub coalesces the close event into the push-to-main
-#        run (the run's event is `push` and no separate pull_request run is
-#        created), so the step also runs on pushes to main and recovers the
-#        PR number from the merge. On a pull_request close, steps 1–2 are
-#        skipped: dispatching a Gitea build for a branch we are about to
-#        delete would race the deletion (the build clones the branch by name);
-#        a merged PR is covered by the same run's main mirror + build anyway.
+#        branches (ANT-296). For MERGED PRs GitHub coalesces the close
+#        event into the push-to-main run (the run's event is `push` and no
+#        separate pull_request run is created), so the step also runs on
+#        pushes to main and recovers the PR number from the merge. A
+#        DISMISSED PR gets no close run at all — GitHub deletes the PR's
+#        merge ref (the source pull_request workflows resolve from) when
+#        the PR closes, so no run can be created (verified 2026-11-10: two
+#        close attempts + four historical dismissed PRs all produced none;
+#        a reopen recreates the merge ref and DOES produce a run). The
+#        daily branch-sweep leg (routine c6c4011f rule 4) is the cleanup
+#        path for dismissed-PR branches. If a pull_request close run ever
+#        does fire, steps 1–2 are skipped on it: dispatching a Gitea build
+#        for a branch we are about to delete would race the deletion (the
+#        build clones the branch by name).
 #
 #   bump-and-tag  (push to main only)
 #     Per-push versioning (ANT-1050): every push to main becomes a release.
@@ -54,24 +82,39 @@
 #        on an already-released version — the common case now) → BUMP PATH:
 #        run scripts/bump-version.sh patch (the single place version math
 #        lives), commit the VERSION/Cargo.toml/Cargo.lock rewrite as
-#        vreckan-ci[bot], push to main. That push re-runs this job; the new
+#        vreckan-ci[bot], then land it on main in two stages: first push it
+#        to a staging branch release/bump-<new> (whose push mirrors the
+#        branch and dispatches the Gitea build, which posts the three
+#        VRECKAN commit statuses the main-protection ruleset requires on
+#        every commit pushed to main — a fresh bot commit has none yet, so
+#        a direct push is rejected, GH013), wait for those statuses to go
+#        green, then push to main. That push re-runs this job; the new
 #        version's tag does not exist, so its run takes the tag path and the
 #        release is cut. The loop terminates — at most one bot commit per
 #        push. On a non-fast-forward push (main moved under the run), the
-#        bump re-derives from the new main tip and retries once, so
-#        back-to-back merges get distinct sequential numbers instead of
-#        racing for the same tag.
+#        bump re-derives from the new main tip and retries once (re-staging
+#        the fresh commit), so back-to-back merges get distinct sequential
+#        numbers instead of racing for the same tag.
 #     The job is serialized by a concurrency group (cancel-in-progress:
 #     false), so queued pushes each run in order. Consequence: every merge
 #     to main — including docs-only and dependency PRs — is a patch release
 #     and, via the deployment's :latest tracking, a production deploy; minor
 #     and major bumps remain explicit PR decisions (see docs/release.md).
 #
-# The jobs are independent (no `needs`), so a tag no-op never masks a build
-# failure and vice-versa.
+# The pipeline jobs stay independent where it matters: a tag no-op never
+# masks a build failure and vice versa (bump-and-tag has no `needs`).
+# mirror-and-trigger `needs` the two gate jobs only to consume their
+# decisions on the events those jobs handle. On the other events both
+# gates are skipped — and GitHub skips a dependent job whose `needs` are
+# ALL skipped, so the job `if` carries an `always()` guard (verified with
+# a workflow_dispatch run 2026-11-10, ANT-1056) that keeps push-to-main
+# and manual dispatches running; the gate clauses themselves still decide
+# (a skipped gate yields empty outputs, which fail the comparison).
 #
-# This keeps GitHub Actions costs near zero: ~10 seconds of curl + git push,
-# then the real work happens on Gitea.
+# This keeps GitHub Actions costs near zero: ~10 seconds of curl + git push
+# (plus ~2 membership API calls on PRs), then the real work happens on
+# Gitea. A gated-out non-member PR costs a few seconds of runner time and
+# nothing on Gitea.
 #
 # Secrets needed (GitHub):
 #   GITEA_URL    — e.g. https://repo.vreckanproject.com
@@ -89,22 +132,330 @@ name: Gitea Mirror + Trigger
 # pre-pipeline repo state didn't fire the mirror + build.
 on:
   push:
-    branches: [main]
+    # main — the release flow. release/bump-* — per-push bump staging
+    # (ANT-1050): the bump commit is pushed there first so the Gitea build
+    # dispatched for that push posts the VRECKAN statuses the main-protection
+    # ruleset requires on any commit that lands on main.
+    branches: [main, 'release/bump-*']
   pull_request:
     branches: [main]
+  # The /allow-ci opt-in fires on the comment itself (ANT-1053). GitHub
+  # resolves pull_request workflows from the merge ref (PR head merged
+  # into base) and issue_comment workflows from the default branch, so
+  # for PRs that do not themselves modify this file the gate goes live
+  # only once merged to main (this PR's own runs already used it — the
+  # merge ref contains the new file).
+  issue_comment:
+    types: [created]
   workflow_dispatch:
 
+# CI-gate constants (ANT-1053). ALLOW_CI_TAG is the single source for the
+# opt-in command — rename it here (and in docs/ops.md §3.3) to change it.
+env:
+  ALLOW_CI_TAG: "/allow-ci"
+  GATE_ORG: "vreckan-project"
+
 jobs:
+  pr-gate:
+    # Runs on every pull_request action against main (ANT-1053). No
+    # checkout: a few seconds of runner time is the entire cost of a
+    # skipped PR. The token scopes below are what a fork-PR token has in
+    # any case, so the probe works for fork PRs too — exactly the
+    # population we gate.
+    if: github.event_name == 'pull_request'
+    runs-on: ubuntu-latest
+    permissions:
+      # Note: "org: read" is NOT a valid GITHUB_TOKEN permission scope
+      # (actionlint). The membership probe below therefore uses a
+      # short-lived vreckan-ci app installation token (204/404 verified
+      # pre-merge, ANT-1056 — the GITHUB_TOKEN 302-redirects on that
+      # endpoint); the contents/pull-requests/issues scopes here cover
+      # the comment and PR fetches, which GITHUB_TOKEN serves fine.
+      contents: read
+      pull-requests: read
+      issues: read
+    outputs:
+      run-ci: ${{ steps.gate.outputs.run-ci }}
+    steps:
+      - name: Evaluate CI gate
+        id: gate
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GH_APP_ID: ${{ secrets.GH_APP_ID }}
+          GH_APP_KEY: ${{ secrets.GH_APP_KEY }}
+          ORG: ${{ env.GATE_ORG }}
+          REPO: ${{ github.repository }}
+          PR_NUM: ${{ github.event.number }}
+          ACTION: ${{ github.event.action }}
+          AUTHOR: ${{ github.event.pull_request.user.login }}
+          TAG: ${{ env.ALLOW_CI_TAG }}
+        run: |
+          set -uo pipefail
+          echo "=== CI gate (ANT-1053): PR #${PR_NUM} [action: ${ACTION}] by ${AUTHOR} ==="
+
+          # The org-membership endpoint answers 302 (login redirect) for
+          # GITHUB_TOKEN on known users — it cannot distinguish members
+          # from non-members with that token (verified 2026-11-10, ANT-1056
+          # dispatch probe). The vreckan-ci app installation token answers
+          # 204/404 correctly, so the probe mints one (same secrets the
+          # bump-and-tag job uses — no new secrets). Comment and PR fetches
+          # below use GITHUB_TOKEN, which works fine for those. If the mint
+          # fails, the probe fails open (treated as member).
+          APP_TOKEN=""
+          NOW=$(date +%s)
+          HEADER=$(echo -n '{"alg":"RS256","typ":"JWT"}' | base64 -w0 | sed 's/=//g; s/+/-/g; s/\//_/g')
+          PAYLOAD=$(printf '{"iat":%d,"exp":%d,"iss":%s}' "$((NOW-60))" "$((NOW+540))" "$GH_APP_ID" | base64 -w0 | sed 's/=//g; s/+/-/g; s/\//_/g')
+          printf '%s' "$GH_APP_KEY" > /tmp/gate-app-key.pem
+          SIG=$(printf '%s.%s' "$HEADER" "$PAYLOAD" | openssl dgst -sha256 -sign /tmp/gate-app-key.pem | base64 -w0 | sed 's/=//g; s/+/-/g; s/\//_/g')
+          JWT="${HEADER}.${PAYLOAD}.${SIG}"
+          APP_TOKEN=$(curl -sS -X POST -H "Authorization: Bearer $JWT" -H "Accept: application/vnd.github+json" \
+            "https://api.github.com/app/installations/$(curl -sS -H "Authorization: Bearer $JWT" -H "Accept: application/vnd.github+json" "https://api.github.com/repos/${REPO}/installation" | python3 -c 'import json,sys; print(json.load(sys.stdin).get("id",""))')/access_tokens" \
+            | python3 -c 'import json,sys; print(json.load(sys.stdin).get("token",""))' 2>/dev/null || true)
+          if [ -z "$APP_TOKEN" ]; then
+            echo "WARN: vreckan-ci app token mint failed — membership probe will fail open" >&2
+          fi
+
+          # Membership probe: 204 = member, 404 = non-member. Any other
+          # code (302/403/5xx) FAILS OPEN (treated as member) with a warning
+          # — the gate is a cost/automation filter, not a security boundary,
+          # and a transient API error must not block an internal PR.
+          check_member() {
+            local login="$1" enc code
+            # Bot logins contain "[bot]", which must be URL-encoded.
+            enc="$(python3 -c 'import sys, urllib.parse; print(urllib.parse.quote(sys.argv[1], safe=""))' "$login")"
+            local tok="${APP_TOKEN:-$GITHUB_TOKEN}"
+            code=$(curl -sS -o /tmp/gate-member.json -w '%{http_code}' \
+              -H "Authorization: Bearer $tok" \
+              -H "Accept: application/vnd.github+json" \
+              "https://api.github.com/orgs/${ORG}/members/${enc}")
+            case "$code" in
+              204) echo true ;;
+              404) echo false ;;
+              *)
+                echo "WARN: membership probe for '${login}' returned HTTP ${code} — fail open (treated as member):" >&2
+                cat /tmp/gate-member.json >&2 2>/dev/null || true
+                echo true
+                ;;
+            esac
+          }
+
+          IS_MEMBER="$(check_member "$AUTHOR")"
+          if [ "$IS_MEMBER" = "true" ]; then
+            echo "author ${AUTHOR}: org member — run-ci=true"
+            echo "run-ci=true" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+          echo "author ${AUTHOR}: not a member — checking for a member ${TAG} opt-in"
+
+          # Memoized membership check for comment authors (same API call,
+          # cached per login in this run).
+          MEMBERS_FILE="$(mktemp)"
+          trap 'rm -f "$MEMBERS_FILE"' EXIT
+          is_member() {
+            local login="$1" line result
+            line="$(grep -F "${login}=" "$MEMBERS_FILE" 2>/dev/null | head -n 1 || true)"
+            if [ -n "$line" ]; then
+              echo "${line#*=}"
+              return 0
+            fi
+            result="$(check_member "$login")"
+            printf '%s=%s\n' "$login" "$result" >> "$MEMBERS_FILE"
+            echo "$result"
+          }
+
+          # Opt-in: page through the PR's issue comments (capped at 5
+          # pages) looking for the tag (case-insensitive substring). A
+          # tagged comment only counts when its AUTHOR is an org member;
+          # any member tag -> run-ci=true.
+          ALLOWED=false
+          TAG_LC="$(printf '%s' "$TAG" | tr '[:upper:]' '[:lower:]')"
+          for page in 1 2 3 4 5; do
+            curl -sS -H "Authorization: Bearer $GITHUB_TOKEN" \
+              -H "Accept: application/vnd.github+json" \
+              "https://api.github.com/repos/${REPO}/issues/${PR_NUM}/comments?per_page=100&page=${page}" \
+              > "/tmp/gate-comments-${page}.json" || {
+                echo "WARN: comment fetch (page ${page}) failed — fail open (run-ci=true)" >&2
+                echo "run-ci=true" >> "$GITHUB_OUTPUT"
+                exit 0
+              }
+            # Tagged comments on this page, as <author><TAB><body snippet>.
+            # The process substitution keeps the loop in this shell so
+            # ALLOWED survives; the body is trimmed to one log line.
+            while IFS="$(printf '\t')" read -r author body; do
+              [ -n "$author" ] || continue
+              if [ "$(is_member "$author")" = "true" ]; then
+                echo "tagged comment by member ${author} (${body:-...}) — run-ci=true"
+                ALLOWED=true
+              else
+                echo "tagged comment by non-member ${author} (${body:-...}) — ignored (logged, no effect)"
+              fi
+            done < <(jq -r --arg tag "$TAG_LC" '.[] | select(.body != null) | select((.body | ascii_downcase) | contains($tag)) | [(.user.login // ""), ((.body | split("\n") | first) | .[0:80])] | @tsv' "/tmp/gate-comments-${page}.json")
+            if [ "$ALLOWED" = "true" ]; then break; fi
+            # Stop paging when a page comes back short.
+            count="$(jq 'length' "/tmp/gate-comments-${page}.json" 2>/dev/null || echo 0)"
+            if [ "${count:-0}" -lt 100 ]; then break; fi
+          done
+
+          if [ "$ALLOWED" = "true" ]; then
+            echo "member ${TAG} tag present — run-ci=true"
+            echo "run-ci=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "not a member — no ${TAG} tag — skipping CI"
+            echo "run-ci=false" >> "$GITHUB_OUTPUT"
+          fi
+
+  allow-ci:
+    # The immediate opt-in (ANT-1053): a member `/allow-ci` comment on an
+    # open PR targeting main triggers the mirror + build on the comment
+    # itself. No checkout. Trust note: the tag only decides whether to run
+    # the pipeline we already run — it grants no write, secret, or merge
+    # capability beyond what the mirror/dispatch steps use. Side effect
+    # (documented): on a member-authored PR it re-runs CI.
+    if: github.event_name == 'issue_comment'
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      pull-requests: read
+      issues: read
+    outputs:
+      trigger: ${{ steps.allow.outputs.trigger }}
+      pr_head_sha: ${{ steps.allow.outputs.pr_head_sha }}
+    steps:
+      - name: Evaluate /allow-ci opt-in
+        id: allow
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GH_APP_ID: ${{ secrets.GH_APP_ID }}
+          GH_APP_KEY: ${{ secrets.GH_APP_KEY }}
+          ORG: ${{ env.GATE_ORG }}
+          REPO: ${{ github.repository }}
+          ISSUE_NUM: ${{ github.event.issue.number }}
+          COMMENT_BODY: ${{ github.event.comment.body }}
+          COMMENTOR: ${{ github.event.comment.user.login }}
+          PR_URL: ${{ github.event.issue.pull_request.url }}
+          TAG: ${{ env.ALLOW_CI_TAG }}
+        run: |
+          set -uo pipefail
+          echo "=== /allow-ci opt-in (ANT-1053): comment by ${COMMENTOR} on issue/PR #${ISSUE_NUM} ==="
+
+          # Cheap local pre-filter first (zero API calls): the body must
+          # contain the tag and the issue must be a PR. Ordinary issue
+          # comments fail here in milliseconds.
+          if ! printf '%s' "$COMMENT_BODY" | grep -qiF "$TAG"; then
+            echo "no ${TAG} tag in comment — nothing to do"
+            echo "trigger=false" >> "$GITHUB_OUTPUT"
+            echo "pr_head_sha=" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+          if [ -z "$PR_URL" ]; then
+            echo "comment is on a plain issue (not a PR) — nothing to do"
+            echo "trigger=false" >> "$GITHUB_OUTPUT"
+            echo "pr_head_sha=" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+
+          # Fetch the PR (one API call).
+          curl -sS -H "Authorization: Bearer $GITHUB_TOKEN" \
+            -H "Accept: application/vnd.github+json" \
+            "https://api.github.com/repos/${REPO}/pulls/${ISSUE_NUM}" > /tmp/allow-ci-pr.json || {
+              echo "WARN: PR fetch failed — fail open (triggering anyway)" >&2
+              echo "trigger=true" >> "$GITHUB_OUTPUT"
+              echo "pr_head_sha=" >> "$GITHUB_OUTPUT"
+              exit 0
+            }
+          BASE_BRANCH="$(jq -r '.base.ref // empty' /tmp/allow-ci-pr.json)"
+          PR_STATE="$(jq -r '.state // empty' /tmp/allow-ci-pr.json)"
+          PR_AUTHOR="$(jq -r '.user.login // empty' /tmp/allow-ci-pr.json)"
+          HEAD_SHA="$(jq -r '.head.sha // empty' /tmp/allow-ci-pr.json)"
+          echo "PR #${ISSUE_NUM} by ${PR_AUTHOR}: state=${PR_STATE} base=${BASE_BRANCH} head=${HEAD_SHA:-<unavailable>}"
+
+          if [ "$PR_STATE" != "open" ]; then
+            echo "PR is not open (${PR_STATE}) — no trigger"
+            echo "trigger=false" >> "$GITHUB_OUTPUT"
+            echo "pr_head_sha=" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+          if [ "$BASE_BRANCH" != "main" ]; then
+            echo "PR targets ${BASE_BRANCH}, not main — no trigger"
+            echo "trigger=false" >> "$GITHUB_OUTPUT"
+            echo "pr_head_sha=" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+
+          # Membership of the COMMENT author (not the PR author — the
+          # author is precisely the non-member in the opt-in case). The
+          # probe uses the vreckan-ci app installation token (204/404; the
+          # GITHUB_TOKEN 302-redirects on this endpoint — see pr-gate).
+          # Anything other than 204/404 fails OPEN (treated as member).
+          APP_TOKEN=""
+          NOW=$(date +%s)
+          HEADER=$(echo -n '{"alg":"RS256","typ":"JWT"}' | base64 -w0 | sed 's/=//g; s/+/-/g; s/\//_/g')
+          PAYLOAD=$(printf '{"iat":%d,"exp":%d,"iss":%s}' "$((NOW-60))" "$((NOW+540))" "$GH_APP_ID" | base64 -w0 | sed 's/=//g; s/+/-/g; s/\//_/g')
+          printf '%s' "$GH_APP_KEY" > /tmp/allow-ci-app-key.pem
+          SIG=$(printf '%s.%s' "$HEADER" "$PAYLOAD" | openssl dgst -sha256 -sign /tmp/allow-ci-app-key.pem | base64 -w0 | sed 's/=//g; s/+/-/g; s/\//_/g')
+          JWT="${HEADER}.${PAYLOAD}.${SIG}"
+          APP_TOKEN=$(curl -sS -X POST -H "Authorization: Bearer $JWT" -H "Accept: application/vnd.github+json" \
+            "https://api.github.com/app/installations/$(curl -sS -H "Authorization: Bearer $JWT" -H "Accept: application/vnd.github+json" "https://api.github.com/repos/${REPO}/installation" | python3 -c 'import json,sys; print(json.load(sys.stdin).get("id",""))')/access_tokens" \
+            | python3 -c 'import json,sys; print(json.load(sys.stdin).get("token",""))' 2>/dev/null || true)
+          if [ -z "$APP_TOKEN" ]; then
+            echo "WARN: vreckan-ci app token mint failed — membership probe will fail open" >&2
+          fi
+          enc="$(python3 -c 'import sys, urllib.parse; print(urllib.parse.quote(sys.argv[1], safe=""))' "$COMMENTOR")"
+          code=$(curl -sS -o /tmp/allow-ci-member.json -w '%{http_code}' \
+            -H "Authorization: Bearer ${APP_TOKEN:-$GITHUB_TOKEN}" \
+            -H "Accept: application/vnd.github+json" \
+            "https://api.github.com/orgs/${ORG}/members/${enc}")
+          case "$code" in
+            204)
+              echo "comment author ${COMMENTOR}: org member — trigger=true"
+              echo "trigger=true" >> "$GITHUB_OUTPUT"
+              echo "pr_head_sha=${HEAD_SHA}" >> "$GITHUB_OUTPUT"
+              ;;
+            404)
+              echo "comment author ${COMMENTOR}: not a member — tag ignored (logged, no effect)"
+              echo "trigger=false" >> "$GITHUB_OUTPUT"
+              echo "pr_head_sha=" >> "$GITHUB_OUTPUT"
+              ;;
+            *)
+              echo "WARN: membership probe for '${COMMENTOR}' returned HTTP ${code} — fail open (triggering anyway):" >&2
+              cat /tmp/allow-ci-member.json >&2 2>/dev/null || true
+              echo "trigger=true" >> "$GITHUB_OUTPUT"
+              echo "pr_head_sha=${HEAD_SHA}" >> "$GITHUB_OUTPUT"
+              ;;
+          esac
+
   mirror-and-trigger:
-    # Skip PRs from forks (e.g. Dependabot) — repo secrets aren't exposed to
-    # fork PRs by default, so the mirror step would fail on missing secrets.
-    # Regular PRs from branches in this repo still run normally.
-    if: github.event_name != 'pull_request' || github.event.pull_request.base.repo.full_name == github.event.pull_request.head.repo.full_name
+    # Gated (ANT-1053): PRs run only when pr-gate said so (member, or a
+    # member /allow-ci tag present); the comment path runs only when
+    # allow-ci fired. Pushes to main and release/bump-* (per-push bump
+    # staging, ANT-1050 — the staging push is what mirrors the branch and
+    # dispatches the Gitea build that posts the required statuses), plus
+    # manual dispatch, always run. The old fork-skip `if` is subsumed: fork
+    # PRs are non-member PRs, so they gate out on membership unless a
+    # member tags them — and a tagged fork PR now works because repo
+    # secrets ARE exposed to it (the token carries the gate permissions
+    # above), so no fork PR is left behind.
+    needs: [pr-gate, allow-ci]
+    if: >-
+      always() && (
+      (github.event_name == 'pull_request' && needs.pr-gate.outputs.run-ci == 'true')
+      || (github.event_name == 'issue_comment' && needs.allow-ci.outputs.trigger == 'true')
+      || (github.event_name == 'push' && github.ref == 'refs/heads/main')
+      || (github.event_name == 'push' && startsWith(github.ref, 'refs/heads/release/bump-'))
+      || github.event_name == 'workflow_dispatch')
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v7
         with:
           fetch-depth: 0
+          # issue_comment carries no PR context: the default checkout is
+          # the default-branch HEAD, which would mirror main into pr/<n>.
+          # Check out the PR head sha the allow-ci job fetched from the PR
+          # (a bare-SHA ref fetches all branches, then the sha itself —
+          # fork head commits are reachable via refs/pull/N/head). An
+          # empty sha (degraded payload) falls back to github.sha, so the
+          # mirror and the Gitea branch-HEAD fetch stay consistent.
+          ref: ${{ github.event_name == 'issue_comment' && needs.allow-ci.outputs.pr_head_sha || github.sha }}
 
       - name: Determine target branch
         # On a PR close the branch is deleted instead of mirrored (step
@@ -118,8 +469,18 @@ jobs:
             # which does not exist in the mirror. The mirror only has the PR
             # head commit, so build + post status against that instead.
             echo "target_sha=${{ github.event.pull_request.head.sha }}" >> "$GITHUB_OUTPUT"
+          elif [ "${{ github.event_name }}" = "issue_comment" ]; then
+            # The /allow-ci path: mirror the PR head (the commit we just
+            # checked out). Empty sha = degraded payload; the Gitea fetch
+            # then falls back to the pr/<n> branch HEAD, which is the same
+            # commit we just mirrored (build-test-rust.yml fetch step).
+            echo "target_branch=pr/${{ github.event.issue.number }}" >> "$GITHUB_OUTPUT"
+            echo "target_sha=${{ needs.allow-ci.outputs.pr_head_sha }}" >> "$GITHUB_OUTPUT"
           else
-            echo "target_branch=main" >> "$GITHUB_OUTPUT"
+            # push: mirror the branch that was pushed (main, or the
+            # release/bump-* staging branch whose Gitea build posts the
+            # required VRECKAN statuses for the bump commit).
+            echo "target_branch=${GITHUB_REF_NAME}" >> "$GITHUB_OUTPUT"
             echo "target_sha=${{ github.sha }}" >> "$GITHUB_OUTPUT"
           fi
 
@@ -159,20 +520,34 @@ jobs:
           ./scripts/trigger-gitea.sh
 
       - name: Delete Gitea PR mirror branch
-        # PR closed — merged or dismissed; either way the mirror branch is
-        # dead and should go (ANT-296). Two entry paths:
-        #   pull_request/closed — a dismissed PR (or a merged PR if GitHub
-        #     did not coalesce the events); the number comes from the event.
-        #   push to main — when a PR is merged, GitHub coalesces the close
-        #     event into this push run (event is `push`, no separate
-        #     pull_request run), so the number is recovered from the merge:
-        #     the merge-commit subject locally first (fast, no network, the
-        #     common case), then the GitHub API (covers squash/rebase, where
-        #     the subject is the PR title, not "Merge pull request #N").
-        #     Ordinary (non-PR) pushes are a no-op.
-        # Idempotent: a 404 means the branch was never mirrored (fork PRs are
-        # skipped by the job-level gate), was already deleted by the other
-        # entry path, or was swept by the daily cleanup job — a no-op.
+        # PR closed — the mirror branch is dead and should go (ANT-296).
+        # Entry paths:
+        #   push to main — the path that actually fires for merged PRs:
+        #     GitHub coalesces the close event into this push run (event is
+        #     `push`, no separate pull_request run), so the number is
+        #     recovered from the merge: the merge-commit subject locally
+        #     first (fast, no network, the common case), then the GitHub
+        #     API (covers squash/rebase, where the subject is the PR
+        #     title, not "Merge pull request #N"). Ordinary (non-PR)
+        #     pushes are a no-op.
+        #   pull_request/closed — fires only when GitHub still resolves a
+        #     run for the close. Dismissed-PR closes usually get NO run at
+        #     all: the merge ref that pull_request workflows resolve from
+        #     is deleted when the PR closes (verified 2026-11-10, ANT-1056
+        #     — two close attempts plus four historical dismissed PRs,
+        #     while a reopen, which recreates the merge ref, did fire a
+        #     run). Dismissed-PR branches that never get a close run are
+        #     swept by the daily cleanup leg (routine c6c4011f rule 4).
+        #     When a close run does fire, the number comes from the event.
+        # Idempotent: a 404 means the branch was never mirrored (gated-out
+        # non-member PRs never reach the mirror step), was already deleted
+        # by the other entry path, or was swept by the daily cleanup job —
+        # a no-op. Traced with the gate (ANT-1053): an untagged closed PR
+        # is skipped here — and usually produces no close run at all —
+        # but its mirror branch never existed in the first place; a
+        # tagged-then-closed PR re-see the member tag in pr-gate on the
+        # `closed` action when a close run does fire, so it deletes
+        # cleanly.
         if: >-
           (github.event_name == 'pull_request' && github.event.action == 'closed')
           || (github.event_name == 'push' && github.ref == 'refs/heads/main')
@@ -376,15 +751,25 @@ jobs:
         # exists, so this push's changes are unreleased on a released
         # version. Bump the patch (scripts/bump-version.sh is the single
         # place version math lives), commit the VERSION/Cargo.toml/
-        # Cargo.lock rewrite as vreckan-ci[bot], push to main. That push
-        # re-runs this job and takes the tag path (loop terminates: at most
-        # one bot commit per push, because the bump commit's own run sees a
-        # version whose tag does not exist). Release notes: when the push
-        # range added no CHANGELOG section, its commit subjects ride in the
-        # bump commit's message body — the bump commit's own run (tag path)
-        # carries them into the GitHub Release, because that run's push
-        # range is only the bump commit. On non-fast-forward (main moved
-        # under the run), re-derive from the new tip and retry once.
+        # Cargo.lock rewrite as vreckan-ci[bot], then land it on main in
+        # two stages:
+        #   1. Push the bump commit to a staging branch release/bump-<new>.
+        #      That push mirrors the branch and dispatches the Gitea build,
+        #      which posts the three VRECKAN statuses the main-protection
+        #      ruleset requires on every commit pushed to main — a fresh
+        #      bot commit has none of them yet, so a direct push to main
+        #      is rejected (GH013).
+        #   2. Wait for those statuses to go green on the bump commit,
+        #      then push it to main. That push re-runs this job and takes
+        #      the tag path (loop terminates: at most one bot commit per
+        #      push, because the bump commit's own run sees a version whose
+        #      tag does not exist).
+        # Release notes: when the push range added no CHANGELOG section,
+        # its commit subjects ride in the bump commit's message body — the
+        # bump commit's own run (tag path) carries them into the GitHub
+        # Release, because that run's push range is only the bump commit.
+        # On non-fast-forward (main moved under the run), re-derive from
+        # the new tip and retry once (re-staging the fresh commit).
         if: steps.exists.outputs.exists == 'true'
         env:
           GH_TOKEN: ${{ steps.apptoken.outputs.token }}
@@ -392,6 +777,9 @@ jobs:
           set -euo pipefail
           TAG="${{ steps.version.outputs.tag }}"
           TAG_COMMIT="${{ steps.exists.outputs.tag_commit }}"
+          # The contexts the main-protection ruleset requires (Gitea posts
+          # them as commit statuses on whatever commit it builds).
+          REQUIRED_CHECKS=("VRECKAN: Smoke (Rust)" "VRECKAN: Test (Rust)" "VRECKAN: Scan (Rust)")
           git config user.name "vreckan-ci[bot]"
           git config user.email "bot@vreckanproject.com"
           # Notes range base = the commit the existing tag points at.
@@ -415,6 +803,38 @@ jobs:
             git log --no-merges --reverse --format='- %s' "$1".."${GITHUB_SHA}"
           }
           NOTES="$(compose_notes "$TAG_COMMIT")"
+          # Poll the bump commit's combined status until every required
+          # check is green. Failure/error states fail fast (the Gitea run
+          # linked from the status has the log); a 25-minute timeout covers
+          # the dispatch + build + post cycle with wide margin (observed
+          # build runs finish in ~4 minutes).
+          wait_for_checks() {
+            local sha="$1" deadline=$(( $(date +%s) + 1500 )) state ctx ok
+            echo "Waiting for the required checks on ${sha:0:8} (posted by the Gitea build for ${BUMP_BRANCH})"
+            while :; do
+              ok=0
+              for ctx in "${REQUIRED_CHECKS[@]}"; do
+                state=$(curl -sS -H "Authorization: Bearer $GH_TOKEN" \
+                  "https://api.github.com/repos/${GITHUB_REPOSITORY}/commits/${sha}/status" \
+                  | jq -r --arg c "$ctx" '[.statuses[]? | select(.context == $c) | .state] | first // "expected"')
+                case "$state" in
+                  success) ok=$((ok+1)) ;;
+                  failure|error)
+                    echo "ERROR: required check '$ctx' reported $state on ${sha:0:8} — the Gitea run linked from the status has the log" >&2
+                    return 1 ;;
+                esac
+              done
+              if [ "$ok" = "${#REQUIRED_CHECKS[@]}" ]; then
+                echo "All ${#REQUIRED_CHECKS[@]} required checks green on ${sha:0:8}"
+                return 0
+              fi
+              if [ "$(date +%s)" -ge "$deadline" ]; then
+                echo "ERROR: timed out (25m) waiting for required checks on ${sha:0:8} — if the Gitea build ran but never posted, re-dispatch build-test-rust.yml with branch=${BUMP_BRANCH} sha=${sha}, then re-run this job" >&2
+                return 1
+              fi
+              sleep 20
+            done
+          }
           try_push() {
             local new
             new=$(./scripts/bump-version.sh patch)
@@ -427,15 +847,23 @@ jobs:
             } > /tmp/bump-commit-msg
             git add VERSION Cargo.toml Cargo.lock
             git commit -F /tmp/bump-commit-msg
+            BUMP_BRANCH="release/bump-${new}"
+            BUMP_SHA=$(git rev-parse HEAD)
             # Same extraheader override as the tag push: actions/checkout
             # writes a read-only GITHUB_TOKEN extraheader that would 403
             # the push otherwise; the app token (Contents: write) must win.
+            # --force: a retried bump (non-FF on main) replaces the staging
+            # commit, and a re-run of this job is a no-op re-stage.
+            git -c http.https://github.com/.extraheader= push \
+              "https://x-access-token:${GH_TOKEN}@github.com/${GITHUB_REPOSITORY}.git" "+HEAD:refs/heads/${BUMP_BRANCH}"
+            echo "Staged bump commit ${BUMP_SHA:0:8} on ${BUMP_BRANCH} — waiting for its required checks before touching main"
+            wait_for_checks "$BUMP_SHA"
             if git -c http.https://github.com/.extraheader= push \
-              "https://x-access-token:${GH_TOKEN}@github.com/${{ github.repository }}.git" "HEAD:refs/heads/main"; then
-              echo "Pushed per-push bump commit — the next run cuts tag v${new} and releases it"
+              "https://x-access-token:${GH_TOKEN}@github.com/${GITHUB_REPOSITORY}.git" "HEAD:refs/heads/main"; then
+              echo "Pushed per-push bump commit to main — the next run cuts tag v${new} and releases it"
               return 0
             fi
-            echo "Bump push was non-fast-forward — main moved, re-deriving from the new tip" >&2
+            echo "Bump push to main was non-fast-forward — main moved, re-deriving from the new tip" >&2
             return 1
           }
           if ! try_push; then
@@ -446,6 +874,12 @@ jobs:
             NOTES="$(compose_notes "$TAG_COMMIT")"
             try_push
           fi
+          # Best-effort: drop the staging branch from GitHub (it has served
+          # its purpose once main carries the commit). The mirror branch
+          # is swept by the daily cleanup routine.
+          git -c http.https://github.com/.extraheader= push \
+            "https://x-access-token:${GH_TOKEN}@github.com/${GITHUB_REPOSITORY}.git" \
+            --delete "refs/heads/${BUMP_BRANCH}" || true
 
       - name: Create tag + push to GitHub
         if: steps.exists.outputs.exists == 'false'

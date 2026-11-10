@@ -263,7 +263,22 @@ the Gitea `vreckan/vreckan` mirror — feature branches go to GitHub only, and
   - *mirror-and-trigger* — force-mirrors the branch to the Gitea mirror repo
     (`scripts/mirror-to-gitea.sh`; PRs mirror to `pr/<number>`) and dispatches
     the Gitea-side **`build-test-rust.yml`** workflow (`scripts/trigger-gitea.sh`)
-    with `branch`/`sha` inputs.
+    with `branch`/`sha` inputs. Gated for PRs by the CI gate below.
+  - *CI gate* (*pr-gate* + *allow-ci* jobs, ANT-1053, board-approved
+    2026-11-10) — PRs from **org members run CI; PRs from non-members skip
+    it by default** (bot accounts such as `vreckan-ci[bot]`, the Paperclip
+    bot, and Renovate are non-members, so they are covered without
+    special-casing). Opt-in: an **org member comments `/allow-ci` on the
+    PR** — the `allow-ci` job mirrors + dispatches the build immediately on
+    the comment, and the `pr-gate` job (which re-evaluates on every
+    `pull_request` action) also runs the build on the author's next push.
+    Caveats: (a) membership is the single default rule — if a bot account is
+    ever added to the `vreckan-project` org, its PRs start triggering CI
+    again; (b) `/allow-ci` on a member-authored PR re-runs CI (an intended
+    manual re-run). The tag is the `ALLOW_CI_TAG` constant at the top of the
+    workflow (rename there + here to change it). The gate is a
+    cost/automation filter, not a security boundary: transient
+    membership-API errors fail open (CI runs).
   - *bump-and-tag* — on push to `main`: reads `VERSION`; if tag
     `v<VERSION>` does not exist yet, mints a short-lived GitHub App
     installation token, creates and pushes the annotated tag, mirrors the
