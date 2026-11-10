@@ -1,9 +1,31 @@
 # Gitea Mirror + Trigger — the GitHub-side "vLLM pattern" leg.
 #
-# One workflow, two independent jobs, so a push to main shows a SINGLE run
-# (not two) while keeping the two concerns clearly separated:
+# One workflow, three jobs. The two pipeline jobs (mirror-and-trigger,
+# bump-and-tag) stay independent, so a push to main shows a SINGLE run
+# (not two) while keeping the two concerns clearly separated; the third job
+# pair is the CI gate (ANT-1053, board-approved 2026-11-10):
 #
-#   mirror-and-trigger  (push to main + pull_request)
+#   pr-gate  (pull_request only) — decides whether a PR runs the pipeline:
+#     org members run CI; non-members skip it UNLESS an org member has
+#     commented `/allow-ci` on the PR. Re-evaluated on every pull_request
+#     action (opened/synchronize/reopened/closed), so a tagged PR also
+#     starts building on the author's next push. No checkout step: a few
+#     seconds of runner time is the entire cost of a skipped PR.
+#   allow-ci  (issue_comment only) — the immediate opt-in: a member
+#     `/allow-ci` comment on an open PR targeting main mirrors + dispatches
+#     the Gitea build right away. No checkout.
+#
+#   GATE RULE — the default: non-member PRs do NOT trigger CI (members:
+#   yes). The gate is a cost/automation filter, not a security boundary,
+#   and a transient membership-API error FAILS OPEN (CI runs). Two
+#   caveats: (a) membership is the single default rule — if a bot account
+#   is ever ADDED to the vreckan-project org, its PRs start triggering CI
+#   again; (b) `/allow-ci` on a member-authored PR re-runs CI (an intended
+#   manual re-run). The tag string is the ALLOW_CI_TAG constant below —
+#   renaming the command is a one-line change there (docs/ops.md §3.3
+#   mirrors this documentation).
+#
+#   mirror-and-trigger  (push to main + gated pull_request + gated issue_comment)
 #     1. Mirrors the current branch to the Gitea mirror repo (vreckan/vreckan).
 #        For PRs, the code is mirrored to a `pr/<number>` branch.
 #     2. Dispatches the Gitea build workflow in vreckan/vreckan-workflow so the
@@ -67,11 +89,20 @@
 #     and, via the deployment's :latest tracking, a production deploy; minor
 #     and major bumps remain explicit PR decisions (see docs/release.md).
 #
-# The jobs are independent (no `needs`), so a tag no-op never masks a build
-# failure and vice-versa.
+# The pipeline jobs stay independent where it matters: a tag no-op never
+# masks a build failure and vice versa (bump-and-tag has no `needs`).
+# mirror-and-trigger `needs` the two gate jobs only to consume their
+# decisions on the events those jobs handle. On the other events both
+# gates are skipped — and GitHub skips a dependent job whose `needs` are
+# ALL skipped, so the job `if` carries an `always()` guard (verified with
+# a workflow_dispatch run 2026-11-10, ANT-1056) that keeps push-to-main
+# and manual dispatches running; the gate clauses themselves still decide
+# (a skipped gate yields empty outputs, which fail the comparison).
 #
-# This keeps GitHub Actions costs near zero: ~10 seconds of curl + git push,
-# then the real work happens on Gitea.
+# This keeps GitHub Actions costs near zero: ~10 seconds of curl + git push
+# (plus ~2 membership API calls on PRs), then the real work happens on
+# Gitea. A gated-out non-member PR costs a few seconds of runner time and
+# nothing on Gitea.
 #
 # Secrets needed (GitHub):
 #   GITEA_URL    — e.g. https://repo.vreckanproject.com
@@ -92,19 +123,319 @@ on:
     branches: [main]
   pull_request:
     branches: [main]
+  # The /allow-ci opt-in fires on the comment itself (ANT-1053). GitHub
+  # resolves pull_request workflows from the merge ref (PR head merged
+  # into base) and issue_comment workflows from the default branch, so
+  # for PRs that do not themselves modify this file the gate goes live
+  # only once merged to main (this PR's own runs already used it — the
+  # merge ref contains the new file).
+  issue_comment:
+    types: [created]
   workflow_dispatch:
 
+# CI-gate constants (ANT-1053). ALLOW_CI_TAG is the single source for the
+# opt-in command — rename it here (and in docs/ops.md §3.3) to change it.
+env:
+  ALLOW_CI_TAG: "/allow-ci"
+  GATE_ORG: "vreckan-project"
+
 jobs:
+  pr-gate:
+    # Runs on every pull_request action against main (ANT-1053). No
+    # checkout: a few seconds of runner time is the entire cost of a
+    # skipped PR. The token scopes below are what a fork-PR token has in
+    # any case, so the probe works for fork PRs too — exactly the
+    # population we gate.
+    if: github.event_name == 'pull_request'
+    runs-on: ubuntu-latest
+    permissions:
+      # Note: "org: read" is NOT a valid GITHUB_TOKEN permission scope
+      # (actionlint). The membership probe below therefore uses a
+      # short-lived vreckan-ci app installation token (204/404 verified
+      # pre-merge, ANT-1056 — the GITHUB_TOKEN 302-redirects on that
+      # endpoint); the contents/pull-requests/issues scopes here cover
+      # the comment and PR fetches, which GITHUB_TOKEN serves fine.
+      contents: read
+      pull-requests: read
+      issues: read
+    outputs:
+      run-ci: ${{ steps.gate.outputs.run-ci }}
+    steps:
+      - name: Evaluate CI gate
+        id: gate
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GH_APP_ID: ${{ secrets.GH_APP_ID }}
+          GH_APP_KEY: ${{ secrets.GH_APP_KEY }}
+          ORG: ${{ env.GATE_ORG }}
+          REPO: ${{ github.repository }}
+          PR_NUM: ${{ github.event.number }}
+          ACTION: ${{ github.event.action }}
+          AUTHOR: ${{ github.event.pull_request.user.login }}
+          TAG: ${{ env.ALLOW_CI_TAG }}
+        run: |
+          set -uo pipefail
+          echo "=== CI gate (ANT-1053): PR #${PR_NUM} [action: ${ACTION}] by ${AUTHOR} ==="
+
+          # The org-membership endpoint answers 302 (login redirect) for
+          # GITHUB_TOKEN on known users — it cannot distinguish members
+          # from non-members with that token (verified 2026-11-10, ANT-1056
+          # dispatch probe). The vreckan-ci app installation token answers
+          # 204/404 correctly, so the probe mints one (same secrets the
+          # bump-and-tag job uses — no new secrets). Comment and PR fetches
+          # below use GITHUB_TOKEN, which works fine for those. If the mint
+          # fails, the probe fails open (treated as member).
+          APP_TOKEN=""
+          NOW=$(date +%s)
+          HEADER=$(echo -n '{"alg":"RS256","typ":"JWT"}' | base64 -w0 | sed 's/=//g; s/+/-/g; s/\//_/g')
+          PAYLOAD=$(printf '{"iat":%d,"exp":%d,"iss":%s}' "$((NOW-60))" "$((NOW+540))" "$GH_APP_ID" | base64 -w0 | sed 's/=//g; s/+/-/g; s/\//_/g')
+          printf '%s' "$GH_APP_KEY" > /tmp/gate-app-key.pem
+          SIG=$(printf '%s.%s' "$HEADER" "$PAYLOAD" | openssl dgst -sha256 -sign /tmp/gate-app-key.pem | base64 -w0 | sed 's/=//g; s/+/-/g; s/\//_/g')
+          JWT="${HEADER}.${PAYLOAD}.${SIG}"
+          APP_TOKEN=$(curl -sS -X POST -H "Authorization: Bearer $JWT" -H "Accept: application/vnd.github+json" \
+            "https://api.github.com/app/installations/$(curl -sS -H "Authorization: Bearer $JWT" -H "Accept: application/vnd.github+json" "https://api.github.com/repos/${REPO}/installation" | python3 -c 'import json,sys; print(json.load(sys.stdin).get("id",""))')/access_tokens" \
+            | python3 -c 'import json,sys; print(json.load(sys.stdin).get("token",""))' 2>/dev/null || true)
+          if [ -z "$APP_TOKEN" ]; then
+            echo "WARN: vreckan-ci app token mint failed — membership probe will fail open" >&2
+          fi
+
+          # Membership probe: 204 = member, 404 = non-member. Any other
+          # code (302/403/5xx) FAILS OPEN (treated as member) with a warning
+          # — the gate is a cost/automation filter, not a security boundary,
+          # and a transient API error must not block an internal PR.
+          check_member() {
+            local login="$1" enc code
+            # Bot logins contain "[bot]", which must be URL-encoded.
+            enc="$(python3 -c 'import sys, urllib.parse; print(urllib.parse.quote(sys.argv[1], safe=""))' "$login")"
+            local tok="${APP_TOKEN:-$GITHUB_TOKEN}"
+            code=$(curl -sS -o /tmp/gate-member.json -w '%{http_code}' \
+              -H "Authorization: Bearer $tok" \
+              -H "Accept: application/vnd.github+json" \
+              "https://api.github.com/orgs/${ORG}/members/${enc}")
+            case "$code" in
+              204) echo true ;;
+              404) echo false ;;
+              *)
+                echo "WARN: membership probe for '${login}' returned HTTP ${code} — fail open (treated as member):" >&2
+                cat /tmp/gate-member.json >&2 2>/dev/null || true
+                echo true
+                ;;
+            esac
+          }
+
+          IS_MEMBER="$(check_member "$AUTHOR")"
+          if [ "$IS_MEMBER" = "true" ]; then
+            echo "author ${AUTHOR}: org member — run-ci=true"
+            echo "run-ci=true" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+          echo "author ${AUTHOR}: not a member — checking for a member ${TAG} opt-in"
+
+          # Memoized membership check for comment authors (same API call,
+          # cached per login in this run).
+          MEMBERS_FILE="$(mktemp)"
+          trap 'rm -f "$MEMBERS_FILE"' EXIT
+          is_member() {
+            local login="$1" line result
+            line="$(grep -F "${login}=" "$MEMBERS_FILE" 2>/dev/null | head -n 1 || true)"
+            if [ -n "$line" ]; then
+              echo "${line#*=}"
+              return 0
+            fi
+            result="$(check_member "$login")"
+            printf '%s=%s\n' "$login" "$result" >> "$MEMBERS_FILE"
+            echo "$result"
+          }
+
+          # Opt-in: page through the PR's issue comments (capped at 5
+          # pages) looking for the tag (case-insensitive substring). A
+          # tagged comment only counts when its AUTHOR is an org member;
+          # any member tag -> run-ci=true.
+          ALLOWED=false
+          TAG_LC="$(printf '%s' "$TAG" | tr '[:upper:]' '[:lower:]')"
+          for page in 1 2 3 4 5; do
+            curl -sS -H "Authorization: Bearer $GITHUB_TOKEN" \
+              -H "Accept: application/vnd.github+json" \
+              "https://api.github.com/repos/${REPO}/issues/${PR_NUM}/comments?per_page=100&page=${page}" \
+              > "/tmp/gate-comments-${page}.json" || {
+                echo "WARN: comment fetch (page ${page}) failed — fail open (run-ci=true)" >&2
+                echo "run-ci=true" >> "$GITHUB_OUTPUT"
+                exit 0
+              }
+            # Tagged comments on this page, as <author><TAB><body snippet>.
+            # The process substitution keeps the loop in this shell so
+            # ALLOWED survives; the body is trimmed to one log line.
+            while IFS="$(printf '\t')" read -r author body; do
+              [ -n "$author" ] || continue
+              if [ "$(is_member "$author")" = "true" ]; then
+                echo "tagged comment by member ${author} (${body:-...}) — run-ci=true"
+                ALLOWED=true
+              else
+                echo "tagged comment by non-member ${author} (${body:-...}) — ignored (logged, no effect)"
+              fi
+            done < <(jq -r --arg tag "$TAG_LC" '.[] | select(.body != null) | select((.body | ascii_downcase) | contains($tag)) | [(.user.login // ""), ((.body | split("\n") | first) | .[0:80])] | @tsv' "/tmp/gate-comments-${page}.json")
+            if [ "$ALLOWED" = "true" ]; then break; fi
+            # Stop paging when a page comes back short.
+            count="$(jq 'length' "/tmp/gate-comments-${page}.json" 2>/dev/null || echo 0)"
+            if [ "${count:-0}" -lt 100 ]; then break; fi
+          done
+
+          if [ "$ALLOWED" = "true" ]; then
+            echo "member ${TAG} tag present — run-ci=true"
+            echo "run-ci=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "not a member — no ${TAG} tag — skipping CI"
+            echo "run-ci=false" >> "$GITHUB_OUTPUT"
+          fi
+
+  allow-ci:
+    # The immediate opt-in (ANT-1053): a member `/allow-ci` comment on an
+    # open PR targeting main triggers the mirror + build on the comment
+    # itself. No checkout. Trust note: the tag only decides whether to run
+    # the pipeline we already run — it grants no write, secret, or merge
+    # capability beyond what the mirror/dispatch steps use. Side effect
+    # (documented): on a member-authored PR it re-runs CI.
+    if: github.event_name == 'issue_comment'
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      pull-requests: read
+      issues: read
+    outputs:
+      trigger: ${{ steps.allow.outputs.trigger }}
+      pr_head_sha: ${{ steps.allow.outputs.pr_head_sha }}
+    steps:
+      - name: Evaluate /allow-ci opt-in
+        id: allow
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GH_APP_ID: ${{ secrets.GH_APP_ID }}
+          GH_APP_KEY: ${{ secrets.GH_APP_KEY }}
+          ORG: ${{ env.GATE_ORG }}
+          REPO: ${{ github.repository }}
+          ISSUE_NUM: ${{ github.event.issue.number }}
+          COMMENT_BODY: ${{ github.event.comment.body }}
+          COMMENTOR: ${{ github.event.comment.user.login }}
+          PR_URL: ${{ github.event.issue.pull_request.url }}
+          TAG: ${{ env.ALLOW_CI_TAG }}
+        run: |
+          set -uo pipefail
+          echo "=== /allow-ci opt-in (ANT-1053): comment by ${COMMENTOR} on issue/PR #${ISSUE_NUM} ==="
+
+          # Cheap local pre-filter first (zero API calls): the body must
+          # contain the tag and the issue must be a PR. Ordinary issue
+          # comments fail here in milliseconds.
+          if ! printf '%s' "$COMMENT_BODY" | grep -qiF "$TAG"; then
+            echo "no ${TAG} tag in comment — nothing to do"
+            echo "trigger=false" >> "$GITHUB_OUTPUT"
+            echo "pr_head_sha=" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+          if [ -z "$PR_URL" ]; then
+            echo "comment is on a plain issue (not a PR) — nothing to do"
+            echo "trigger=false" >> "$GITHUB_OUTPUT"
+            echo "pr_head_sha=" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+
+          # Fetch the PR (one API call).
+          curl -sS -H "Authorization: Bearer $GITHUB_TOKEN" \
+            -H "Accept: application/vnd.github+json" \
+            "https://api.github.com/repos/${REPO}/pulls/${ISSUE_NUM}" > /tmp/allow-ci-pr.json || {
+              echo "WARN: PR fetch failed — fail open (triggering anyway)" >&2
+              echo "trigger=true" >> "$GITHUB_OUTPUT"
+              echo "pr_head_sha=" >> "$GITHUB_OUTPUT"
+              exit 0
+            }
+          BASE_BRANCH="$(jq -r '.base.ref // empty' /tmp/allow-ci-pr.json)"
+          PR_STATE="$(jq -r '.state // empty' /tmp/allow-ci-pr.json)"
+          PR_AUTHOR="$(jq -r '.user.login // empty' /tmp/allow-ci-pr.json)"
+          HEAD_SHA="$(jq -r '.head.sha // empty' /tmp/allow-ci-pr.json)"
+          echo "PR #${ISSUE_NUM} by ${PR_AUTHOR}: state=${PR_STATE} base=${BASE_BRANCH} head=${HEAD_SHA:-<unavailable>}"
+
+          if [ "$PR_STATE" != "open" ]; then
+            echo "PR is not open (${PR_STATE}) — no trigger"
+            echo "trigger=false" >> "$GITHUB_OUTPUT"
+            echo "pr_head_sha=" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+          if [ "$BASE_BRANCH" != "main" ]; then
+            echo "PR targets ${BASE_BRANCH}, not main — no trigger"
+            echo "trigger=false" >> "$GITHUB_OUTPUT"
+            echo "pr_head_sha=" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+
+          # Membership of the COMMENT author (not the PR author — the
+          # author is precisely the non-member in the opt-in case). The
+          # probe uses the vreckan-ci app installation token (204/404; the
+          # GITHUB_TOKEN 302-redirects on this endpoint — see pr-gate).
+          # Anything other than 204/404 fails OPEN (treated as member).
+          APP_TOKEN=""
+          NOW=$(date +%s)
+          HEADER=$(echo -n '{"alg":"RS256","typ":"JWT"}' | base64 -w0 | sed 's/=//g; s/+/-/g; s/\//_/g')
+          PAYLOAD=$(printf '{"iat":%d,"exp":%d,"iss":%s}' "$((NOW-60))" "$((NOW+540))" "$GH_APP_ID" | base64 -w0 | sed 's/=//g; s/+/-/g; s/\//_/g')
+          printf '%s' "$GH_APP_KEY" > /tmp/allow-ci-app-key.pem
+          SIG=$(printf '%s.%s' "$HEADER" "$PAYLOAD" | openssl dgst -sha256 -sign /tmp/allow-ci-app-key.pem | base64 -w0 | sed 's/=//g; s/+/-/g; s/\//_/g')
+          JWT="${HEADER}.${PAYLOAD}.${SIG}"
+          APP_TOKEN=$(curl -sS -X POST -H "Authorization: Bearer $JWT" -H "Accept: application/vnd.github+json" \
+            "https://api.github.com/app/installations/$(curl -sS -H "Authorization: Bearer $JWT" -H "Accept: application/vnd.github+json" "https://api.github.com/repos/${REPO}/installation" | python3 -c 'import json,sys; print(json.load(sys.stdin).get("id",""))')/access_tokens" \
+            | python3 -c 'import json,sys; print(json.load(sys.stdin).get("token",""))' 2>/dev/null || true)
+          if [ -z "$APP_TOKEN" ]; then
+            echo "WARN: vreckan-ci app token mint failed — membership probe will fail open" >&2
+          fi
+          enc="$(python3 -c 'import sys, urllib.parse; print(urllib.parse.quote(sys.argv[1], safe=""))' "$COMMENTOR")"
+          code=$(curl -sS -o /tmp/allow-ci-member.json -w '%{http_code}' \
+            -H "Authorization: Bearer ${APP_TOKEN:-$GITHUB_TOKEN}" \
+            -H "Accept: application/vnd.github+json" \
+            "https://api.github.com/orgs/${ORG}/members/${enc}")
+          case "$code" in
+            204)
+              echo "comment author ${COMMENTOR}: org member — trigger=true"
+              echo "trigger=true" >> "$GITHUB_OUTPUT"
+              echo "pr_head_sha=${HEAD_SHA}" >> "$GITHUB_OUTPUT"
+              ;;
+            404)
+              echo "comment author ${COMMENTOR}: not a member — tag ignored (logged, no effect)"
+              echo "trigger=false" >> "$GITHUB_OUTPUT"
+              echo "pr_head_sha=" >> "$GITHUB_OUTPUT"
+              ;;
+            *)
+              echo "WARN: membership probe for '${COMMENTOR}' returned HTTP ${code} — fail open (triggering anyway):" >&2
+              cat /tmp/allow-ci-member.json >&2 2>/dev/null || true
+              echo "trigger=true" >> "$GITHUB_OUTPUT"
+              echo "pr_head_sha=${HEAD_SHA}" >> "$GITHUB_OUTPUT"
+              ;;
+          esac
+
   mirror-and-trigger:
-    # Skip PRs from forks (e.g. Dependabot) — repo secrets aren't exposed to
-    # fork PRs by default, so the mirror step would fail on missing secrets.
-    # Regular PRs from branches in this repo still run normally.
-    if: github.event_name != 'pull_request' || github.event.pull_request.base.repo.full_name == github.event.pull_request.head.repo.full_name
+    # Gated (ANT-1053): PRs run only when pr-gate said so (member, or a
+    # member /allow-ci tag present); the comment path runs only when
+    # allow-ci fired. push-to-main and manual dispatch always run. The
+    # old fork-skip `if` is subsumed: fork PRs are non-member PRs, so they
+    # gate out on membership unless a member tags them — and a tagged fork
+    # PR now works because repo secrets ARE exposed to it (the token
+    # carries the gate permissions above), so no fork PR is left behind.
+    needs: [pr-gate, allow-ci]
+    if: >-
+      always() && (
+      (github.event_name == 'pull_request' && needs.pr-gate.outputs.run-ci == 'true')
+      || (github.event_name == 'issue_comment' && needs.allow-ci.outputs.trigger == 'true')
+      || (github.event_name == 'push' && github.ref == 'refs/heads/main')
+      || github.event_name == 'workflow_dispatch')
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v7
         with:
           fetch-depth: 0
+          # issue_comment carries no PR context: the default checkout is
+          # the default-branch HEAD, which would mirror main into pr/<n>.
+          # Check out the PR head sha the allow-ci job fetched from the PR
+          # (a bare-SHA ref fetches all branches, then the sha itself —
+          # fork head commits are reachable via refs/pull/N/head). An
+          # empty sha (degraded payload) falls back to github.sha, so the
+          # mirror and the Gitea branch-HEAD fetch stay consistent.
+          ref: ${{ github.event_name == 'issue_comment' && needs.allow-ci.outputs.pr_head_sha || github.sha }}
 
       - name: Determine target branch
         # On a PR close the branch is deleted instead of mirrored (step
@@ -118,6 +449,13 @@ jobs:
             # which does not exist in the mirror. The mirror only has the PR
             # head commit, so build + post status against that instead.
             echo "target_sha=${{ github.event.pull_request.head.sha }}" >> "$GITHUB_OUTPUT"
+          elif [ "${{ github.event_name }}" = "issue_comment" ]; then
+            # The /allow-ci path: mirror the PR head (the commit we just
+            # checked out). Empty sha = degraded payload; the Gitea fetch
+            # then falls back to the pr/<n> branch HEAD, which is the same
+            # commit we just mirrored (build-test-rust.yml fetch step).
+            echo "target_branch=pr/${{ github.event.issue.number }}" >> "$GITHUB_OUTPUT"
+            echo "target_sha=${{ needs.allow-ci.outputs.pr_head_sha }}" >> "$GITHUB_OUTPUT"
           else
             echo "target_branch=main" >> "$GITHUB_OUTPUT"
             echo "target_sha=${{ github.sha }}" >> "$GITHUB_OUTPUT"
@@ -170,9 +508,13 @@ jobs:
         #     common case), then the GitHub API (covers squash/rebase, where
         #     the subject is the PR title, not "Merge pull request #N").
         #     Ordinary (non-PR) pushes are a no-op.
-        # Idempotent: a 404 means the branch was never mirrored (fork PRs are
-        # skipped by the job-level gate), was already deleted by the other
-        # entry path, or was swept by the daily cleanup job — a no-op.
+        # Idempotent: a 404 means the branch was never mirrored (gated-out
+        # non-member PRs never reach the mirror step), was already deleted
+        # by the other entry path, or was swept by the daily cleanup job —
+        # a no-op. Traced with the gate (ANT-1053): a tagged-then-closed PR
+        # re-see the member tag in pr-gate on the `closed` action, so the
+        # job runs and deletes cleanly; an untagged closed PR is skipped
+        # here, but its mirror branch never existed in the first place.
         if: >-
           (github.event_name == 'pull_request' && github.event.action == 'closed')
           || (github.event_name == 'push' && github.ref == 'refs/heads/main')
