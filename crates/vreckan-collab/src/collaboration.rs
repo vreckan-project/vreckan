@@ -1741,23 +1741,23 @@ async fn send_app_list(
         }
         let mut logo_src = app.logo.clone();
         if logo_src.starts_with("/api/app_icon/") {
-            let icon_path = std::path::Path::new(&state.settings.app_icons_path)
-                .join(format!("{}.png", app.id));
-            // ANT-1061 (#83): containment guard — only read the icon if it sits
-            // inside the icon directory (defense-in-depth for a legacy
-            // non-conforming app.id that could otherwise name a file elsewhere
-            // and leak its bytes into the app list). The `starts_with` prefix
-            // check mirrors the sanitizer CodeQL recognizes in `get_app_icon`
-            // (catalog.rs:3431); the `is_safe_path_segment` id check closes the
-            // gap `starts_with` has for an absolute base dir (a `..`/`/` id
-            // still prefixes the base literally), which is the case install-time
-            // validation rejects going forward.
-            if vreckan_core::shared::is_safe_path_segment(&app.id)
-                && icon_path.starts_with(&state.settings.app_icons_path)
-            {
-                if let Ok(bytes) = std::fs::read(&icon_path) {
-                    let b64 = base64::engine::general_purpose::STANDARD.encode(&bytes);
-                    logo_src = format!("data:image/png;base64,{b64}");
+            // ANT-1061 (#83): negation guard mirroring get_app_icon (the
+            // CodeQL-recognized taint-kill form): past this branch app.id is
+            // clean before it is spliced into a path. A legacy non-conforming
+            // id skips the read (logo_src stays its original URL — no leak);
+            // the app entry below is still pushed either way.
+            if !vreckan_core::shared::is_safe_path_segment(&app.id) {
+                // skip: non-conforming legacy id, leave logo_src as the URL
+            } else {
+                let icon_path = std::path::Path::new(&state.settings.app_icons_path)
+                    .join(format!("{}.png", app.id));
+                // Belt-and-suspenders containment: skip the read if the derived
+                // path somehow escapes the icon directory.
+                if icon_path.starts_with(&state.settings.app_icons_path) {
+                    if let Ok(bytes) = std::fs::read(&icon_path) {
+                        let b64 = base64::engine::general_purpose::STANDARD.encode(&bytes);
+                        logo_src = format!("data:image/png;base64,{b64}");
+                    }
                 }
             }
         }
