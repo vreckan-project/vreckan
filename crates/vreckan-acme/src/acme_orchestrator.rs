@@ -56,6 +56,27 @@ pub fn host_cert_dir() -> String {
         .unwrap_or_else(|| "/etc/letsencrypt".to_string())
 }
 
+/// Bounds for `acme_renew_check_hours`: at most one check per hour, at least
+/// one per day (ANT-878, audit finding 7). Unclamped, `0` makes the renewal
+/// loop sleep zero seconds and burn the CA's failed-order allowance, and a
+/// negative value saturates to a sleep of ~292 million years — the loop never
+/// runs again and the cert expires.
+pub const ACME_RENEW_CHECK_HOURS_MIN: i64 = 1;
+pub const ACME_RENEW_CHECK_HOURS_MAX: i64 = 24;
+
+/// Clamp the renewal check interval into \[1, 24\] hours and warn when the
+/// applied value differs from the configured one (ANT-878).
+pub fn clamp_acme_renew_check_hours(hours: i64) -> i64 {
+    let clamped = hours.clamp(ACME_RENEW_CHECK_HOURS_MIN, ACME_RENEW_CHECK_HOURS_MAX);
+    if clamped != hours {
+        warn!(
+            "acme_renew_check_hours {hours} is outside the {}-{}h range; using {clamped}h",
+            ACME_RENEW_CHECK_HOURS_MIN, ACME_RENEW_CHECK_HOURS_MAX
+        );
+    }
+    clamped
+}
+
 /// The effective ACME configuration (DB-over-env-over-default), mirroring the
 /// `_Cfg` object returned by Python's `effective_acme_config()`. Both the
 /// startup path and the background renewal loop read from this so a value
@@ -113,11 +134,15 @@ pub async fn effective_acme_config(state: &AppState) -> AcmeConfig {
         .unwrap_or("")
         .to_string();
     let acme_auto_renew = s.get_setting(db, "acme_auto_renew").await.as_bool().unwrap_or(false);
-    let acme_renew_check_hours =
+    // Clamped: an unbounded value is a zero-second sleep (tight loop that
+    // burns the CA's failed-order allowance) or a ~292-million-year sleep
+    // (the loop never runs again) — audit finding 7, ANT-878.
+    let acme_renew_check_hours = clamp_acme_renew_check_hours(
         s.get_setting(db, "acme_renew_check_hours")
             .await
             .as_i64()
-            .unwrap_or(0);
+            .unwrap_or(0),
+    );
     let acme_renew_before_days =
         s.get_setting(db, "acme_renew_before_days")
             .await
@@ -825,6 +850,17 @@ mod tests {
             acme_dns_provider_config: String::new(),
             data_root: "/data".to_string(),
         }
+    }
+
+    #[test]
+    fn renew_check_hours_clamped_to_1_24() {
+        assert_eq!(clamp_acme_renew_check_hours(0), 1);
+        assert_eq!(clamp_acme_renew_check_hours(-6), 1);
+        assert_eq!(clamp_acme_renew_check_hours(1), 1);
+        assert_eq!(clamp_acme_renew_check_hours(6), 6);
+        assert_eq!(clamp_acme_renew_check_hours(24), 24);
+        assert_eq!(clamp_acme_renew_check_hours(25), 24);
+        assert_eq!(clamp_acme_renew_check_hours(8760), 24);
     }
 
     #[test]

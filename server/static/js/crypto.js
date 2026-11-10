@@ -36,7 +36,7 @@ export function pemToArrayBuffer(pem) {
   return bytes.buffer;
 }
 
-async function importRsaPublicKey(pem) {
+async function importPublicKey(pem) {
   return {
     verifyKey: await crypto.subtle.importKey(
       "spki",
@@ -61,7 +61,7 @@ async function performHandshake(baseUrl) {
   if (!pubRes.ok) throw new Error(`Failed to fetch public key: ${pubRes.status}`);
   const pub = await pubRes.json();
 
-  const { verifyKey, oaeKey } = await importRsaPublicKey(pub.server_public_key);
+  const { verifyKey, oaeKey } = await importPublicKey(pub.server_public_key);
 
   // 2. Nonce + signature (server identity proof)
   const initRes = await fetch(`${baseUrl}/api/handshake/initiate`, { method: "POST" });

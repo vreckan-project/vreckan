@@ -961,6 +961,42 @@ async fn test_certificates_put_and_get() {
 #[tokio::test]
 // The LE serialization lock intentionally spans the whole test.
 #[allow(clippy::await_holding_lock)]
+async fn test_certificates_put_renew_check_hours_clamped() {
+    let _serial = lock_le();
+    let tmp = TempDir::new();
+    let state = build_state(tmp.path()).await;
+    let client = admin_client(state).await;
+    // Out-of-range intervals are clamped on the way into the DB (audit
+    // finding 7, ANT-878): 0/negative would tight-loop the renewal job,
+    // absurdly large would put it to sleep past the cert's expiry.
+    for (sent, expected) in [(0i64, 1i64), (-6, 1), (1, 1), (24, 24), (25, 24), (8760, 24)] {
+        let payload = json!({
+            "acme_enabled": true,
+            "acme_domains": ["example.com"],
+            "acme_auth": "dns-cloudflare",
+            "acme_cloudflare_email": "admin@example.com",
+            "acme_cloudflare_token": "cf-token-123",
+            "acme_cloudflare_zone_id": "zone-abc",
+            "acme_staging": false,
+            "acme_auto_renew": true,
+            "acme_renew_check_hours": sent,
+            "acme_renew_before_days": 30,
+        });
+        let (status, _) = client.call("PUT", "/api/admin/certificates", Some(&payload)).await;
+        assert_eq!(status, StatusCode::OK, "sent {sent}");
+        let (status, data) = client.call("GET", "/api/admin/certificates", None).await;
+        assert_eq!(status, StatusCode::OK, "sent {sent}");
+        assert_eq!(
+            data.expect("body")["values"]["acme_renew_check_hours"],
+            expected,
+            "sent {sent}"
+        );
+    }
+}
+
+#[tokio::test]
+// The LE serialization lock intentionally spans the whole test.
+#[allow(clippy::await_holding_lock)]
 async fn test_certificates_put_blank_token_keeps_existing() {
     let _serial = lock_le();
     let tmp = TempDir::new();

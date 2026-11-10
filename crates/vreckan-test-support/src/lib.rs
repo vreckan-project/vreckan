@@ -64,7 +64,7 @@ use base64::Engine;
 use http::header;
 use http::{Request, StatusCode};
 use pkcs8::DecodePublicKey;
-use rsa::{sha2::Sha256, Oaep, RsaPublicKey};
+use rsa::{sha2::Sha256, Oaep, PublicKey};
 use serde_json::Value;
 use tower::ServiceExt;
 
@@ -470,7 +470,7 @@ impl SecureClient {
             .post_json("/api/handshake/initiate", &Value::Null)
             .await;
         // 3) Wrap a fresh AES-256 key with RSA-OAEP.
-        let pub_key = RsaPublicKey::from_public_key_pem(&pem).expect("parse SPKI");
+        let pub_key = PublicKey::from_public_key_pem(&pem).expect("parse SPKI");
         let mut aes_key = [0u8; 32];
         rand::rng().fill_bytes(&mut aes_key);
         let wrapped = pub_key
