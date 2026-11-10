@@ -11,17 +11,23 @@ record of what shipped in each release — see
 
 ## 2026-11-10 — v0.11.9: base-image bump + trusted-proxies fix + backup/restore hardening
 
-- **The build base advanced to the 2026-11-09 10:31 PM MST re-bake**
-  (`vreckan-base-build` `sha256:b6dfcae6d994…` → `sha256:e0d35b6196fa…`;
-  `.base-image-digest` and the `Dockerfile` build-stage `FROM` re-pointed
-  together, ANT-277). The Rust toolchain is unchanged — 1.99.1, parent
-  `rust:1.99.1-slim` still at `sha256:f6c4a35d…`. What the re-bake brings:
-  the pre-warmed crates.io dependency cache now matches the current
-  `main` `Cargo.lock` — the re-bake was triggered by `rsa`
-  0.10.0-rc.22 → 0.10.0 (renovate, PR #186, which also moves the
-  transitive `crypto-bigint` 0.7.10 → 0.7.11) — so nightly image builds
-  on `main` only fetch lockfile deltas — and the `apt-get upgrade`
-  security layer was refreshed to the trixie-security state at bake time.
+- **The build base advanced to the 2026-11-10 7:16 AM MST bake**
+  (`vreckan-base-build` `sha256:b6dfcae6d994…` →
+  `sha256:9d7216808bb2…`; `.base-image-digest` and the `Dockerfile`
+  build-stage `FROM` re-pointed together, ANT-277). The bump PR (#191)
+  originally re-pointed to the 2026-11-09 10:31 PM MST bake
+  `sha256:e0d35b6196fa…`, but the registry GC reclaimed that bake's
+  blobs overnight — the morning bake re-pointed the date tag, leaving
+  the previous bake unreferenced (the v0.11.1 / 2026-10-28 pin-lag
+  class), so the pin landed on the surviving current bake. The Rust
+  toolchain is unchanged — 1.99.1, parent `rust:1.99.1-slim` still at
+  `sha256:f6c4a35d…`. What the bake brings: the pre-warmed crates.io
+  dependency cache matches the current `main` `Cargo.lock` — it was
+  baked from the consolidated landing head `9765349` (carrying `rsa`
+  0.10.0 final + `crypto-bigint` 0.7.11, PR #186, and everything else
+  that landed since v0.11.8) — so nightly image builds on `main` only
+  fetch lockfile deltas — and the `apt-get upgrade` security layer was
+  refreshed to the trixie-security state at bake time.
 
 - **Trusted-proxy settings saved on the admin SSO page take effect again
   (ANT-879, PR #154).** The trusted-proxy gate (client IP, request
