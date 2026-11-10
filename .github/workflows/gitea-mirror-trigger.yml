@@ -82,13 +82,19 @@
 #        on an already-released version — the common case now) → BUMP PATH:
 #        run scripts/bump-version.sh patch (the single place version math
 #        lives), commit the VERSION/Cargo.toml/Cargo.lock rewrite as
-#        vreckan-ci[bot], push to main. That push re-runs this job; the new
+#        vreckan-ci[bot], then land it on main in two stages: first push it
+#        to a staging branch release/bump-<new> (whose push mirrors the
+#        branch and dispatches the Gitea build, which posts the three
+#        VRECKAN commit statuses the main-protection ruleset requires on
+#        every commit pushed to main — a fresh bot commit has none yet, so
+#        a direct push is rejected, GH013), wait for those statuses to go
+#        green, then push to main. That push re-runs this job; the new
 #        version's tag does not exist, so its run takes the tag path and the
 #        release is cut. The loop terminates — at most one bot commit per
 #        push. On a non-fast-forward push (main moved under the run), the
-#        bump re-derives from the new main tip and retries once, so
-#        back-to-back merges get distinct sequential numbers instead of
-#        racing for the same tag.
+#        bump re-derives from the new main tip and retries once (re-staging
+#        the fresh commit), so back-to-back merges get distinct sequential
+#        numbers instead of racing for the same tag.
 #     The job is serialized by a concurrency group (cancel-in-progress:
 #     false), so queued pushes each run in order. Consequence: every merge
 #     to main — including docs-only and dependency PRs — is a patch release
@@ -126,7 +132,11 @@ name: Gitea Mirror + Trigger
 # pre-pipeline repo state didn't fire the mirror + build.
 on:
   push:
-    branches: [main]
+    # main — the release flow. release/bump-* — per-push bump staging
+    # (ANT-1050): the bump commit is pushed there first so the Gitea build
+    # dispatched for that push posts the VRECKAN statuses the main-protection
+    # ruleset requires on any commit that lands on main.
+    branches: [main, 'release/bump-*']
   pull_request:
     branches: [main]
   # The /allow-ci opt-in fires on the comment itself (ANT-1053). GitHub
@@ -417,17 +427,21 @@ jobs:
   mirror-and-trigger:
     # Gated (ANT-1053): PRs run only when pr-gate said so (member, or a
     # member /allow-ci tag present); the comment path runs only when
-    # allow-ci fired. push-to-main and manual dispatch always run. The
-    # old fork-skip `if` is subsumed: fork PRs are non-member PRs, so they
-    # gate out on membership unless a member tags them — and a tagged fork
-    # PR now works because repo secrets ARE exposed to it (the token
-    # carries the gate permissions above), so no fork PR is left behind.
+    # allow-ci fired. Pushes to main and release/bump-* (per-push bump
+    # staging, ANT-1050 — the staging push is what mirrors the branch and
+    # dispatches the Gitea build that posts the required statuses), plus
+    # manual dispatch, always run. The old fork-skip `if` is subsumed: fork
+    # PRs are non-member PRs, so they gate out on membership unless a
+    # member tags them — and a tagged fork PR now works because repo
+    # secrets ARE exposed to it (the token carries the gate permissions
+    # above), so no fork PR is left behind.
     needs: [pr-gate, allow-ci]
     if: >-
       always() && (
       (github.event_name == 'pull_request' && needs.pr-gate.outputs.run-ci == 'true')
       || (github.event_name == 'issue_comment' && needs.allow-ci.outputs.trigger == 'true')
       || (github.event_name == 'push' && github.ref == 'refs/heads/main')
+      || (github.event_name == 'push' && startsWith(github.ref, 'refs/heads/release/bump-'))
       || github.event_name == 'workflow_dispatch')
     runs-on: ubuntu-latest
     steps:
@@ -463,7 +477,10 @@ jobs:
             echo "target_branch=pr/${{ github.event.issue.number }}" >> "$GITHUB_OUTPUT"
             echo "target_sha=${{ needs.allow-ci.outputs.pr_head_sha }}" >> "$GITHUB_OUTPUT"
           else
-            echo "target_branch=main" >> "$GITHUB_OUTPUT"
+            # push: mirror the branch that was pushed (main, or the
+            # release/bump-* staging branch whose Gitea build posts the
+            # required VRECKAN statuses for the bump commit).
+            echo "target_branch=${GITHUB_REF_NAME}" >> "$GITHUB_OUTPUT"
             echo "target_sha=${{ github.sha }}" >> "$GITHUB_OUTPUT"
           fi
 
@@ -734,15 +751,25 @@ jobs:
         # exists, so this push's changes are unreleased on a released
         # version. Bump the patch (scripts/bump-version.sh is the single
         # place version math lives), commit the VERSION/Cargo.toml/
-        # Cargo.lock rewrite as vreckan-ci[bot], push to main. That push
-        # re-runs this job and takes the tag path (loop terminates: at most
-        # one bot commit per push, because the bump commit's own run sees a
-        # version whose tag does not exist). Release notes: when the push
-        # range added no CHANGELOG section, its commit subjects ride in the
-        # bump commit's message body — the bump commit's own run (tag path)
-        # carries them into the GitHub Release, because that run's push
-        # range is only the bump commit. On non-fast-forward (main moved
-        # under the run), re-derive from the new tip and retry once.
+        # Cargo.lock rewrite as vreckan-ci[bot], then land it on main in
+        # two stages:
+        #   1. Push the bump commit to a staging branch release/bump-<new>.
+        #      That push mirrors the branch and dispatches the Gitea build,
+        #      which posts the three VRECKAN statuses the main-protection
+        #      ruleset requires on every commit pushed to main — a fresh
+        #      bot commit has none of them yet, so a direct push to main
+        #      is rejected (GH013).
+        #   2. Wait for those statuses to go green on the bump commit,
+        #      then push it to main. That push re-runs this job and takes
+        #      the tag path (loop terminates: at most one bot commit per
+        #      push, because the bump commit's own run sees a version whose
+        #      tag does not exist).
+        # Release notes: when the push range added no CHANGELOG section,
+        # its commit subjects ride in the bump commit's message body — the
+        # bump commit's own run (tag path) carries them into the GitHub
+        # Release, because that run's push range is only the bump commit.
+        # On non-fast-forward (main moved under the run), re-derive from
+        # the new tip and retry once (re-staging the fresh commit).
         if: steps.exists.outputs.exists == 'true'
         env:
           GH_TOKEN: ${{ steps.apptoken.outputs.token }}
@@ -750,6 +777,9 @@ jobs:
           set -euo pipefail
           TAG="${{ steps.version.outputs.tag }}"
           TAG_COMMIT="${{ steps.exists.outputs.tag_commit }}"
+          # The contexts the main-protection ruleset requires (Gitea posts
+          # them as commit statuses on whatever commit it builds).
+          REQUIRED_CHECKS=("VRECKAN: Smoke (Rust)" "VRECKAN: Test (Rust)" "VRECKAN: Scan (Rust)")
           git config user.name "vreckan-ci[bot]"
           git config user.email "bot@vreckanproject.com"
           # Notes range base = the commit the existing tag points at.
@@ -773,6 +803,38 @@ jobs:
             git log --no-merges --reverse --format='- %s' "$1".."${GITHUB_SHA}"
           }
           NOTES="$(compose_notes "$TAG_COMMIT")"
+          # Poll the bump commit's combined status until every required
+          # check is green. Failure/error states fail fast (the Gitea run
+          # linked from the status has the log); a 25-minute timeout covers
+          # the dispatch + build + post cycle with wide margin (observed
+          # build runs finish in ~4 minutes).
+          wait_for_checks() {
+            local sha="$1" deadline=$(( $(date +%s) + 1500 )) state ctx ok
+            echo "Waiting for the required checks on ${sha:0:8} (posted by the Gitea build for ${BUMP_BRANCH})"
+            while :; do
+              ok=0
+              for ctx in "${REQUIRED_CHECKS[@]}"; do
+                state=$(curl -sS -H "Authorization: Bearer $GH_TOKEN" \
+                  "https://api.github.com/repos/${GITHUB_REPOSITORY}/commits/${sha}/status" \
+                  | jq -r --arg c "$ctx" '[.statuses[]? | select(.context == $c) | .state] | first // "expected"')
+                case "$state" in
+                  success) ok=$((ok+1)) ;;
+                  failure|error)
+                    echo "ERROR: required check '$ctx' reported $state on ${sha:0:8} — the Gitea run linked from the status has the log" >&2
+                    return 1 ;;
+                esac
+              done
+              if [ "$ok" = "${#REQUIRED_CHECKS[@]}" ]; then
+                echo "All ${#REQUIRED_CHECKS[@]} required checks green on ${sha:0:8}"
+                return 0
+              fi
+              if [ "$(date +%s)" -ge "$deadline" ]; then
+                echo "ERROR: timed out (25m) waiting for required checks on ${sha:0:8} — if the Gitea build ran but never posted, re-dispatch build-test-rust.yml with branch=${BUMP_BRANCH} sha=${sha}, then re-run this job" >&2
+                return 1
+              fi
+              sleep 20
+            done
+          }
           try_push() {
             local new
             new=$(./scripts/bump-version.sh patch)
@@ -785,15 +847,23 @@ jobs:
             } > /tmp/bump-commit-msg
             git add VERSION Cargo.toml Cargo.lock
             git commit -F /tmp/bump-commit-msg
+            BUMP_BRANCH="release/bump-${new}"
+            BUMP_SHA=$(git rev-parse HEAD)
             # Same extraheader override as the tag push: actions/checkout
             # writes a read-only GITHUB_TOKEN extraheader that would 403
             # the push otherwise; the app token (Contents: write) must win.
+            # --force: a retried bump (non-FF on main) replaces the staging
+            # commit, and a re-run of this job is a no-op re-stage.
+            git -c http.https://github.com/.extraheader= push \
+              "https://x-access-token:${GH_TOKEN}@github.com/${GITHUB_REPOSITORY}.git" "+HEAD:refs/heads/${BUMP_BRANCH}"
+            echo "Staged bump commit ${BUMP_SHA:0:8} on ${BUMP_BRANCH} — waiting for its required checks before touching main"
+            wait_for_checks "$BUMP_SHA"
             if git -c http.https://github.com/.extraheader= push \
-              "https://x-access-token:${GH_TOKEN}@github.com/${{ github.repository }}.git" "HEAD:refs/heads/main"; then
-              echo "Pushed per-push bump commit — the next run cuts tag v${new} and releases it"
+              "https://x-access-token:${GH_TOKEN}@github.com/${GITHUB_REPOSITORY}.git" "HEAD:refs/heads/main"; then
+              echo "Pushed per-push bump commit to main — the next run cuts tag v${new} and releases it"
               return 0
             fi
-            echo "Bump push was non-fast-forward — main moved, re-deriving from the new tip" >&2
+            echo "Bump push to main was non-fast-forward — main moved, re-deriving from the new tip" >&2
             return 1
           }
           if ! try_push; then
@@ -804,6 +874,12 @@ jobs:
             NOTES="$(compose_notes "$TAG_COMMIT")"
             try_push
           fi
+          # Best-effort: drop the staging branch from GitHub (it has served
+          # its purpose once main carries the commit). The mirror branch
+          # is swept by the daily cleanup routine.
+          git -c http.https://github.com/.extraheader= push \
+            "https://x-access-token:${GH_TOKEN}@github.com/${GITHUB_REPOSITORY}.git" \
+            --delete "refs/heads/${BUMP_BRANCH}" || true
 
       - name: Create tag + push to GitHub
         if: steps.exists.outputs.exists == 'false'
