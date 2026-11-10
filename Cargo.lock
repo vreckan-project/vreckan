@@ -5678,7 +5678,7 @@ checksum = "0b928f33d975fc6ad9f86c8f283853ad26bdd5b10b7f1542aa2fa15e2289105a"
 
 [[package]]
 name = "vreckan"
-version = "0.11.9"
+version = "0.11.10"
 dependencies = [
  "anyhow",
  "axum-server",
@@ -5698,7 +5698,7 @@ dependencies = [
 
 [[package]]
 name = "vreckan-acme"
-version = "0.11.9"
+version = "0.11.10"
 dependencies = [
  "acmex",
  "aes-gcm",
@@ -5729,7 +5729,7 @@ dependencies = [
 
 [[package]]
 name = "vreckan-admin"
-version = "0.11.9"
+version = "0.11.10"
 dependencies = [
  "aes-gcm",
  "anyhow",
@@ -5779,7 +5779,7 @@ dependencies = [
 
 [[package]]
 name = "vreckan-auth"
-version = "0.11.9"
+version = "0.11.10"
 dependencies = [
  "aes-gcm",
  "argon2",
@@ -5809,7 +5809,7 @@ dependencies = [
 
 [[package]]
 name = "vreckan-catalog"
-version = "0.11.9"
+version = "0.11.10"
 dependencies = [
  "aes-gcm",
  "axum",
@@ -5840,7 +5840,7 @@ dependencies = [
 
 [[package]]
 name = "vreckan-collab"
-version = "0.11.9"
+version = "0.11.10"
 dependencies = [
  "axum",
  "base64 0.23.1",
@@ -5859,7 +5859,7 @@ dependencies = [
 
 [[package]]
 name = "vreckan-core"
-version = "0.11.9"
+version = "0.11.10"
 dependencies = [
  "async-trait",
  "axum",
@@ -5880,7 +5880,7 @@ dependencies = [
 
 [[package]]
 name = "vreckan-files"
-version = "0.11.9"
+version = "0.11.10"
 dependencies = [
  "aes-gcm",
  "axum",
@@ -5907,7 +5907,7 @@ dependencies = [
 
 [[package]]
 name = "vreckan-sessions"
-version = "0.11.9"
+version = "0.11.10"
 dependencies = [
  "aes-gcm",
  "axum",
@@ -5937,7 +5937,7 @@ dependencies = [
 
 [[package]]
 name = "vreckan-test-support"
-version = "0.11.9"
+version = "0.11.10"
 dependencies = [
  "aes-gcm",
  "axum",
