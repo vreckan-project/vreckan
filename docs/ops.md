@@ -266,9 +266,12 @@ the Gitea `vreckan/vreckan` mirror — feature branches go to GitHub only, and
     with `branch`/`sha` inputs.
   - *bump-and-tag* — on push to `main`: reads `VERSION`; if tag
     `v<VERSION>` does not exist yet, mints a short-lived GitHub App
-    installation token, creates and pushes the annotated tag, and mirrors the
-    tag (and the commit as `main`) to Gitea. **The Gitea Release workflow
-    fires on that tag push** and builds + pushes the container image.
+    installation token, creates and pushes the annotated tag, mirrors the
+    tag (and the commit as `main`) to Gitea, and **dispatches the
+    `release-rust.yml` workflow** in `vreckan/vreckan-workflow` with
+    `tag=v<VERSION>` — Gitea Actions has no cross-repo tag-push routing, so
+    the dispatch is the release trigger (ANT-1050) — which then builds +
+    pushes the container image.
 - **Gitea-side workflows** live in the separate `vreckan/vreckan-workflow`
   repo (not this one): `build-test-rust.yml` (build + test + scan on the
   Gitea runner), the **Release (Rust)** workflow (tag → image → registries),
