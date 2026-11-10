@@ -34,14 +34,20 @@ by a concurrency group) decides which path this push takes from the current
 - **Bump path** — tag `v<VERSION>` already exists (this push carries
   unreleased changes on an already-released version — the common case). The
   job runs `scripts/bump-version.sh patch`, commits the
-  `VERSION`/`Cargo.toml`/`Cargo.lock` rewrite as vreckan-ci[bot], and pushes
-  to `main`. That push re-runs the job and takes the tag path, so the
-  release is cut automatically. **The loop terminates**: at most one bot
-  commit per push, because the bump commit's own run sees a version whose
-  tag does not exist. If `main` moves under the run (back-to-back merges),
-  the bump re-derives from the new tip and retries once, so each merge gets
-  its own sequential number (0.11.10, 0.11.11, …) instead of racing for the
-  same tag.
+  `VERSION`/`Cargo.toml`/`Cargo.lock` rewrite as vreckan-ci[bot], and lands
+  the commit on `main` in two stages: first it pushes it to a staging
+  branch `release/bump-<new>` (whose push mirrors the branch and dispatches
+  the Gitea build, which posts the `VRECKAN: Smoke/Test/Scan (Rust)` commit
+  statuses that the `main` branch rules require on every commit pushed to
+  `main` — a fresh bot commit has none of them yet, so a direct push is
+  rejected), then, once those checks are green, it pushes the commit to
+  `main`. That push re-runs the job and takes the tag path, so the release
+  is cut automatically. **The loop terminates**: at most one bot commit per
+  push, because the bump commit's own run sees a version whose tag does not
+  exist. If `main` moves under the run (back-to-back merges), the bump
+  re-derives from the new tip and retries once (re-staging the fresh
+  commit), so each merge gets its own sequential number (0.11.10, 0.11.11,
+  …) instead of racing for the same tag.
 
 ### Explicit releases (minor / major)
 
