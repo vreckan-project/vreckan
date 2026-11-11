@@ -920,12 +920,41 @@ jobs:
             echo "Staged bump commit ${BUMP_SHA:0:8} on ${BUMP_BRANCH}"
             # Open the PR for the staging branch (or find the open one —
             # a re-run or a concurrent cycle may have opened it already).
-            PR_NUM=$(curl -sS --max-time 30 "${PR_AUTH[@]}" \
-              "${API}/pulls?head=${GITHUB_REPOSITORY}/${BUMP_BRANCH}&state=open" | jq -r '.[0].number // empty')
+            # Token split from live observation: the app token creates PRs
+            # but 403s on the single-PR read; the PAT reads it but cannot
+            # create. Find+create therefore go to the app first with a PAT
+            # fallback, and any real failure fails loud (both bodies in
+            # the log) instead of polling /pulls/null for an hour.
+            PR_NUM=$(curl -sS --max-time 30 -o /tmp/pr-find.json -w '%{http_code}' \
+              "${AUTH[@]}" "${API}/pulls?head=${GITHUB_REPOSITORY}/${BUMP_BRANCH}&state=open" || echo 000)
+            PRCODE=$PR_NUM
+            PR_NUM=""
+            if [ "$PRCODE" = "200" ]; then
+              PR_NUM=$(jq -r '.[0].number // empty' /tmp/pr-find.json)
+            else
+              echo "WARN: PR find returned HTTP ${PRCODE} — $(head -c 200 /tmp/pr-find.json 2>/dev/null)" >&2
+            fi
             if [ -z "$PR_NUM" ]; then
-              PR_NUM=$(curl -sS --max-time 30 -X POST "${PR_AUTH[@]}" -H "Content-Type: application/json" \
-                -d "$(printf '{"base":"main","head":"%s","title":"chore(release): bump to %s (per-push release)","body":"Per-push patch release (ANT-1050): the tag for the previous version already exists, so this push cuts the next patch. Merged automatically by `bump-and-tag` once every required check (Gitea build statuses + CodeQL + code quality) is green. The release notes ride in this commit message."}' "${BUMP_BRANCH}" "${new}")" \
-                "${API}/pulls" | jq -r .number)
+              CREATE_BODY=$(printf '{"base":"main","head":"%s","title":"chore(release): bump to %s (per-push release)","body":"Per-push patch release (ANT-1050): the tag for the previous version already exists, so this push cuts the next patch. Merged automatically by `bump-and-tag` once every required check (Gitea build statuses + CodeQL + code quality) is green. The release notes ride in this commit message."}' "${BUMP_BRANCH}" "${new}")
+              PRCODE=$(curl -sS --max-time 30 -o /tmp/pr-create.json -w '%{http_code}' \
+                -X POST "${AUTH[@]}" -H "Content-Type: application/json" \
+                -d "${CREATE_BODY}" "${API}/pulls" || echo 000)
+              case "$PRCODE" in 401|403|000)
+                echo "WARN: PR create with the app token returned HTTP ${PRCODE} — $(head -c 200 /tmp/pr-create.json 2>/dev/null); retrying with the PAT" >&2
+                PRCODE=$(curl -sS --max-time 30 -o /tmp/pr-create.json -w '%{http_code}' \
+                  -X POST "${PR_AUTH[@]}" -H "Content-Type: application/json" \
+                  -d "${CREATE_BODY}" "${API}/pulls" || echo 000)
+                ;;
+              esac
+              if [ "$PRCODE" = "201" ] || [ "$PRCODE" = "200" ]; then
+                PR_NUM=$(jq -r '.number // empty' /tmp/pr-create.json)
+              else
+                echo "ERROR: PR create failed (HTTP ${PRCODE}): $(head -c 300 /tmp/pr-create.json 2>/dev/null)" >&2
+              fi
+            fi
+            if [ -z "$PR_NUM" ] || [ "$PR_NUM" = "null" ]; then
+              echo "ERROR: could not open/find the bump PR for ${BUMP_BRANCH} — re-run this job (the staging branch is intact)" >&2
+              return 1
             fi
             echo "Bump PR #${PR_NUM} open — waiting for it to become mergeable, then merging"
             local wrc=0
@@ -942,10 +971,10 @@ jobs:
               -X PUT "${PR_AUTH[@]}" -H "Content-Type: application/json" \
               -d '{"merge_method":"merge"}' "${API}/pulls/${PR_NUM}/merge" || echo 000)
             if [ "$mcode" = "401" ] || [ "$mcode" = "403" ] || [ "$mcode" = "000" ]; then
-              echo "WARN: merge of PR #${PR_NUM} returned HTTP ${mcode} — retrying once" >&2
+              echo "WARN: merge with the PAT returned HTTP ${mcode} — $(head -c 200 /tmp/merge-resp.json 2>/dev/null); retrying with the app token" >&2
               sleep 5
               mcode=$(curl -sS --max-time 60 -o /tmp/merge-resp.json -w '%{http_code}' \
-                -X PUT "${PR_AUTH[@]}" -H "Content-Type: application/json" \
+                -X PUT "${AUTH[@]}" -H "Content-Type: application/json" \
                 -d '{"merge_method":"merge"}' "${API}/pulls/${PR_NUM}/merge" || echo 000)
             fi
             if [ "$mcode" = "200" ] || [ "$mcode" = "202" ]; then
