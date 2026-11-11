@@ -1207,9 +1207,14 @@ jobs:
           set -euo pipefail
           TAG="${{ steps.version.outputs.tag }}"
           # Release notes, two sources (per-push versioning, ANT-1050):
-          #  1. This push added a CHANGELOG.md section (an explicit
-          #     release PR) → the newest CHANGELOG section, which per
-          #     docs/release.md ships in the same PR as the VERSION bump.
+          #  1. A CHANGELOG.md section is unreleased in the notes range →
+          #     the newest CHANGELOG section, which per docs/release.md
+          #     ships in the same PR as the VERSION bump. The range is
+          #     widened to the previous release's tag commit on a
+          #     PR-merge landing (see the widening below): per-push
+          #     versioning splits the release content from the bump merge,
+          #     so the section can land in an earlier push than the bump
+          #     PR merge (ANT-1076, observed on v0.12.3).
           #  2. Otherwise (a per-push bump) → the bump commit's message
           #     with the bump subject stripped: the bump path composed the
           #     release content's commit subjects into that message, so
@@ -1224,6 +1229,45 @@ jobs:
             # First push to main (or a force-push from off-history): range
             # against the empty tree so any added section still counts.
             BASE=$(git hash-object -t tree /dev/null)
+          fi
+          # Widen the notes range to the previous release's tag commit
+          # when the tip is a PR-merge landing (ANT-1076): the raw push
+          # range then misses a CHANGELOG section that landed in an
+          # earlier push, and the bump commit's carried subjects are
+          # empty because compose_notes defers to this step when its own
+          # (wider) range already saw the section — the v0.12.3 release
+          # shipped the "Release v0.12.3" fallback instead of its
+          # section. Everything after the previous version's tag is this
+          # release's content, the same reasoning the source-gate
+          # widening uses for the bump decision. The gate only bumps
+          # patches, so the previous version is the current patch minus
+          # one. A missing or unreadable previous tag falls back to the
+          # push range above.
+          if [ "$(git cat-file -p "${GITHUB_SHA}" 2>/dev/null | grep -c '^parent ')" -ge 2 ]; then
+            read -r MA MIN PA <<<"$(echo "${TAG#v}" | tr '.' ' ')"
+            if [ "$PA" -ge 1 ] 2>/dev/null; then
+              PREV="v${MA}.${MIN}.$((PA - 1))"
+              CODE=$(curl -sS -o /tmp/prev-tag.json -w '%{http_code}' \
+                -H "Authorization: Bearer ${GH_TOKEN}" -H "Accept: application/vnd.github+json" \
+                "https://api.github.com/repos/${GITHUB_REPOSITORY}/git/ref/tags/${PREV}" || echo 000)
+              if [ "$CODE" = "200" ]; then
+                REF_OBJ=$(jq -r '.object.sha' /tmp/prev-tag.json)
+                REF_TYPE=$(jq -r '.object.type' /tmp/prev-tag.json)
+                if [ "$REF_TYPE" = "tag" ]; then
+                  # Dereference the annotated tag to its commit (same
+                  # shape as the "Check if tag already exists" step).
+                  REF_OBJ=$(curl -sS -H "Authorization: Bearer ${GH_TOKEN}" \
+                    -H "Accept: application/vnd.github+json" \
+                    "https://api.github.com/repos/${GITHUB_REPOSITORY}/git/tags/${REF_OBJ}" \
+                    | jq -r '.object.sha' || echo null)
+                fi
+                if [ -n "$REF_OBJ" ] && [ "$REF_OBJ" != "null" ] \
+                   && git cat-file -e "${REF_OBJ}^{commit}" 2>/dev/null; then
+                  BASE="$REF_OBJ"
+                  echo "Widening release-notes range to ${PREV} tag commit ${REF_OBJ:0:8} (a CHANGELOG section may have landed in an earlier push)"
+                fi
+              fi
+            fi
           fi
           # Capture the diff before the grep: under pipefail, grep -q on a
           # piped diff can die of SIGPIPE and flip a match into a miss.
