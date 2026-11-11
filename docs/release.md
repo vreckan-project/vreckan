@@ -20,7 +20,10 @@ notes (below).
 
 ## The flow
 
-**Per-push versioning (ANT-1050): every push to `main` is a release.** The
+**Per-push versioning (ANT-1050): every push to `main` that changes source
+is a release.** Docs, site, pipeline, and deployment-config-only pushes are
+mirrored and build-tested but cut no version and deploy nothing (user
+direction 2026-11-11: bump only when source actually changes). The
 `bump-and-tag` job (GitHub Actions, runs on every push to `main`, serialized
 by a concurrency group) decides which path this push takes from the current
 `VERSION`:
@@ -31,9 +34,22 @@ by a concurrency group) decides which path this push takes from the current
   creates and pushes the annotated tag `v<VERSION>`, mirrors the tag (plus
   the commit as `main`) to the Gitea mirror, dispatches the release
   workflow, and creates the GitHub Release entry.
-- **Bump path** — tag `v<VERSION>` already exists (this push carries
-  unreleased changes on an already-released version — the common case). The
-  job runs `scripts/bump-version.sh patch`, commits the
+ - **No-bump path** — tag `v<VERSION>` already exists but the push (more
+   precisely, everything since the tag's commit when that is newer — the
+   gate widens its diff range so a source change skipped by an earlier
+   docs-only push is still seen) changed **no source path**: no version,
+   no tag, no release, no deploy; the run logs the changed files and ends.
+   Source = what the built image is made from and the build inputs that
+   change the binary: `src/`, `crates/`, `server/`, `Dockerfile`,
+   `.dockerignore`, `Cargo.toml`, `Cargo.lock`, `rust-toolchain.toml`,
+   `.base-image-digest`. Known non-source: `docs/`, `site/`, `.github/`,
+   `scripts/` (ops tooling, not baked into the image),
+   `docker-compose*.yml`, `*.md`, `.gitignore`, `.env.example`,
+   `deny.toml`. Anything outside both sets (a new top-level directory, an
+   unfamiliar file) counts as source — when in doubt, ship.
+ - **Bump path** — tag `v<VERSION>` already exists **and the source gate
+   passed** (unreleased changes touched a source path — the common case).
+   The job runs `scripts/bump-version.sh patch`, commits the
   `VERSION`/`Cargo.toml`/`Cargo.lock` rewrite as vreckan-ci[bot], and lands
   the commit on `main` through a pull request: first it pushes the commit
   to a staging branch `release/bump-<new>` (whose push mirrors the branch
@@ -104,22 +120,30 @@ instead (explicit releases above).
    `workflow_dispatch` of `release-rust.yml` (required `tag` input); the
    daily freshness run's "tag without image" early warning flags a tag that
    never got an image (ANT-1050).
-3. **Post-release check.** Verify the tag exists on GitHub, the image tags
-   are present in both registries, and the compose file's
-   `ghcr.io/...:latest` reference resolves. Because every merge is a
-   release, this is effectively a per-push deployment check — the
-   deployment tracks `:latest`, so every merge (including docs-only and
-   dependency PRs) reaches vreckan.antitux.net within minutes of landing.
+ 3. **Post-release check.** Verify the tag exists on GitHub, the image tags
+    are present in both registries, and the compose file's
+    `ghcr.io/...:latest` reference resolves. Because every source-changing
+    merge is a release, this is effectively a per-push deployment check —
+    the deployment tracks `:latest`, so every source merge reaches
+    vreckan.antitux.net within minutes of landing. Docs/site/pipeline/
+    config-only merges cut no release and push no new app image (source
+    gate, above) — the deployment's `:latest` stays on the last
+    source-changing release until the next source merge. (The site image
+    and the pipeline itself still update on their own pushes — the
+    `mirror-and-trigger` job dispatches `build-site.yml` for `site/`
+    changes independently of app releases.)
 
 ### Base-image bumps
 
-When the nightly base-bump routine re-points `.base-image-digest` (build
-base digest drifted), the PR also re-points the `Dockerfile` build-stage
-digest pin (ANT-277) and carries a `CHANGELOG.md` entry noting the base
-change ("build base advanced to digest …") plus the `VERSION` patch bump.
-Under per-push versioning the merge cuts its own new tag and release —
-**a published tag is never re-pointed** (the v0.11.9 mid-day re-cut,
-ANT-1050, is what motivated the rule).
+ When the nightly base-bump routine re-points `.base-image-digest` (build
+ base digest drifted), the PR also re-points the `Dockerfile` build-stage
+ digest pin (ANT-277) and carries a `CHANGELOG.md` entry noting the base
+ change ("build base advanced to digest …"). Under per-push versioning
+ the automatic bump numbers it — `.base-image-digest` is a source path,
+ so the merge takes the bump path and cuts its own new tag and release
+ without the routine carrying a `VERSION` change; **a published tag is
+ never re-pointed** (the v0.11.9 mid-day re-cut, ANT-1050, is what
+ motivated the rule).
 
 ## Changelog convention
 
