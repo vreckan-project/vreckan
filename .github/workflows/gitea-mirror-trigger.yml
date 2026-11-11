@@ -1043,12 +1043,22 @@ jobs:
             # create. Find+create therefore go to the app first with a PAT
             # fallback, and any real failure fails loud (both bodies in
             # the log) instead of polling /pulls/null for an hour.
+            # The client-side head.ref filter is load-bearing (ANT-1076):
+            # this environment's REST /pulls ignores the head= query
+            # parameter (same instability class as the REST
+            # merge_state_status nulls that pushed the merge-state read to
+            # GraphQL) and returns ALL open PRs, so taking .[0] adopted
+            # PR #210 (ant-1085-arrow-bump) as "the bump PR" on the
+            # 2026-11-11 13:40 and 15:40 runs — both exited 3 on #210's
+            # BEHIND state without ever opening their own PR. Filtering
+            # head.ref client-side makes the find correct whether or not
+            # the server honours the parameter.
             PR_NUM=$(curl -sS --max-time 30 -o /tmp/pr-find.json -w '%{http_code}' \
               "${AUTH[@]}" "${API}/pulls?head=${GITHUB_REPOSITORY}/${BUMP_BRANCH}&state=open" || echo 000)
             PRCODE=$PR_NUM
             PR_NUM=""
             if [ "$PRCODE" = "200" ]; then
-              PR_NUM=$(jq -r '.[0].number // empty' /tmp/pr-find.json)
+              PR_NUM=$(jq -r --arg b "$BUMP_BRANCH" '[.[] | select(.head.ref == $b)] | .[0].number // empty' /tmp/pr-find.json)
             else
               echo "WARN: PR find returned HTTP ${PRCODE} — $(head -c 200 /tmp/pr-find.json 2>/dev/null)" >&2
             fi
