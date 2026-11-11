@@ -9,6 +9,54 @@ is committed normally in `vreckan`. The changelog is the authoritative
 record of what shipped in each release — see
 [`docs/release.md`](./docs/release.md) for the conventions.
 
+## 2026-11-11 — base-image bump + per-push source-gate versioning
+
+- **The build base advanced to the 2026-11-11 10:31 PM MST bake**
+  (`vreckan-base-build` `sha256:9d7216808bb2…` →
+  `sha256:bed6d28538e8…`; `.base-image-digest` and the `Dockerfile`
+  build-stage `FROM` re-pointed together, ANT-277). The Rust
+  toolchain is unchanged — 1.99.1, parent `rust:1.99.1-slim` still at
+  `sha256:f6c4a35d…`. What the re-bake brings: the daily re-bake gate
+  now keys on the **external dep-set hash** instead of vreckan's HEAD
+  (vreckan-workflow PR #273, the content-hash gate that had been a
+  pending board decision) — the cron re-bakes only when the
+  normalized `Cargo.lock` dep set (workspace members' version lines
+  stripped away) or the Rust base digest moves, so a version-only
+  per-push bump no longer cascades into a re-bake and then its own
+  base-only patch release (the compounding re-bake→bump loop behind
+  the consecutive base-bump cycles of the v0.10.x era). This image is
+  the first stamped with the new `vreckan.dep-digest` label.
+  **Caveat:** this bake drops the baked-in `CARGO_BUILD_JOBS=4`
+  default (ANT-1040) — the ant-1040 bake commit never reached the
+  workflow's `main` before PR #273 (cut from an older main) replaced
+  it, and the new image's config carries no `CARGO_BUILD_JOBS`.
+  Documented dev sessions are unaffected — every agent's dev-session
+  command passes `-e CARGO_BUILD_JOBS=4` plus the `--memory=12g`
+  ceiling, and the CI build/test stages set their own job counts —
+  but an ad-hoc `docker run` of the base image without the flag would
+  again let cargo default to the host core count (the 2026-11-10
+  global-OOM shape, ANT-1025).
+
+- **Patch releases are now cut only on pushes that actually change
+  source (ANT-1050).** The per-push `bump-and-tag` gate gained a
+  source check for bump candidates: the diff range (widened back to
+  the tag's commit when that is newer, so a source change skipped by
+  an earlier docs-only push still counts) must touch a source path —
+  `src/`, `crates/`, `server/`, `Dockerfile`, `.dockerignore`,
+  `Cargo.toml`, `Cargo.lock`, `rust-toolchain.toml`,
+  `.base-image-digest` — for the bot to assign the next patch number
+  and cut the release. Docs/site/pipeline/deployment-config-only
+  merges are mirrored and build-tested but cut no version and deploy
+  no app image: the deployment's `:latest` stays on the last
+  source-changing release until the next source merge (the site image
+  and the pipeline itself still update on their own pushes). This
+  base re-point is itself a source change, so its merge is what
+  numbers this release — the PR deliberately carries no
+  `VERSION`/`Cargo.toml`/`Cargo.lock` change. The bot's bump-PR
+  merge-state read also moved from REST to GraphQL (the REST
+  `mergeable` state came back null in this environment, stalling
+  every bump PR after ten polls — #205/#206/#207).
+
 ## 2026-11-10 — v0.12.0: code-scanning security fixes
 
 This release lands the GitHub code-scanning remediation (ANT-1057) as one
