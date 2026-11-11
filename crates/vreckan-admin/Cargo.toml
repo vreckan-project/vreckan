@@ -43,6 +43,9 @@ tokio = { workspace = true }
 tokio-rustls = { workspace = true }
 tower = { workspace = true }
 tracing = { workspace = true }
+# ANT-1061 (code-scanning #5): parse the app-store catalog URL for the SSRF
+# scheme/host allowlist check in the admin store endpoint.
+url = { workspace = true }
 
 # The same-port dispatch tests in `serve.rs` build a no-verify TLS client.
 # Integration test suite (tests/): re-homed from the root package in

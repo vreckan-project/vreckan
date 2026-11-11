@@ -9,6 +9,58 @@ is committed normally in `vreckan`. The changelog is the authoritative
 record of what shipped in each release — see
 [`docs/release.md`](./docs/release.md) for the conventions.
 
+## 2026-11-10 — v0.12.0: code-scanning security fixes
+
+This release lands the GitHub code-scanning remediation (ANT-1057) as one
+batch: eight valid alerts are fixed, one is documented-accepted with the
+limitation made explicit, and the CI token-scoping pair is explicitly
+deferred to a future pipeline fix.
+
+- **App-store input is now validated, closing an admin-gated SSRF and the
+  store-cache path traversal (CodeQL #5, #85, #88; ANT-1057).** The
+  app-store browse handler now validates `store_name` to a character
+  allowlist (ASCII letters, digits, `_`, `-`, and space — the default
+  store is "SealSkin Apps") and restricts the store-fetch `url` to
+  `http`/`https` on allowlisted hosts. Previously a user with
+  `admin.stores` could point the server's fetch at any host or scheme —
+  the scan's one critical-rated finding, e.g. a cloud metadata endpoint —
+  and a crafted `store_name` could read from, or (on a fresh fetch) write
+  into, files outside the app-store cache directory.
+
+- **App ids are validated at install, closing the icon-path injection
+  cluster (CodeQL #83, #86, #87, #89; ANT-1057).** `app.id` must now match
+  the `A-Za-z0-9_-` allowlist when an app is installed, and the icon
+  read/write/remove paths are containment-guarded to the icon directory.
+  Before this, an unvalidated id (say one containing `/` or `..`) could
+  steer the app-list icon read (base64'd into the app list's `logo`), the
+  icon write, and the icon delete to arbitrary paths — including an
+  arbitrary file write with attacker-controlled content. All of it was
+  admin-gated.
+
+- **File names are escaped in the files manager, closing a DOM-XSS
+  (CodeQL #4; ANT-1057).** `file.name` is now rendered escaped (via the
+  existing `escModal` helper) instead of interpolated raw into
+  `innerHTML`, so a file named e.g. `<img src=x onerror=…>` no longer
+  executes script. The flaw was self-scoped — the uploader triggers their
+  own reflected name — but it is now closed.
+
+- **The cleartext local-container probe is documented-accepted (CodeQL
+  #78; ANT-1063).** The `probe_selkies_capability` probe stays cleartext
+  by decision: the probe targets the locally-launched app container over
+  the host Docker bridge, not an external/untrusted network; the
+  cleartext transport carries `session_id` (+ optional Basic auth) and is
+  bounded to host-level (same-host) attackers; upgrading to loopback TLS /
+  a sidecar is a separate future follow-up, not part of this release.
+
+- **CI token scoping is explicitly deferred (CodeQL #1, #2; ANT-1060).**
+  The `permissions: { contents: read }` block for
+  `gitea-mirror-trigger.yml` ships with the future pipeline fix
+  (backlogged as ANT-1060), **not** this release — it is intentionally
+  **not** part of the v0.12.0 changes. Today the workflow's
+  `GITHUB_TOKEN` is unscoped, which is low-risk while both jobs do their
+  privileged work with dedicated credentials (Gitea PAT / GitHub App); the
+  scoping block lands when that pipeline work resumes.
+
 ## 2026-11-10 — v0.11.9: base-image bump + trusted-proxies fix + backup/restore hardening
 
 - **The build base advanced to the 2026-11-10 7:16 AM MST bake**
