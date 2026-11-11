@@ -773,12 +773,22 @@ jobs:
         if: steps.exists.outputs.exists == 'true'
         env:
           GH_TOKEN: ${{ steps.apptoken.outputs.token }}
+          PR_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
           set -euo pipefail
           TAG="${{ steps.version.outputs.tag }}"
           TAG_COMMIT="${{ steps.exists.outputs.tag_commit }}"
           API="https://api.github.com/repos/${GITHUB_REPOSITORY}"
           AUTH=(-H "Authorization: Bearer $GH_TOKEN" -H "Accept: application/vnd.github+json")
+          # PR lifecycle (find/create/poll/merge) runs on the long-lived
+          # GITHUB_TOKEN secret — the same token pr-gate/allow-ci use for
+          # PR fetches. The app installation token answers 403 on
+          # GET /pulls/{n} in this environment even though the
+          # installation lists pull_requests: write (observed live on
+          # the first PR-based bump: merge state read "null" for a full
+          # hour), so the app token keeps its job (git push -> tag) and
+          # the PAT handles the PR API.
+          PR_AUTH=(-H "Authorization: Bearer $PR_TOKEN" -H "Accept: application/vnd.github+json")
           # The contexts the main-protection ruleset requires as commit
           # statuses (Gitea posts them on whatever commit it builds — for
           # a PR, the head). CodeQL + code quality are NOT statuses; they
@@ -850,9 +860,23 @@ jobs:
           #   UNSTABLE -> a required check failed -> fail the job
           #   BLOCKED/other -> checks still running -> keep waiting
           wait_for_mergeable() {
-            local pr="$1" deadline=$(( $(date +%s) + 3600 )) state last=""
+            local pr="$1" deadline=$(( $(date +%s) + 3600 )) state last="" code errs=0
             while :; do
-              state=$(curl -sS --max-time 30 "${AUTH[@]}" "${API}/pulls/${pr}" | jq -r .merge_state_status)
+              code=$(curl -sS --max-time 30 -o /tmp/pr-state.json -w '%{http_code}' \
+                "${PR_AUTH[@]}" "${API}/pulls/${pr}" || echo 000)
+              state=$(jq -r .merge_state_status /tmp/pr-state.json 2>/dev/null || echo null)
+              if [ "$code" != "200" ] || [ -z "$state" ] || [ "$state" = "null" ]; then
+                # A transient API hiccup must not kill the wait: log it,
+                # keep polling, give up only after 10 straight bad answers.
+                errs=$((errs+1))
+                echo "WARN: PR #${pr} state fetch bad (HTTP ${code}, state '${state}', streak ${errs}) — $(head -c 160 /tmp/pr-state.json 2>/dev/null)" >&2
+                if [ "$errs" -ge 10 ]; then
+                  echo "ERROR: PR #${pr} state unreadable 10 polls in a row (last HTTP ${code}) — re-run this job to continue waiting" >&2
+                  return 1
+                fi
+              else
+                errs=0
+              fi
               if [ "$state" != "$last" ]; then
                 echo "PR #${pr} merge state: ${state}"
                 last="$state"
@@ -896,10 +920,10 @@ jobs:
             echo "Staged bump commit ${BUMP_SHA:0:8} on ${BUMP_BRANCH}"
             # Open the PR for the staging branch (or find the open one —
             # a re-run or a concurrent cycle may have opened it already).
-            PR_NUM=$(curl -sS --max-time 30 "${AUTH[@]}" \
+            PR_NUM=$(curl -sS --max-time 30 "${PR_AUTH[@]}" \
               "${API}/pulls?head=${GITHUB_REPOSITORY}/${BUMP_BRANCH}&state=open" | jq -r '.[0].number // empty')
             if [ -z "$PR_NUM" ]; then
-              PR_NUM=$(curl -sS --max-time 30 -X POST "${AUTH[@]}" -H "Content-Type: application/json" \
+              PR_NUM=$(curl -sS --max-time 30 -X POST "${PR_AUTH[@]}" -H "Content-Type: application/json" \
                 -d "$(printf '{"base":"main","head":"%s","title":"chore(release): bump to %s (per-push release)","body":"Per-push patch release (ANT-1050): the tag for the previous version already exists, so this push cuts the next patch. Merged automatically by `bump-and-tag` once every required check (Gitea build statuses + CodeQL + code quality) is green. The release notes ride in this commit message."}' "${BUMP_BRANCH}" "${new}")" \
                 "${API}/pulls" | jq -r .number)
             fi
@@ -915,8 +939,15 @@ jobs:
             fi
             local mcode
             mcode=$(curl -sS --max-time 60 -o /tmp/merge-resp.json -w '%{http_code}' \
-              -X PUT "${AUTH[@]}" -H "Content-Type: application/json" \
-              -d '{"merge_method":"merge"}' "${API}/pulls/${PR_NUM}/merge")
+              -X PUT "${PR_AUTH[@]}" -H "Content-Type: application/json" \
+              -d '{"merge_method":"merge"}' "${API}/pulls/${PR_NUM}/merge" || echo 000)
+            if [ "$mcode" = "401" ] || [ "$mcode" = "403" ] || [ "$mcode" = "000" ]; then
+              echo "WARN: merge of PR #${PR_NUM} returned HTTP ${mcode} — retrying once" >&2
+              sleep 5
+              mcode=$(curl -sS --max-time 60 -o /tmp/merge-resp.json -w '%{http_code}' \
+                -X PUT "${PR_AUTH[@]}" -H "Content-Type: application/json" \
+                -d '{"merge_method":"merge"}' "${API}/pulls/${PR_NUM}/merge" || echo 000)
+            fi
             if [ "$mcode" = "200" ] || [ "$mcode" = "202" ]; then
               echo "Merged PR #${PR_NUM} — the merge push re-runs this job and cuts tag v${new}"
               return 0
