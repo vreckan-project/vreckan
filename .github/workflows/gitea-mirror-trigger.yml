@@ -52,7 +52,9 @@
 #        build clones the branch by name).
 #
 #   bump-and-tag  (push to main only)
-#     Per-push versioning (ANT-1050): every push to main becomes a release.
+#     Per-push versioning (ANT-1050): every push to main that changes
+#     source becomes a release; docs/site/pipeline/config-only pushes cut
+#     no version (the source gate, step 5 below).
 #     1. Reads the current VERSION from the repo.
 #     2. Tag v<VERSION> does NOT exist (a version-bump PR just landed, or the
 #        bump commit's own run) → TAG PATH: create the tag, push it to
@@ -78,8 +80,18 @@
 #        of the release's actual content (composed by the bump path).
 #        Before this step, neither side of the pipeline created the
 #        /releases entry — v0.6.2 had to be published by hand (ANT-128).
-#     5. Tag v<VERSION> ALREADY EXISTS (this push carries unreleased changes
-#        on an already-released version — the common case now) → BUMP PATH:
+#     5. Tag v<VERSION> exists AND the push range (widened to the tag's
+#        commit when it is newer — see the step) changed no SOURCE path
+#        (src/, crates/, server/, Dockerfile, .dockerignore, Cargo.toml,
+#        Cargo.lock, rust-toolchain.toml, .base-image-digest) → NO-BUMP
+#        PATH: log and skip — no version, no tag, no release, no deploy.
+#        Anything outside both the source and known-non-source sets
+#        (a new top-level dir, an unfamiliar file) counts as source:
+#        when in doubt, ship (user direction 2026-11-11: bump only when
+#        source actually changes, never on docs/site).
+#     6. Tag v<VERSION> ALREADY EXISTS and source changed (unreleased
+#        changes on an already-released version — the common case now) →
+#        BUMP PATH:
 #        run scripts/bump-version.sh patch (the single place version math
 #        lives), commit the VERSION/Cargo.toml/Cargo.lock rewrite as
 #        vreckan-ci[bot], then land it on main in two stages: first push it
@@ -97,9 +109,11 @@
 #        numbers instead of racing for the same tag.
 #     The job is serialized by a concurrency group (cancel-in-progress:
 #     false), so queued pushes each run in order. Consequence: every merge
-#     to main — including docs-only and dependency PRs — is a patch release
-#     and, via the deployment's :latest tracking, a production deploy; minor
-#     and major bumps remain explicit PR decisions (see docs/release.md).
+#     to main that touches source is a patch release and, via the
+#     deployment's :latest tracking, a production deploy; docs/site/
+#     pipeline/config-only merges are mirrored and build-tested but cut no
+#     version and deploy nothing (user direction 2026-11-11); minor and
+#     major bumps remain explicit PR decisions (see docs/release.md).
 #
 # The pipeline jobs stay independent where it matters: a tag no-op never
 # masks a build failure and vice versa (bump-and-tag has no `needs`).
@@ -664,6 +678,17 @@ jobs:
       cancel-in-progress: false
     if: github.event_name == 'push' && github.ref == 'refs/heads/main'
     runs-on: ubuntu-latest
+    permissions:
+      # The automatic GITHUB_TOKEN (PR_TOKEN) drives the bump-PR lifecycle
+      # (find/create/poll/merge). It needs pull-requests: write to create
+      # and merge the PR and to read its mergeStateStatus via GraphQL; the
+      # REST /pulls/{n} merge_state_status field is unreliable in this
+      # environment (null even for a mergeable PR, even with full scopes
+      # and an explicit API version), so the merge-state read uses GraphQL
+      # (ANT-1050). contents: read matches the sibling gate jobs. The git
+      # pushes use the app token (GH_TOKEN), not this one.
+      contents: read
+      pull-requests: write
     steps:
       - uses: actions/checkout@v7
         with:
@@ -746,11 +771,86 @@ jobs:
             echo "Tag ${TAG} does not exist — will create."
           fi
 
+      - name: Check if source changed
+        id: source-changed
+        # The source gate (ANT-1050, user direction 2026-11-11): the bump
+        # path fires only when unreleased content actually changed source.
+        # SOURCE = what the built image is made from and the build inputs
+        # that change the binary: src/, crates/, server/ (the Dockerfile
+        # COPYs exactly these plus the Cargo manifests), Dockerfile,
+        # .dockerignore, Cargo.toml, Cargo.lock (dependency set),
+        # rust-toolchain.toml, .base-image-digest (base image pin).
+        # Known non-source: docs/, site/, .github/ (pipeline), scripts/
+        # (ops tooling — not baked into the image), docker-compose*.yml
+        # (deployment config), *.md, .gitignore, .env.example, deny.toml.
+        # Anything outside BOTH sets (a new top-level dir, an unfamiliar
+        # file) counts as source: when in doubt, ship.
+        #
+        # Range: the push range (BEFORE..AFTER; empty-tree base for a
+        # first/force push, mirroring the site-changed step). Widened to
+        # TAG_COMMIT..AFTER when the tag's commit is newer than the push
+        # range's base: a source change that landed in an earlier
+        # docs-only push is still unreleased (that push was skipped, so
+        # VERSION never advanced), and THIS push must carry the bump —
+        # the widening is what makes the skip rule lossless.
+        #
+        # This step runs only on the bump candidate (tag exists); the tag
+        # path needs no gate. Its log line is the run's record of the
+        # decision — a future misclassification is visible in the log
+        # (first matching path, and the full changed-file list when
+        # nothing source matched).
+        if: github.event_name == 'push' && github.ref == 'refs/heads/main' && steps.exists.outputs.exists == 'true'
+        run: |
+          set -euo pipefail
+          BEFORE="${{ github.event.before }}"
+          AFTER="${{ github.sha }}"
+          TAG_COMMIT="${{ steps.exists.outputs.tag_commit }}"
+          ZERO="0000000000000000000000000000000000000000"
+          if [ "$BEFORE" = "$ZERO" ] || ! git cat-file -e "${BEFORE}^{commit}" 2>/dev/null; then
+            # First push to main (or a force-push from off-history): diff
+            # against the empty tree so a first landing of source still
+            # counts as a change. fetch-depth: 0 keeps ordinary push
+            # ranges (incl. force-pushes) resolvable.
+            BASE=$(git hash-object -t tree /dev/null)
+          else
+            BASE="$BEFORE"
+          fi
+          if [ -n "$TAG_COMMIT" ] && [ "$TAG_COMMIT" != "null" ] \
+             && git cat-file -e "${TAG_COMMIT}^{commit}" 2>/dev/null \
+             && ! git merge-base --is-ancestor "$AFTER" "$TAG_COMMIT"; then
+            # The tag's commit is not an ancestor of this tip (it landed
+            # after the push range's base — e.g. this push was docs-only
+            # and the release was cut by a later bump). Widen to
+            # everything since the last release: the skip decision must
+            # see source that is still unreleased, not just this push's
+            # own delta.
+            BASE="$TAG_COMMIT"
+            echo "Widening diff range to ${TAG_COMMIT:0:8} (tag commit is newer than the push range base)"
+          fi
+          SOURCE_PATHS=(src/ crates/ server/ Dockerfile .dockerignore Cargo.toml Cargo.lock rust-toolchain.toml .base-image-digest)
+          CHANGED="$(git diff --name-only "$BASE" "$AFTER" -- "${SOURCE_PATHS[@]}")"
+          if [ -n "$CHANGED" ]; then
+            echo "changed=true" >> "$GITHUB_OUTPUT"
+            echo "Source changed in ${BASE:0:8}..${AFTER:0:8} (first: $(printf '%s\n' "$CHANGED" | head -n 1)) — bump path"
+          else
+            ALL="$(git diff --name-only "$BASE" "$AFTER")"
+            echo "changed=false" >> "$GITHUB_OUTPUT"
+            echo "No source changes in ${BASE:0:8}..${AFTER:0:8} — skipping the version bump (no tag, no release, no deploy)"
+            if [ -n "$ALL" ]; then
+              echo "Changed files (all non-source):"
+              printf '%s\n' "$ALL" | sed 's/^/  /'
+            else
+              echo "Empty push range — nothing changed."
+            fi
+          fi
+
       - name: Bump patch version + push (per-push release)
         # The bump path (ANT-1050): the tag for the current VERSION already
-        # exists, so this push's changes are unreleased on a released
-        # version. Bump the patch (scripts/bump-version.sh is the single
-        # place version math lives), commit the VERSION/Cargo.toml/
+        # exists AND the source gate above passed (unreleased content
+        # changed a source path), so this push's changes are unreleased on
+        # a released version. Bump the patch (scripts/bump-version.sh is
+        # the single place version math lives), commit the VERSION/
+        # Cargo.toml/
         # Cargo.lock rewrite as vreckan-ci[bot], then land it on main via a
         # short-lived PR (release/bump-<new> -> main). The PR — not a
         # direct push — is the only rules-compatible landing: the
@@ -770,7 +870,11 @@ jobs:
         # its commit subjects ride in the bump commit's message body — the
         # bump commit's own run (tag path) carries them into the GitHub
         # Release, because that run's push range is only the bump commit.
-        if: steps.exists.outputs.exists == 'true'
+        # Gated on the source check (step above): the bump path fires only
+        # when unreleased content changed a source path. A docs/site/
+        # pipeline/config-only push takes neither path — the run ends here
+        # after the mirror-and-trigger job did its normal work.
+        if: steps.exists.outputs.exists == 'true' && steps.source-changed.outputs.changed == 'true'
         env:
           GH_TOKEN: ${{ steps.apptoken.outputs.token }}
           PR_TOKEN: ${{ secrets.GITHUB_TOKEN }}
@@ -860,18 +964,32 @@ jobs:
           #   UNSTABLE -> a required check failed -> fail the job
           #   BLOCKED/other -> checks still running -> keep waiting
           wait_for_mergeable() {
-            local pr="$1" deadline=$(( $(date +%s) + 3600 )) state last="" code errs=0
+            local pr="$1" deadline=$(( $(date +%s) + 3600 )) state last="" code errs=0 gerr detail owner name gql_query body
+            owner="${GITHUB_REPOSITORY%%/*}"
+            name="${GITHUB_REPOSITORY##*/}"
+            # GraphQL, not REST: the REST /pulls/{n} merge_state_status
+            # field is null in this environment even for a mergeable PR
+            # (verified against a full-scope PAT and an explicit
+            # X-GitHub-Api-Version); GraphQL mergeStateStatus reliably
+            # returns CLEAN/BEHIND/DIRTY/UNSTABLE/BLOCKED (ANT-1050).
+            gql_query="query{repository(owner:\"${owner}\",name:\"${name}\"){pullRequest(number:${pr}){mergeStateStatus}}}"
             while :; do
+              body=$(jq -n --arg q "$gql_query" '{query: $q}')
               code=$(curl -sS --max-time 30 -o /tmp/pr-state.json -w '%{http_code}' \
-                "${PR_AUTH[@]}" "${API}/pulls/${pr}" || echo 000)
-              state=$(jq -r .merge_state_status /tmp/pr-state.json 2>/dev/null || echo null)
-              if [ "$code" != "200" ] || [ -z "$state" ] || [ "$state" = "null" ]; then
+                "${PR_AUTH[@]}" -X POST -H "Content-Type: application/json" \
+                -d "$body" "https://api.github.com/graphql" || echo 000)
+              state=$(jq -r '.data.repository.pullRequest.mergeStateStatus // empty' /tmp/pr-state.json 2>/dev/null)
+              gerr=$(jq -r '.errors[0].message // empty' /tmp/pr-state.json 2>/dev/null)
+              if [ -z "$state" ] || [ "$state" = "null" ] || [ -n "$gerr" ]; then
                 # A transient API hiccup must not kill the wait: log it,
                 # keep polling, give up only after 10 straight bad answers.
                 errs=$((errs+1))
-                echo "WARN: PR #${pr} state fetch bad (HTTP ${code}, state '${state}', streak ${errs}) — $(head -c 160 /tmp/pr-state.json 2>/dev/null)" >&2
+                detail="HTTP ${code}"
+                [ -n "$gerr" ] && detail="${detail}, graphql: ${gerr}"
+                [ -n "$state" ] && [ "$state" != "null" ] && detail="${detail}, mergeStateStatus='${state}'"
+                echo "WARN: PR #${pr} merge-state fetch bad (${detail}, streak ${errs})" >&2
                 if [ "$errs" -ge 10 ]; then
-                  echo "ERROR: PR #${pr} state unreadable 10 polls in a row (last HTTP ${code}) — re-run this job to continue waiting" >&2
+                  echo "ERROR: PR #${pr} merge state unreadable 10 polls in a row (last HTTP ${code}) — re-run this job to continue waiting" >&2
                   return 1
                 fi
               else
