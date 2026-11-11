@@ -678,6 +678,17 @@ jobs:
       cancel-in-progress: false
     if: github.event_name == 'push' && github.ref == 'refs/heads/main'
     runs-on: ubuntu-latest
+    permissions:
+      # The automatic GITHUB_TOKEN (PR_TOKEN) drives the bump-PR lifecycle
+      # (find/create/poll/merge). It needs pull-requests: write to create
+      # and merge the PR and to read its mergeStateStatus via GraphQL; the
+      # REST /pulls/{n} merge_state_status field is unreliable in this
+      # environment (null even for a mergeable PR, even with full scopes
+      # and an explicit API version), so the merge-state read uses GraphQL
+      # (ANT-1050). contents: read matches the sibling gate jobs. The git
+      # pushes use the app token (GH_TOKEN), not this one.
+      contents: read
+      pull-requests: write
     steps:
       - uses: actions/checkout@v7
         with:
@@ -953,18 +964,32 @@ jobs:
           #   UNSTABLE -> a required check failed -> fail the job
           #   BLOCKED/other -> checks still running -> keep waiting
           wait_for_mergeable() {
-            local pr="$1" deadline=$(( $(date +%s) + 3600 )) state last="" code errs=0
+            local pr="$1" deadline=$(( $(date +%s) + 3600 )) state last="" code errs=0 gerr detail owner name gql_query body
+            owner="${GITHUB_REPOSITORY%%/*}"
+            name="${GITHUB_REPOSITORY##*/}"
+            # GraphQL, not REST: the REST /pulls/{n} merge_state_status
+            # field is null in this environment even for a mergeable PR
+            # (verified against a full-scope PAT and an explicit
+            # X-GitHub-Api-Version); GraphQL mergeStateStatus reliably
+            # returns CLEAN/BEHIND/DIRTY/UNSTABLE/BLOCKED (ANT-1050).
+            gql_query="query{repository(owner:\"${owner}\",name:\"${name}\"){pullRequest(number:${pr}){mergeStateStatus}}}"
             while :; do
+              body=$(jq -n --arg q "$gql_query" '{query: $q}')
               code=$(curl -sS --max-time 30 -o /tmp/pr-state.json -w '%{http_code}' \
-                "${PR_AUTH[@]}" "${API}/pulls/${pr}" || echo 000)
-              state=$(jq -r .merge_state_status /tmp/pr-state.json 2>/dev/null || echo null)
-              if [ "$code" != "200" ] || [ -z "$state" ] || [ "$state" = "null" ]; then
+                "${PR_AUTH[@]}" -X POST -H "Content-Type: application/json" \
+                -d "$body" "https://api.github.com/graphql" || echo 000)
+              state=$(jq -r '.data.repository.pullRequest.mergeStateStatus // empty' /tmp/pr-state.json 2>/dev/null)
+              gerr=$(jq -r '.errors[0].message // empty' /tmp/pr-state.json 2>/dev/null)
+              if [ -z "$state" ] || [ "$state" = "null" ] || [ -n "$gerr" ]; then
                 # A transient API hiccup must not kill the wait: log it,
                 # keep polling, give up only after 10 straight bad answers.
                 errs=$((errs+1))
-                echo "WARN: PR #${pr} state fetch bad (HTTP ${code}, state '${state}', streak ${errs}) — $(head -c 160 /tmp/pr-state.json 2>/dev/null)" >&2
+                detail="HTTP ${code}"
+                [ -n "$gerr" ] && detail="${detail}, graphql: ${gerr}"
+                [ -n "$state" ] && [ "$state" != "null" ] && detail="${detail}, mergeStateStatus='${state}'"
+                echo "WARN: PR #${pr} merge-state fetch bad (${detail}, streak ${errs})" >&2
                 if [ "$errs" -ge 10 ]; then
-                  echo "ERROR: PR #${pr} state unreadable 10 polls in a row (last HTTP ${code}) — re-run this job to continue waiting" >&2
+                  echo "ERROR: PR #${pr} merge state unreadable 10 polls in a row (last HTTP ${code}) — re-run this job to continue waiting" >&2
                   return 1
                 fi
               else
