@@ -305,6 +305,16 @@ async fn spin_up_postgres(marker_dir: &std::path::Path) -> (String, bollard::Doc
             host_config.network_mode = Some(net.trim().to_string());
         }
     }
+    // Run the throwaway postgres unconfined. Some host kernels (observed on
+    // 7.0.0-43-generic) carry an AppArmor regression: when runc execs an
+    // unconfined binary inside a `docker-default` container the kernel stacks
+    // it as `docker-default//&unconfined`, and AppArmor then DENIES signal
+    // sends to that peer (audit: operation="signal" denied_mask="send"). The
+    // entrypoint's `pg_ctl ... stop` signals the (exec'd) postmaster, so the
+    // stop EPERMs and `set -e` aborts the container before it serves. Asking
+    // for `apparmor=unconfined` sidesteps the stacking; on hosts without the
+    // regression it is a harmless no-op for a disposable test container.
+    host_config.security_opt = Some(vec!["apparmor=unconfined".to_string()]);
     let body = bollard::models::ContainerCreateBody {
         image: Some("postgres:16".to_string()),
         env: Some(vec![
