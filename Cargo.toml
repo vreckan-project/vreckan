@@ -27,7 +27,7 @@ resolver = "2"
 # Single version shared by all six workspace crates via
 # `version = { workspace = true }` (Candidate C split, ANT-770). Bumped
 # 0.10.7 -> 0.11.0 for the v0.11.0 cut that ships the split (ANT-775).
-version = "0.12.2"
+version = "0.12.3"
 edition = "2021"
 license = "MPL-2.0"
 
