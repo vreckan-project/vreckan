@@ -9,7 +9,29 @@ is committed normally in `vreckan`. The changelog is the authoritative
 record of what shipped in each release — see
 [`docs/release.md`](./docs/release.md) for the conventions.
 
-## 2026-11-12 — base-image bump + dep-set cache refresh (arrow 60.1.0)
+## 2026-11-12 — workspace-GC host-sudo reclaim (ANT-1111) — no version cut
+
+Ops tooling only: `scripts/` is a non-source path, so this merge cut no
+patch and pushed no app image (the pipeline picks the script up on its own
+push).
+
+- **The daily workspace GC can now finish reclaims that a local `rm`
+  cannot.** A container build that runs as root against a mounted worktree
+  leaves root-owned `target/` trees the sandbox user (uid 1000) cannot
+  unlink; the sweep's `rm` then fails after a partial delete and records a
+  stale "rm failed; kept" row indefinitely (observed on bobby's ANT-1061
+  worktree in the 2026-11-12 daily GC run, ANT-1110). On `rm` failure the
+  reclaim is now re-issued through the paperclip01 host — the same tree via
+  the `/paperclip → /srv/paperclip/data` symlink (ANT-343), with jdee's
+  passwordless sudo — so foreign-owned trees are finished instead of
+  re-logged forever. Every doubt path (no key, host unreachable, remote
+  `rm` left the tree) keeps the item and records why — the existing
+  keep-and-record semantics are unchanged. Applies to all three reclaim
+  paths: stale session clones, broken-pointer orphans, and merged/gone
+  worktrees. New flags: `--host-sudo-ssh-target`,
+  `--host-sudo-ssh-key-env`, `--no-host-sudo` (disable the fallback).
+
+## 2026-11-12 — v0.12.5: base-image bump + dep-set cache refresh (arrow 60.1.0)
 
 - **The build base advanced to the 2026-11-11 10:31 PM MST bake**
   (`vreckan-base-build` `sha256:bed6d28538e8…` →
@@ -34,7 +56,25 @@ record of what shipped in each release — see
   bump path numbers and tags this release automatically; this PR
   deliberately carries no `VERSION`/`Cargo.toml`/`Cargo.lock` change.
 
-## 2026-11-11 — base-image bump + per-push source-gate versioning
+## 2026-11-11 — v0.12.4: arrow 60.1.0 clears RUSTSEC-2026-0442 + release-notes range fix
+
+- **The arrow stack moved 60.0.0 → 60.1.0 to clear RUSTSEC-2026-0442
+  (CVE-2026-111959); `atoi` 3.1.0 → 3.1.1 follows `arrow-cast` 60.1.0's
+  requirement (ANT-1085).** A dependency/security fix only — no behavior
+  change.
+
+- **Auto-composed release notes now read from the previous tag's commit,
+  not the raw push range (ANT-1076), and the bump-PR find is filtered by
+  `head.ref` client-side.** Consecutive per-push releases each pick up
+  exactly their own commit range in the GitHub Release notes instead of
+  re-listing earlier work, and a stray bump PR from an older staging
+  branch can no longer be adopted by a later run.
+
+- **Catalog tests: the throwaway Postgres fixture now runs
+  `apparmor=unconfined`** so the suite passes on hosts with strict
+  profiles (test infrastructure only).
+
+## 2026-11-11 — v0.12.3: base-image bump + per-push source-gate versioning + rustix 1.1.6
 
 - **The build base advanced to the 2026-11-11 10:31 PM MST bake**
   (`vreckan-base-build` `sha256:9d7216808bb2…` →
@@ -75,12 +115,22 @@ record of what shipped in each release — see
   no app image: the deployment's `:latest` stays on the last
   source-changing release until the next source merge (the site image
   and the pipeline itself still update on their own pushes). This
-  base re-point is itself a source change, so its merge is what
-  numbers this release — the PR deliberately carries no
-  `VERSION`/`Cargo.toml`/`Cargo.lock` change. The bot's bump-PR
-  merge-state read also moved from REST to GraphQL (the REST
-  `mergeable` state came back null in this environment, stalling
-  every bump PR after ten polls — #205/#206/#207).
+   base re-point is itself a source change, so its merge is what
+   numbers this release — the PR deliberately carries no
+   `VERSION`/`Cargo.toml`/`Cargo.lock` change.
+
+- **rustix 1.1.5 → 1.1.6 clears RUSTSEC-2026-0486** (unsound zero-length
+  buffer init in the xattr path); the `windows-sys` edges re-resolve
+  0.61.2 → 0.52.0 to satisfy `quinn-udp`/`winapi-util` capability caps
+  (ANT-1084). A dependency/security fix only — no behavior change.
+
+- **The bump-PR lifecycle was hardened across v0.12.1 → v0.12.3
+  (ANT-1050):** the per-push bump now lands through a PR merge (the only
+  ruleset-compatible landing for the CodeQL status), runs on the PAT with
+  token fallbacks instead of the app token, and reads merge state via
+  GraphQL — the REST `mergeable` state came back null in this
+  environment and had been stalling every bump PR after ten polls
+  (#205/#206/#207).
 
 ## 2026-11-10 — v0.12.0: code-scanning security fixes
 
