@@ -9,6 +9,31 @@ is committed normally in `vreckan`. The changelog is the authoritative
 record of what shipped in each release — see
 [`docs/release.md`](./docs/release.md) for the conventions.
 
+## 2026-11-12 — base-image bump + dep-set cache refresh (arrow 60.1.0)
+
+- **The build base advanced to the 2026-11-11 10:31 PM MST bake**
+  (`vreckan-base-build` `sha256:bed6d28538e8…` →
+  `sha256:9eaed5bc52d4…`; `.base-image-digest` and the `Dockerfile`
+  build-stage `FROM` re-pointed together, ANT-277). This re-bake is a
+  dependency-cache refresh only: the daily re-bake gate keys on the
+  normalized `Cargo.lock` dep-set hash (ANT-1050), and the hash moved
+  with the arrow 60.0.0 → 60.1.0 bump (ANT-1085, shipped in v0.12.4),
+  so the image's warm crates.io + git dependency caches now match the
+  current lockfile (`vreckan.dep-digest` `92be1505…` →
+  `7a0dd3f0…`). The Rust toolchain is unchanged — 1.99.1, parent
+  `rust:1.99.1-slim` still at `sha256:f6c4a35d…` — and the build
+  workflow is unchanged (`vreckan.workflow-sha` `082227f1…`). The
+  `CARGO_BUILD_JOBS` caveat from the 2026-11-11 entry still stands:
+  this bake line carries no baked-in job cap, so ad-hoc `docker run`
+  sessions should keep passing `-e CARGO_BUILD_JOBS=4` (ANT-1040).
+
+- **No user-visible changes since v0.12.4.** `main` carries no commits
+  past the v0.12.4 tag, so this release is the base re-point alone.
+  The version number is auto-assigned by the per-push source gate on
+  merge (ANT-1050) — `.base-image-digest` is a source path, so the
+  bump path numbers and tags this release automatically; this PR
+  deliberately carries no `VERSION`/`Cargo.toml`/`Cargo.lock` change.
+
 ## 2026-11-11 — base-image bump + per-push source-gate versioning
 
 - **The build base advanced to the 2026-11-11 10:31 PM MST bake**
