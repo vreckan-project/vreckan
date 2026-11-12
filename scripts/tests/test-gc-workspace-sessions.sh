@@ -192,6 +192,108 @@ exit 0
 SH
 chmod +x "$FAKE_BIN/docker"
 
+# Fake `ssh` + `sudo` for the host-sudo fallback test (ANT-1111): the fake
+# ssh ignores the transport options, runs the remote command locally (so a
+# foreign-owned tree is deleted the way the host's sudo would delete it),
+# and exits 255 when the fixture carries an `unreachable` marker — a failed
+# connection. The fake sudo records its command line and execs it as-is (no
+# real privilege escalation: the simulation exercises the script's control
+# flow, not root). FAKE_HOST_SUDO_FIXTURE is threaded from the GC invocation
+# below.
+HOSTFIX="$FIXTURE/host-sudo"
+mkdir -p "$HOSTFIX"
+: > "$HOSTFIX/cmds"
+: > "$HOSTFIX/sudo-cmds"
+: > "$HOSTFIX/git-calls"
+# BASH_ENV override: some runtimes (the Paperclip agent sandbox) export
+# BASH_ENV pointing at a .bashrc that re-prepends a runtime bin dir to PATH
+# for every child bash — that dir carries a managed `git` wrapper that would
+# shadow the fake git (and any other fake) in $FAKE_BIN. Point BASH_ENV at a
+# no-op file for the GC invocation so $FAKE_BIN stays first.
+NOOP_BASHRC="$FIXTURE/noop-bashrc"
+: > "$NOOP_BASHRC"
+cat > "$FAKE_BIN/ssh" <<'SH'
+#!/usr/bin/env bash
+fix="${FAKE_HOST_SUDO_FIXTURE:-}"
+cmd=""
+seen_user=0
+lastarg=""
+while [[ $# -gt 0 ]]; do
+  case "$1" in
+    -i) shift 2 ;;
+    -o) shift 2 ;;
+    -*) shift ;;
+    --) shift; break ;;
+    *)
+      if [[ "$seen_user" -eq 0 ]]; then
+        seen_user=1
+      else
+        cmd="${cmd:+$cmd }$1"
+      fi
+      lastarg="$1"
+      shift
+      ;;
+  esac
+done
+[[ -n "$fix" ]] && printf '%s\n' "$cmd" >> "$fix/cmds"
+# Per-target reachability: `unreachable-<basename of the remote target>` in
+# the fixture makes only that target's connection fail (a failed ssh), so
+# multiple host-sudo scenarios can share one fake ssh. The remote command is
+# `sudo rm -rf '<path>'` — peel off the prefix and the quotes.
+target=""
+if [[ -n "$lastarg" && "$lastarg" == *rm\ -rf\ * ]]; then
+  target="${lastarg#*rm -rf }"
+  target="${target#\'}"
+  target="${target%\'}"
+fi
+if [[ -n "$fix" && -n "$target" ]] && [[ -f "$fix/unreachable-$(basename "$target")" ]]; then
+  echo "ssh: connect to host (fake) port 22: Connection timed out" >&2
+  exit 255
+fi
+[[ -n "$cmd" ]] || exit 0
+bash -c "$cmd"
+SH
+cat > "$FAKE_BIN/sudo" <<'SH'
+#!/usr/bin/env bash
+fix="${FAKE_HOST_SUDO_FIXTURE:-}"
+[[ -n "$fix" ]] && printf '%s\n' "$*" >> "$fix/sudo-cmds"
+# The host's sudo runs the command as root, and root can unlink everything —
+# so this execs the REAL rm (absolute path: the fake rm on PATH must not
+# re-trigger the marker failure on the already-deleted tree).
+exec /usr/bin/rm "${@:2}"
+SH
+chmod +x "$FAKE_BIN/ssh" "$FAKE_BIN/sudo"
+# The fake git makes `worktree remove` fail when the target tree carries the
+# foreign-owned marker — exactly what real git does on a root-owned tree
+# (it cannot unlink the file, reports it, and exits non-zero). Without this
+# the fake `git worktree remove --force` on an all-node-owned fixture would
+# delete the marker first, and the GC's subsequent `rm -rf` would see a
+# clean tree and never reach the host-sudo fallback. Every other git
+# invocation delegates to the real git untouched.
+cat > "$FAKE_BIN/git" <<'SH'
+#!/usr/bin/env bash
+real=/usr/bin/git
+fix="${FAKE_HOST_SUDO_FIXTURE:-}"
+[[ -n "$fix" ]] && printf 'git %s\n' "$*" >> "$fix/git-calls"
+mode=""
+for a in "$@"; do
+  case "$a" in
+    worktree) mode=worktree ;;
+    remove) [[ "$mode" == worktree ]] && mode=remove ;;
+  esac
+done
+if [[ "$mode" == remove ]]; then
+  for a in "$@"; do
+    if [[ -d "$a" ]] && find "$a" -name .gc-foreign-owned 2>/dev/null | grep -q .; then
+      echo "error: failed to delete '$a/target/release/deps/.gc-foreign-owned': Permission denied" >&2
+      exit 1
+    fi
+  done
+fi
+exec "$real" "$@"
+SH
+chmod +x "$FAKE_BIN/git"
+
 # --- volume fixtures (ANT-1002) ---
 VOLREFS="$FIXTURE/fake-vol-refs"
 VOLCREATED="$FIXTURE/fake-vol-created"
@@ -323,8 +425,63 @@ commit_in "$WT_ACTIVE" active.txt
 push_b "$S" active-branch
 del_b "$S" active-branch
 
+# --- scenario: host-sudo (ANT-1111) ---
+# Merged branch, but the tree carries foreign-owned build output (a root-owned
+# target/ from an as-root container build): the sandbox `rm -rf` fails after
+# a partial delete (the fake rm emulates that via the marker file), and the
+# host-sudo fallback must finish the job. -> RECLAIMED, "via host sudo".
+S="$(mk_base host-sudo)"; WT_HOSTSUDO="$(add_wt "$S" host-sudo host-sudo-branch)"
+commit_in "$WT_HOSTSUDO" host-sudo.txt
+push_b "$S" host-sudo-branch
+git -C "$S" merge -q --ff-only host-sudo-branch
+push_b "$S" main
+mkdir -p "$WT_HOSTSUDO/target/release/deps"
+echo root-owned > "$WT_HOSTSUDO/target/release/deps/.gc-foreign-owned"
+
+# --- scenario: host-unreach (ANT-1111) ---
+# Same foreign-owned tree, but the host is unreachable (fake ssh exits 255):
+# keep-and-record — the stale "kept" row must say the host was unreachable.
+S="$(mk_base host-unreach)"; WT_HOSTUNREACH="$(add_wt "$S" host-unreach host-unreach-branch)"
+commit_in "$WT_HOSTUNREACH" host-unreach.txt
+push_b "$S" host-unreach-branch
+git -C "$S" merge -q --ff-only host-unreach-branch
+push_b "$S" main
+mkdir -p "$WT_HOSTUNREACH/target/release/deps"
+echo root-owned > "$WT_HOSTUNREACH/target/release/deps/.gc-foreign-owned"
+
+# Per-target reachability marker (see the fake ssh): only the host-unreach
+# worktree's host connection fails.
+touch "$HOSTFIX/unreachable-host-unreach"
+# The fake rm emulates the sandbox rm's permission failure: when the target
+# tree contains the foreign-owned marker anywhere (a root-owned file from an
+# as-root container build), it performs a PARTIAL delete — every top-level
+# entry that does not itself contain the marker goes away (including the
+# .git pointer file, exactly as in the ANT-1110 incident), the marker's
+# ancestor chain stays — and the command fails. Any rm whose arguments hold
+# no marker delegates to the real rm untouched.
+cat > "$FAKE_BIN/rm" <<'SH'
+#!/usr/bin/env bash
+real=/usr/bin/rm
+for a in "$@"; do
+  [[ -d "$a" ]] || continue
+  if find "$a" -name .gc-foreign-owned 2>/dev/null | grep -q .; then
+    for e in "$a"/* "$a"/.[!.]* "$a"/..?*; do
+      [[ -e "$e" || -L "$e" ]] || continue
+      if ! find "$e" -name .gc-foreign-owned 2>/dev/null | grep -q .; then
+        "$real" -rf "$e"
+      fi
+    done
+    echo "rm: cannot remove '$a/target/release/deps/.gc-foreign-owned': Permission denied" >&2
+    exit 1
+  fi
+done
+exec "$real" "$@"
+SH
+chmod +x "$FAKE_BIN/rm"
+
 age_out "$WT_STALE" "$WT_UNPUSHED" "$WT_MERGED" "$WT_LIVE" \
-  "$WT_NOREMOTES" "$WT_UNREACH" "$WT_DOUBT" "$WT_ACTIVE"
+  "$WT_NOREMOTES" "$WT_UNREACH" "$WT_DOUBT" "$WT_ACTIVE" \
+  "$WT_HOSTSUDO" "$WT_HOSTUNREACH"
 # $WT_YOUNG intentionally keeps its fresh mtime.
 
 # --- stub API server ---
@@ -342,11 +499,14 @@ API_PORT="$(cat "$PORT_FILE")"
 
 # ------------------------------------------------------------------- run GC --
 SUMMARY="$(
+  PATH="$FAKE_BIN:$PATH" \
+  BASH_ENV="$NOOP_BASHRC" \
   PAPERCLIP_API_URL="http://127.0.0.1:${API_PORT}/api" \
   PAPERCLIP_API_KEY=test \
   PAPERCLIP_COMPANY_ID=test \
   PAPERCLIP_RUN_ID=gc-test-run \
   FAKE_DOCKER_FIXTURE="$FIXTURE" \
+  FAKE_HOST_SUDO_FIXTURE="$HOSTFIX" \
     bash "$GC" \
     --workspace-root "$FIXTURE/workspaces" \
     --scratch-root "$SCRATCH" \
@@ -405,6 +565,22 @@ expect_kept      doubt     "$WT_DOUBT"     "not merged/gone"
 expect_kept      noremotes "$WT_NOREMOTES" "not merged/gone"
 expect_kept      young     "$WT_YOUNG"     "young"
 expect_kept      active    "$WT_ACTIVE"    "active"
+
+# --- host-sudo fallback assertions (ANT-1111) ---
+# The foreign-owned (fake marker) tree must be finished by the host sudo path,
+# and the unreachable host must keep-and-record instead of a bare "rm failed".
+expect_reclaimed host-sudo    "$WT_HOSTSUDO"    "reclaimed via host sudo"
+expect_kept      host-unreach "$WT_HOSTUNREACH" "host sudo unreachable"
+if grep -qF "rm -rf $WT_HOSTSUDO" "$HOSTFIX/sudo-cmds"; then
+  pass "host-sudo: fake sudo received 'rm -rf <worktree>' on the host"
+else
+  fail "host-sudo: fake sudo did not receive the rm -rf for $WT_HOSTSUDO (cmds: $(cat "$HOSTFIX/sudo-cmds"))"
+fi
+if grep -qF "$WT_HOSTUNREACH" "$HOSTFIX/cmds"; then
+  pass "host-unreach: the ssh attempt was made and failed (command logged)"
+else
+  fail "host-unreach: no ssh attempt logged for $WT_HOSTUNREACH (cmds: $(cat "$HOSTFIX/cmds"))"
+fi
 
 # Salvage-before-delete: the reclaimed stale worktree had uncommitted work;
 # the manifest's Salvage section must list the patch and it must exist.

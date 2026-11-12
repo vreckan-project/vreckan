@@ -50,6 +50,14 @@ SCAN_MAXDEPTH=4                          # how deep to scan for .git pointer fil
 DOCKER_BIN="docker"                      # docker CLI used by the volume sweep
 VOLUME_PREFIX="ant-"                     # volume name prefix swept (ANT-1002)
 VOLUME_TERMINAL_HOURS=24                 # owning issue must be terminal this long
+# Host-sudo fallback for rm failures on foreign-owned (root-owned) trees
+# (ANT-1111): a container build that ran as root against a mounted worktree
+# leaves root-owned entries the sandbox user cannot unlink. The paperclip01
+# host sees the same tree (/paperclip -> /srv/paperclip/data, ANT-343) and
+# jdee has passwordless sudo there, so the reclaim is re-issued over SSH.
+HOST_SUDO_SSH_TARGET="jdee@172.18.0.1"   # paperclip01 host (docker bridge gateway)
+HOST_SUDO_SSH_KEY_ENV="INTEGRATIONS_PAPERCLIP01_SSH_KEY"  # env var holding the PEM key
+HOST_SUDO_ENABLED=1                      # 0 disables the fallback (plain keep-and-record)
 
 usage() {
   cat <<'EOF'
@@ -71,6 +79,14 @@ Options:
   --volume-terminal-hours N
                         owning issue must be terminal this long to reclaim
                         (default 24)
+  --host-sudo-ssh-target USER@HOST
+                        host used to reclaim foreign-owned trees after a
+                        local rm failure (default jdee@172.18.0.1, paperclip01)
+  --host-sudo-ssh-key-env ENVVAR
+                        env var holding the multi-line PEM ssh key for that
+                         host (default INTEGRATIONS_PAPERCLIP01_SSH_KEY)
+  --no-host-sudo        disable the host-sudo fallback; a local rm failure
+                        keeps the item and records why
   --dry-run             report what would be reclaimed without deleting
   -h, --help            this help
 EOF
@@ -91,6 +107,9 @@ while [[ $# -gt 0 ]]; do
      --docker-bin)     DOCKER_BIN="$2"; shift 2 ;;
      --volume-prefix)  VOLUME_PREFIX="$2"; shift 2 ;;
      --volume-terminal-hours) VOLUME_TERMINAL_HOURS="$2"; shift 2 ;;
+     --host-sudo-ssh-target) HOST_SUDO_SSH_TARGET="$2"; shift 2 ;;
+     --host-sudo-ssh-key-env) HOST_SUDO_SSH_KEY_ENV="$2"; shift 2 ;;
+     --no-host-sudo)   HOST_SUDO_ENABLED=0; shift ;;
      --dry-run)        DRY_RUN=1; shift ;;
     -h|--help)        usage; exit 0 ;;
     *) echo "unknown argument: $1" >&2; usage; exit 1 ;;
@@ -118,6 +137,7 @@ API_NOTE="not attempted"
 VOLUME_NOTE="not attempted"
 RECLAIM_COUNT=0
 KEEP_COUNT=0
+RECLAIM_HOST_SUDO_NOTE="rm failed; kept"   # last host-sudo attempt's keep reason
 
 ACTIVE_IDS="$TMP/active-ids"        # run ids / workspace ids of active issues
 ACTIVE_CWDS="$TMP/active-cwds"      # realpath'd cwds of active execution workspaces
@@ -334,6 +354,81 @@ run_salvage() {
   return 0
 }
 
+# ------------------------------------------------- host-sudo fallback (ANT-1111) --
+# The sandbox user (node, uid 1000) cannot unlink foreign-owned entries: a
+# container build that ran as root against a mounted worktree leaves a
+# root-owned target/ tree behind, and `rm -rf` fails after a partial delete.
+# Re-issued through the paperclip01 host, which sees the same tree
+# (/paperclip -> /srv/paperclip/data, ANT-343 — the absolute path is valid
+# on both sides) and whose jdee user has passwordless sudo. Every doubt path
+# (no key material, host unreachable, remote rm failed) keeps the path and
+# records why — same "when in doubt, keep" semantics as a plain rm failure.
+
+# Run a remote command on the host with the agent's SSH key. The key (a
+# multi-line PEM in $HOST_SUDO_SSH_KEY_ENV) is materialized into $TMP once.
+# Returns the remote command's exit status.
+host_ssh() {
+  local keyvar keyfile
+  keyvar="${!HOST_SUDO_SSH_KEY_ENV-}"
+  if [[ -z "$keyvar" ]]; then
+    RECLAIM_HOST_SUDO_NOTE="rm failed; host sudo key env ${HOST_SUDO_SSH_KEY_ENV} not set; kept"
+    return 1
+  fi
+  keyfile="$TMP/host-sudo-key"
+  if [[ ! -f "$keyfile" ]]; then
+    printf '%s\n' "${keyvar%$'\n'}" > "$keyfile"
+    chmod 600 "$keyfile"
+  fi
+  ssh -i "$keyfile" \
+      -o BatchMode=yes \
+      -o StrictHostKeyChecking=accept-new \
+      -o ConnectTimeout=15 \
+      -o LogLevel=ERROR \
+      "$HOST_SUDO_SSH_TARGET" "$@"
+}
+
+# Reclaim $1 (a path the local rm could not fully remove) with `sudo rm -rf`
+# on the host. $2 = base repo for a `git worktree prune` (optional; empty
+# when the base is gone — a broken-pointer orphan has no metadata left to
+# prune). On success the prune runs locally as the sandbox user (the base's
+# .git is node-owned; the sudo was only needed for the foreign-owned files).
+# Sets RECLAIM_HOST_SUDO_NOTE on failure. Returns 0 when the path is gone,
+# 1 otherwise.
+reclaim_foreign_owned() {
+  local path="$1" base="${2:-}"
+  [[ -e "$path" ]] || return 0
+  if [[ "$HOST_SUDO_ENABLED" -ne 1 ]]; then
+    RECLAIM_HOST_SUDO_NOTE="rm failed; host sudo disabled; kept"
+    return 1
+  fi
+  local foreign esc
+  foreign="$(find "$path" -not -uid "$(id -u)" -print -quit 2>/dev/null || true)"
+  esc="${path//\'/\'\\\'\'}"
+  if host_ssh "sudo rm -rf '$esc'"; then
+    if [[ -n "$base" && -d "$base" ]]; then
+      git -C "$base" worktree prune >/dev/null 2>&1 || true
+    fi
+    if [[ ! -e "$path" ]]; then
+      log "reclaimed ${path} via host sudo (${HOST_SUDO_SSH_TARGET})"
+      return 0
+    fi
+    if [[ -n "$foreign" ]]; then
+      RECLAIM_HOST_SUDO_NOTE="rm failed (foreign-owned entries, e.g. ${foreign}); host sudo rm left it in place; kept"
+    else
+      RECLAIM_HOST_SUDO_NOTE="rm failed (no foreign-owned entry found); host sudo rm left it in place; kept"
+    fi
+    log "host sudo rm on ${path} returned 0 but the path still exists"
+    return 1
+  fi
+  if [[ -n "$foreign" ]]; then
+    RECLAIM_HOST_SUDO_NOTE="rm failed (foreign-owned entries, e.g. ${foreign}); host sudo unreachable; kept"
+  else
+    RECLAIM_HOST_SUDO_NOTE="rm failed (no foreign-owned entry found); host sudo unreachable; kept"
+  fi
+  log "host sudo reclaim of ${path} failed (unreachable); kept"
+  return 1
+}
+
 # ----------------------------------------------- session-clone sweep (1/2) --
 consider_session() {
   local agent="$1" ws="$2" s="$3"
@@ -369,8 +464,12 @@ consider_session() {
       add_reclaimed "$s" "$size" "${age}d" "stale session clone (> ${TTL_DAYS}d, not an active run)" "$salvages"
       BYTES_FREED=$((BYTES_FREED + ${size:-0}))
       log "reclaimed session ${s} (${size} bytes, age ${age}d)"
+    elif reclaim_foreign_owned "$s" ""; then
+      add_reclaimed "$s" "$size" "${age}d" "stale session clone (> ${TTL_DAYS}d), foreign-owned entries reclaimed via host sudo" "$salvages"
+      BYTES_FREED=$((BYTES_FREED + ${size:-0}))
+      log "reclaimed session ${s} via host sudo (${size} bytes, age ${age}d)"
     else
-      add_kept "$s" "$size" "${age}d" "rm failed; kept"
+      add_kept "$s" "$size" "${age}d" "$RECLAIM_HOST_SUDO_NOTE"
     fi
   else
     add_reclaimed "$s" "$size" "${age}d" "DRY-RUN: stale session clone (> ${TTL_DAYS}d, not an active run)" "$salvages"
@@ -427,8 +526,12 @@ consider_worktree() {
         add_reclaimed "$wt" "$size" "${age}d" "orphaned worktree (broken .git pointer)" "$salvages"
         BYTES_FREED=$((BYTES_FREED + ${size:-0}))
         log "reclaimed orphan worktree ${wt} (${size} bytes)"
+      elif reclaim_foreign_owned "$wt" ""; then
+        add_reclaimed "$wt" "$size" "${age}d" "orphaned worktree (broken .git pointer), foreign-owned entries reclaimed via host sudo" "$salvages"
+        BYTES_FREED=$((BYTES_FREED + ${size:-0}))
+        log "reclaimed orphan worktree ${wt} via host sudo (${size} bytes)"
       else
-        add_kept "$wt" "$size" "${age}d" "rm failed; kept"
+        add_kept "$wt" "$size" "${age}d" "$RECLAIM_HOST_SUDO_NOTE"
       fi
     else
       add_reclaimed "$wt" "$size" "${age}d" "DRY-RUN: orphaned worktree (broken .git pointer)" "$salvages"
@@ -538,8 +641,12 @@ consider_worktree() {
       add_reclaimed "$wt" "$size" "${age}d" "worktree branch ${branch} ${why}" "$salvages"
       BYTES_FREED=$((BYTES_FREED + ${size:-0}))
       log "reclaimed worktree ${wt} (${size} bytes, ${why})"
+    elif reclaim_foreign_owned "$wt" "$base"; then
+      add_reclaimed "$wt" "$size" "${age}d" "worktree branch ${branch} ${why}, foreign-owned entries reclaimed via host sudo" "$salvages"
+      BYTES_FREED=$((BYTES_FREED + ${size:-0}))
+      log "reclaimed worktree ${wt} via host sudo (${size} bytes, ${why})"
     else
-      add_kept "$wt" "$size" "${age}d" "rm failed; kept"
+      add_kept "$wt" "$size" "${age}d" "$RECLAIM_HOST_SUDO_NOTE"
     fi
   else
     add_reclaimed "$wt" "$size" "${age}d" "DRY-RUN: worktree branch ${branch} ${why}" "$salvages"
