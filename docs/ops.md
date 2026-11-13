@@ -355,7 +355,10 @@ moves (ANT-203). The nightly
 scan workflow compares the live registry digest of that base against the
 `vreckan.base-digest` label of the last nightly image; when they differ it
 opens a bot PR re-pointing both `.base-image-digest` and the `Dockerfile`
-build-stage digest pin (and bumping the patch version). The runtime base
+build-stage digest pin (with a `CHANGELOG.md` entry) — the PR carries no
+`VERSION` change itself: the per-push source gate numbers and tags the
+release on merge (ANT-1050; see the [release process](./release.md)).
+The runtime base
 (`debian:trixie-slim`) is a fixed tag and is not part of the digest
 convention. When a digest re-point lands, the release notes should mention
 the base-image bump (see [release process](./release.md)).
