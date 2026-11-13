@@ -16,10 +16,12 @@ use vreckan_auth::user_manager;
 
 /// If the storage tree cannot be removed after the row is gone, the delete
 /// still succeeds (log-and-continue): the account is removed and the leftover
-/// directory is a harmless orphan, not a failed delete. The test process runs
-/// as root, so it drops to a non-root effective uid — where a read-only,
-/// root-owned storage tree is genuinely not removable — while the database is
-/// left writable so the row delete itself succeeds.
+/// directory is a harmless orphan, not a failed delete. When run as root, the
+/// test drops to a non-root effective uid — where a read-only, root-owned
+/// storage tree is genuinely not removable — while the database is left
+/// writable so the row delete itself succeeds. Under an already-unprivileged
+/// user (the `node` user of vreckan-base-build, ANT-1113) the same 0o555 tree
+/// is not removable without any privilege dance.
 #[tokio::test]
 async fn storage_removal_failure_is_nonfatal() {
     let root = TempDir::new();
@@ -44,22 +46,33 @@ async fn storage_removal_failure_is_nonfatal() {
             std::fs::set_permissions(&f, PermissionsExt::from_mode(0o666)).unwrap();
         }
     }
-    // …and make the storage tree non-removable by a non-owner (read-only,
-    // root-owned dirs: a non-owner without the write bit cannot unlink entries).
+    // …and make the storage tree non-removable by the deleting process
+    // (read-only dirs: no write bit means no unlink for a non-privileged uid).
     std::fs::set_permissions(storage_root, PermissionsExt::from_mode(0o555)).unwrap();
     std::fs::set_permissions(&storage, PermissionsExt::from_mode(0o555)).unwrap();
 
-    // Drop to a non-root effective uid (real uid stays 0, so we can restore).
-    let nonroot: libc::uid_t = 1000;
-    assert_eq!(unsafe { libc::setegid(nonroot as libc::gid_t) }, 0, "setegid failed");
-    assert_eq!(unsafe { libc::seteuid(nonroot) }, 0, "seteuid failed");
+    // Drop to a non-root effective uid so the read-only tree is genuinely not
+    // removable — but only when privileged. Root bypasses the write bit
+    // (CAP_DAC_OVERRIDE), so dropping euid is what makes remove_dir_all fail,
+    // and the restore below works because the real uid stays 0. An
+    // already-unprivileged process (the uid-1000 `node` user of
+    // vreckan-base-build, ANT-1113) cannot unlink from a 0o555 tree it lacks
+    // the write bit on, and cannot restore euid/egid to 0 afterwards (EPERM) —
+    // so the dance is skipped entirely.
+    let privileged = unsafe { libc::getuid() } == 0;
+    if privileged {
+        let nonroot: libc::uid_t = 1000;
+        assert_eq!(unsafe { libc::setegid(nonroot as libc::gid_t) }, 0, "setegid failed");
+        assert_eq!(unsafe { libc::seteuid(nonroot) }, 0, "seteuid failed");
+    }
 
     // The row write succeeds; the storage removal fails -> log-and-continue.
     let res = user_manager::delete_person(&db, &settings, "carol").await;
 
-    // Restore full privileges before asserting/cleaning up.
-    assert_eq!(unsafe { libc::setegid(0) }, 0, "setegid(0) failed");
-    assert_eq!(unsafe { libc::seteuid(0) }, 0, "seteuid(0) failed");
+    if privileged {
+        assert_eq!(unsafe { libc::setegid(0) }, 0, "setegid(0) failed");
+        assert_eq!(unsafe { libc::seteuid(0) }, 0, "seteuid(0) failed");
+    }
 
     assert!(
         res.is_ok(),
