@@ -9,6 +9,46 @@ is committed normally in `vreckan`. The changelog is the authoritative
 record of what shipped in each release — see
 [`docs/release.md`](./docs/release.md) for the conventions.
 
+## 2026-11-13 — base-image bump + workspace-GC host-sudo reclaim (ANT-1111)
+
+- **The build base advanced to the 2026-11-12 8:23 AM MST bake**
+  (`vreckan-base-build` `sha256:9eaed5bc52d4…` →
+  `sha256:a8324b18829d…`; `.base-image-digest` and the `Dockerfile`
+  build-stage `FROM` re-pointed together, ANT-277). The re-bake ran
+  minutes after vreckan-workflow PR #274 (ANT-1113) landed on
+  workflow `main` (`vreckan.workflow-sha` `082227f1…` →
+  `ba066b3e…`), and it carries that change: the image now ends in a
+  `USER node` (uid/gid 1000) layer over a `chown` of
+  `/usr/local/cargo`, `/usr/local/rustup`, `/app`, and `/sccache` —
+  the content layers below are byte-identical to the previous bake, so
+  the re-bake was a cache hit through `cargo fetch` and only the
+  ownership layer ran. That is the preventive half of the ANT-1111
+  fix: `target/` trees a container build writes into a mounted agent
+  worktree are now node-owned, so the workspace GC reclaims its own
+  worktrees directly instead of leaning on the host-sudo fallback
+  documented in the 2026-11-12 entry above. The toolchain and
+  dependency caches are unchanged — Rust 1.99.1, parent
+  `rust:1.99.1-slim` still at `sha256:f6c4a35d…`,
+  `vreckan.dep-digest` still `7a0dd3f0…` (the arrow 60.1.0 set). The
+  no-baked-`CARGO_BUILD_JOBS` caveat keeps standing (ANT-1040) — ad-hoc
+  `docker run` sessions should keep passing `-e CARGO_BUILD_JOBS=4`.
+  Note: the previous pin `sha256:9eaed5bc52d4…` no longer resolves on
+  the Gitea registry (registry GC reclaimed it once the `20261112` tag
+  re-pointed to this bake), so a fresh `docker build` of the v0.12.5
+  tag's build stage can no longer pull its base; the published v0.12.5
+  image is unaffected.
+
+- **No app-source changes since v0.12.5.** `git log v0.12.5..HEAD`
+  carries only the workspace-GC host-sudo reclaim (ANT-1111 — its own
+  2026-11-12 entry above; that merge cut no version because
+  `scripts/` is a non-source path) and the v0.12.1–v0.12.5 changelog
+  backfill + site current-release sync (ANT-1115, docs). This release
+  is the base re-point. The version number is auto-assigned by the
+  per-push source gate on merge (ANT-1050) — `.base-image-digest` is a
+  source path, so the bump path numbers and tags this release
+  automatically; this PR deliberately carries no `VERSION`/`Cargo.toml`/
+  `Cargo.lock` change.
+
 ## 2026-11-12 — workspace-GC host-sudo reclaim (ANT-1111) — no version cut
 
 Ops tooling only: `scripts/` is a non-source path, so this merge cut no
