@@ -15,15 +15,15 @@ follow-up does not change the endpoint surface.
 
 | Area | Status |
 |---|---|
-| Endpoint surface | **Complete** — all unique paths of the original present (106 unique paths in the current tree; see [api.md](./api.md)); representation-level differences only; 1 additive Rust endpoint (`/api/health`) |
-| 13-table config schema + column migrations | ✅ matches (SeaORM schema-sync subsumes Python `init_db` + `migrate_db`) |
+| Endpoint surface | **Complete** — all unique paths of the original present (the audit-era tree had 106 unique paths; the current tree has **110 unique paths / 131 method+path routes** — see [api.md](./api.md) for the full table, re-verified against the code 2026-11-13); representation-level differences only; additive Rust endpoints: the liveness probe (`/api/health`, G10) and the session-share-link routes added after the audit (v0.8.0–v0.8.5) |
+| 14-table config schema + column migrations | ✅ matches (SeaORM schema-sync subsumes Python `init_db` + `migrate_db`; 13 tables at audit time — `session_shares` was added in v0.8.0, post-audit) |
 | E2EE handshake (RSA-PSS / RSA-OAEP / AES-GCM, AAD=session) | ✅ matches |
 | Auth (cookie/Bearer tokens), OIDC provisioning + group re-stamp, RBAC | ✅ matches |
 | Launch orchestration (env layering, volumes, GPU/DRI3, network, container lifecycle) | ✅ matches |
 | Session persistence across restart (save/load at all mutation sites) | ✅ matches (relaunch gap: G3) |
 | Backup/restore round-trip incl. chunked restore | ✅ matches |
 | Public shares, pinned behaviors, homedirs, app stores/templates | ✅ matches (cleanup jobs: G2) |
-| Web client (`server/static/`, 68 files) | ✅ **byte-identical** |
+| Web client (`server/static/`) | ✅ byte-identical at audit time; evolved since — 42 files differ from the audit baseline as of 2026-11-13, all Vreckan additions/fixes on top of the ported client: the v0.8.x session-share UI (new `js/app/session-share.js`, participant/invite flows), the vendored Font Awesome under `collaboration/font-awesome/` (G6 icon-font resolution, ANT-570), the v0.10.0 launch-dialog rework (`js/app/launch.js`), `room.js` (v0.11.6), file-name escaping in `js/files.js` (v0.12.0, ANT-1062), the expanded i18n set, and admin-page work |
 | Test suite | 388 original tests across 21 modules (baseline `e7b2de6`): 376 ported (367 by name, 9 renamed in the le_certbot→acme port); 12 originals without a Rust counterpart; 32 Rust-only additions (see below) |
 | Open gaps | **G1–G11** below (3× P1, 3× P2, 5× P3) |
 
