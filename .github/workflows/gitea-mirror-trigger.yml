@@ -1172,9 +1172,16 @@ jobs:
           # Push the tag AND the commit it points to (as main) in one shot. The
           # Gitea release workflow clones `--branch <tag>`, which needs the
           # commit to already be in the mirror. The mirror-and-trigger job
-          # pushes main in parallel, but pushing it here too removes the race
-          # (both push the same commit, so it's a no-op for them).
-          git push gitea "$TAG" "HEAD:refs/heads/main"
+          # force-pushes main in parallel, so THIS push must be forced too:
+          # an unforced push sends the advertised old value for its
+          # compare-and-swap lock, and if the parallel force-push lands in the
+          # gap the lock fails with "cannot lock ref ... incorrect old value
+          # provided" while the tag leg still lands (ANT-1149, v0.12.8: the
+          # skipped steps below then stranded the release). Forced, both jobs
+          # push the identical commit and the second landing is a true no-op —
+          # the race is gone. It also lets a re-cut tag (re-pointed to a new
+          # commit) re-land instead of failing with "already exists".
+          git push --force gitea "$TAG" "HEAD:refs/heads/main"
           echo "Mirrored tag ${TAG} + main to Gitea"
 
       - name: Trigger Gitea release
@@ -1210,7 +1217,14 @@ jobs:
         # Gitea "Release (Rust)" workflow only builds + pushes the image —
         # neither created the GitHub Release (ANT-128). The vreckan-ci app
         # token minted above carries Contents: write, which covers releases.
-        if: steps.exists.outputs.exists == 'false'
+        # always(): a Gitea-side failure (mirror-tag push or the dispatch
+        # above) must not orphan the /releases entry either — the dispatch
+        # step's continue-on-error only covers its own failure (ANT-1149:
+        # the mirror-tag step failed and skipped this one, the v0.10.1
+        # incident class). If the tag push to GitHub itself failed, gh
+        # release create still creates the tag at --target, so the entry is
+        # self-consistent; a missing image is flagged by the freshness run.
+        if: always() && steps.exists.outputs.exists == 'false'
         env:
           GH_TOKEN: ${{ steps.apptoken.outputs.token }}
         run: |
