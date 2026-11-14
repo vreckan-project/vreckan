@@ -110,7 +110,7 @@ der = "0.8"
 # runtime. The feature keeps the v10-era crypto family (rsa/p256/p384/
 # ed25519-dalek/sha2/hmac/rand) in the tree — it survives until the
 # crypto-bigint 0.5.5 removal lands under ANT-546.
-jsonwebtoken = { version = "11", features = ["rust_crypto"] }
+jsonwebtoken = { version = "12", features = ["rust_crypto"] }
 
 # Docker Engine API
 bollard = "0.21"
