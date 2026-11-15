@@ -9,6 +9,58 @@ is committed normally in `vreckan`. The changelog is the authoritative
 record of what shipped in each release — see
 [`docs/release.md`](./docs/release.md) for the conventions.
 
+## 2026-11-15 — base-image bump + pipeline hardening (ANT-1149, ANT-1150)
+
+- **The build base advanced to the 2026-11-14 22:35 MST bake**
+  (`vreckan-base-build` `sha256:a8324b18829d…` →
+  `sha256:b856721ffc19…`; `.base-image-digest` and the `Dockerfile`
+  build-stage `FROM` re-pointed together, ANT-277; the registry's
+  `20261115` tag carries the same digest). The re-bake was
+  lockfile-driven: renovate PR #225's `jsonwebtoken` 11 → 12 major
+  bump (shipped in v0.12.8, `2580024`) moved the warm dependency
+  cache — `vreckan.dep-digest` `7a0dd3f0…` → `2fe96783…` — and the
+  major pulled the RustCrypto line refresh with it:
+  `ed25519-dalek` 2.2 → 3.0, `curve25519-dalek` 4.1 → 5.0,
+  `p256`/`p384` 0.13 → 0.14, `ecdsa` 0.16 → 0.17,
+  `elliptic-curve` 0.13 → 0.14, `ff`/`group`/`primeorder` 0.13 →
+  0.14, `sec1` 0.7 → 0.8, `rfc6979` 0.4 → 0.6, `fiat-crypto` 0.2 →
+  0.3 — with `primefield` 0.14 and `wnaf` 0.14 added — and dropped
+  the now-duplicate older generations in one pass (`rsa` 0.9 +
+  `num-bigint-dig`, `pem` 3, `pkcs8` 0.10, `der` 0.7, `spki` 0.7,
+  `hmac` 0.12, `hkdf` 0.12, `signature` 2, `crypto-bigint` 0.5,
+  `base16ct` 0.2, `const-oid` 0.9, `pem-rfc7468` 0.7, `num-iter`).
+  Toolchain unchanged: Rust 1.99.1, parent `rust:1.99.1-slim` still
+  at `sha256:f6c4a35d…`; vreckan's own crates stay at 0.12.8
+  (unchanged in this PR). The bake also carries the workflow's own
+  main at bake time (`vreckan.workflow-sha` `ba066b3e…` →
+  `01d5e270…`): the cargo-audit gate drops the stale `--ignore
+  RUSTSEC-2023-0071` + `RUSTSEC-2026-0387` flags (workflow #276, the
+  CI half of ANT-1150), and the build-test push no longer stomps the
+  `:latest` tag — `release-rust` owns it (workflow #275, ANT-1147).
+  The no-baked-`CARGO_BUILD_JOBS` caveat keeps standing (ANT-1040) —
+  ad-hoc `docker run` sessions should keep passing
+  `-e CARGO_BUILD_JOBS=4`. The previous pin `sha256:a8324b18829d…`
+  still resolves on the Gitea registry (verified 2026-11-15), so a
+  fresh `docker build` of the v0.12.6–v0.12.8 tags still pulls its
+  base.
+
+- **Pipeline hardening since v0.12.8 — no app-source change.**
+  `git log v0.12.8..HEAD` carries only CI/pipeline commits: the
+  Gitea mirror's `main` push is now forced so a ref-lock race can no
+  longer drop the mirror push (ANT-1149, `.github/` — non-source, so
+  the merge cut no version), and the root `deny.toml` drops the two
+  now-stale rustsec ignores — RUSTSEC-2023-0071 (rsa "Marvin
+  Attack"; the `rsa 0.9.10` instance left the tree with jsonwebtoken
+  12) and RUSTSEC-2026-0387 (crypto-bigint 0.5.5 timing; the 0.5.5
+  instance is gone, only the patched 0.7.x line remains) — the same
+  ignores the audit gate lost (ANT-1150, non-source). App source is
+  unchanged since v0.12.8; this release is the base re-point. The
+  version number is auto-assigned by the per-push source gate on
+  merge (ANT-1050) — `.base-image-digest` is a source path, so the
+  bump path numbers and tags this release automatically; this PR
+  deliberately carries no `VERSION`/`Cargo.toml`/`Cargo.lock`
+  change.
+
 ## 2026-11-13 — base-image bump + workspace-GC host-sudo reclaim (ANT-1111)
 
 - **The build base advanced to the 2026-11-12 8:23 AM MST bake**
