@@ -3,7 +3,7 @@
 
 import { secureFetch } from "./api.js";
 import { base64ToArrayBuffer } from "./crypto.js";
-import { openCustomModal, confirmModal, promptModal, escModal } from "./modal.js";
+import { openCustomModal, confirmModal, promptModal, escModal, attachStaticModalDismissal } from "./modal.js";
 import { $, toast, formatBytes, uploadFileChunks } from "./util.js";
 import { resolveLaunchGpu } from "./app/launch.js";
 import { highlightSessionRow } from "./app/sessions.js";
@@ -674,6 +674,11 @@ export async function initFilesView() {
     createShare();
   });
   $("fs-cancel").addEventListener("click", () => {
+    $("modal-file-share").hidden = true;
+  });
+  // Escape and backdrop click dismiss the dialog too (ANT-1184), matching
+  // the shared #modal-root modals and the other static modals.
+  attachStaticModalDismissal($("modal-file-share"), () => {
     $("modal-file-share").hidden = true;
   });
 }

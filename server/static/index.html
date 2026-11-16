@@ -196,8 +196,8 @@
 
 <!-- ===== File share modal ===== -->
 <div id="modal-file-share" class="modal-backdrop" hidden>
-  <div class="modal card">
-    <h3 data-i18n="share.title">Share file</h3>
+  <div class="modal card" role="dialog" aria-modal="true" aria-labelledby="fs-title">
+    <h3 id="fs-title" data-i18n="share.title">Share file</h3>
     <p id="file-share-path" class="muted"></p>
     <form id="file-share-form">
       <label data-i18n="share.passwordLabel">Password (optional)
