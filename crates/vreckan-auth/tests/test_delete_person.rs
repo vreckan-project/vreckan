@@ -6,7 +6,6 @@
 mod common;
 
 use common::{connect_db, test_settings, TempDir};
-use sea_orm::ConnectionTrait;
 use std::path::Path;
 use vreckan_auth::user_manager;
 use vreckan_core::db;
@@ -74,21 +73,30 @@ async fn failed_row_delete_preserves_storage() {
 
     // A second connection holding an exclusive lock: the row write below
     // fails ("database is locked") while reads still succeed (WAL permits
-    // concurrent readers).
+    // concurrent readers). The lock is held on a *checked-out* connection
+    // (not returned to the pool), because the pool's `after_release` reset
+    // rolls back any transaction on a released connection (ANT-1176) — a
+    // `BEGIN EXCLUSIVE` issued via `execute_raw` would be rolled back on
+    // release and the lock would not persist.
     let locker = db::connect(&format!(
         "sqlite://{}?mode=rwc",
         root.path().join("test.db").to_string_lossy()
     ))
     .await
     .unwrap();
-    locker
-        .conn
-        .execute_raw(sea_orm::Statement::from_string(
-            locker.conn.get_database_backend(),
-            "BEGIN EXCLUSIVE;",
-        ))
-        .await
-        .unwrap();
+    let locker_conn = {
+        let pool = locker.conn.get_sqlite_connection_pool();
+        let mut c = pool.acquire().await.unwrap();
+        sea_orm::sqlx::query("BEGIN EXCLUSIVE;")
+            .execute(&mut *c)
+            .await
+            .unwrap();
+        c
+    };
+    // `locker_conn` must stay checked out for the rest of the test (it is
+    // dropped at scope end, which releases the lock only after the
+    // assertions have run).
+    let _ = &locker_conn;
     // Precondition: reads still succeed while the write lock is held, so the
     // delete gets past bootstrap_username/get_user and fails at the row write.
     assert!(

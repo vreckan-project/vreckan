@@ -148,6 +148,28 @@ pub async fn connect(url: &str) -> Result<Db, sea_orm::DbErr> {
     // higher), matching the Python server's quieter default behaviour.
     opt.sqlx_logging_level(LevelFilter::Debug);
 
+    // Reset every pooled SQLite connection to a clean autocommit state when
+    // it is returned to the pool. A statement that fails while the WAL write
+    // lock is contended (the transient "database is locked" the app settings
+    // writers swallow) can leave an *implicit* transaction — and with it a
+    // pinned WAL read-mark — open on the pooled connection. sqlx does not
+    // track that transaction (its `transaction_depth` stays 0) and the
+    // pool's idle ping is a no-op liveness check, so nothing else clears it:
+    // the next statement re-joins the stale snapshot and reads pre-commit
+    // data. `ROLLBACK` is a no-op when no transaction is open, so this is
+    // cheap and unconditionally restores autocommit (ANT-1176, and the
+    // ANT-328/ANT-770 pooled-connection WAL-visibility-race family).
+    if dialect == "sqlite" {
+        opt.map_sqlx_sqlite_pool_opts(|p| {
+            p.after_release(|conn, _meta| {
+                Box::pin(async move {
+                    let _ = sea_orm::sqlx::query("ROLLBACK;").execute(conn).await;
+                    Ok(true)
+                })
+            })
+        });
+    }
+
     let conn = Database::connect(opt).await?;
 
     // Enable WAL on SQLite for better concurrent read/write behaviour.
@@ -234,6 +256,36 @@ impl Db {
             )
             .build(self.conn.get_database_backend());
         self.conn.execute_raw(stmt).await?;
+        Ok(())
+    }
+
+    /// Insert or update several `app_settings` rows atomically, in a single
+    /// transaction. All rows are either present (committed) or absent
+    /// (rolled back) — no partial/torn state is observable, unlike issuing
+    /// `set_app_setting` per key, where a concurrent reader can observe some
+    /// of the keys before the rest (ANT-1176). Honors `fail_writes` like
+    /// `set_app_setting` (checked up front; a real write failure rolls the
+    /// whole batch back via the transaction).
+    pub async fn set_app_settings(&self, pairs: &[(String, String)]) -> Result<(), sea_orm::DbErr> {
+        if self.fail_writes.load(std::sync::atomic::Ordering::Relaxed) {
+            return Err(Self::simulated_write_failure());
+        }
+        let txn = self.conn.begin().await?;
+        for (key, value) in pairs {
+            let am = entities::app_setting::ActiveModel {
+                key: ActiveValue::Set(key.clone()),
+                value: ActiveValue::Set(value.clone()),
+            };
+            let stmt = entities::app_setting::Entity::insert(am)
+                .on_conflict(
+                    OnConflict::column(entities::app_setting::Column::Key)
+                        .update_column(entities::app_setting::Column::Value)
+                        .to_owned(),
+                )
+                .build(txn.get_database_backend());
+            txn.execute_raw(stmt).await?;
+        }
+        txn.commit().await?;
         Ok(())
     }
 
@@ -1013,6 +1065,77 @@ mod tests {
         let ids: Vec<_> = rows.iter().map(|r| r.session_id.clone()).collect();
         assert_eq!(ids.len(), 2, "restore must replace, not merge: {ids:?}");
         assert!(!ids.contains(&"s3".to_string()));
+        std::fs::remove_dir_all(&dir).ok();
+    }
+
+    /// Regression (ANT-1176): a pooled SQLite connection must be reset to a
+    /// clean autocommit state when it is returned to the pool. A leaked
+    /// (untracked) transaction must not survive the release→acquire cycle:
+    /// otherwise the next statement re-joins the stale WAL snapshot and reads
+    /// pre-commit data. `connect()`'s `after_release` hook issues a ROLLBACK
+    /// for this (a no-op when no transaction is open), so a connection that
+    /// acquired a read/write transaction and failed to end it is cleaned
+    /// before it is handed out again.
+    #[tokio::test]
+    async fn pool_release_resets_leaked_transaction() {
+        let dir = tmp_dir("pool-reset");
+        let db = connect(&format!(
+            "sqlite://{}?mode=rwc",
+            dir.join("reset.db").display()
+        ))
+        .await
+        .unwrap();
+        let pool = db.conn.get_sqlite_connection_pool();
+
+        // Check out every connection in the pool (draining until acquire
+        // blocks), so none is idle.
+        let mut all: Vec<_> = Vec::new();
+        while let Ok(Ok(c)) = tokio::time::timeout(Duration::from_millis(100), pool.acquire()).await
+        {
+            all.push(c);
+        }
+        assert!(
+            all.len() >= 2,
+            "pool must have >= 2 connections to isolate the leak (got {})",
+            all.len()
+        );
+
+        // Leak a raw transaction on one connection that sqlx/sea-orm do not
+        // track — the shape of the implicit transaction a statement that
+        // failed on a contended WAL write lock can leave behind.
+        sea_orm::sqlx::query("BEGIN;")
+            .execute(&mut *all[0])
+            .await
+            .unwrap();
+
+        // Keep the leaked connection separate; release the rest and then check
+        // them straight back out (`busy`) so the only idle connection is the
+        // leaked one.
+        let leaked = all.remove(0);
+        let rest = all.len();
+        for c in all.drain(..) {
+            drop(c);
+        }
+        let mut busy: Vec<_> = Vec::new();
+        for _ in 0..rest {
+            busy.push(pool.acquire().await.unwrap());
+        }
+
+        // Release the leaked connection: `after_release` must roll back the
+        // leaked transaction before it is handed out again.
+        drop(leaked);
+
+        // The next acquire is forced to return the leaked connection. A fresh
+        // BEGIN must succeed, proving the pool reset it to autocommit.
+        let mut c = pool.acquire().await.unwrap();
+        let r = sea_orm::sqlx::query("BEGIN;").execute(&mut *c).await;
+        sea_orm::sqlx::query("ROLLBACK;").execute(&mut *c).await.ok();
+        assert!(
+            r.is_ok(),
+            "acquired connection must be in autocommit after release; BEGIN failed: {r:?}"
+        );
+        drop(c);
+        drop(busy);
         std::fs::remove_dir_all(&dir).ok();
     }
 }

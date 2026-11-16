@@ -359,12 +359,14 @@ async fn admin_client(state: vreckan_core::state::AppState) -> SecureClient {
 }
 
 /// Persist `rec` and re-read it until the read-back is complete, returning the
-/// stored record. Each `set_app_setting` in `acme_persist_cert` is an
-/// independent upsert whose error is swallowed; on a loaded pool a transient
-/// lock can drop one row (or a read can race a pooled connection still
-/// carrying a pre-write WAL snapshot), leaving a field empty in the read-back.
-/// The upsert is idempotent, so re-persisting is safe; a short settle between
-/// attempts lets stale pooled connections drain out of the pool.
+/// stored record. `acme_persist_cert` writes all five settings atomically in a
+/// single transaction, so the record is observed either fully present or fully
+/// absent — there is no torn partial state. The read-back loop is a safety net
+/// (ANT-1176): on a loaded pool a transient lock can drop the whole (atomic)
+/// persist, in which case the idempotent re-persist is safe; a read could also
+/// still land on a pooled connection that has not been reset to autocommit yet.
+/// The pool's `after_release` ROLLBACK clears such stale connections, and a
+/// short settle between attempts lets any that remain drain out.
 ///
 /// Callers must `expect` on the returned `Option` (ANT-914): a `None`
 /// means the retry budget expired under parallel-suite load, and silently
@@ -396,16 +398,16 @@ async fn persist_until_visible(
 }
 
 /// Read `cert_status` until the DB-sourced record is visible, returning the
-/// status. The record can be fully persisted (see `persist_until_visible`)
-/// while the next read still lands on a pooled connection carrying a
-/// pre-write WAL snapshot, in which case `cert_status` falls through to the
-/// disk path and reports `source: null`. A short settle between attempts
-/// lets stale pooled connections drain out of the pool (ANT-328). The record
-/// is stored as five independent settings and each `acme_cert_record` read
-/// may land on a different pooled connection with a different snapshot, so
-/// the visibility gate also requires the expiry and key fields, not just
-/// the source label (ANT-770: `valid` was intermittently computed from a
-/// stale pre-write read of `VRECKAN_ACME_CERT_EXPIRES`).
+/// status. The record is persisted atomically (see `persist_until_visible`),
+/// so a fresh connection sees all five settings or none. This loop is a
+/// safety net for the rare case where the next read still lands on a pooled
+/// connection that has not yet been reset to autocommit (its `after_release`
+/// ROLLBACK is in flight), in which case `cert_status` falls through to the
+/// disk path and reports `source: null`; a short settle between attempts lets
+/// such connections drain out of the pool (ANT-328). The visibility gate also
+/// requires the expiry and key fields, not just the source label, because
+/// `valid` is computed from `VRECKAN_ACME_CERT_EXPIRES` and a stale pre-write
+/// read of it would otherwise yield an intermittently wrong result (ANT-770).
 async fn cert_status_until_db(
     state: &vreckan_core::state::AppState,
     domains: &[String],
@@ -1348,21 +1350,26 @@ async fn ensure_idle_connections(
     pool
 }
 
-/// One pooled SQLite connection that was returned to the pool with an open
-/// read transaction: the first read on it pinned a pre-write WAL snapshot,
-/// and every read that subsequently lands on that connection keeps seeing
-/// that snapshot until the transaction ends (the mechanism behind the
-/// ANT-328/ANT-770 visibility flakes and the ANT-939 production gap).
+/// A helper that opens a raw read transaction on a pooled connection and
+/// returns it to the pool, exercising the pool's `after_release` reset.
+/// Before the ANT-1176 fix, the released connection kept its open (raw
+/// `BEGIN`) read transaction and pinned a pre-write WAL snapshot, so every
+/// later read that landed on it kept seeing that snapshot (the mechanism
+/// behind the ANT-328/ANT-770 visibility flakes and the ANT-939 production
+/// gap). Now the `after_release` ROLLBACK clears the transaction on release,
+/// so the connection is handed back out in a clean autocommit state; the
+/// renewal test below still churns the pool and asserts the served cert is
+/// reloaded from the in-memory bundle (ANT-939), which holds regardless.
 struct StalePin {
     pool: sea_orm::sqlx::SqlitePool,
 }
 
 impl StalePin {
-    /// Check out a pooled connection, open a (deferred) read transaction,
-    /// pin its snapshot with one read, and return the connection to the pool
-    /// with the transaction still open. The pinned snapshot is the committed
-    /// state at the call site — pin *after* the seed is fully visible and
-    /// *before* the write the reload must not miss.
+    /// Check out a pooled connection, open a (deferred) read transaction, and
+    /// pin its snapshot with one read, then return the connection to the pool.
+    /// The raw `BEGIN` bypasses sqlx's transaction tracking, but the pool's
+    /// `after_release` ROLLBACK (ANT-1176) clears it on release, so the
+    /// connection is handed back out clean rather than persistently stale.
     async fn pin(state: &vreckan_core::state::AppState) -> Self {
         use sea_orm::sqlx::Executor;
         let pool = state.db.conn.get_sqlite_connection_pool().clone();
@@ -1377,9 +1384,9 @@ impl StalePin {
             ))
             .await
             .expect("snapshot-pinning read");
-        // The raw BEGIN bypasses sqlx's transaction tracking, so the pool
-        // hands this stale connection out to the next reader as if it were
-        // ordinary (dropping the `PoolConnection` returns it to the pool).
+        // Dropping the `PoolConnection` returns it to the pool; the
+        // `after_release` ROLLBACK then rolls back the raw-BEGIN transaction
+        // (ANT-1176), so the connection is not persistently stale.
         drop(conn);
         Self { pool }
     }

@@ -368,14 +368,26 @@ pub async fn acme_cert_record(state: &AppState) -> Option<AcmeCertRecord> {
 /// Persist an ACME cert record to the config DB (the source of truth). Uses the
 /// existing `app_settings` store; a `None` expiry is stored as an empty string
 /// and read back as `None`.
+///
+/// All five settings are written atomically in a single transaction
+/// (`Db::set_app_settings`): a concurrent reader observes the record either
+/// fully present or fully absent, never a torn mix of old and new keys
+/// (ANT-1176). On a real write failure the whole batch rolls back and the
+/// error is logged; the caller's `persist_until_visible` read-back retries,
+/// and the next ensure cycle re-persists.
 pub async fn acme_persist_cert(state: &AppState, rec: &AcmeCertRecord) {
     let db = &state.db;
-    let _ = db.set_app_setting("VRECKAN_ACME_CERT_PEM", &rec.cert_pem).await;
-    let _ = db.set_app_setting("VRECKAN_ACME_KEY_PEM", &rec.key_pem).await;
-    let _ = db.set_app_setting("VRECKAN_ACME_CERT_CA", &rec.ca).await;
-    let _ = db.set_app_setting("VRECKAN_ACME_CERT_DOMAINS", &rec.domains).await;
     let expires = rec.expires.map(|e| e.to_string()).unwrap_or_default();
-    let _ = db.set_app_setting("VRECKAN_ACME_CERT_EXPIRES", &expires).await;
+    let pairs = [
+        ("VRECKAN_ACME_CERT_PEM".to_string(), rec.cert_pem.clone()),
+        ("VRECKAN_ACME_KEY_PEM".to_string(), rec.key_pem.clone()),
+        ("VRECKAN_ACME_CERT_CA".to_string(), rec.ca.clone()),
+        ("VRECKAN_ACME_CERT_DOMAINS".to_string(), rec.domains.clone()),
+        ("VRECKAN_ACME_CERT_EXPIRES".to_string(), expires),
+    ];
+    if let Err(e) = db.set_app_settings(&pairs).await {
+        warn!("acme_persist_cert: atomic persist failed: {e}");
+    }
 }
 
 /// Swap the running TLS listener to the given in-memory cert/key bundle,
