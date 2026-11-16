@@ -84,6 +84,33 @@ export function closeModal() {
   root.onclick = null;
 }
 
+// Wire Escape + backdrop-click dismissal onto a *static* modal backdrop —
+// one that lives in index.html (#modal-launch, #modal-password) rather than
+// the shared #modal-root box, so it does not go through show(). The keydown
+// listener is document-level but only acts while the backdrop is visible, so
+// wiring once at init is safe for the page's lifetime; `onClose` should just
+// hide the backdrop (mirroring the modal's Cancel button). While a dynamic
+// modal (#modal-root: confirm/prompt/custom) is open on top, that modal owns
+// the Escape press and the static one stays put. Returns a detach function
+// that removes both listeners.
+export function attachStaticModalDismissal(backdrop, onClose) {
+  const onKey = (e) => {
+    if (e.key !== "Escape" || backdrop.hidden) return;
+    const root = document.getElementById(ROOT_ID);
+    if (root && !root.hidden) return;
+    onClose();
+  };
+  const onClick = (e) => {
+    if (e.target === backdrop) onClose();
+  };
+  document.addEventListener("keydown", onKey);
+  backdrop.addEventListener("click", onClick);
+  return () => {
+    document.removeEventListener("keydown", onKey);
+    backdrop.removeEventListener("click", onClick);
+  };
+}
+
 // Promise-based confirm. Resolves true when confirmed, false on Cancel /
 // Escape / backdrop click.
 export function confirmModal(

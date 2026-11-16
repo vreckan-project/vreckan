@@ -172,8 +172,8 @@
 
 <!-- ===== Change password modal ===== -->
 <div id="modal-password" class="modal-backdrop" hidden>
-  <div class="modal card">
-    <h3 data-i18n="password.title">Change password</h3>
+  <div class="modal card" role="dialog" aria-modal="true" aria-labelledby="cp-title">
+    <h3 id="cp-title" data-i18n="password.title">Change password</h3>
     <p id="cp-must-change" class="muted" hidden data-i18n="password.mustChangeNote">You're still using your initial password. Change it now — or close this dialog and do it later from the Password button.</p>
     <form id="change-password-form">
       <label data-i18n="password.current">Current password
@@ -351,7 +351,7 @@
 
 <!-- ===== Launch modal (unified, per-app — ANT-228 Option A; Feat 12) ===== -->
 <div id="modal-launch" class="modal-backdrop" hidden>
-  <div class="modal card">
+  <div class="modal card" role="dialog" aria-modal="true" aria-labelledby="launch-title">
     <h3 id="launch-title" data-i18n="launch.title">Launch app</h3>
     <p class="muted" id="launch-sub" hidden data-i18n="launch.subtitle">The app will launch without opening a file. Check "Open file on launch" to pick one.</p>
     <form id="launch-form">

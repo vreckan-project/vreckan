@@ -5,6 +5,7 @@ import { login, logout, me, changePassword } from "./auth.js";
 import { secureFetch } from "./api.js";
 import { resetSession, ensureSession } from "./crypto.js";
 import { $, toast, formatLogoSrc } from "./util.js";
+import { attachStaticModalDismissal } from "./modal.js";
 import { initFilesView, showFilesTab, loadHomedirs } from "./files.js";
 import { initAdminView, showAdminTab, refreshAdminSection } from "./admin.js";
 import { loadTranslator, applyTranslations, setLanguage, t, activeLanguage, SUPPORTED_UI_LANGS, resolveLanguage } from "./i18n.js";
@@ -395,6 +396,11 @@ async function init() {
   $("cp-cancel").addEventListener("click", () => {
     $("modal-password").hidden = true;
   });
+  // Escape and backdrop click dismiss the dialog too (ANT-1177), matching
+  // the shared #modal-root modals and the session-share modal.
+  attachStaticModalDismissal($("modal-password"), () => {
+    $("modal-password").hidden = true;
+  });
   $("change-password-form").addEventListener("submit", async (e) => {
     e.preventDefault();
     clearError($("cp-error"));
@@ -425,6 +431,11 @@ async function init() {
 
   // Launch modal for file-backed apps (Feat 12 — open file on launch)
   $("launch-cancel").addEventListener("click", () => {
+    $("modal-launch").hidden = true;
+  });
+  // Escape and backdrop click dismiss the dialog too (ANT-1177), matching
+  // the shared #modal-root modals and the session-share modal.
+  attachStaticModalDismissal($("modal-launch"), () => {
     $("modal-launch").hidden = true;
   });
   $("launch-open-on-launch").addEventListener("change", () => {
