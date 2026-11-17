@@ -496,9 +496,33 @@ async fn proxy_session_request(
     }
 
     let upstream_response = match req.send().await {
-        Ok(r) => r,
+        Ok(r) => {
+            // ANT-1214: a successful upstream connect after failures logs the
+            // recovery line and resets the rate-limiter state.
+            if let Some(line) = crate::proxy_failure_log::record_success(state, session_id).await {
+                info!("{line}");
+            }
+            r
+        }
         Err(e) => {
-            warn!("[{session_id}] Proxy connect to {upstream_host} failed: {e}");
+            // ANT-1214: the first failure of each error class logs at full
+            // detail (the original warn); repeats are suppressed and one
+            // cumulative line is emitted per ~30s — before this, a dead
+            // upstream logged one WARN per client reconnect (~1/sec,
+            // indefinitely). The client still gets the 502.
+            if let Some(line) = crate::proxy_failure_log::record_failure(
+                state,
+                session_id,
+                &upstream_host,
+                None,
+                &e.to_string(),
+                "Proxy connect",
+                std::time::Instant::now(),
+            )
+            .await
+            {
+                warn!("{line}");
+            }
             return (
                 StatusCode::BAD_GATEWAY,
                 axum::Json(serde_json::json!({ "detail": "Could not reach the application container." })),
@@ -1123,9 +1147,40 @@ async fn session_proxy_websocket(
     }
 
     let (upstream_ws, upstream_response) = match connect_async(request).await {
-        Ok(r) => r,
+        Ok(r) => {
+            // ANT-1214: the upstream leg came up — log the recovery line and
+            // reset the rate-limiter state.
+            if let Some(line) = crate::proxy_failure_log::record_success(state, &session_id).await {
+                info!("{line}");
+            }
+            r
+        }
         Err(e) => {
-            warn!("[{session_id}] WebSocket connect to {upstream_host} failed: {e}");
+            // A non-101 answer comes back boxed in tungstenite's
+            // `Error::Http` (mirroring how the client-side handshake result
+            // is shaped); anything else is a transport error.
+            let status = match &e {
+                tokio_tungstenite::tungstenite::Error::Http(resp) => Some(resp.status().as_u16()),
+                _ => None,
+            };
+            // ANT-1214: the first failure of each error class logs at full
+            // detail (the original warn); the upstream 404 is labeled as the
+            // missing-50x.html artifact. Repeats are suppressed and one
+            // cumulative line is emitted per ~30s. The client still gets the
+            // closed WS.
+            if let Some(line) = crate::proxy_failure_log::record_failure(
+                state,
+                &session_id,
+                &upstream_host,
+                status,
+                &e.to_string(),
+                "WebSocket connect",
+                std::time::Instant::now(),
+            )
+            .await
+            {
+                warn!("{line}");
+            }
             return upgrade.on_upgrade(|mut ws| async move {
                 let _ = ws.close().await;
             });

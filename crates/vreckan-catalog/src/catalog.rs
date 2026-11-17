@@ -2721,6 +2721,59 @@ pub async fn launch_common(
                         }
                     }
                     apply_selkies_probe(&state_bg, Some(&provider), &mut s, &session_id_bg, &app_bg, launch_in_room_mode).await;
+                    // ANT-1214: a freshly launched plain session whose probe
+                    // resolved Secure must prove its data plane is serving
+                    // before the session is ready — the 2026-11-17 incident
+                    // (ANT-1211) marked a crash-looping selkies ready,
+                    // because the probe's step 2 (`selkies --version`) only
+                    // proves the binary exists. Room launches already gate on
+                    // the collaboration health check and legacy sessions have
+                    // no token API, so neither goes through the WebSocket
+                    // liveness check.
+                    if !launch_in_room_mode
+                        && s.get("selkies_capability").and_then(Value::as_str) == Some("secure")
+                    {
+                        let auth_header = wait_env
+                            .get("CUSTOM_USER")
+                            .zip(wait_env.get("PASSWORD"))
+                            .map(|(u, p)| {
+                                format!(
+                                    "Basic {}",
+                                    base64::engine::general_purpose::STANDARD.encode(format!("{u}:{p}"))
+                                )
+                            });
+                        let up = crate::selkies_liveness::wait_for_data_plane(
+                            &state_bg,
+                            &ip,
+                            port,
+                            &session_id_bg,
+                            master_token.as_deref().unwrap_or(""),
+                            auth_header.as_deref(),
+                            std::time::Duration::from_secs(SELKIES_LIVENESS_BUDGET_SECS),
+                        )
+                        .await;
+                        if up.is_none() {
+                            // The container is still running (the nginx
+                            // health check passed); stop it, then run the
+                            // same ephemeral cleanup + failure record the
+                            // wait-timeout path uses, so the status endpoint
+                            // shows the reason instead of clients looping on
+                            // 404 indefinitely.
+                            provider.stop(&instance_id).await;
+                            mark_background_launch_failed(
+                                &state_bg,
+                                &session_id_bg,
+                                format!(
+                                    "the session's desktop service (selkies) is not serving: the WebSocket liveness check failed after {SELKIES_LIVENESS_BUDGET_SECS}s (upstream 404/502) — relaunch the session or check the container logs"
+                                ),
+                                &host_mount_path_bg,
+                                shared_files_path_bg.as_deref(),
+                                &ephemeral_base_bg,
+                            )
+                            .await;
+                            return;
+                        }
+                    }
                     s["ready"] = Value::Bool(true);
                     s["launch_failed"] = Value::Bool(false);
                     s["launch_error"] = Value::Null;
@@ -2740,30 +2793,18 @@ pub async fn launch_common(
                     );
                 }
                 Err(e) => {
-                    // The wait already stopped the container on timeout; run
-                    // the same ephemeral cleanup the inline failure path used
-                    // to and record the failure on the session, so polling
-                    // surfaces it instead of losing it (ANT-654).
-                    error!(
-                        "[{session_id_bg}] Background readiness wait failed: {}",
-                        e.detail
-                    );
-                    cleanup_ephemeral(&host_mount_path_bg, &ephemeral_base_bg);
-                    if let Some(sfp) = &shared_files_path_bg {
-                        if sfp.starts_with(&ephemeral_base_bg) && std::path::Path::new(sfp).exists() {
-                            let _ = std::fs::remove_dir_all(sfp);
-                        }
-                    }
-                    let mut sessions = state_bg.sessions.write().await;
-                    if let Some(s) = sessions.get_mut(&session_id_bg) {
-                        s["ready"] = Value::Bool(false);
-                        s["launch_failed"] = Value::Bool(true);
-                        s["launch_error"] = Value::String(e.detail);
-                    }
-                    drop(sessions);
-                    if let Err(e) = save_sessions(&state_bg).await {
-                        error!("[{session_id_bg}] Failed to persist session after failed readiness wait: {e}");
-                    }
+                    // The wait already stopped the container on timeout; the
+                    // cleanup + failure record are shared with the
+                    // liveness-gate failure path (ANT-1214).
+                    mark_background_launch_failed(
+                        &state_bg,
+                        &session_id_bg,
+                        e.detail,
+                        &host_mount_path_bg,
+                        shared_files_path_bg.as_deref(),
+                        &ephemeral_base_bg,
+                    )
+                    .await;
                 }
             }
         });
@@ -2781,6 +2822,47 @@ pub async fn launch_common(
     };
 
     Ok(LaunchResponse { session_url, session_id })
+}
+
+/// Total budget for the launch-time selkies data-plane liveness check
+/// (ANT-1214): selkies/nginx need a few seconds after container start, but a
+/// dead data plane must fail the launch instead of burning the client's
+/// patience — 20s sits in the plan's 10–30s window with ~11 backoff
+/// attempts.
+const SELKIES_LIVENESS_BUDGET_SECS: u64 = 20;
+
+/// Record a background readiness failure on the session and run the
+/// ephemeral cleanup the inline failure path used (ANT-654): `ready=false`,
+/// `launch_failed=true`, `launch_error={detail}`, persisted, so the status
+/// endpoint surfaces the reason instead of losing it. The container stop is
+/// the caller's business — the nginx wait-timeout path stops it inside
+/// `wait_for_container_ready`, and the liveness-gate failure path (ANT-1214)
+/// stops it before calling here.
+async fn mark_background_launch_failed(
+    state: &AppState,
+    session_id: &str,
+    detail: String,
+    host_mount_path: &Option<String>,
+    shared_files_path: Option<&str>,
+    ephemeral_base: &str,
+) {
+    error!("[{session_id}] Background readiness wait failed: {detail}");
+    cleanup_ephemeral(host_mount_path, ephemeral_base);
+    if let Some(sfp) = shared_files_path {
+        if sfp.starts_with(ephemeral_base) && std::path::Path::new(sfp).exists() {
+            let _ = std::fs::remove_dir_all(sfp);
+        }
+    }
+    let mut sessions = state.sessions.write().await;
+    if let Some(s) = sessions.get_mut(session_id) {
+        s["ready"] = Value::Bool(false);
+        s["launch_failed"] = Value::Bool(true);
+        s["launch_error"] = Value::String(detail);
+    }
+    drop(sessions);
+    if let Err(e) = save_sessions(state).await {
+        error!("[{session_id}] Failed to persist session after failed readiness wait: {e}");
+    }
 }
 
 /// Apply the launch-time capability probe (ANT-438) to a session: record the
@@ -3536,6 +3618,9 @@ pub async fn stop_session(state: &AppState, session_id: &str) -> Result<(), sea_
     // lifetime (ANT-470 F5). Done before the found-check so a double-stop or
     // a stale entry still gets cleaned up.
     state.selkies_client_conns.write().await.remove(session_id);
+    // The proxy's upstream-connect failure limiter is pruned the same way
+    // (ANT-1214): a killed session leaves no accumulators behind.
+    vreckan_sessions::proxy_failure_log::prune_session(state, session_id).await;
     state
         .last_pushed_token_tables
         .write()

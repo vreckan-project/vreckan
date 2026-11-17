@@ -170,6 +170,43 @@ impl SelkiesProbe {
         matches!(self, SelkiesProbe::Secure { .. })
     }
 }
+/// The recorded outcome of the launch-time selkies data-plane liveness check
+/// (ANT-1214). Tests set it through the `fake_selkies_liveness` hook on
+/// `AppState` so a recorded result stands in for the live WebSocket upgrade:
+/// `up_after: Some(n)` means the plane answered on the nth attempt, and
+/// `up_after: None` (with a `detail`) means the retry budget was exhausted.
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+pub struct SelkiesLivenessHook {
+    /// The attempt number at which the data plane came up (`None`: the budget
+    /// was exhausted without an answer).
+    pub up_after: Option<usize>,
+    /// The reason recorded when the budget was exhausted.
+    #[serde(default)]
+    pub detail: Option<String>,
+}
+/// One error-class accumulator of a session's proxy upstream-connect failure
+/// log rate limiter (ANT-1214). The first failure of a class is logged at
+/// full detail, repeats are suppressed, and one cumulative line is emitted
+/// per `cumulative_window` (see `ProxyFailureLogState`). Entries are removed
+/// on recovery (the next successful connect) and on session kill so the map
+/// cannot grow unbounded. In-memory only — never persisted.
+#[derive(Clone, Debug)]
+pub struct ProxyFailureLogEntry {
+    /// The error-class key ("transport", "upstream-404", "upstream-{status}").
+    pub class: String,
+    /// Total failures of this class since the first one.
+    pub count: u64,
+    /// When the first failure of this class was seen.
+    pub first_at: std::time::Instant,
+    /// When the last cumulative line was emitted (`first_at` until then).
+    pub last_logged_at: std::time::Instant,
+    /// The detail of the most recent failure of this class.
+    pub last_detail: String,
+}
+/// The proxy failure-log limiter state: session id -> error class ->
+/// accumulator (ANT-1214).
+pub type ProxyFailureLogState =
+    std::collections::HashMap<String, std::collections::HashMap<String, ProxyFailureLogEntry>>;
 // From `docker_provider` (vreckan_catalog::docker_provider)
 /// A GPU device detected on the host (mirrors an entry of `api.AVAILABLE_GPUS`).
 #[derive(Clone, Debug, Serialize, Deserialize)]
