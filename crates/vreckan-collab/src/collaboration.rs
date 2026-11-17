@@ -824,6 +824,75 @@ pub async fn derive_plain_session_token_table(
         })
         .map(|(tok, _)| tok.clone());
 
+    // (ANT-1217) The viewer-role token the pushed table presents as a
+    // controller while no owner/controller is on the data plane, so a share
+    // visitor left alone drives the controller path (display create/realize,
+    // reconfigure, backpressure, stream_resolution, and encoder negotiation
+    // from the client's own capabilities) instead of the shared-viewer path,
+    // which restarts the capture against the display entry the departed
+    // controller's teardown removed (backpressure and stream resolution then
+    // never initialize, the stream stays pinned to the server-default
+    // encoder, and non-HEVC clients render black).
+    //
+    // The grant is LATCHED on the session rather than derived per refresh
+    // from the connection list: a pure conns-derived flag flaps — the
+    // promotion's own 4002 role-change kick drops the viewer from the list,
+    // the next refresh demotes and re-kicks, and the pair cycles forever.
+    // The latch transfers to a connected viewer only while the latched one
+    // is absent, sticks while the latched one is away (its rejoin then finds
+    // the table unchanged and is not kicked again), and clears the moment
+    // any owner/controller reconnects. The static owner mk grant below keeps
+    // the promoted client at MK_ACCESS 0, so a view-only share stays
+    // input-less.
+    let promoted: Option<String> = {
+        let mut sessions = state.sessions.write().await;
+        let Some(session_live) = sessions.get_mut(session_id) else {
+            return None;
+        };
+        let is_viewer_entry = |s: &Value, tok: &str| {
+            s.get("viewers")
+                .and_then(|v| v.as_array())
+                .is_some_and(|viewers| {
+                    viewers.iter().any(|v| {
+                        v.get("token")
+                            .and_then(|t| t.as_str())
+                            .is_some_and(|t| tokens_equal(t, tok))
+                            && v.get("role")
+                                .and_then(|r| r.as_str())
+                                .unwrap_or("viewer")
+                                == "viewer"
+                    })
+                })
+        };
+        let connected_viewer = conns
+            .iter()
+            .rev()
+            .find(|(tok, _)| is_viewer_entry(&session, tok))
+            .map(|(tok, _)| tok.clone())
+            .filter(|tok| is_viewer_entry(session_live, tok));
+        let latched = session_live
+            .get("promoted_viewer_token")
+            .and_then(|v| v.as_str())
+            .map(|s| s.to_string())
+            .filter(|tok| is_viewer_entry(session_live, tok));
+        let next = if newest.is_some() {
+            None
+        } else {
+            match (&latched, &connected_viewer) {
+                (Some(l), Some(c)) if l != c => Some(c.clone()),
+                (Some(l), _) => Some(l.clone()),
+                (None, c) => c.clone(),
+            }
+        };
+        if next.as_deref() != latched.as_deref() {
+            session_live["promoted_viewer_token"] = next
+                .clone()
+                .map(Value::String)
+                .unwrap_or(Value::Null);
+        }
+        next
+    };
+
     let owner_mk: bool;
     let viewer_mk: Box<dyn Fn(&str) -> bool + Send>;
     match newest {
@@ -832,8 +901,9 @@ pub async fn derive_plain_session_token_table(
             viewer_mk = Box::new(move |t: &str| tokens_equal(&holder, t));
         }
         None => {
-            // No data-plane client connected: keep the static default (the
-            // owner holds mk; an explicit mk owner, if any, wins).
+            // No owner or controller connected: keep the static default for
+            // the mk grant (the owner holds mk; an explicit mk owner, if any,
+            // wins), so a promoted viewer never gains input.
             let mk_owner = session
                 .get("mk_owner_token")
                 .and_then(|v| v.as_str())
@@ -847,7 +917,12 @@ pub async fn derive_plain_session_token_table(
         }
     }
 
-    let table = build_token_table(&session, owner_mk, &viewer_mk);
+    let mut table = build_token_table(&session, owner_mk, &viewer_mk);
+    if let Some(tok) = &promoted {
+        if let Some(entry) = table.get_mut(tok) {
+            entry["role"] = Value::String("controller".to_string());
+        }
+    }
     Some(PlainTokenTableDerivation { generation, table })
 }
 
@@ -2701,5 +2776,299 @@ mod tests {
         // The guard skipped the out-of-dir read: the logo is the raw
         // reference, not the inlined bytes of the secret file.
         assert_eq!(legacy_row["logo"], "/api/app_icon/../escape");
+    }
+
+    // --- ANT-1217: viewer-only display recovery --------------------------
+
+    /// A plain (non-room) secure session: the owner is addressed by the
+    /// access token; one view-only share visitor (no explicit role, so a
+    /// table entry defaults to "viewer") and one full share visitor
+    /// (explicit "controller" role).
+    fn plain_share_session() -> Value {
+        serde_json::json!({
+            "instance_id": "ctr-ant1217",
+            "ip": "127.0.0.1",
+            "port": 8083,
+            "created_at": 1.0,
+            "access_token": "owner-tok-ant1217",
+            "is_collaboration": false,
+            "username": "admin",
+            "master_token": "master-ant1217",
+            "controller_slot": Value::Null,
+            "mk_owner_token": Value::Null,
+            "viewers": [
+                { "token": "viewer-ro-ant1217", "slot": Value::Null, "mk_control": false,
+                  "username": Value::Null, "permission": "readonly", "share_id": "share-ro" },
+                { "token": "viewer-full-ant1217", "slot": Value::Null, "mk_control": false,
+                  "username": Value::Null, "permission": "full", "share_id": "share-full",
+                  "role": "controller" },
+            ],
+            "container_registry": {},
+        })
+    }
+
+    /// Record data-plane connects in the given order (the same shape the
+    /// session proxy writes as bridges come up).
+    async fn connect_tokens(state: &AppState, session_id: &str, tokens: &[&str]) {
+        let mut conns = state.selkies_client_conns.write().await;
+        for t in tokens {
+            let seq = state
+                .selkies_conn_seq
+                .fetch_add(1, std::sync::atomic::Ordering::SeqCst);
+            let list = conns.entry(session_id.to_string()).or_default();
+            list.retain(|(tok, _)| tok != t);
+            list.push((t.to_string(), seq));
+        }
+    }
+
+    /// Drop one token from the recorded data-plane connections (the shape
+    /// the proxy cleanup writes when its bridge tears down).
+    async fn disconnect_token(state: &AppState, session_id: &str, token: &str) {
+        let mut conns = state.selkies_client_conns.write().await;
+        if let Some(list) = conns.get_mut(session_id) {
+            list.retain(|(t, _)| t != token);
+            if list.is_empty() {
+                conns.remove(session_id);
+            }
+        }
+    }
+
+    #[tokio::test]
+    async fn ant1217_lone_view_only_visitor_is_promoted_to_controller() {
+        let ts = TestState::new().await;
+        let state = ts.state.clone();
+        let sid = "ant1217-lone-viewer";
+        state
+            .sessions
+            .write()
+            .await
+            .insert(sid.to_string(), plain_share_session());
+        // The owner's tab is closed; only the read-only visitor is on the
+        // data plane.
+        connect_tokens(&state, sid, &["viewer-ro-ant1217"]).await;
+
+        let table = derive_plain_session_token_table(&state, sid)
+            .await
+            .unwrap()
+            .table;
+        assert_eq!(table["owner-tok-ant1217"]["role"], "controller");
+        assert_eq!(
+            table["owner-tok-ant1217"]["mk_control"], true,
+            "the static owner mk grant must survive: it is what keeps the promoted visitor at MK_ACCESS 0"
+        );
+        assert_eq!(
+            table["viewer-ro-ant1217"]["role"], "controller",
+            "a viewer left alone on the data plane must drive the controller path (ANT-1217)"
+        );
+        assert_eq!(
+            table["viewer-ro-ant1217"]["mk_control"], false,
+            "the promoted visitor stays input-less"
+        );
+        assert_eq!(
+            table["viewer-full-ant1217"]["role"], "controller",
+            "an already-controller full-share entry is untouched"
+        );
+        assert_eq!(table["viewer-full-ant1217"]["mk_control"], false);
+        let session = state.sessions.read().await.get(sid).cloned().unwrap();
+        assert_eq!(
+            session["promoted_viewer_token"],
+            "viewer-ro-ant1217",
+            "the promotion must be latched on the session"
+        );
+    }
+
+    /// The flap regression: the promotion's own 4002 kick drops the viewer
+    /// from the connection list; a conns-derived derivation would demote on
+    /// the very next refresh, re-kick, and cycle forever. The latch must
+    /// keep the table stable across the kick/rejoin cycle.
+    #[tokio::test]
+    async fn ant1217_promotion_latch_survives_the_kick_rejoin_cycle() {
+        let ts = TestState::new().await;
+        let state = ts.state.clone();
+        let sid = "ant1217-flap";
+        state
+            .sessions
+            .write()
+            .await
+            .insert(sid.to_string(), plain_share_session());
+
+        // 1. Owner gone, visitor connected -> promote + latch.
+        connect_tokens(&state, sid, &["viewer-ro-ant1217"]).await;
+        let t1 = derive_plain_session_token_table(&state, sid).await.unwrap().table;
+        assert_eq!(t1["viewer-ro-ant1217"]["role"], "controller");
+
+        // 2. The container's role-change kick tears the visitor's bridge
+        //    down; the proxy removes the token from the connections.
+        disconnect_token(&state, sid, "viewer-ro-ant1217").await;
+        let t2 = derive_plain_session_token_table(&state, sid).await.unwrap().table;
+        assert_eq!(
+            t2, t1,
+            "a kick with no one left connected must not demote the latched viewer (flap)"
+        );
+        assert_eq!(t2["viewer-ro-ant1217"]["role"], "controller");
+
+        // 3. The visitor rejoins; the table is already its promoted form,
+        //    so no new kick follows.
+        connect_tokens(&state, sid, &["viewer-ro-ant1217"]).await;
+        let t3 = derive_plain_session_token_table(&state, sid).await.unwrap().table;
+        assert_eq!(t3, t1, "the rejoin must find the table unchanged (no re-kick)");
+
+        // 4. The owner returns: the latch clears and the visitor demotes
+        //    exactly once.
+        connect_tokens(&state, sid, &["viewer-ro-ant1217", "owner-tok-ant1217"]).await;
+        let t4 = derive_plain_session_token_table(&state, sid).await.unwrap().table;
+        assert_eq!(t4["viewer-ro-ant1217"]["role"], "viewer");
+        assert_eq!(t4["owner-tok-ant1217"]["mk_control"], true);
+        let session = state.sessions.read().await.get(sid).cloned().unwrap();
+        assert_eq!(
+            session["promoted_viewer_token"],
+            Value::Null,
+            "the latch must clear when the owner returns"
+        );
+    }
+
+    #[tokio::test]
+    async fn ant1217_latch_transfers_to_a_connected_viewer_when_the_latched_one_is_gone() {
+        let ts = TestState::new().await;
+        let state = ts.state.clone();
+        let sid = "ant1217-transfer";
+        let mut session = plain_share_session();
+        session["viewers"].as_array_mut().unwrap().push(serde_json::json!({
+            "token": "viewer-ro2-ant1217", "slot": Value::Null, "mk_control": false,
+            "username": Value::Null, "permission": "readonly", "share_id": "share-ro2",
+        }));
+        state.sessions.write().await.insert(sid.to_string(), session);
+
+        // V1 promotes first...
+        connect_tokens(&state, sid, &["viewer-ro-ant1217"]).await;
+        let t1 = derive_plain_session_token_table(&state, sid).await.unwrap().table;
+        assert_eq!(t1["viewer-ro-ant1217"]["role"], "controller");
+
+        // ...V2 joins while the owner is still away: the latch transfers to
+        // the connected newcomer rather than sticking to an absent V1.
+        connect_tokens(&state, sid, &["viewer-ro-ant1217", "viewer-ro2-ant1217"]).await;
+        let t2 = derive_plain_session_token_table(&state, sid).await.unwrap().table;
+        assert_eq!(t2["viewer-ro2-ant1217"]["role"], "controller");
+        assert_eq!(t2["viewer-ro-ant1217"]["role"], "viewer");
+
+        // V1 leaves for good; V2 stays latched (and still connected).
+        disconnect_token(&state, sid, "viewer-ro-ant1217").await;
+        let t3 = derive_plain_session_token_table(&state, sid).await.unwrap().table;
+        assert_eq!(t3["viewer-ro2-ant1217"]["role"], "controller");
+        assert_eq!(t3, t2, "no extra churn once V2 owns the latch");
+    }
+
+    #[tokio::test]
+    async fn ant1217_no_client_connected_keeps_the_static_table() {
+        let ts = TestState::new().await;
+        let state = ts.state.clone();
+        let sid = "ant1217-idle";
+        state
+            .sessions
+            .write()
+            .await
+            .insert(sid.to_string(), plain_share_session());
+
+        let table = derive_plain_session_token_table(&state, sid)
+            .await
+            .unwrap()
+            .table;
+        assert_eq!(table["owner-tok-ant1217"]["mk_control"], true);
+        assert_eq!(
+            table["viewer-ro-ant1217"]["role"], "viewer",
+            "with nobody on the data plane there is no driver to promote"
+        );
+    }
+
+    #[tokio::test]
+    async fn ant1217_owner_connected_keeps_the_visitor_a_viewer() {
+        let ts = TestState::new().await;
+        let state = ts.state.clone();
+        let sid = "ant1217-owner-back";
+        state
+            .sessions
+            .write()
+            .await
+            .insert(sid.to_string(), plain_share_session());
+        // The owner rejoined while the visitor was still connected.
+        connect_tokens(&state, sid, &["viewer-ro-ant1217", "owner-tok-ant1217"]).await;
+
+        let table = derive_plain_session_token_table(&state, sid)
+            .await
+            .unwrap()
+            .table;
+        assert_eq!(
+            table["viewer-ro-ant1217"]["role"], "viewer",
+            "the promotion must revert when the owner returns so his SETTINGS drive the stream"
+        );
+        assert_eq!(table["owner-tok-ant1217"]["mk_control"], true);
+        assert_eq!(table["viewer-ro-ant1217"]["mk_control"], false);
+    }
+
+    #[tokio::test]
+    async fn ant1217_newest_viewer_wins_when_no_controller_is_present() {
+        let ts = TestState::new().await;
+        let state = ts.state.clone();
+        let sid = "ant1217-two-viewers";
+        let mut session = plain_share_session();
+        session["viewers"].as_array_mut().unwrap().push(serde_json::json!({
+            "token": "viewer-ro2-ant1217", "slot": Value::Null, "mk_control": false,
+            "username": Value::Null, "permission": "readonly", "share_id": "share-ro2",
+        }));
+        state.sessions.write().await.insert(sid.to_string(), session);
+        connect_tokens(&state, sid, &["viewer-ro-ant1217", "viewer-ro2-ant1217"]).await;
+
+        let table = derive_plain_session_token_table(&state, sid)
+            .await
+            .unwrap()
+            .table;
+        assert_eq!(
+            table["viewer-ro2-ant1217"]["role"], "controller",
+            "the newest connected viewer drives the stream, mirroring newest-controller-wins"
+        );
+        assert_eq!(table["viewer-ro-ant1217"]["role"], "viewer");
+        assert_eq!(table["owner-tok-ant1217"]["mk_control"], true);
+    }
+
+    #[tokio::test]
+    async fn ant1217_full_share_controller_present_prevents_viewer_promotion() {
+        let ts = TestState::new().await;
+        let state = ts.state.clone();
+        let sid = "ant1217-full-share-present";
+        state
+            .sessions
+            .write()
+            .await
+            .insert(sid.to_string(), plain_share_session());
+        // A full share (controller) plus a view-only visitor, owner away:
+        // the full share already drives the display, so the viewer stays a
+        // plain viewer on the shared stream.
+        connect_tokens(&state, sid, &["viewer-full-ant1217", "viewer-ro-ant1217"]).await;
+
+        let table = derive_plain_session_token_table(&state, sid)
+            .await
+            .unwrap()
+            .table;
+        assert_eq!(table["viewer-full-ant1217"]["mk_control"], true);
+        assert_eq!(
+            table["viewer-ro-ant1217"]["role"], "viewer",
+            "no promotion while a controller drives the display"
+        );
+    }
+
+    #[tokio::test]
+    async fn ant1217_legacy_session_derives_no_table() {
+        let ts = TestState::new().await;
+        let state = ts.state.clone();
+        let sid = "ant1217-legacy";
+        let mut session = plain_share_session();
+        session["master_token"] = Value::String(String::new());
+        state.sessions.write().await.insert(sid.to_string(), session);
+        connect_tokens(&state, sid, &["viewer-ro-ant1217"]).await;
+
+        assert!(
+            derive_plain_session_token_table(&state, sid).await.is_none(),
+            "a legacy (non-secure) session has no token table to derive"
+        );
     }
 }
