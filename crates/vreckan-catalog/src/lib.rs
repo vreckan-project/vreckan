@@ -11,3 +11,4 @@
 
 pub mod catalog;
 pub mod docker_provider;
+pub mod selkies_liveness;

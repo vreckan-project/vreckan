@@ -9,5 +9,6 @@
 //! once pulled from `catalog` now live in `vreckan-core`, and the password
 //! page it rendered from `files` now lives in `core::static_files`.
 
+pub mod proxy_failure_log;
 pub mod session_proxy;
 pub mod session_shares;

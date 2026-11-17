@@ -225,6 +225,20 @@ pub struct AppState {
     /// provider launches (ANT-438). `None` (the default) means the probe
     /// reports the 2.0.0-class happy path (secure).
     pub fake_selkies_probe: Arc<RwLock<Option<crate::shared::SelkiesProbe>>>,
+    /// Test hook: the recorded outcome of the launch-time selkies data-plane
+    /// liveness check (ANT-1214). `None` (the default) means the check dials
+    /// the live WebSocket upgrade; a recorded result stands in for it so
+    /// launch tests don't need a live WebSocket.
+    pub fake_selkies_liveness: Arc<RwLock<Option<crate::shared::SelkiesLivenessHook>>>,
+    /// Per-session, per-error-class accumulators for the session proxy's
+    /// upstream-connect failure logs (ANT-1214): the 2026-11-17 incident
+    /// showed a client held against a dead upstream logging one WARN per
+    /// reconnect (~1/sec, indefinitely). The limiter logs the first failure
+    /// of each class at full detail, suppresses repeats, emits one
+    /// cumulative line per ~30s, and a recovery line on the next success.
+    /// The proxy prunes an entry on success and on session kill.
+    pub proxy_upstream_failure_logs:
+        Arc<RwLock<crate::shared::ProxyFailureLogState>>,
     /// The TLS listener's `RustlsConfig` (an `Arc<ArcSwap<ServerConfig>>`). The
     /// ACME issuance/renewal paths reload this in place so a renewed certificate
     /// is served by the running process without a restart or a port rebind.
@@ -274,6 +288,8 @@ impl AppState {
             fake_provider: Arc::new(std::sync::atomic::AtomicBool::new(false)),
             fake_provider_record: Arc::new(std::sync::Mutex::new(None)),
             fake_selkies_probe: Arc::new(RwLock::new(None)),
+            fake_selkies_liveness: Arc::new(RwLock::new(None)),
+            proxy_upstream_failure_logs: Arc::new(RwLock::new(std::collections::HashMap::new())),
             tls_config: None,
         }
     }
