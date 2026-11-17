@@ -13,6 +13,13 @@
 #      (running or exited) mounting them, whose owning Paperclip issue
 #      (ant-945-sccache -> ANT-945) has been terminal (done/cancelled) for
 #      --volume-terminal-hours (default 24).
+#   4. Regenerable build dirs in terminal worktrees (ANT-1199): `target/` and
+#      `node_modules/` inside worktrees whose owning issue
+#      (worktree name <agent-ws>/<TASK-ID> -> TASK-ID) is terminal
+#      (done/cancelled) per the Paperclip API — pruned even when the
+#      worktree itself is kept (uncommitted tracked changes, unmerged
+#      branch, ...). Build output only: git-tracked entries are never
+#      touched, and the worktree's tracked changes stay intact.
 #
 # Safety model (hard constraints from ANT-716):
 #   - The current run's own workspace (--cwd) is never reclaimed.
@@ -24,6 +31,11 @@
 #     manifest.
 #   - Volumes keep-and-record on any doubt: referenced by a container, owning
 #     issue not terminal or not queryable, API/docker unreachable.
+#   - Build-dir pruning keep-and-records on any doubt: issue not terminal or
+#     not queryable, API/docker unreachable, tracked entries under the build
+#     dir, a running container with a workspace-scoped bind mount over the
+#     worktree (a live dev session), unreadable git metadata, or the current
+#     run's own workspace.
 #
 # Output: a markdown manifest under --manifest-dir (durable) plus a short
 # machine-readable summary on stdout. Exit 0 on a completed sweep (even a
@@ -50,6 +62,13 @@ SCAN_MAXDEPTH=4                          # how deep to scan for .git pointer fil
 DOCKER_BIN="docker"                      # docker CLI used by the volume sweep
 VOLUME_PREFIX="ant-"                     # volume name prefix swept (ANT-1002)
 VOLUME_TERMINAL_HOURS=24                 # owning issue must be terminal this long
+BUILD_PRUNE=1                            # 4th sweep: prune build dirs in terminal worktrees (ANT-1199)
+# Host-side root of the data tree the docker daemon bind-mounts: on
+# paperclip01 the daemon sees /srv/paperclip/data where the sandbox sees
+# /paperclip (ANT-343). Mount sources from `docker inspect` live in the
+# host's path space and are translated with this before they are compared
+# against sandbox-space worktree paths.
+HOST_DATA_ROOT="/srv/paperclip/data"
 # Host-sudo fallback for rm failures on foreign-owned (root-owned) trees
 # (ANT-1111): a container build that ran as root against a mounted worktree
 # leaves root-owned entries the sandbox user cannot unlink. The paperclip01
@@ -79,6 +98,12 @@ Options:
   --volume-terminal-hours N
                         owning issue must be terminal this long to reclaim
                         (default 24)
+  --no-build-prune      skip the build-dir sweep (ANT-1199): target/ +
+                        node_modules/ in done/cancelled-issue worktrees are
+                        left alone
+  --host-data-root DIR  host-side root of the bind-mounted data tree used to
+                        translate docker mount sources into the sandbox path
+                        space (default /srv/paperclip/data)
   --host-sudo-ssh-target USER@HOST
                         host used to reclaim foreign-owned trees after a
                         local rm failure (default jdee@172.18.0.1, paperclip01)
@@ -107,6 +132,8 @@ while [[ $# -gt 0 ]]; do
      --docker-bin)     DOCKER_BIN="$2"; shift 2 ;;
      --volume-prefix)  VOLUME_PREFIX="$2"; shift 2 ;;
      --volume-terminal-hours) VOLUME_TERMINAL_HOURS="$2"; shift 2 ;;
+     --no-build-prune) BUILD_PRUNE=0; shift ;;
+     --host-data-root) HOST_DATA_ROOT="$2"; shift 2 ;;
      --host-sudo-ssh-target) HOST_SUDO_SSH_TARGET="$2"; shift 2 ;;
      --host-sudo-ssh-key-env) HOST_SUDO_SSH_KEY_ENV="$2"; shift 2 ;;
      --no-host-sudo)   HOST_SUDO_ENABLED=0; shift ;;
@@ -122,6 +149,8 @@ SCRATCH_ROOT="$(realpath -m "$SCRATCH_ROOT")"
 SALVAGE_DIR="$(realpath -m "$SALVAGE_DIR")"
 MANIFEST_DIR="$(realpath -m "$MANIFEST_DIR")"
 WORKSPACE_ROOT="$(realpath -m "$WORKSPACE_ROOT")"
+HOST_DATA_ROOT="$(realpath -m "$HOST_DATA_ROOT")"
+SANDBOX_ROOT="${WORKSPACE_ROOT%/*}"       # /paperclip: sandbox side of HOST_DATA_ROOT
 CURRENT_CWD="$(realpath -m "$CURRENT_CWD")"
 MANIFEST="$MANIFEST_DIR/${MANIFEST_NAME}.md"
 TMP="$(mktemp -d)"
@@ -135,6 +164,8 @@ touch "$SALVAGE_FILE"
 API_OK=0
 API_NOTE="not attempted"
 VOLUME_NOTE="not attempted"
+BUILD_PRUNE_NOTE="not attempted"
+MOUNTS_OK=0                     # set 1 when docker mount sources were collected
 RECLAIM_COUNT=0
 KEEP_COUNT=0
 RECLAIM_HOST_SUDO_NOTE="rm failed; kept"   # last host-sudo attempt's keep reason
@@ -776,7 +807,7 @@ sweep_worktrees() {
   scan_worktree_pointers "$SCRATCH_ROOT" "scratch"
 }
 
-# --------------------------------------- orphaned ant-* volume sweep (3/3) --
+# --------------------------------------- orphaned ant-* volume sweep (3/4) --
 # Query the owning issue for a volume name. Echoes "<verdict>|<detail>" where
 # verdict is one of: terminal|<ISO timestamp>, not-terminal|<status>,
 # no-timestamp, unknown (API unreachable or no issue with that identifier).
@@ -939,6 +970,235 @@ sweep_volumes() {
   return 0
 }
 
+# --------------------------- build-dir prune for terminal worktrees (ANT-1199) --
+# Worktrees whose owning issue is terminal (done/cancelled) are often kept
+# for other reasons — uncommitted tracked changes, an unmerged branch — and
+# the regenerable build output inside them keeps living on: rob's ANT-1067
+# worktree held 36 GB of target/, bobby's kept ANT-808 worktree 5.8 GB. This
+# sweep prunes only the build dirs (target/, node_modules/); the worktree
+# itself — and its tracked changes, which the prune never touches because
+# anything git-tracked under a build dir is kept — stays intact. sccache
+# makes the rebuild cheap: this is build cache, never source.
+#
+# The owning issue is derived from the worktree name
+# (<agent-workspace>/<TASK-ID> -> TASK-ID) and confirmed terminal via the
+# Paperclip API (query_issue_verdict, shared with the volume sweep).
+# Keep-and-record on any doubt: issue not terminal or unresolvable, API or
+# docker unreachable, unreadable git metadata, tracked entries under the
+# build dir, a running container with a workspace-scoped bind mount over
+# the worktree (a live dev session), or the current run's own workspace.
+# Foreign-owned (root-owned) build trees reuse the host-sudo fallback
+# (ANT-1111).
+
+# Issue key from a worktree basename: echoes "ANT-<n>"; nothing when the
+# name carries no issue id.
+issue_key_from_name() {
+  local b="$1"
+  if [[ "$b" =~ ^[Aa][Nn][Tt]-([0-9]+)$ ]]; then
+    printf 'ANT-%s' "${BASH_REMATCH[1]}"
+  fi
+}
+
+# Collect the mount source paths of every RUNNING container on the docker
+# daemon and translate them from the host's path space into the sandbox
+# path space (HOST_DATA_ROOT -> SANDBOX_ROOT; sources outside that prefix
+# are kept as-is, so a daemon that already sees the sandbox's paths works
+# unchanged). One unique source per line in $1. Sets MOUNTS_OK=0 when the
+# daemon cannot be queried (the sweep then keeps "in doubt"). Only running
+# containers matter: an exited container holds no live writer, so build
+# output under its mount is safe to prune.
+collect_mount_sources() {
+  local out="$1" ids s mapped rc
+  MOUNTS_OK=0
+  if ! command -v "$DOCKER_BIN" >/dev/null 2>&1; then
+    return 0
+  fi
+  rc=0
+  ids="$("$DOCKER_BIN" ps -q 2>/dev/null)" || rc=$?
+  if (( rc != 0 )); then
+    # `ps` failed (daemon down): a failed query is not "no running
+    # containers", so MOUNTS_OK stays 0 and the sweep keeps "in doubt".
+    return 0
+  fi
+  if [[ -z "$ids" ]]; then
+    : > "$out"
+    MOUNTS_OK=1
+    return 0
+  fi
+  # A vanished container makes inspect exit non-zero overall; the sources of
+  # the surviving ones are still printed.
+  # shellcheck disable=SC2086  # word-split on purpose: one container id per word
+  "$DOCKER_BIN" inspect -f '{{range .Mounts}}{{.Source}}{{"\n"}}{{end}}' $ids 2>/dev/null |
+    while IFS= read -r s; do
+      mapped="$s"
+      if [[ "$s" == "$HOST_DATA_ROOT" ]]; then
+        mapped="$SANDBOX_ROOT"
+      elif [[ "$s" == "$HOST_DATA_ROOT"/* ]]; then
+        mapped="$SANDBOX_ROOT/${s#"$HOST_DATA_ROOT"/}"
+      fi
+      printf '%s\n' "$mapped"
+    done | sort -u > "$out"
+  MOUNTS_OK=1
+  return 0
+}
+
+# 0 when a running container carries a bind mount that covers worktree $1:
+# source == the worktree, a source inside the worktree (a container mounted
+# INTO it — the vreckan dev-container shape), or a workspace-scoped
+# ancestor source (a container mounted on the repo/base tree the worktree
+# lives under). Ancestor sources OUTSIDE the agent-workspace root are the
+# runtime's housing mounts (e.g. the paperclip container's data-root mount,
+# which covers every worktree without making any of them "in use") and do
+# not count.
+worktree_mounted_live() {
+  local wt="$1" s
+  [[ -s "$TMP/mount-sources" ]] || return 1
+  while IFS= read -r s; do
+    [[ -n "$s" ]] || continue
+    if [[ "$s" == "$wt" || "$s" == "$wt"/* ]]; then
+      return 0
+    fi
+    if [[ "$wt" == "$s"/* ]] && [[ "$s" == "$WORKSPACE_ROOT"/* ]]; then
+      return 0
+    fi
+  done < "$TMP/mount-sources"
+  return 1
+}
+
+# Judge the build dirs of one worktree ($1). Emits per-dir kept/reclaimed
+# rows; pruned bytes count toward the totals.
+consider_build_dirs() {
+  local wt="$1"
+  local name key
+  name="$(basename "$wt")"
+  key="$(issue_key_from_name "$name")"
+  [[ -n "$key" ]] || return 0
+  local mt age
+  mt="$(stat -c %Y "$wt" 2>/dev/null)" || return 0
+  age=$(( (NOW - mt) / 86400 ))
+
+  if is_active_path "$(realpath -m "$wt")"; then
+    local d
+    for d in target node_modules; do
+      [[ -d "$wt/$d" ]] && \
+        add_kept "$wt/$d" "?" "${age}d" "current run's workspace (cwd/API active match); kept"
+    done
+    return 0
+  fi
+  if [[ ! -e "$wt/.git" ]] ||
+     ! git -C "$wt" rev-parse --git-dir >/dev/null 2>&1; then
+    return 0
+  fi
+
+  local verdict_file="$TMP/wt-issue-$key"
+  if [[ ! -f "$verdict_file" ]]; then
+    query_issue_verdict "$key" > "$verdict_file"
+  fi
+  local verdict term_ts
+  IFS='|' read -r verdict term_ts < "$verdict_file"
+
+  local d b size tracked
+  for d in target node_modules; do
+    b="$wt/$d"
+    [[ -d "$b" ]] || continue
+    size="$(du -sb "$b" 2>/dev/null | awk '{print $1}')"
+    size="${size:-?}"
+    if [[ -z "$verdict" || "$verdict" == "unknown" ]]; then
+      add_kept "$b" "$size" "${age}d" \
+        "owning issue ${key} unresolvable (${term_ts:-API unreachable}); kept when in doubt"
+    elif [[ "$verdict" == "not-terminal" ]]; then
+      add_kept "$b" "$size" "${age}d" \
+        "owning issue ${key} not terminal (status: ${term_ts}); kept"
+    elif [[ "$verdict" == "no-timestamp" ]]; then
+      add_kept "$b" "$size" "${age}d" \
+        "owning issue ${key} terminal but no terminal timestamp; kept when in doubt"
+    else
+      local tracked rc=0
+      tracked="$(git -C "$wt" ls-files -z -- "$d" 2>/dev/null)" || rc=$?
+      if (( rc != 0 )); then
+        add_kept "$b" "$size" "${age}d" \
+          "git ls-files failed for ${d}/; kept when in doubt"
+        continue
+      fi
+      if [[ -n "$tracked" ]]; then
+        add_kept "$b" "$size" "${age}d" \
+          "git-tracked entries under ${d}/; kept"
+        continue
+      fi
+      if [[ "$MOUNTS_OK" -ne 1 ]]; then
+        add_kept "$b" "$size" "${age}d" \
+          "in-use check skipped (docker unreachable); kept when in doubt"
+      elif worktree_mounted_live "$wt"; then
+        add_kept "$b" "$size" "${age}d" \
+          "bind-mounted by a running container (live dev session); kept"
+      elif (( DRY_RUN == 0 )); then
+        if rm -rf "$b" 2>/dev/null; then
+          add_reclaimed "$b" "$size" "${age}d" \
+            "regenerable build dir (owning issue ${key} terminal)" ""
+          [[ "$size" =~ ^[0-9]+$ ]] && BYTES_FREED=$((BYTES_FREED + size))
+          log "pruned ${b} (${size} bytes, ${key} terminal)"
+        elif reclaim_foreign_owned "$b" ""; then
+          add_reclaimed "$b" "$size" "${age}d" \
+            "regenerable build dir (owning issue ${key} terminal), foreign-owned entries reclaimed via host sudo" ""
+          [[ "$size" =~ ^[0-9]+$ ]] && BYTES_FREED=$((BYTES_FREED + size))
+          log "pruned ${b} via host sudo (${size} bytes, ${key} terminal)"
+        else
+          add_kept "$b" "$size" "${age}d" "$RECLAIM_HOST_SUDO_NOTE"
+        fi
+      else
+        add_reclaimed "$b" "$size" "${age}d" \
+          "DRY-RUN: regenerable build dir (owning issue ${key} terminal)" ""
+      fi
+    fi
+  done
+  return 0
+}
+
+# Walk the agent workspaces (depths 1-3: <agent>/<repo>/<task>, plus any
+# layout one level shallower) and the scratch root for dirs whose basename
+# carries an issue id, and judge their build dirs. Dirs without an issue
+# id in the name (base repos, session clones, scratch tools) are skipped
+# silently — they are not attributable to an issue. Worktrees the
+# orphaned-worktree sweep already reclaimed are gone by now and are
+# skipped naturally.
+sweep_build_dirs() {
+  if (( BUILD_PRUNE == 0 )); then
+    BUILD_PRUNE_NOTE="skipped (--no-build-prune)"
+    return 0
+  fi
+  collect_mount_sources "$TMP/mount-sources"
+  local agent_dir repo d scanned=0
+  for agent_dir in "$WORKSPACE_ROOT"/*/; do
+    [[ -d "$agent_dir" ]] || continue
+    for repo in "$agent_dir"*/; do
+      [[ -d "$repo" ]] || continue
+      repo="${repo%/}"
+      scanned=$((scanned + 1))
+      consider_build_dirs "$repo"
+      for d in "$repo"/*/; do
+        [[ -d "$d" ]] || continue
+        d="${d%/}"
+        scanned=$((scanned + 1))
+        consider_build_dirs "$d"
+      done
+    done
+  done
+  for d in "$SCRATCH_ROOT"/*/; do
+    [[ -d "$d" ]] || continue
+    d="${d%/}"
+    scanned=$((scanned + 1))
+    consider_build_dirs "$d"
+  done
+  local mounts_note
+  if [[ "$MOUNTS_OK" -eq 1 ]]; then
+    mounts_note=", $(wc -l < "$TMP/mount-sources" 2>/dev/null || echo 0) live mount sources"
+  else
+    mounts_note=", docker unreachable"
+  fi
+  BUILD_PRUNE_NOTE="ok (${scanned} dirs scanned${mounts_note})"
+  return 0
+}
+
 # ---------------------------------------------------------------- manifest --
 write_manifest() {
   mkdir -p "$MANIFEST_DIR"
@@ -956,6 +1216,7 @@ write_manifest() {
     echo "- TTL: ${TTL_DAYS} days; worktree grace: ${GRACE_HOURS}h"
     echo "- API signals: ${API_NOTE}"
     echo "- Volumes (${DOCKER_BIN}, prefix ${VOLUME_PREFIX}, terminal ${VOLUME_TERMINAL_HOURS}h): ${VOLUME_NOTE}"
+    echo "- Build-dir prune (target/, node_modules/ in terminal-issue worktrees): ${BUILD_PRUNE_NOTE}"
     echo
     echo "## Reclaimed (${RECLAIM_COUNT})"
     echo
@@ -996,6 +1257,7 @@ write_manifest() {
 collect_api_signals
 sweep_sessions
 sweep_worktrees
+sweep_build_dirs
 sweep_volumes
 write_manifest
 

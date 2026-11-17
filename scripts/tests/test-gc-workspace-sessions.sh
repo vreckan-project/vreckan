@@ -45,7 +45,28 @@
 #               -> KEPT, "owning issue not derivable from name"
 #   other-vol   : does not match the ant- prefix
 #               -> absent from the manifest entirely
-
+#
+# Build-dir prune scenarios (ANT-1199; the worktree is KEPT by the
+# worktree sweep — branch still on origin — while its target/ and
+# node_modules/ are judged against the owning issue's terminal state):
+#   build-done  : worktree with uncommitted tracked work + target/ +
+#                 node_modules/, ANT-910 done 2 days ago
+#               -> worktree kept, both build dirs PRUNED, tracked work intact
+#   build-open  : same shape, ANT-911 in_progress
+#               -> build dirs KEPT, "not terminal"
+#   build-tracked: target/ contains a git-TRACKED file, ANT-912 done
+#               -> target/ KEPT, "git-tracked entries"
+#   build-root  : target/ carries a foreign-owned (root-owned) entry,
+#                 ANT-913 done; the local rm fails
+#               -> target/ PRUNED via the host-sudo fallback
+#   build-active: ANT-914 done, but the API reports an active execution
+#                 workspace whose cwd is inside the worktree
+#               -> build dirs KEPT, "active match"
+#   build-mounted: ANT-915 done, but a RUNNING container carries a
+#                 workspace-scoped bind mount on the base repo (the
+#                 vreckan dev-container shape)
+#               -> target/ KEPT, "bind-mounted by a running container"
+ 
 set -u -o pipefail
 
 TESTS_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
@@ -90,6 +111,7 @@ mkdir -p "$ORIGINS" "$SCRATCH" "$MANIFESTS" "$WSROOT"
 cat > "$FAKE_API" <<'PY'
 import http.server
 import json
+import os
 import sys
 from datetime import datetime, timedelta, timezone
 from urllib.parse import urlparse, parse_qs
@@ -98,10 +120,10 @@ def ts(delta):
     # RFC3339 with Z, matching the real API's completedAt/cancelledAt shape.
     return (datetime.now(timezone.utc) - delta).isoformat().replace("+00:00", "Z")
 
-# Volume-sweep issue fixtures (ANT-1002): the stub answers `?q=ANT-<n>` with
-# the matching issue, everything else (status filters, workspaces) with [].
-# The `id` field matters: the GC script treats a match without an id as
-# "no issue with this identifier".
+# Issue fixtures for the volume sweep (ANT-1002) and the build-dir prune
+# (ANT-1199): the stub answers `?q=ANT-<n>` with the matching issue,
+# everything else (status filters) with []. The `id` field matters: the GC
+# script treats a match without an id as "no issue with this identifier".
 ISSUES = {
     "ANT-900": {"id": "fixture-ant-900", "identifier": "ANT-900", "status": "done",
                 "completedAt": ts(timedelta(days=2)), "cancelledAt": None},
@@ -111,6 +133,18 @@ ISSUES = {
                 "completedAt": None, "cancelledAt": None},
     "ANT-903": {"id": "fixture-ant-903", "identifier": "ANT-903", "status": "done",
                 "completedAt": ts(timedelta(hours=2)), "cancelledAt": None},
+    "ANT-910": {"id": "fixture-ant-910", "identifier": "ANT-910", "status": "done",
+                "completedAt": ts(timedelta(days=2)), "cancelledAt": None},
+    "ANT-911": {"id": "fixture-ant-911", "identifier": "ANT-911", "status": "in_progress",
+                "completedAt": None, "cancelledAt": None},
+    "ANT-912": {"id": "fixture-ant-912", "identifier": "ANT-912", "status": "done",
+                "completedAt": ts(timedelta(days=2)), "cancelledAt": None},
+    "ANT-913": {"id": "fixture-ant-913", "identifier": "ANT-913", "status": "done",
+                "completedAt": ts(timedelta(days=2)), "cancelledAt": None},
+    "ANT-914": {"id": "fixture-ant-914", "identifier": "ANT-914", "status": "done",
+                "completedAt": ts(timedelta(days=2)), "cancelledAt": None},
+    "ANT-915": {"id": "fixture-ant-915", "identifier": "ANT-915", "status": "done",
+                "completedAt": ts(timedelta(days=2)), "cancelledAt": None},
 }
 
 class Handler(http.server.BaseHTTPRequestHandler):
@@ -118,6 +152,14 @@ class Handler(http.server.BaseHTTPRequestHandler):
         q = parse_qs(urlparse(self.path).query)
         if "q" in q:
             body = json.dumps([i for k, i in ISSUES.items() if k == q["q"][0]]).encode()
+        elif "execution-workspaces" in self.path:
+            # ANT-1199: an active execution workspace whose cwd sits inside
+            # a scenario worktree (FAKE_ACTIVE_CWD; empty -> []).
+            cwd = os.environ.get("FAKE_ACTIVE_CWD", "")
+            if cwd:
+                body = json.dumps([{"status": "active", "cwd": cwd}]).encode()
+            else:
+                body = b"[]"
         else:
             body = b"[]"
         self.send_response(200)
@@ -168,6 +210,14 @@ case "${1:-}" in
     esac
     ;;
   ps)
+    case "${2:-}" in
+      -q)
+        # Running container ids (ANT-1199 mount-source collection): one id
+        # per line in `fake-container-ids`; absent/empty -> no running
+        # containers.
+        cat "$fix/fake-container-ids" 2>/dev/null || true
+        ;;
+    esac
     # ... -aq --filter volume=<name>
     case "${4:-}" in
       volume=*)
@@ -175,6 +225,12 @@ case "${1:-}" in
         cat "$fix/fake-vol-refs/$name" 2>/dev/null || true
         ;;
     esac
+    ;;
+  inspect)
+    # ... -f <fmt> <container-id>... — the GC passes the ids from
+    # `ps -q`; the fake ignores them and prints the bind sources of the
+    # modelled RUNNING containers (one per line in `fake-container-mounts`).
+    cat "$fix/fake-container-mounts" 2>/dev/null || true
     ;;
   system)
     # ... df -v
@@ -449,6 +505,71 @@ push_b "$S" main
 mkdir -p "$WT_HOSTUNREACH/target/release/deps"
 echo root-owned > "$WT_HOSTUNREACH/target/release/deps/.gc-foreign-owned"
 
+# --- build-dir prune scenarios (ANT-1199) ---
+# Each is a worktree whose branch is still on origin (so the worktree sweep
+# KEEPS it: "not merged/gone") while its build dirs are judged against the
+# owning issue's terminal state via the API. The worktree basename is the
+# issue id, mirroring the real <agent>/<repo>/<TASK-ID> layout the sweep
+# derives the owning issue from.
+# build-done: uncommitted tracked work + target/ + node_modules/ (the
+# ANT-808 shape); ANT-910 done -> worktree kept, both build dirs PRUNED,
+# tracked work intact.
+S="$(mk_base build-done)"; WT_BUILDDONE="$(add_wt "$S" ANT-910 build-done-branch)"
+commit_in "$WT_BUILDDONE" build-done.txt
+push_b "$S" build-done-branch
+echo dirty > "$WT_BUILDDONE/build-done-dirty.txt"
+mkdir -p "$WT_BUILDDONE/target/release/deps" "$WT_BUILDDONE/node_modules/pkg"
+echo obj > "$WT_BUILDDONE/target/release/deps/lib.a"
+echo js > "$WT_BUILDDONE/node_modules/pkg/index.js"
+# build-open: same shape, ANT-911 in_progress -> both build dirs kept.
+S="$(mk_base build-open)"; WT_BUILDOPE="$(add_wt "$S" ANT-911 build-open-branch)"
+commit_in "$WT_BUILDOPE" build-open.txt
+push_b "$S" build-open-branch
+echo dirty > "$WT_BUILDOPE/build-open-dirty.txt"
+mkdir -p "$WT_BUILDOPE/target/release/deps" "$WT_BUILDOPE/node_modules/pkg"
+echo obj > "$WT_BUILDOPE/target/release/deps/lib.a"
+echo js > "$WT_BUILDOPE/node_modules/pkg/index.js"
+# build-tracked: target/ carries a git-TRACKED file (with untracked build
+# output beside it); ANT-912 done -> target/ KEPT, the tracked file stays.
+S="$(mk_base build-tracked)"; WT_BUILDTRACKED="$(add_wt "$S" ANT-912 build-tracked-branch)"
+mkdir -p "$WT_BUILDTRACKED/target/keep"
+echo tracked > "$WT_BUILDTRACKED/target/keep/keep.txt"
+git -C "$WT_BUILDTRACKED" add target
+git -C "$WT_BUILDTRACKED" commit -qm "track target/keep"
+push_b "$S" build-tracked-branch
+mkdir -p "$WT_BUILDTRACKED/target/release/deps"
+echo obj > "$WT_BUILDTRACKED/target/release/deps/lib.a"
+# build-root: target/ carries a foreign-owned (root-owned) entry, ANT-913
+# done; the fake rm emulates the sandbox rm's permission failure (partial
+# delete), so the host-sudo fallback must finish the prune.
+S="$(mk_base build-root)"; WT_BUILDROOT="$(add_wt "$S" ANT-913 build-root-branch)"
+commit_in "$WT_BUILDROOT" build-root.txt
+push_b "$S" build-root-branch
+mkdir -p "$WT_BUILDROOT/target/release/deps"
+echo root-owned > "$WT_BUILDROOT/target/release/deps/.gc-foreign-owned"
+# build-active: ANT-914 done, but the stub API reports an active execution
+# workspace whose cwd sits inside the worktree -> build dirs kept ("active
+# match"). FAKE_ACTIVE_CWD is exported at the stub server's startup below.
+S="$(mk_base build-active)"; WT_BUILDACTIVE="$(add_wt "$S" ANT-914 build-active-branch)"
+commit_in "$WT_BUILDACTIVE" build-active.txt
+push_b "$S" build-active-branch
+mkdir -p "$WT_BUILDACTIVE/target/release/deps"
+echo obj > "$WT_BUILDACTIVE/target/release/deps/lib.a"
+# build-mounted: target/, ANT-915 done, but a RUNNING container carries a
+# workspace-scoped bind mount on the base repo (the vreckan dev-container
+# shape) -> target/ KEPT, "bind-mounted by a running container". The fake
+# docker below reports that container via fake-container-ids/mounts.
+S="$(mk_base build-mounted)"; WT_BUILDMOUNTED="$(add_wt "$S" ANT-915 build-mounted-branch)"
+commit_in "$WT_BUILDMOUNTED" build-mounted.txt
+push_b "$S" build-mounted-branch
+mkdir -p "$WT_BUILDMOUNTED/target/release/deps"
+echo obj > "$WT_BUILDMOUNTED/target/release/deps/lib.a"
+# One running container whose only bind source is the build-mounted base
+# repo (sandbox-space path, so it is compared as-is; only worktrees under
+# that base count as "in use").
+printf 'c0ffee99\n' > "$FIXTURE/fake-container-ids"
+printf '%s\n' "$WSROOT/build-mounted" > "$FIXTURE/fake-container-mounts"
+
 # Per-target reachability marker (see the fake ssh): only the host-unreach
 # worktree's host connection fails.
 touch "$HOSTFIX/unreachable-host-unreach"
@@ -481,11 +602,17 @@ chmod +x "$FAKE_BIN/rm"
 
 age_out "$WT_STALE" "$WT_UNPUSHED" "$WT_MERGED" "$WT_LIVE" \
   "$WT_NOREMOTES" "$WT_UNREACH" "$WT_DOUBT" "$WT_ACTIVE" \
-  "$WT_HOSTSUDO" "$WT_HOSTUNREACH"
+  "$WT_HOSTSUDO" "$WT_HOSTUNREACH" \
+  "$WT_BUILDDONE" "$WT_BUILDOPE" "$WT_BUILDTRACKED" \
+  "$WT_BUILDROOT" "$WT_BUILDACTIVE" "$WT_BUILDMOUNTED"
 # $WT_YOUNG intentionally keeps its fresh mtime.
 
 # --- stub API server ---
-python3 "$FAKE_API" "$PORT_FILE" &
+# FAKE_ACTIVE_CWD: the execution-workspaces endpoint reports one active
+# workspace whose cwd sits inside the build-active worktree (ANT-1199);
+# the python server reads the env var per request, so it must be fixed at
+# startup.
+FAKE_ACTIVE_CWD="$WT_BUILDACTIVE" python3 "$FAKE_API" "$PORT_FILE" &
 FAKE_PID=$!
 for _ in $(seq 1 50); do
   [[ -s "$PORT_FILE" ]] && break
@@ -581,6 +708,48 @@ if grep -qF "$WT_HOSTUNREACH" "$HOSTFIX/cmds"; then
 else
   fail "host-unreach: no ssh attempt logged for $WT_HOSTUNREACH (cmds: $(cat "$HOSTFIX/cmds"))"
 fi
+
+# --- build-dir prune assertions (ANT-1199) ---
+# All five worktrees are kept by the worktree sweep (branch still on origin;
+# build-active additionally by the active-workspace match) while the build
+# dirs are judged against the owning issue's terminal state.
+expect_kept ANT-910 "$WT_BUILDDONE"     "not merged/gone"
+expect_kept ANT-911 "$WT_BUILDOPE"      "not merged/gone"
+expect_kept ANT-912 "$WT_BUILDTRACKED"  "not merged/gone"
+expect_kept ANT-913 "$WT_BUILDROOT"     "not merged/gone"
+expect_kept ANT-914 "$WT_BUILDACTIVE"   "active"
+# build-done (the ANT-808 shape): both build dirs pruned, tracked work intact.
+expect_reclaimed "ANT-910/target"       "$WT_BUILDDONE/target"       "regenerable build dir"
+expect_reclaimed "ANT-910/node_modules" "$WT_BUILDDONE/node_modules" "regenerable build dir"
+if [[ -f "$WT_BUILDDONE/build-done-dirty.txt" ]]; then
+  pass "build-done: uncommitted tracked work survived the prune"
+else
+  fail "build-done: uncommitted tracked work missing after the prune"
+fi
+# build-open: issue not terminal -> both dirs kept.
+expect_kept "ANT-911/target"       "$WT_BUILDOPE/target"       "not terminal"
+expect_kept "ANT-911/node_modules" "$WT_BUILDOPE/node_modules" "not terminal"
+# build-tracked: git-tracked entries under target/ keep the whole dir.
+expect_kept "ANT-912/target" "$WT_BUILDTRACKED/target" "git-tracked entries"
+if [[ -f "$WT_BUILDTRACKED/target/keep/keep.txt" ]]; then
+  pass "build-tracked: the git-tracked file under target/ survived"
+else
+  fail "build-tracked: the git-tracked file under target/ is missing"
+fi
+# build-root: the local rm failed on the foreign-owned tree; the host-sudo
+# fallback finished the prune.
+expect_reclaimed "ANT-913/target" "$WT_BUILDROOT/target" "reclaimed via host sudo"
+if grep -qF "rm -rf $WT_BUILDROOT/target" "$HOSTFIX/sudo-cmds"; then
+  pass "build-root: fake sudo received 'rm -rf <worktree>/target' on the host"
+else
+  fail "build-root: fake sudo did not receive the target prune (cmds: $(cat "$HOSTFIX/sudo-cmds"))"
+fi
+# build-active: active execution workspace cwd inside -> kept, active match.
+expect_kept "ANT-914/target" "$WT_BUILDACTIVE/target" "active match"
+# build-mounted: a running container with a workspace-scoped bind mount on
+# the base repo marks the worktree in use -> target/ kept.
+expect_kept ANT-915 "$WT_BUILDMOUNTED" "not merged/gone"
+expect_kept "ANT-915/target" "$WT_BUILDMOUNTED/target" "bind-mounted by a running container"
 
 # Salvage-before-delete: the reclaimed stale worktree had uncommitted work;
 # the manifest's Salvage section must list the patch and it must exist.
