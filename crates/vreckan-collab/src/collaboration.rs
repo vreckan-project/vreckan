@@ -846,9 +846,7 @@ pub async fn derive_plain_session_token_table(
     // input-less.
     let promoted: Option<String> = {
         let mut sessions = state.sessions.write().await;
-        let Some(session_live) = sessions.get_mut(session_id) else {
-            return None;
-        };
+        let session_live = sessions.get_mut(session_id)?;
         let is_viewer_entry = |s: &Value, tok: &str| {
             s.get("viewers")
                 .and_then(|v| v.as_array())
