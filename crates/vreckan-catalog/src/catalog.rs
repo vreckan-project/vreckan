@@ -2760,6 +2760,10 @@ pub async fn launch_common(
                             // shows the reason instead of clients looping on
                             // 404 indefinitely.
                             provider.stop(&instance_id).await;
+                            // The probe already ran above and filled `s` with
+                            // the detected capability: hand it over so the
+                            // persisted failure row matches the probe
+                            // observation (ANT-1216).
                             mark_background_launch_failed(
                                 &state_bg,
                                 &session_id_bg,
@@ -2769,6 +2773,7 @@ pub async fn launch_common(
                                 &host_mount_path_bg,
                                 shared_files_path_bg.as_deref(),
                                 &ephemeral_base_bg,
+                                Some(&s),
                             )
                             .await;
                             return;
@@ -2795,7 +2800,10 @@ pub async fn launch_common(
                 Err(e) => {
                     // The wait already stopped the container on timeout; the
                     // cleanup + failure record are shared with the
-                    // liveness-gate failure path (ANT-1214).
+                    // liveness-gate failure path (ANT-1214). The capability
+                    // probe only runs once the container is ready, so it never
+                    // ran on this path — pass `None` to keep the row's
+                    // pre-probe capability state (ANT-1216).
                     mark_background_launch_failed(
                         &state_bg,
                         &session_id_bg,
@@ -2803,6 +2811,7 @@ pub async fn launch_common(
                         &host_mount_path_bg,
                         shared_files_path_bg.as_deref(),
                         &ephemeral_base_bg,
+                        None,
                     )
                     .await;
                 }
@@ -2838,6 +2847,15 @@ const SELKIES_LIVENESS_BUDGET_SECS: u64 = 20;
 /// the caller's business — the nginx wait-timeout path stops it inside
 /// `wait_for_container_ready`, and the liveness-gate failure path (ANT-1214)
 /// stops it before calling here.
+///
+/// `probed` is the local session clone the capability probe already filled
+/// (`apply_selkies_probe`) on the paths where the probe ran before the
+/// failure — the liveness-gate timeout (ANT-1214). Its detected
+/// `selkies_capability`/`selkies_version` are written back alongside the
+/// failure fields so the persisted row matches what the probe observed
+/// (ANT-1216) instead of staying `null`. When the container never reached
+/// ready (the nginx wait timeout), the probe never ran and `probed` is
+/// `None`, so the row keeps its pre-probe capability state.
 async fn mark_background_launch_failed(
     state: &AppState,
     session_id: &str,
@@ -2845,6 +2863,7 @@ async fn mark_background_launch_failed(
     host_mount_path: &Option<String>,
     shared_files_path: Option<&str>,
     ephemeral_base: &str,
+    probed: Option<&Value>,
 ) {
     error!("[{session_id}] Background readiness wait failed: {detail}");
     cleanup_ephemeral(host_mount_path, ephemeral_base);
@@ -2858,6 +2877,15 @@ async fn mark_background_launch_failed(
         s["ready"] = Value::Bool(false);
         s["launch_failed"] = Value::Bool(true);
         s["launch_error"] = Value::String(detail);
+        if let Some(probed) = probed {
+            for key in ["selkies_capability", "selkies_version"] {
+                if let Some(v) = probed.get(key) {
+                    if !v.is_null() {
+                        s[key] = v.clone();
+                    }
+                }
+            }
+        }
     }
     drop(sessions);
     if let Err(e) = save_sessions(state).await {
@@ -4814,6 +4842,7 @@ pub fn catalog_router() -> Router<AppState> {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use sea_orm::{ColumnTrait, QueryFilter};
 
     #[test]
     fn parse_version_standard() {
@@ -5399,5 +5428,193 @@ mod tests {
         // Cleanup: remove both containers and the scratch database.
         let _ = client.remove_container(&dead_id, None).await;
         let _ = client.remove_container(&live_id, force_remove).await;
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    /// Minimal HTTP responder: answers every request with `200
+    /// application/json {}` so the secure probe's initial token-table push
+    /// succeeds on the first attempt — without it, `apply_selkies_probe`
+    /// burns its 5x2s retry sleeps against a refused connection.
+    async fn spawn_ok_http_server() -> (u16, tokio::task::JoinHandle<()>) {
+        use tokio::io::AsyncWriteExt;
+        let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let port = listener.local_addr().unwrap().port();
+        let handle = tokio::spawn(async move {
+            loop {
+                let Ok((mut stream, _)) = listener.accept().await else {
+                    break;
+                };
+                tokio::spawn(async move {
+                    let _ = stream
+                        .write_all(
+                            b"HTTP/1.1 200 OK\r\nContent-Type: application/json\r\nContent-Length: 2\r\nConnection: close\r\n\r\n{}",
+                        )
+                        .await;
+                });
+            }
+        });
+        (port, handle)
+    }
+
+    /// F1 (ANT-1215 QA): after a launch that fails the liveness gate, the
+    /// persisted session row must keep the capability the probe detected
+    /// during the same launch — not regress to `selkies_capability: null`.
+    /// Drives the production order: the (hook) probe fills the session, the
+    /// (hook) liveness check fails, and the background task records the
+    /// failure with the probed session (ANT-1216).
+    #[tokio::test]
+    async fn liveness_gate_failure_persists_the_detected_capability() {
+        let (dir, state) = fresh_state("liveness-fail-capability").await;
+        let (port, server) = spawn_ok_http_server().await;
+        let app = minimal_app("selkies-app");
+        let session_id = "s-liveness-fail";
+        // The session row as launch_common records it for a real-provider
+        // launch: not ready, the probe not run yet.
+        let mut s = serde_json::json!({
+            "instance_id": "ctr-1",
+            "ip": "127.0.0.1",
+            "port": port as u64,
+            "username": "u1",
+            "master_token": "mtok",
+            "ready": false,
+        });
+        state
+            .sessions
+            .write()
+            .await
+            .insert(session_id.to_string(), s.clone());
+
+        // The recorded probe resolves Secure with a detected version — the
+        // shape a live 2.x probe returns.
+        *state.fake_selkies_probe.write().await = Some(SelkiesProbe::Secure {
+            version: Some("2.1.2".into()),
+        });
+        apply_selkies_probe(&state, None, &mut s, session_id, &app, false).await;
+        assert_eq!(s["selkies_capability"], "secure");
+        assert_eq!(s["selkies_version"], "2.1.2");
+
+        // The data-plane check exhausts its budget (the incident's 404
+        // masquerading as a 502, recorded on the hook) — the launch-failure
+        // branch runs with the probed session.
+        *state.fake_selkies_liveness.write().await =
+            Some(vreckan_core::shared::SelkiesLivenessHook {
+                up_after: None,
+                detail: Some("upstream 404 text/html (nginx 502 masquerading as 404)".into()),
+            });
+        let up = crate::selkies_liveness::wait_for_data_plane(
+            &state,
+            "127.0.0.1",
+            port as i64,
+            session_id,
+            "mtok",
+            None,
+            std::time::Duration::from_secs(SELKIES_LIVENESS_BUDGET_SECS),
+        )
+        .await;
+        assert!(up.is_none(), "the recorded hook must fail the liveness gate");
+        let detail = format!(
+            "the session's desktop service (selkies) is not serving: the WebSocket liveness check failed after {SELKIES_LIVENESS_BUDGET_SECS}s (upstream 404/502) — relaunch the session or check the container logs"
+        );
+        mark_background_launch_failed(
+            &state,
+            session_id,
+            detail.clone(),
+            &None,
+            None,
+            &dir.display().to_string(),
+            Some(&s),
+        )
+        .await;
+
+        // In-memory row: the failure fields plus the probe observation.
+        let row = state
+            .sessions
+            .read()
+            .await
+            .get(session_id)
+            .cloned()
+            .unwrap();
+        assert_eq!(row["ready"], false);
+        assert_eq!(row["launch_failed"], true);
+        assert_eq!(row["launch_error"], detail);
+        assert_eq!(
+            row["selkies_capability"], "secure",
+            "the failure path must not regress the detected capability to null"
+        );
+        assert_eq!(row["selkies_version"], "2.1.2");
+
+        // The durable row — the one the QA report observed as null (F1).
+        let persisted = entities::session_record::Entity::find()
+            .filter(entities::session_record::Column::SessionId.eq(session_id))
+            .one(&state.db.conn)
+            .await
+            .unwrap()
+            .expect("the failure record must be persisted");
+        assert_eq!(persisted.data["launch_failed"], true);
+        assert_eq!(persisted.data["launch_error"], detail);
+        assert_eq!(persisted.data["selkies_capability"], "secure");
+        assert_eq!(persisted.data["selkies_version"], "2.1.2");
+
+        server.abort();
+        let _ = server.await;
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    /// The nginx wait-timeout branch: the probe only runs once the container
+    /// is ready, so it never ran on this path — the row keeps its pre-probe
+    /// capability state instead of gaining one (ANT-1216).
+    #[tokio::test]
+    async fn wait_timeout_failure_keeps_pre_probe_capability_state() {
+        let (dir, state) = fresh_state("wait-timeout-capability").await;
+        let session_id = "s-wait-timeout";
+        state
+            .sessions
+            .write()
+            .await
+            .insert(
+                session_id.to_string(),
+                serde_json::json!({
+                    "instance_id": "ctr-1",
+                    "ip": "10.0.0.5",
+                    "port": 3000,
+                    "username": "u1",
+                    "ready": false,
+                }),
+            );
+
+        mark_background_launch_failed(
+            &state,
+            session_id,
+            "the container did not report ready within the launch budget".to_string(),
+            &None,
+            None,
+            &dir.display().to_string(),
+            None,
+        )
+        .await;
+
+        let row = state
+            .sessions
+            .read()
+            .await
+            .get(session_id)
+            .cloned()
+            .unwrap();
+        assert_eq!(row["ready"], false);
+        assert_eq!(row["launch_failed"], true);
+        assert!(
+            row.get("selkies_capability").map(Value::is_null).unwrap_or(true),
+            "no probe ran before this failure: the capability must stay unset"
+        );
+
+        let persisted = entities::session_record::Entity::find()
+            .filter(entities::session_record::Column::SessionId.eq(session_id))
+            .one(&state.db.conn)
+            .await
+            .unwrap()
+            .expect("the failure record must be persisted");
+        assert_eq!(persisted.data["launch_failed"], true);
+        assert!(persisted.data.get("selkies_capability").map(Value::is_null).unwrap_or(true));
+
         let _ = std::fs::remove_dir_all(&dir);
     }}
