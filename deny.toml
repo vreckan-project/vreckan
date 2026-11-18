@@ -54,6 +54,17 @@ ignore = [
   # transitive via aws-smithy-http (aws-sdk stack) <- acmex, which has no
   # in-tree replacement. Accepted until the aws-sdk subtree changes.
   { id = "RUSTSEC-2026-0441", reason = "pin-utils archived 2026-10-01; macros-only, transitive via aws-sdk (aws-smithy-http); no in-tree replacement" },
+  # chrono 0.4.45 — unmaintained (chronotope/chrono#1768; RUSTSEC-2026-0543
+  # INFO/unmaintained, landed in the advisory DB 2026-11-17; no patched
+  # version, no known vulnerability). It is the datetime backbone of
+  # sea-orm 2.0.4 / sqlx 0.9 / sea-query / sea-schema transitively, and two
+  # in-tree crates use it directly for small RFC-3339 timestamp formatting
+  # (vreckan-admin backup archive names/mtimes, vreckan-acme cert-expiry
+  # status). The advisory's suggested alternatives (jiff, time) are already
+  # in the lockfile transitively. TEMPORARY allowance: drop this entry once
+  # a non-chrono datetime path is reachable — a sea-orm/sqlx migration, or an
+  # in-tree cutover of the two direct uses to jiff/time.
+  { id = "RUSTSEC-2026-0543", reason = "chrono archived/unmaintained (chronotope#1768); no known vulnerability; direct use limited to vreckan-admin backup timestamps and vreckan-acme cert-expiry formatting, plus transitive backbone of sea-orm 2.0.4 / sqlx 0.9; revisit when a non-chrono datetime path (jiff/time) becomes reachable" },
   # The crates whose advisories used to require ignores in the acmex subtree
   # (h2 0.3, hickory 0.25, rustls 0.21, rustls-webpki 0.101 — RUSTSEC-2026-0258/
   # 0118/0119/0346/0349/0098/0099/0104) are gone: pinning acmex to the upstream
