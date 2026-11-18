@@ -9,6 +9,41 @@ is committed normally in `vreckan`. The changelog is the authoritative
 record of what shipped in each release — see
 [`docs/release.md`](./docs/release.md) for the conventions.
 
+## 2026-11-18 — base-image bump + no app-source changes since v0.12.13
+
+- **The build base advanced to the 2026-11-17 10:34 PM MST bake**
+  (`vreckan-base-build` `sha256:b856721ffc19…` →
+  `sha256:9375ae5bfc13…`; `.base-image-digest` and the `Dockerfile`
+  build-stage `FROM` re-pointed together, ANT-277; the registry's
+  `20261118` tag carries the same digest). The re-bake was
+  lockfile-driven: since the 2026-11-14 10:35 PM MST bake, the warm
+  dependency cache moved — `vreckan.dep-digest` `2fe96783…` →
+  `792ccc0f…` — as the per-push version syncs (v0.12.9–v0.12.13) and the
+  new direct `tokio-tungstenite` 0.29 edge in `vreckan-catalog` (the
+  selkies readiness liveness gate, ANT-1214, shipped in v0.12.12) rewrote
+  the lockfile. No new packages entered the tree — tokio-tungstenite
+  0.29.0 was already locked (pinned in ANT-854); only the direct
+  dependency edge is new. Toolchain unchanged: Rust 1.99.1, parent
+  `rust:1.99.1-slim` still at `sha256:f6c4a35d…`, and workflow main is
+  unchanged (`vreckan.workflow-sha` still `01d5e270…` — no new workflow
+  changes since the previous bake). The no-baked-`CARGO_BUILD_JOBS`
+  caveat keeps standing (ANT-1040) — ad-hoc `docker run` sessions should
+  keep passing `-e CARGO_BUILD_JOBS=4`. Note: the previous pin
+  `sha256:b856721ffc19…` no longer resolves on the Gitea registry
+  (registry GC reclaimed it once the `20261118` tag re-pointed to this
+  bake), so a fresh `docker build` of the v0.12.9–v0.12.13 tags' build
+  stage can no longer pull its base; the published images are
+  unaffected.
+
+- **No app-source changes since v0.12.13.** `git log v0.12.13..HEAD`
+  is empty — the last release (v0.12.13, cut from the
+  viewer-only display recovery merge, ANT-1217) is current main, so
+  this release is the base re-point. The version number is
+  auto-assigned by the per-push source gate on merge (ANT-1050) —
+  `.base-image-digest` is a source path, so the bump path numbers and
+  tags this release automatically; this PR deliberately carries no
+  `VERSION`/`Cargo.toml`/`Cargo.lock` change.
+
 ## 2026-11-15 — base-image bump + pipeline hardening (ANT-1149, ANT-1150)
 
 - **The build base advanced to the 2026-11-14 22:35 MST bake**
