@@ -524,6 +524,23 @@ jobs:
           # step clones from the mirror. Using pr/<n> as the ref would fail,
           # since that branch only exists in the mirror, not the workflow repo.
           GITEA_REF: "refs/heads/main"
+          # Per-leg wait (ANT-1241): the PR legs (pull_request and the
+          # /allow-ci issue_comment path) build a PR head — a 30-60 min
+          # build whose outcome reaches the PR as VRECKAN commit statuses,
+          # which are the PR's own signal. So the PR leg only confirms the
+          # run exists and leaves waiting/queued (started), then releases
+          # the GitHub runner (the vLLM-style cost split it exists for).
+          # The push legs (main, release/bump-*) keep the default
+          # completion: their GitHub run is the release-critical signal, so
+          # a run that starts and then stalls or fails goes red there
+          # instead of leaving the required statuses pending forever.
+          # GITEA_WAIT is deliberately left EMPTY here: the script derives
+          # the mode from the runner's $GITHUB_EVENT_NAME (PR legs ->
+          # started, other legs -> completion). A ${{ ... ? ... : ... }}
+          # ternary in this env block is what GitHub's expression parser
+          # rejects — 'expected symbol: "?"' (2026-11-18, run
+          # 44421574544 killed the workflow at parse time).
+          GITEA_WAIT: ""
           # Pass the values as plain scalars and build the JSON in the shell.
           # Building it inline with ${{ }} in YAML made the Actions expression
           # evaluator leak a stray '}' into the value (HTTP 422 on dispatch).
@@ -1201,6 +1218,14 @@ jobs:
           GITEA_WORKFLOW_REPO: vreckan/vreckan-workflow
           GITEA_WORKFLOW: release-rust.yml
           GITEA_REF: "refs/heads/main"
+          # Fire-and-forget here (ANT-1241): the hardened trigger defaults to
+          # GITEA_WAIT=completion (wait for the run to finish), but the
+          # release job must not hold a runner for a 30-60 min image build —
+          # the GitHub Release below has to be created right after the tag.
+          # The run-existence check still runs (a lost dispatch still fails
+          # this step), and the freshness run's tag-without-image check
+          # covers run failure.
+          GITEA_WAIT: "none"
           RELEASE_TAG: ${{ steps.version.outputs.tag }}
         run: |
           set -uo pipefail
