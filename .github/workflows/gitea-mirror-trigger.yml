@@ -534,9 +534,13 @@ jobs:
           # completion: their GitHub run is the release-critical signal, so
           # a run that starts and then stalls or fails goes red there
           # instead of leaving the required statuses pending forever.
-          # Quoted (not a bare scalar): the ternary's ': ' would break YAML
-          # parsing of an unquoted value.
-          GITEA_WAIT: "${{ (github.event_name == 'pull_request' || github.event_name == 'issue_comment') ? 'started' : 'completion' }}"
+          # GITEA_WAIT is deliberately left EMPTY here: the script derives
+          # the mode from the runner's $GITHUB_EVENT_NAME (PR legs ->
+          # started, other legs -> completion). A ${{ ... ? ... : ... }}
+          # ternary in this env block is what GitHub's expression parser
+          # rejects — 'expected symbol: "?"' (2026-11-18, run
+          # 44421574544 killed the workflow at parse time).
+          GITEA_WAIT: ""
           # Pass the values as plain scalars and build the JSON in the shell.
           # Building it inline with ${{ }} in YAML made the Actions expression
           # evaluator leak a stray '}' into the value (HTTP 422 on dispatch).

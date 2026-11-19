@@ -25,6 +25,10 @@
 #                      never completes — the script must not       moment the run
 #                      hold the wait for the run's full lifetime   leaves
 #                                                                  waiting/queued
+#   t-event-derive     GITEA_WAIT unset (the workflow's case);    -> exit 0,
+#                      the runner's GITHUB_EVENT_NAME=             and the mode
+#                      pull_request selects started                 must be the
+#                                                                  derived one
 #   t-auth-basic       GITEA_ADMIN_USER switches auth to HTTP      -> exit 0
 #                      Basic (stub verifies the Authorization      (Basic header
 #                      header is exactly Basic admin:stub-pass)    on dispatch)
@@ -153,6 +157,14 @@ run_case t-wait0 0 "not waiting for the run to finish" \
 run_case t-started 0 "GITEA_WAIT=started" \
   STUB_DISPATCH=ok-200 STUB_LIST=appears STUB_RUN=started STUB_JOBS=unassigned \
   -- GITEA_WAIT=started GITEA_RUN_TIMEOUT=15 GITEA_START_TIMEOUT=10 GITEA_POLL_INTERVAL=1
+
+# -- t-event-derive: the workflow leaves GITEA_WAIT empty; the mode must
+# come from the runner's GITHUB_EVENT_NAME (PR leg -> started). Same stub
+# shape as t-started (run starts, never completes): a wrong derived mode
+# (completion) would time out instead of exiting 0.
+run_case t-event-derive 0 "derived 'started' from GITHUB_EVENT_NAME=pull_request" \
+  STUB_DISPATCH=ok-200 STUB_LIST=appears STUB_RUN=started STUB_JOBS=unassigned \
+  -- GITHUB_EVENT_NAME=pull_request GITEA_RUN_TIMEOUT=15 GITEA_START_TIMEOUT=10 GITEA_POLL_INTERVAL=1
 
 # -- t-auth-basic: GITEA_ADMIN_USER switches auth to HTTP Basic; the stub
 # verifies the dispatch Authorization header is exactly Basic admin:stub-token.

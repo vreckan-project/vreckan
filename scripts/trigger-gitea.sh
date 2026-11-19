@@ -72,7 +72,12 @@
 #   GITEA_INPUTS   — JSON object of workflow inputs, e.g. '{"branch":"main","sha":"abc123"}'
 #   GITEA_DISPATCH_CONFIRM_TIMEOUT — seconds to poll for run existence on the
 #     204 fallback path (default 600)
-#   GITEA_WAIT — what to wait for after the run exists (default completion).
+#   GITEA_WAIT — what to wait for after the run exists. An explicit value
+#     always wins; unset/empty (what the mirror workflow passes) derives the
+#     mode from the GitHub event via the runner's GITHUB_EVENT_NAME:
+#     pull_request and issue_comment (the PR legs) -> started, everything
+#     else -> completion. (The workflow cannot pick this with a ${{ }}
+#     ternary — GitHub's expression parser rejects the '?'.)
 #     completion = poll to a terminal state, so the caller mirrors the Gitea
 #     run's outcome (use for the push legs, where the GitHub run is the
 #     release-critical signal); started = exit 0 as soon as the run leaves
@@ -128,6 +133,21 @@ case "$WAIT" in
     exit 2
     ;;
 esac
+# The mirror workflow leaves GITEA_WAIT empty and the per-leg mode comes from
+# the GitHub event instead: GitHub's workflow expression parser rejects the
+# ${{ ... ? ... : ... }} ternary that would select it in the workflow's env
+# block ('expected symbol: "?"', run 44421574544), so the runner's standard
+# GITHUB_EVENT_NAME env var (already used elsewhere in the workflow) carries
+# the event here. An explicitly set GITEA_WAIT always wins over the derived
+# mode.
+if [ -z "${GITEA_WAIT:-}" ] && [ -n "${GITHUB_EVENT_NAME:-}" ]; then
+  case "$GITHUB_EVENT_NAME" in
+    pull_request|issue_comment)
+      WAIT="started"
+      echo "GITEA_WAIT not set — derived 'started' from GITHUB_EVENT_NAME=${GITHUB_EVENT_NAME} (PR leg)"
+      ;;
+  esac
+fi
 RUN_TIMEOUT="${GITEA_RUN_TIMEOUT:-5400}"
 START_TIMEOUT="${GITEA_START_TIMEOUT:-600}"
 POLL_INTERVAL="${GITEA_POLL_INTERVAL:-30}"
@@ -327,7 +347,7 @@ while :; do
         # started mode: the run has left waiting/queued — the silent modes
         # (no run created; lost transition) are behind us. Release the
         # caller; the run's own commit statuses carry its outcome.
-        echo "Gitea run ${RUN_ID} left waiting/queued (in_progress) after $(elapsed_hms "$wait_start") — GITEA_WAIT=started, not waiting for completion (${RUN_HTML:-$RUN_URL/$RUN_ID})"
+        echo "Gitea run ${RUN_ID} left waiting/queued (in_progress) after $(elapsed_hms "$wait_start") — GITEA_WAIT=$WAIT, not waiting for completion (${RUN_HTML:-$RUN_URL/$RUN_ID})"
         exit 0
       fi
       ;;
