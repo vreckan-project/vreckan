@@ -77,3 +77,13 @@ work as-is. Since ANT-343 the host also carries a
 `/paperclip -> /srv/paperclip/data` symlink, so the bare `$PWD` form works
 again too; the prefixed form is always safe. If a bind suddenly shows a
 tree without `Cargo.toml`, suspect the mount form before the checkout.
+
+**Standing dev/preview service naming (ANT-1254; CEO decisions 2026-11-19).**
+Prefer `--rm` (ephemeral) for one-off dev sessions. Use a standing named
+container only when the dev/preview service must outlive the session — and
+then name it after the owning Paperclip issue: `ant-<issue>-live` (or
+`ant-<issue>-dev`), e.g. `ant-1247-live`. Rationale: the daily-cleanup B2
+naming pass flags explicitly-named, non-compose containers that miss the
+`ant-<issue>-<purpose>` convention, and an unattributable name like bare
+`vreckan` is swept once the owning issue's 24h terminal grace passes.
+`vreckan` is deliberately NOT on the B2 exemption list.
