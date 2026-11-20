@@ -23,6 +23,22 @@
 * { box-sizing: border-box; }
 [hidden] { display: none !important; }
 
+/* Skip link: visually hidden until focused (WCAG 2.4.1 bypass blocks). */
+.skip-link {
+  position: absolute;
+  left: -9999px;
+  top: 0;
+  z-index: 100;
+  padding: 8px 16px;
+  background: var(--surface);
+  color: var(--accent);
+  text-decoration: none;
+}
+.skip-link:focus {
+  left: 8px;
+  top: 8px;
+}
+
 html, body { margin: 0; padding: 0; min-height: 100vh; }
 
 body {
@@ -344,6 +360,17 @@ a:focus-visible, button:focus-visible, input:focus-visible { outline: 2px solid 
 .callout strong { color: var(--text); }
 .callout.warn { border-left-color: var(--amber); }
 .callout.tip { border-left-color: var(--green); }
+.doc-note {
+  border: 1px solid var(--border);
+  border-left: 3px solid var(--amber);
+  border-radius: var(--radius-sm);
+  background: var(--surface);
+  padding: 12px 16px;
+  margin: 0 0 18px;
+  font-size: 0.9rem;
+  color: var(--text-muted);
+}
+.doc-note strong { color: var(--text); }
 
 /* FAQ */
 .faq-item {
