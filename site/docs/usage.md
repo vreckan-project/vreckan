@@ -79,7 +79,7 @@ description: Launching apps, managing files and shares, and the administrator's 
     </div>
     <div class="card">
       <h3><span class="glyph">🔌</span> Volume Mounts</h3>
-      <p>Attach external volumes into app containers for shared or specialized storage.</p>
+      <p>Define user/group-scoped external volumes for shared or specialized storage. Known gap: mounts created here are persisted and managed, but they are not yet attached when app containers launch — the admin side is complete, the launch-side wiring is still pending in the Rust port.</p>
     </div>
     <div class="card">
       <h3><span class="glyph">💾</span> Backup &amp; Restore</h3>

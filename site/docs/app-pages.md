@@ -229,6 +229,7 @@ description: A page-by-page walkthrough of the Vreckan web app — what each pag
   <h3>Volume mounts</h3>
   <p>Bind directories from the Docker host into app containers. The container path is <em>relative to the user's home directory inside the container</em>, so the same mount composes with each user's storage. The table lists every mount: name, host path, container path, mode (<em>ro</em>/<em>rw</em>), and assignment (none = inactive, or <em>user: …</em> / <em>group: …</em> — only the assigned users or groups get the mount in their sessions).</p>
   <p><strong>Add / Edit</strong> a mount: name, host path, container path, a <em>Read-only</em> checkbox, and <em>Assign to</em> (None, a specific User, or a specific Group, with a target picker that follows the scope). A mount assigned to no one is stored but never attached.</p>
+  <p class="doc-note">Known gap: in the current Rust port, mounts created here are persisted and managed, but they are not yet attached when app containers launch — the launch-side wiring is still pending, so no mount takes effect in a session yet.</p>
 
   <h3>Backup</h3>
   <p>Snapshot and restore of the application configuration. Three cards:</p>

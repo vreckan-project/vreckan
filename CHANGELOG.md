@@ -9,6 +9,46 @@ is committed normally in `vreckan`. The changelog is the authoritative
 record of what shipped in each release — see
 [`docs/release.md`](./docs/release.md) for the conventions.
 
+## 2026-11-20 — v0.12.17: dependency refresh + advisory handling (operator-transparent)
+
+- **Dependency refresh:** sqlx 0.9.0 → 0.9.1 and libsqlite3-sys 0.37.0 →
+  0.40.0 (bundles SQLite 3.54.1). This clears RUSTSEC-2026-0459, the
+  SQLite advisory affecting libsqlite3-sys 0.37.0, so the cargo-audit
+  step in `vreckan-workflow`'s `build-test-rust.yml` no longer passes
+  `--ignore RUSTSEC-2026-0459` (ANT-995 — the advisory allowance is
+  removed, not renewed).
+- **RUSTSEC-2026-0543 (chrono is unmaintained) allowance added** to
+  `deny.toml` (ANT-1230). This is the non-source change noted in the
+  v0.12.15/v0.12.16 entry below as riding "the next release" rather
+  than carrying its own version — v0.12.17 is that next release.
+  Chrono consumers are the sea-orm/sqlx backbone plus small direct uses.
+- **CI hardening:** `trigger-gitea.sh` hardened against silent dispatch
+  no-ops, and the per-leg `GITEA_WAIT` kept out of the workflow YAML
+  (ANT-1241).
+- **Docs:** standing dev/preview service containers are now named
+  `ant-<issue>-live` / `ant-<issue>-dev` (ANT-1254).
+- No app-source changes — transparent to operators: the same binary
+  name, the same API surface, and the same `VRECKAN_*` environment
+  variables.
+
+## 2026-11-18 — v0.12.15/v0.12.16: internal hardening — clippy lint + selkies capability persistence on launch failure
+
+- **v0.12.16 — the probed selkies capability is now persisted on the
+  launch-failure path** (ANT-1216). A launch that fails the data-plane
+  liveness gate (v0.12.12) used to persist `selkies_capability: null` even
+  though the capability probe had detected the capability in memory during
+  the same launch; the failed session row now carries the probed
+  `selkies_capability`/`selkies_version` alongside the failure fields, so
+  the persisted row matches what the probe observed. (On the nginx
+  wait-timeout path the probe never ran, and the row keeps its pre-probe
+  state.) No operator action needed.
+- **v0.12.15 — internal only:** a clippy `question_mark` cleanup in the
+  collaboration-room code; no behavior change.
+- Note: the `deny.toml` allowance for RUSTSEC-2026-0543 (chrono is
+  unmaintained) landed on `main` after v0.12.16 as a non-source change
+  (ANT-1230); it shipped in v0.12.17 (2026-11-20, above) rather than
+  carrying its own version.
+
 ## 2026-11-18 — base-image bump + no app-source changes since v0.12.13
 
 - **The build base advanced to the 2026-11-17 10:34 PM MST bake**
@@ -43,6 +83,68 @@ record of what shipped in each release — see
   `.base-image-digest` is a source path, so the bump path numbers and
   tags this release automatically; this PR deliberately carries no
   `VERSION`/`Cargo.toml`/`Cargo.lock` change.
+
+## 2026-11-17 — v0.12.13: viewer-only display recovery — a lone share visitor drives the screen (ANT-1217)
+
+- **A share-link visitor who is the only client on a plain session no
+  longer gets a black screen.** Selkies 2.2.1 drives display
+  create/realize, encoder negotiation, and backpressure off a *controller*
+  connection; when the owner's tab closed, the departed controller's
+  display entry was torn down and the viewer's capture restart found no
+  display, so no frames were ever broadcast (the client looped on
+  START_VIDEO over a 100% black canvas). The token table pushed to the
+  container now presents the remaining share visitor as a controller while
+  no owner or controller is on the data plane — the read-only visitor
+  drives the display from their own client, and a view-only share stays
+  input-less (the mk grant is untouched). Controller-present and
+  owner-present joins are unchanged.
+
+## 2026-11-17 — v0.12.12: selkies data-plane liveness gate + rate-limited proxy failure logs (ANT-1214)
+
+- **Launch readiness now includes a real data-plane liveness check.** A
+  crash-looping selkies used to pass the readiness gate (the nginx 200 +
+  `selkies --version` check only proves the binary exists), so a session
+  could be marked ready while nginx 502'd the WebSocket path. For plain
+  Secure sessions the readiness task now performs a server-side WebSocket
+  upgrade to selkies before marking ready (20-second budget; a 401/403
+  JSON answer is treated as the token-table race, 404-text/502/503/504 or
+  transport errors as not-up); when the budget is exhausted the container
+  is stopped and the launch marked failed with an explicit reason. Room
+  launches (collaboration health check) and the legacy path are untouched.
+- **Proxy failure logging is now rate-limited.** The first failure of each
+  error class logs at full detail; repeats are suppressed and one
+  cumulative line is emitted per ~30s; a recovery line is logged when the
+  upstream leg comes back up. Before this, a dead upstream logged one WARN
+  per client reconnect (~1/sec, indefinitely). The client still gets the
+  502 either way.
+- Also in this release's range: `scripts/gc-workspace-sessions.sh` (ops
+  tooling, non-source — ANT-1199).
+
+## 2026-11-17 — v0.12.11: modals honor Escape + backdrop close; file-share dialog gains ARIA (ANT-1177, ANT-1184)
+
+- **Static modals (launch, password, and file-share dialogs) now close on
+  the Escape key and on a backdrop click**, with the backdrop hidden on
+  close; the Cancel-button path is unchanged.
+- **The file-share dialog now carries `role=dialog`, `aria-modal=true`,
+  and `aria-labelledby`** to match the other static modals, so screen
+  readers announce it as a dialog.
+
+## 2026-11-16 — v0.12.10: pooled SQLite connections reset on release — fixes the flaky ACME cert persistence (ANT-1176)
+
+- **Pooled SQLite connections are now reset to autocommit when returned
+  to the pool.** A statement that failed while the WAL write lock was
+  contended could leave an implicit transaction — and with it a pinned WAL
+  read-mark — open on a pooled connection; sqlx does not track that
+  transaction and the pool's idle ping is a no-op liveness check, so the
+  next statement re-joined the stale snapshot and read pre-commit data.
+  This is the mechanism behind the flaky ACME cert-persist behavior (a torn
+  N-of-5 view of the 5-setting ACME cert record) that turned the release
+  gate red on v0.12.9.
+- **`Db::set_app_settings` is now an atomic single-transaction multi-row
+  upsert** (the record is observed fully present or fully absent) and
+  `acme_persist_cert` persists atomically; the bounded
+  `persist_until_visible` helper stays as a safety net. A regression test
+  (`pool_release_resets_leaked_transaction`) pins the pool reset.
 
 ## 2026-11-15 — base-image bump + pipeline hardening (ANT-1149, ANT-1150)
 
