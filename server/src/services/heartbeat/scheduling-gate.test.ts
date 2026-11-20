@@ -74,6 +74,9 @@ function gateCallbacks(db: Db, overrides: Partial<HeartbeatQueueDependencies> = 
     issuesSvc: {
       getDependencyReadiness: vi.fn<HeartbeatQueueDependencies["issuesSvc"]["getDependencyReadiness"]>(),
       listDependencyReadiness: vi.fn(async () => new Map()),
+      updateForCompany: vi.fn<HeartbeatQueueDependencies["issuesSvc"]["updateForCompany"]>(async () => {
+        throw new Error("Unexpected task reopen");
+      }),
     },
     treeControlSvc: { getActivePauseHoldGate: vi.fn(async () => null) },
     budgets: { getInvocationBlock: vi.fn(async () => null) },
