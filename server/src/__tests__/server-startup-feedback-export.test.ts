@@ -1190,7 +1190,7 @@ describe("startServer feedback export wiring", () => {
       expect(options.retention).toEqual({ dailyDays: 7, weeklyWeeks: 4, monthlyMonths: 1 });
       expect(options.verifyBeforePrune).toEqual(expect.any(Function));
       await options.verifyBeforePrune!(backupFile);
-      return { backupFile, sizeBytes: bytes.length, prunedCount: 0 };
+      return { backupFile, sizeBytes: bytes.length, prunedCount: 0, engine: "javascript" as const };
     };
     vi.mocked(runDatabaseBackup).mockImplementationOnce(async options => {
       await pending;

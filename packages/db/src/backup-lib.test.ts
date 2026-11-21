@@ -2,9 +2,10 @@ import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import { gunzipSync, gzipSync } from "node:zlib";
+import type { RunDatabaseBackupResult } from "./backup-lib.js";
 import { afterEach, describe, expect, it } from "vitest";
 import postgres from "postgres";
-import { createBufferedTextFileWriter, runDatabaseBackup, runDatabaseRestore } from "./backup-lib.js";
+import { createBufferedTextFileWriter, formatDatabaseBackupResult, runDatabaseBackup, runDatabaseRestore } from "./backup-lib.js";
 import { ensurePostgresDatabase } from "./client.js";
 import {
   EMBEDDED_POSTGRES_TEST_TIMEOUT_MS,
@@ -107,6 +108,104 @@ describeEmbeddedPostgres("runDatabaseBackup", () => {
       else process.env.PAPERCLIP_PG_DUMP_PATH = previous;
     }
   }, EMBEDDED_POSTGRES_TEST_TIMEOUT_MS);
+
+  function observeEmptyArchives(backupDir: string, observed: string[]): () => void {
+    const poll = setInterval(() => {
+      for (const name of fs.readdirSync(backupDir)) {
+        if (!name.endsWith(".sql.gz")) continue;
+        const archive = path.join(backupDir, name);
+        try {
+          // A complete gzip that decompresses to nothing is the transient
+          // empty pg_dump archive. Partial archives throw and are ignored.
+          if (gunzipSync(fs.readFileSync(archive)).length === 0) observed.push(name);
+        } catch {
+          // Ignore archives that are still being written.
+        }
+      }
+    }, 5);
+    poll.unref?.();
+    return () => clearInterval(poll);
+  }
+
+  it("falls back to the JavaScript engine without a transient empty gzip when the pinned pg_dump is missing", async () => {
+    const connectionString = await createTempDatabase();
+    const backupDir = createTempDir("checkpoint-pg-dump-pinned-missing-");
+    const previous = process.env.PAPERCLIP_PG_DUMP_PATH;
+    process.env.PAPERCLIP_PG_DUMP_PATH = path.join(backupDir, "missing-pg-dump");
+    const observed: string[] = [];
+    const stopObserving = observeEmptyArchives(backupDir, observed);
+    try {
+      const result = await runDatabaseBackup({
+        connectionString, backupDir,
+        retention: { dailyDays: 7, weeklyWeeks: 4, monthlyMonths: 1 },
+        backupEngine: "auto",
+      });
+      expect(result.engine).toBe("javascript");
+      expect(fs.existsSync(result.backupFile)).toBe(true);
+      expect(fs.statSync(result.backupFile).size).toBeGreaterThan(0);
+      expect(gunzipSync(fs.readFileSync(result.backupFile)).length).toBeGreaterThan(0);
+      expect(observed).toEqual([]);
+    } finally {
+      stopObserving();
+      if (previous === undefined) delete process.env.PAPERCLIP_PG_DUMP_PATH;
+      else process.env.PAPERCLIP_PG_DUMP_PATH = previous;
+    }
+  }, EMBEDDED_POSTGRES_TEST_TIMEOUT_MS);
+
+  it("fails fast with a clear error and no archive files when an explicit pg_dump engine has no usable binary", async () => {
+    const connectionString = await createTempDatabase();
+    const backupDir = createTempDir("checkpoint-pg-dump-required-missing-");
+    const previous = process.env.PAPERCLIP_PG_DUMP_PATH;
+    process.env.PAPERCLIP_PG_DUMP_PATH = path.join(backupDir, "missing-pg-dump");
+    try {
+      await expect(runDatabaseBackup({
+        connectionString, backupDir,
+        retention: { dailyDays: 7, weeklyWeeks: 4, monthlyMonths: 1 },
+        backupEngine: "pg_dump",
+      })).rejects.toThrow("pg_dump binary not found");
+      expect(fs.readdirSync(backupDir)).toEqual([]);
+    } finally {
+      if (previous === undefined) delete process.env.PAPERCLIP_PG_DUMP_PATH;
+      else process.env.PAPERCLIP_PG_DUMP_PATH = previous;
+    }
+  }, EMBEDDED_POSTGRES_TEST_TIMEOUT_MS);
+
+  it("selects the JavaScript engine when no pg_dump exists on a stripped PATH", async () => {
+    const connectionString = await createTempDatabase();
+    const backupDir = createTempDir("checkpoint-pg-dump-path-");
+    const previousPath = process.env.PATH;
+    const emptyBin = createTempDir("checkpoint-pg-dump-empty-bin-");
+    process.env.PATH = emptyBin;
+    const observed: string[] = [];
+    const stopObserving = observeEmptyArchives(backupDir, observed);
+    try {
+      const result = await runDatabaseBackup({
+        connectionString, backupDir,
+        retention: { dailyDays: 7, weeklyWeeks: 4, monthlyMonths: 1 },
+        backupEngine: "auto",
+      });
+      expect(result.engine).toBe("javascript");
+      expect(observed).toEqual([]);
+    } finally {
+      stopObserving();
+      process.env.PATH = previousPath;
+    }
+  }, EMBEDDED_POSTGRES_TEST_TIMEOUT_MS);
+
+  it("reports the engine that produced the archive in the formatted result", () => {
+    expect(formatDatabaseBackupResult({
+      backupFile: "/tmp/paperclip.sql.gz",
+      sizeBytes: 2048,
+      prunedCount: 0,
+      engine: "javascript",
+    } as RunDatabaseBackupResult)).toBe("/tmp/paperclip.sql.gz (2.0K; engine: javascript)");
+    expect(formatDatabaseBackupResult({
+      backupFile: "/tmp/paperclip.sql.gz",
+      sizeBytes: 2048,
+      prunedCount: 2,
+      engine: "pg_dump",
+    } as RunDatabaseBackupResult)).toBe("/tmp/paperclip.sql.gz (2.0K; engine: pg_dump; pruned 2 old backup(s))");
+  });
 
   it("preserves identity generation, sequence options and progress in JavaScript backups", async () => {
     const source = await createTempDatabase();
