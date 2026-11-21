@@ -1,5 +1,5 @@
-import { createReadStream, createWriteStream, existsSync, mkdirSync, readdirSync, statSync, unlinkSync } from "node:fs";
-import { basename, resolve } from "node:path";
+import { accessSync, constants, createReadStream, createWriteStream, existsSync, mkdirSync, readdirSync, statSync, unlinkSync } from "node:fs";
+import { basename, delimiter, join, resolve } from "node:path";
 import { createInterface } from "node:readline";
 import { spawn } from "node:child_process";
 import { open as openFile } from "node:fs/promises";
@@ -37,6 +37,8 @@ export type RunDatabaseBackupResult = {
   backupFile: string;
   sizeBytes: number;
   prunedCount: number;
+  /** Engine that actually produced the archive. */
+  engine: "pg_dump" | "javascript";
 };
 
 export type RunDatabaseRestoreOptions = {
@@ -259,6 +261,42 @@ function hasBackupTransforms(opts: RunDatabaseBackupOptions): boolean {
     Object.keys(opts.nullifyColumns ?? {}).length > 0;
 }
 
+function isExecutableFile(filePath: string): boolean {
+  try {
+    if (!statSync(filePath).isFile()) return false;
+    accessSync(filePath, constants.X_OK);
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+function findExecutableInPath(name: string): string | null {
+  const pathEnv = process.env.PATH;
+  if (!pathEnv) return null;
+  for (const dir of pathEnv.split(delimiter)) {
+    if (dir.length === 0) continue;
+    const candidate = join(dir, name);
+    if (isExecutableFile(candidate)) return candidate;
+  }
+  return null;
+}
+
+/**
+ * Pre-flight lookup of the pg_dump binary. A pinned path must exist and be an
+ * executable file; a bare pinned name is resolved through PATH; otherwise the
+ * first executable `pg_dump` on PATH wins. Returns null when no usable binary
+ * exists so callers can choose the JavaScript engine without spawning a child
+ * that fails with ENOENT and leaves a transient empty gzip behind.
+ */
+function resolvePgDumpExecutable(): string | null {
+  const pinned = process.env.PAPERCLIP_PG_DUMP_PATH?.trim();
+  if (!pinned) return findExecutableInPath("pg_dump");
+  return pinned.includes("/")
+    ? (isExecutableFile(pinned) ? pinned : null)
+    : findExecutableInPath(pinned);
+}
+
 function formatPostgresArrayElement(value: unknown): string {
   if (value === null || value === undefined) return "NULL";
   if (Array.isArray(value)) return formatPostgresArrayLiteral(value);
@@ -328,8 +366,17 @@ async function runPgDumpBackup(opts: {
   connectionString: string;
   backupFile: string;
   connectTimeout: number;
+  pgDumpExecutable: string;
 }): Promise<void> {
-  const pgDumpBin = process.env.PAPERCLIP_PG_DUMP_PATH || "pg_dump";
+  const pgDumpBin = opts.pgDumpExecutable;
+  if (existsSync(opts.backupFile)) {
+    try {
+      unlinkSync(opts.backupFile);
+    } catch {
+      // A stale target that cannot be removed does not change spawn behavior;
+      // the pipeline creates the archive fresh.
+    }
+  }
   const child = spawn(
     pgDumpBin,
     [
@@ -353,10 +400,21 @@ async function runPgDumpBackup(opts: {
     throw new Error("pg_dump did not expose stdout");
   }
 
-  await Promise.all([
-    pipeline(child.stdout, createGzip(), createWriteStream(opts.backupFile)),
-    waitForChildExit(child, pgDumpBin),
-  ]);
+  const archivePipeline = pipeline(child.stdout, createGzip(), createWriteStream(opts.backupFile));
+  try {
+    await waitForChildExit(child, pgDumpBin);
+  } catch (error) {
+    // Settle the gzip pipeline before re-throwing so the on-disk archive is
+    // final when the caller unlinks it.
+    await archivePipeline.catch(() => {});
+    throw error;
+  }
+  try {
+    await archivePipeline;
+  } catch (error) {
+    child.kill("SIGKILL");
+    throw error;
+  }
 }
 
 async function restoreWithPsql(opts: RunDatabaseRestoreOptions, connectTimeout: number): Promise<void> {
@@ -557,36 +615,51 @@ export async function runDatabaseBackup(opts: RunDatabaseBackupOptions): Promise
 
   try {
     if (backupEngine === "pg_dump" || (backupEngine === "auto" && canUsePgDump)) {
-      await sql`SELECT 1`;
-      let dumped = false;
-      try {
-        await closeSql();
-        await runPgDumpBackup({
-          connectionString: opts.connectionString,
-          backupFile,
-          connectTimeout,
-        });
-        dumped = true;
-      } catch (error) {
-        if (existsSync(backupFile)) {
-          try { unlinkSync(backupFile); } catch { /* ignore */ }
-        }
+      const pgDumpExecutable = resolvePgDumpExecutable();
+      if (!pgDumpExecutable) {
         if (backupEngine === "pg_dump") {
-          throw error;
+          throw new Error(
+            process.env.PAPERCLIP_PG_DUMP_PATH
+              ? `pg_dump binary not found: PAPERCLIP_PG_DUMP_PATH (${process.env.PAPERCLIP_PG_DUMP_PATH}) is not an executable file; set it to an installed pg_dump or use backupEngine "javascript"`
+              : 'pg_dump binary not found on PATH; install PostgreSQL client tools, set PAPERCLIP_PG_DUMP_PATH, or use backupEngine "javascript"',
+          );
         }
+        // No usable pg_dump: skip the pg_dump branch entirely instead of
+        // spawning a doomed process whose ENOENT races a transient empty gzip.
         effectiveBackupEngine = "javascript";
-        sql = postgres(opts.connectionString, { max: 1, connect_timeout: connectTimeout });
-        sqlClosed = false;
-      }
-      if (dumped) {
-        // Only an engine failure can select the JavaScript fallback. Once
-        // pg_dump succeeds, archive verification or persistence failures
-        // must retain their original error and must not reuse a closed writer.
-        await writer.abort();
-        const sizeBytes = statSync(backupFile).size;
-        await opts.verifyBeforePrune?.(backupFile);
-        const prunedCount = pruneOldBackups(opts.backupDir, retention, filenamePrefix);
-        return { backupFile, sizeBytes, prunedCount };
+      } else {
+        await sql`SELECT 1`;
+        let dumped = false;
+        try {
+          await closeSql();
+          await runPgDumpBackup({
+            connectionString: opts.connectionString,
+            backupFile,
+            connectTimeout,
+            pgDumpExecutable,
+          });
+          dumped = true;
+        } catch (error) {
+          if (existsSync(backupFile)) {
+            try { unlinkSync(backupFile); } catch { /* ignore */ }
+          }
+          if (backupEngine === "pg_dump") {
+            throw error;
+          }
+          effectiveBackupEngine = "javascript";
+          sql = postgres(opts.connectionString, { max: 1, connect_timeout: connectTimeout });
+          sqlClosed = false;
+        }
+        if (dumped) {
+          // Only an engine failure can select the JavaScript fallback. Once
+          // pg_dump succeeds, archive verification or persistence failures
+          // must retain their original error and must not reuse a closed writer.
+          await writer.abort();
+          const sizeBytes = statSync(backupFile).size;
+          await opts.verifyBeforePrune?.(backupFile);
+          const prunedCount = pruneOldBackups(opts.backupDir, retention, filenamePrefix);
+          return { backupFile, sizeBytes, prunedCount, engine: "pg_dump" };
+        }
       }
     }
 
@@ -1077,10 +1150,13 @@ export async function runDatabaseBackup(opts: RunDatabaseBackupOptions): Promise
     await opts.verifyBeforePrune?.(backupFile);
     const prunedCount = pruneOldBackups(opts.backupDir, retention, filenamePrefix);
 
+    // This path is only reached by the JavaScript engine: a successful
+    // pg_dump branch returns earlier and a failed explicit pg_dump throws.
     return {
       backupFile,
       sizeBytes,
       prunedCount,
+      engine: "javascript",
     };
   } catch (error) {
     await writer.abort();
@@ -1137,5 +1213,5 @@ export async function runDatabaseRestore(opts: RunDatabaseRestoreOptions): Promi
 export function formatDatabaseBackupResult(result: RunDatabaseBackupResult): string {
   const size = formatBackupSize(result.sizeBytes);
   const pruned = result.prunedCount > 0 ? `; pruned ${result.prunedCount} old backup(s)` : "";
-  return `${result.backupFile} (${size}${pruned})`;
+  return `${result.backupFile} (${size}; engine: ${result.engine}${pruned})`;
 }
