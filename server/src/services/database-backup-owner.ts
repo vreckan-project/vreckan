@@ -66,6 +66,7 @@ export function createDatabaseBackupOwner(options: {
           backupFile: result.backupFile,
           sizeBytes: result.sizeBytes,
           prunedCount: result.prunedCount,
+          engine: result.engine,
           backupDir: options.backupDir,
           retention,
           trigger,
