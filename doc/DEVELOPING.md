@@ -4041,6 +4041,17 @@ pnpm paperclipai db:backup
 pnpm db:backup
 ```
 
+Backup engines:
+
+- The default `auto` selection uses the `pg_dump` binary when a usable one
+  exists and the built-in JavaScript engine otherwise. A missing binary skips
+  the `pg_dump` engine instead of spawning a process that fails with ENOENT.
+- `PAPERCLIP_PG_DUMP_PATH=/path/to/pg_dump` pins the binary. The path must be
+  an executable file; a bare name resolves through `PATH`. An explicit
+  `pg_dump` selection with no usable binary fails before it writes any file.
+- The backup result, the `db:backup --json` output, and the owner-service log
+  line report which engine produced the archive (`pg_dump` or `javascript`).
+
 Environment overrides:
 
 - `PAPERCLIP_DB_BACKUP_ENABLED=true|false`
