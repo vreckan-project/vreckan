@@ -30,12 +30,13 @@ RUN bundle install --quiet && jekyll build --quiet
 # path go away (plucky was excluded from Ubuntu USN-9159-1's nginx2root
 # backport; no apt pinning is needed on this base).
 #
-# Unlike the retired ubuntu/nginx base, this alpine base DOES ship
-# libexpat and libx11 (the latter family pulled in by
-# nginx-module-image-filter), so the nightly Trivy scan may flag
-# CVE-2026-77214 (libexpat) and CVE-2026-88806 (libx11) until the alpine
-# base ships fixes — the entries are justified in vreckan-workflow
-# `.trivy/site-trivyignore`.
+# This alpine base ships libexpat and libx11 (the latter family pulled
+# in by nginx-module-image-filter), but the pinned alpine 3.24.4 packages
+# (expat-2.10.0-r0, libx11-1.8.14-r0) postdate CVE-2026-77214 (libexpat)
+# and CVE-2026-88806 (libx11), so the nightly Trivy scan does not flag
+# them. The only open finding on the rebuilt image is CVE-2026-86144
+# (libxml2 2.13.9-r2, pulled in via nginx-module-xslt), allowed in
+# vreckan-workflow's `.trivy/site-trivyignore` until the base is re-pinned.
 FROM nginx:1.31.9-alpine@sha256:fb4658584bd9a916ffb6f6e365f97c25cfdb2923801f551ea08356e695f14ff7
 # The alpine base's conf.d default is overwritten by our COPY below
 # (the Ubuntu base needed a separate sites-enabled rm; alpine uses
