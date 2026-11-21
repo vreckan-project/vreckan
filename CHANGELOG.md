@@ -9,6 +9,46 @@ is committed normally in `vreckan`. The changelog is the authoritative
 record of what shipped in each release — see
 [`docs/release.md`](./docs/release.md) for the conventions.
 
+## 2026-11-21 — base-image bump + site/docs-only changes since v0.12.17
+
+- **The build base advanced to the 2026-11-20 10:35 PM MST bake**
+  (`vreckan-base-build` `sha256:9375ae5bfc13…` →
+  `sha256:5aa2fd39e259…`; `.base-image-digest` and the `Dockerfile`
+  build-stage `FROM` re-pointed together, ANT-277; the registry's
+  `20261121` tag carries the same digest). The re-bake was
+  lockfile-driven: the v0.12.17 dependency refresh (sqlx 0.9.0 →
+  0.9.1, libsqlite3-sys 0.37.0 → 0.40.0 bundling SQLite 3.54.1, which
+  cleared RUSTSEC-2026-0459) rewrote `Cargo.lock`, so the baked
+  warm dependency cache moved — `vreckan.dep-digest` `792ccc0f…` →
+  `997e3e41…`. Toolchain unchanged: Rust 1.99.1, parent
+  `rust:1.99.1-slim` still at `sha256:f6c4a35d…`. The workflow main
+  advanced between bakes, docs-only (`vreckan.workflow-sha`
+  `01d5e270…` → `4c53b27a…` — the ANT-1288 site-pipeline Trivy
+  comment corrections). The no-baked-`CARGO_BUILD_JOBS` caveat keeps
+  standing (ANT-1040) — ad-hoc `docker run` sessions should keep
+  passing `-e CARGO_BUILD_JOBS=4`. Note: the previous pin
+  `sha256:9375ae5bfc13…` no longer resolves on the Gitea registry
+  (registry GC reclaimed it once the `20261121` tag re-pointed to this
+  bake), so a fresh `docker build` of the v0.12.14–v0.12.17 tags'
+  build stage can no longer pull its base; the published images are
+  unaffected.
+
+- **Since v0.12.17: site/docs-only changes, no app-source changes.**
+  The site run stage rebased to `nginx:1.31.9-alpine` (ANT-1284/
+  ANT-1285), the stage-2 scan comment was corrected — 77214/88806 not
+  flagged, 86144 is the allowed entry (ANT-1288) — and the weekly docs
+  freshness pass (ANT-1266) synced the site current-release line to
+  v0.12.17, ops.html §3.5 base-bump wording, the share-password
+  limiter settings (README + `.env.example`), the port-status
+  re-verification, the WCAG 2.4.1 skip link, and volume-mount
+  known-gap notes. Operators get a refreshed site/docs build; the
+  binary name, API surface, and `VRECKAN_*` environment variables are
+  unchanged from v0.12.17. The version number is auto-assigned by the
+  per-push source gate on merge (ANT-1050) — `.base-image-digest` is a
+  source path, so the bump path numbers and tags this release
+  automatically; this PR deliberately carries no
+  `VERSION`/`Cargo.toml`/`Cargo.lock` change.
+
 ## 2026-11-20 — v0.12.17: dependency refresh + advisory handling (operator-transparent)
 
 - **Dependency refresh:** sqlx 0.9.0 → 0.9.1 and libsqlite3-sys 0.37.0 →
