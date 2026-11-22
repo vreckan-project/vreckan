@@ -1,0 +1,39 @@
+# Overlay build: upstream v2026.1117.0 + ANT-896 scheduling gate.
+# Source: vreckan branch ant-1275-gate-on-1117 (gate commits 2604d86 + c261ab6
+# rebased onto v2026.1117.0 / c0f132898d).
+# Built locally on paperclip01; the image tag is local-only (no push to ghcr).
+#
+# ANT-1279 (2026-11-20): also build the bundled plugin-llm-wiki dist into the
+# image. No upstream release image ships packages/plugins/plugin-llm-wiki/dist
+# (the install route auto-builds it into the container writable layer, which
+# a container recreation drops), but the v2026.1117.0 plugin loader requires
+# dist/manifest.js on disk at activation. Without this step the plugin fails
+# at every boot with "no longer exposes a Paperclip manifest".
+FROM ghcr.io/paperclipai/paperclip:2026.1117.0
+ARG PAPERCLIP_BUILD_COMMIT=c261ab679b150e552c031d8adf29cf0a27cd7f58
+COPY doc/plugins/PLUGIN_SPEC.md doc/plugins/PLUGIN_SPEC.md
+COPY packages/db/src/migrations/0452_company_scheduling.sql packages/db/src/migrations/0452_company_scheduling.sql
+COPY packages/db/src/migrations/meta/_journal.json packages/db/src/migrations/meta/_journal.json
+COPY packages/db/src/schema/companies.ts packages/db/src/schema/companies.ts
+COPY packages/plugins/sdk/src/define-plugin.ts packages/plugins/sdk/src/define-plugin.ts
+COPY packages/plugins/sdk/src/index.ts packages/plugins/sdk/src/index.ts
+COPY packages/plugins/sdk/src/protocol.ts packages/plugins/sdk/src/protocol.ts
+COPY packages/plugins/sdk/src/worker-rpc-host.ts packages/plugins/sdk/src/worker-rpc-host.ts
+COPY packages/shared/src/constants.ts packages/shared/src/constants.ts
+COPY packages/shared/src/index.ts packages/shared/src/index.ts
+COPY packages/shared/src/types/company.ts packages/shared/src/types/company.ts
+COPY packages/shared/src/types/index.ts packages/shared/src/types/index.ts
+COPY packages/shared/src/types/plugin.ts packages/shared/src/types/plugin.ts
+COPY server/src/index.ts server/src/index.ts
+COPY server/src/routes/companies.ts server/src/routes/companies.ts
+COPY server/src/services/heartbeat.ts server/src/services/heartbeat.ts
+COPY server/src/services/heartbeat/queue.ts server/src/services/heartbeat/queue.ts
+COPY server/src/services/heartbeat/scheduling-gate.test.ts server/src/services/heartbeat/scheduling-gate.test.ts
+COPY server/src/services/heartbeat/scheduling-gate.ts server/src/services/heartbeat/scheduling-gate.ts
+COPY server/src/services/plugin-capability-validator.ts server/src/services/plugin-capability-validator.ts
+COPY server/src/services/plugin-worker-manager.ts server/src/services/plugin-worker-manager.ts
+RUN PAPERCLIP_BUILD_COMMIT=$PAPERCLIP_BUILD_COMMIT pnpm --filter @paperclipai/plugin-sdk build
+RUN PAPERCLIP_BUILD_COMMIT=$PAPERCLIP_BUILD_COMMIT pnpm --filter @paperclipai/plugin-llm-wiki build
+RUN PAPERCLIP_BUILD_COMMIT=$PAPERCLIP_BUILD_COMMIT sh -c "cd server && node scripts/verify-runner-vendor-dependencies.mjs && node ./node_modules/typescript/bin/tsc && mkdir -p dist/onboarding-assets dist/built-ins dist/services/scripts dist/vendor/paperclip-runner && cp -R src/onboarding-assets/. dist/onboarding-assets/ && cp -R src/built-ins/. dist/built-ins/ && cp -R src/services/scripts/. dist/services/scripts/ && cp -Rf ../packages/paperclip-runner/dist/. dist/vendor/paperclip-runner/ && node scripts/write-build-stamp.mjs"
+RUN test -f server/dist/index.js && cat server/dist/build-info.json
+RUN test -f packages/plugins/plugin-llm-wiki/dist/manifest.js && test -f packages/plugins/plugin-llm-wiki/dist/worker.js && test -d packages/plugins/plugin-llm-wiki/dist/ui

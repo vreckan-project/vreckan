@@ -245,3 +245,21 @@ endpoint is hot-reloaded without a restart.
 ## Details
 
 This README covers the Vreckan server. The web client is served by the server and requires no separate installation or documentation.
+
+## Platform base tree (v2026.1117.0 lineage)
+
+Since the v2026.1117.0 base lineage merge (ANT-1311 / ANT-1312, 2026-11-22)
+this repo also carries the full **Paperclip platform** source tree — the
+`server/` (Express control-plane API), `ui/` (React + Vite board UI),
+`packages/`, `cli/`, `doc/`, `rules/`, `skills/`, and the platform
+`Dockerfile`s — merged from `history/base-v2026.1117.0` (tag
+`base-v2026.1117.0-gate`) via a merge of unrelated histories. The vreckan
+Rust app (`crates/`, `Cargo.toml`/`Cargo.lock`, `server/` web client,
+`site/`) remains the primary project; the platform tree is the base the
+running paperclip01 control plane is built from.
+
+- **[docs/platform/README.md](./docs/platform/README.md)** — the platform's own README.
+- **[docs/platform/AGENTS.md](./docs/platform/AGENTS.md)** — platform working conventions (read `doc/DEVELOPING.md`, `doc/DATABASE.md`, and the scoped `rules/*.mdc` before touching platform code).
+- **[docs/platform/LICENSE.md](./docs/platform/LICENSE.md)** — the platform's MIT license (the repo root keeps Vreckan's MPL-2.0).
+- **`docker/Dockerfile.platform-base`** — the platform's node-based image build, relocated from the root (the root `Dockerfile` is the vreckan-app image); build it with `docker build -f docker/Dockerfile.platform-base .` from the repo root.
+- **`Dockerfile.ant-1275-gate`** — the scheduling-gate overlay image (`FROM ghcr.io/paperclipai/paperclip:2026.1117.0` + `PAPERCLIP_BUILD_COMMIT` ARG) used for the paperclip01 control-plane deploy.
