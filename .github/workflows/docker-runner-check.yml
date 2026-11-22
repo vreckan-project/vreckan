@@ -54,7 +54,13 @@ concurrency:
 
 jobs:
   runner:
-    if: github.event_name == 'pull_request'
+    # ANT-1312: upstream-gated. The PR leg seeds its baseline build from the
+    # upstream buildcache images (ghcr.io/paperclipai/paperclip:buildcache-*)
+    # and compiles a cache-proof stage FROM the upstream runner-build image,
+    # neither of which this repo provisions, so the leg only runs in the
+    # upstream paperclipai/paperclip repo. The workflow_dispatch leg keeps
+    # its own repository authorization and is unaffected.
+    if: github.event_name == 'pull_request' && github.repository == 'paperclipai/paperclip'
     name: Compile isolated native Runner
     runs-on: ubuntu-latest
     timeout-minutes: 20

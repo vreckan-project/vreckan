@@ -27,7 +27,11 @@ import { describe, expect, it } from "vitest";
 const repoRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..", "..", "..");
 const read = (...segments: string[]) => readFileSync(path.join(repoRoot, ...segments), "utf8");
 
-const dockerfile = read("Dockerfile");
+// The platform image's Dockerfile lives at docker/Dockerfile.platform-base in
+// the vreckan tree: the root Dockerfile builds the vreckan server image, and
+// the unrelated-histories merge (ANT-1312) kept the platform file at its
+// side-by-side location rather than at the root.
+const dockerfile = read("docker", "Dockerfile.platform-base");
 const agentRuntimeBase = read("docker", "agent-runtime", "Dockerfile.base");
 const compose = read("docker", "docker-compose.yml");
 const quickstartCompose = read("docker", "docker-compose.quickstart.yml");

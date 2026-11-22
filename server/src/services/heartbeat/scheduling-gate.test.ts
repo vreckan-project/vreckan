@@ -69,6 +69,7 @@ function gateCallbacks(db: Db, overrides: Partial<HeartbeatQueueDependencies> = 
     appendRunEvent: vi.fn<HeartbeatQueueDependencies["appendRunEvent"]>(async () => undefined),
     finalizeAgentStatus: vi.fn(async () => undefined),
     getAgentInvokability: vi.fn<HeartbeatQueueDependencies["getAgentInvokability"]>(async () => ({ invokable: true })),
+    canStartNewExternalBotWork: vi.fn<HeartbeatQueueDependencies["canStartNewExternalBotWork"]>(async () => true),
     getWorktreeExecutionCutoff: vi.fn(async () => null),
     applyRunDispatchPostCommitEffects: vi.fn(),
     issuesSvc: {

@@ -13,7 +13,17 @@ permissions:
 
 jobs:
   ci:
-    if: github.event.action != 'labeled' || github.event.label.name == 'profile-ci' || github.event.label.name == 'full-ci'
+    # ANT-1312: upstream-gated. This call runs the upstream
+    # pr-trusted.yml@master against the checked-out tree, which assumes the
+    # upstream layout: the root Dockerfile is the platform image (the
+    # "Verify Tailscale runtime clients" step builds it at the
+    # tailscale-client stage), upstream-only runner groups, secrets and the
+    # lockfile-trust policy. In the vreckan tree the root Dockerfile builds
+    # the vreckan server image (the platform one lives at
+    # docker/Dockerfile.platform-base, without the tailscale-client stage),
+    # so the lane cannot be green here without upstream infrastructure. It
+    # therefore only runs in the upstream paperclipai/paperclip repo.
+    if: github.repository == 'paperclipai/paperclip' && (github.event.action != 'labeled' || github.event.label.name == 'profile-ci' || github.event.label.name == 'full-ci')
     # Master requires CODEOWNERS review for .github/**, including this workflow.
     # The AWS runner group permits pr-trusted.yml@refs/heads/master.
     uses: paperclipai/paperclip/.github/workflows/pr-trusted.yml@master
