@@ -236,6 +236,7 @@ endpoint is hot-reloaded without a restart.
 - **[docs/api.md](./docs/api.md)** — full REST/WS endpoint reference for the Rust port, with per-route auth and E2EE requirements.
 - **[docs/ops.md](./docs/ops.md)** — operations & deployment: the container and its host privileges (docker-sock, DRI, group add), image build and registries, the Gitea vLLM-pattern CI/CD flow, database backends, TLS / ACME, and the data layout.
 - **[docs/release.md](./docs/release.md)** — the release & changelog process (`bump-and-tag`, `.base-image-digest`, changelog conventions).
+- **[docs/control-plane.md](./docs/control-plane.md)** — the paperclip01 control plane: where the Paperclip platform tree lives in the repo (since the v2026.1117.0 base lineage landing), the `Dockerfile.ant-1275-gate` overlay image build, the tag/revision-metadata rule (tag must equal the build commit), the rollback artifact policy, and the durable `history/` lineage refs.
 - **[docs/port-status.md](./docs/port-status.md)** — living record of known gaps vs the Python original, sourced from the ANT-5 parity audit.
 - **[REWRITE_EVALUATION.md](./REWRITE_EVALUATION.md)** — the feasibility assessment that kicked off the Rust rewrite.
 - **[HISTORY.md](./HISTORY.md)** — the full record of the original SealSkin hard fork (pre-Rust).
@@ -262,4 +263,4 @@ running paperclip01 control plane is built from.
 - **[docs/platform/AGENTS.md](./docs/platform/AGENTS.md)** — platform working conventions (read `doc/DEVELOPING.md`, `doc/DATABASE.md`, and the scoped `rules/*.mdc` before touching platform code).
 - **[docs/platform/LICENSE.md](./docs/platform/LICENSE.md)** — the platform's MIT license (the repo root keeps Vreckan's MPL-2.0).
 - **`docker/Dockerfile.platform-base`** — the platform's node-based image build, relocated from the root (the root `Dockerfile` is the vreckan-app image); build it with `docker build -f docker/Dockerfile.platform-base .` from the repo root.
-- **`Dockerfile.ant-1275-gate`** — the scheduling-gate overlay image (`FROM ghcr.io/paperclipai/paperclip:2026.1117.0` + `PAPERCLIP_BUILD_COMMIT` ARG) used for the paperclip01 control-plane deploy.
+- **`Dockerfile.ant-1275-gate`** — the scheduling-gate overlay image (`FROM ghcr.io/paperclipai/paperclip:2026.1117.0` + `PAPERCLIP_BUILD_COMMIT` ARG) used for the paperclip01 control-plane deploy; the operator runbook (build pattern, tag/revision rule, rollback policy) is [docs/control-plane.md](./docs/control-plane.md).
