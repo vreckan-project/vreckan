@@ -22,6 +22,11 @@
 # The known advisories are ignored (with reasons) because they are accepted
 # risk in this tree; drop an entry once its crate is fixed.
 ignore = [
+  # (RUSTSEC-2026-0592 url 2.5.8 "Stack overflow in Url::origin() on nested
+  # blob: URLs" dropped in ANT-1312: `url = "2"` re-resolved to 2.5.9 (the
+  # fix, published 2026-11-22) and form_urlencoded 1.2.2 -> 1.2.3 with it —
+  # a no-flag cargo-audit on the post-bump lockfile is clean; mirrored in
+  # vreckan-workflow's build-test-rust.yml, same PR pair.)
   # (RUSTSEC-2023-0071 rsa "Marvin Attack" and RUSTSEC-2026-0387 crypto-bigint
   # 0.5.5 dropped in ANT-1150: jsonwebtoken 12 (PR #225) moved the tree onto
   # p256/p384 0.14, so only the patched rsa 0.10.0 and crypto-bigint 0.7.x
