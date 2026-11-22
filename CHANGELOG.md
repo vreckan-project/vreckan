@@ -9,6 +9,114 @@ is committed normally in `vreckan`. The changelog is the authoritative
 record of what shipped in each release — see
 [`docs/release.md`](./docs/release.md) for the conventions.
 
+## 2026-11-22 — v2026.1117.0 base lineage lands on `main` (v0.12.19); control-plane redeploy pending the security vet
+
+- **The Paperclip platform v2026.1117.0 base lineage is now on `main`**
+  (ANT-1311 / [ANT-1312](/ANT/issues/ANT-1312)). The lineage branch
+  `history/base-v2026.1117.0` (head `3f76d306`, tag
+  `base-v2026.1117.0-gate`) — the vendor base
+  `ghcr.io/paperclipai/paperclip:2026.1117.0` (upstream build commit
+  `c0f132898`), plus the scheduling-gate work rebased onto it — was merged
+  into `main` @ `1490a2987` as a **merge of unrelated histories** (empty
+  merge base: the 2026-11-20 base re-bump re-rooted the platform history).
+  Merge commit `b8bb44ed5` (parents `1490a2987` + `3f76d306`), PR
+  [#258](https://github.com/vreckan-project/vreckan/pull/258), merged
+  2026-11-22 9:49 AM MST via the push-the-merge-commit path (the GitHub
+  merge endpoint returns 422 in this environment). The only content
+  conflicts were the 7 root files, resolved as: root `Dockerfile` stays the
+  vreckan-app image (the platform's node-based Dockerfile moved to
+  `docker/Dockerfile.platform-base`); `.gitignore` / `.dockerignore` /
+  `.env.example` are unions; `AGENTS.md` keeps the vreckan conventions
+  primary with the platform's preserved verbatim at
+  `docs/platform/AGENTS.md`; the root `README.md` stays the vreckan README
+  with a new "Platform base tree" section pointing at
+  `docs/platform/README.md`; the root `LICENSE` stays MPL-2.0 with the
+  platform's MIT license preserved at `docs/platform/LICENSE.md`. The tree
+  is now the union: the vreckan Rust app (`crates/`, root
+  `Cargo.toml`/`Cargo.lock`, the `server/static` web client, `site/`) plus
+  the full platform v2026.1117.0 source tree (`server/` Express
+  control-plane API, `ui/`, `packages/`, `cli/`, `doc/`, `rules/`,
+  `skills/`, and the platform's `.github/workflows/` entries). Five
+  platform-only workflows (`commitperclip-review`, `refresh-lockfile`,
+  `runner-chaos-evals`, the `pr.yml` job, and the `docker-runner-check` PR
+  leg) are gated on `github.repository == 'paperclipai/paperclip'` so they
+  stay inert here. See [docs/control-plane.md](./docs/control-plane.md) for
+  the operator runbook (tree layout, overlay build, tag/revision rule,
+  rollback policy).
+- **Landing CI — first upstream-platform CI run on the merged head.** The
+  ~18 failing platform `ci/*` jobs were not merge breakage: `pr.yml` pulled
+  upstream `pr-trusted.yml@master`, whose new Tailscale step builds the
+  root Dockerfile at a `tailscale-client` stage that no longer exists at the
+  root (the platform Dockerfile moved to
+  `docker/Dockerfile.platform-base`); the `docker-runner-check` PR leg
+  needs upstream-published images; and two genuine lineage test drifts
+  surfaced (the `container-init-reaping` test read the root Dockerfile
+  expecting the platform layout; the `scheduling-gate.test.ts` stub was
+  missing `canStartNewExternalBotWork`). All fixed in `3d4955385` (both
+  platform test files verified locally — typecheck clean, 37/37), the
+  upstream-dependent legs gated to the upstream repo. A same-day RustSec
+  advisory, RUSTSEC-2026-0592 (stack overflow in `Url::origin()`, `url
+  2.5.8`), would have failed `main` independently of the merge; fixed in
+  `24603aea2` (`url 2.5.9` + `form_urlencoded 1.2.3`). Gitea
+  `build-test-rust` runs 1526 + 1528 are green on the merged `main`, with
+  all five `VRECKAN: * (Rust)` commit statuses success.
+- **v0.12.19** was auto-assigned by the per-push source gate (ANT-1050):
+  the landing changed `server/` (the platform tree) and the dependency fix
+  changed `Cargo.toml`/`Cargo.lock`, both source paths. The release notes
+  were auto-composed from the push range's commit subjects (the platform's
+  landing commits). Two one-time pipeline quirks on the tag path needed
+  manual workarounds — the composed release-notes body hit the 125 KB
+  GitHub Release API limit (the platform changelog landed in-tree), and a
+  ~30-open-PR dependabot flood pushed the bump PR off the first page of an
+  un-paginated `/pulls` lookup — so the `/releases` entry was created
+  manually; permanent fixes are tracked as follow-ups on
+  [ANT-1312](/ANT/issues/ANT-1312).
+- **The `c261ab6` / `c0f132898` anomaly — why the old image carried two
+  different SHAs.** The image the paperclip01 control plane ran before this
+  landing was tagged `ant-1275-gate-c261ab6` while its reported build
+  revision (`org.opencontainers.image.revision`) was `c0f132898`. The two
+  metadata fields come from different places in
+  `Dockerfile.ant-1275-gate`: the **tag** carries the Dockerfile's
+  `PAPERCLIP_BUILD_COMMIT` ARG — the **pre-bump** scheduling-gate commit
+  `c261ab6` (ANT-906, the staggered-reentry fix "settle claimed-run
+  reservations at execution settle"), from the gate branch as it stood
+  before the 2026-11-20 rebase onto v2026.1117.0 — while the **revision
+  label** is inherited from the vendor base image on the `FROM` line
+  (`ghcr.io/paperclipai/paperclip:2026.1117.0`, which upstream built at
+  `c0f132898`). So the tag named the pre-bump overlay history and the label
+  named the vendor base; neither is a contradiction of the other, but the
+  tag was not the commit the image was actually built from. When the
+  pre-bump branch was deleted, `c261ab6` became an orphan; it is now
+  preserved permanently on branch `history/pre-bump-scheduling-gate` (tip
+  `2bc30c13a` = ANT-904; chain `2604d86` ANT-902 → `c261ab6` ANT-906 →
+  `2bc30c13a`), under the `history/`-prefix sweep exemption (precedent
+  `history/pre-squash`). The gate content also lives in the post-rebase
+  lineage under new SHAs (`78e1260` / `254af40` + the ANT-1275/1279/1300
+  commits on top of `c0f132898`).
+- **Durable lineage refs — not deletion targets.** Branch
+  `history/base-v2026.1117.0` (head `3f76d306`, tag
+  `base-v2026.1117.0-gate`) and branch
+  `history/pre-bump-scheduling-gate` (the pre-bump gate chain) are the
+  permanent record of the base lineage; they stay on GitHub post-landing.
+- **Control-plane redeploy — pending the security vet.** The paperclip01
+  control plane will be rebuilt from the merged `main` HEAD with the image
+  tag **and** the revision label both carrying the actual build commit
+  ([ANT-1314](/ANT/issues/ANT-1314)), gated on the security re-vet of the
+  v2026.1117.0 dependency set
+  ([ANT-1313](/ANT/issues/ANT-1313)), with independent post-deploy
+  verification and release sign-off
+  ([ANT-1315](/ANT/issues/ANT-1315)). The old
+  `ant-1275-gate-c261ab6` image is retained as the rollback artifact until
+  sign-off — it is not deleted before the new deployment is verified
+  healthy, and whether it stays in ghcr as a permanent rollback artifact is
+  an open board decision after sign-off.
+- **No vreckan app behavior change.** v0.12.18 was the base-image pin bump
+  above (behavior-neutral); this landing adds the platform source tree to
+  the repo and to the control-plane image build, plus the
+  `url`/`form_urlencoded` dependency bump above. The vreckan binary's API
+  surface and `VRECKAN_*` environment variables are unchanged from
+  v0.12.17.
+
 ## 2026-11-21 — base-image bump + site/docs-only changes since v0.12.17
 
 - **The build base advanced to the 2026-11-20 10:35 PM MST bake**
