@@ -9,7 +9,7 @@ is committed normally in `vreckan`. The changelog is the authoritative
 record of what shipped in each release — see
 [`docs/release.md`](./docs/release.md) for the conventions.
 
-## 2026-11-22 — v2026.1117.0 base lineage lands on `main` (v0.12.19); control-plane redeploy pending the security vet
+## 2026-11-22 — v2026.1117.0 base lineage lands on `main` (v0.12.19); paperclip01 control plane redeployed from merged main (QA sign-off pending)
 
 - **The Paperclip platform v2026.1117.0 base lineage is now on `main`**
   (ANT-1311 / [ANT-1312](/ANT/issues/ANT-1312)). The lineage branch
@@ -98,14 +98,22 @@ record of what shipped in each release — see
   `base-v2026.1117.0-gate`) and branch
   `history/pre-bump-scheduling-gate` (the pre-bump gate chain) are the
   permanent record of the base lineage; they stay on GitHub post-landing.
-- **Control-plane redeploy — pending the security vet.** The paperclip01
-  control plane will be rebuilt from the merged `main` HEAD with the image
-  tag **and** the revision label both carrying the actual build commit
-  ([ANT-1314](/ANT/issues/ANT-1314)), gated on the security re-vet of the
+- **Security re-vet — GO (12:31 PM MST).** The security re-vet of the
   v2026.1117.0 dependency set
-  ([ANT-1313](/ANT/issues/ANT-1313)), with independent post-deploy
-  verification and release sign-off
-  ([ANT-1315](/ANT/issues/ANT-1315)). The old
+  ([ANT-1313](/ANT/issues/ANT-1313)) completed with a **GO**: zero
+  dependency delta versus the vetted set, the 2 known criticals accepted as
+  risk, and the sharp CVE plus remaining dep bumps tracked as follow-up in
+  [ANT-1320](/ANT/issues/ANT-1320).
+- **Control-plane redeploy — done (12:57 PM MST), QA sign-off pending.**
+  The paperclip01 control plane was rebuilt from the merged `main` HEAD
+  ([ANT-1314](/ANT/issues/ANT-1314)) as
+  `ghcr.io/paperclipai/paperclip:ant-1311-main-ec8862b4c`, with the image
+  tag **and** the revision label both carrying the actual build commit
+  `ec8862b4c` — all five metadata sources (tag, `revision`, `version`,
+  `source`, and the running container's reported revision) agree on
+  `ec8862b4ce1c7b68fd07fcc2067406eb4e6ba7e1`, and the deploy verified
+  healthy. Independent post-deploy verification and release sign-off
+  ([ANT-1315](/ANT/issues/ANT-1315)) is still pending. The old
   `ant-1275-gate-c261ab6` image is retained as the rollback artifact until
   sign-off — it is not deleted before the new deployment is verified
   healthy, and whether it stays in ghcr as a permanent rollback artifact is

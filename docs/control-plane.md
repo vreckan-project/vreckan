@@ -100,8 +100,11 @@ plane build:
 2. Tag the image with that same SHA (e.g. `ant-<issue>-<short-sha>`).
 3. Verify after the build: the tag, `build-info.json`, and the image's
    revision metadata must all carry the same SHA.
-4. The 2026-11-22 redeploy (ANT-1314) is the first build under this rule —
-   its tag and revision label both carry the actual merged-`main` SHA.
+4. The 2026-11-22 redeploy (ANT-1314) was the first build under this rule —
+   it shipped as `ant-1311-main-ec8862b4c` with the tag and revision label
+   both carrying the actual merged-`main` SHA (`ec8862b4c`); all five
+   metadata sources (tag, revision, version, source, and the running
+   container's reported revision) agreed after deploy.
 
 ## 4. Rollback artifact policy
 
