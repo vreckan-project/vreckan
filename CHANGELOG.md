@@ -9,6 +9,45 @@ is committed normally in `vreckan`. The changelog is the authoritative
 record of what shipped in each release — see
 [`docs/release.md`](./docs/release.md) for the conventions.
 
+## 2026-11-23 — base-image bump + no app-source changes since v0.12.20
+
+- **The build base advanced to the 2026-11-22 10:32 PM MST bake**
+  (`vreckan-base-build` `sha256:5aa2fd39e259…` →
+  `sha256:de3cafb94580…`; `.base-image-digest` and the `Dockerfile`
+  build-stage `FROM` re-pointed together, ANT-277). The re-bake is
+  **lockfile-driven** — `vreckan.dep-digest` `792ccc0f…` →
+  `9cda3a39…` — bringing the base's warm crates.io cache in line with
+  the dependency moves that reached `main` between v0.12.14 and
+  v0.12.20: `libsqlite3-sys 0.37.0 → 0.40.0` (bundles SQLite 3.54.1, the
+  CVE-2026-119375 / RUSTSEC-2026-0459 fix — the ANT-982 temporary
+  allowance and the nightly `cargo-audit --ignore` for it were already
+  dropped, ANT-995, so the audit gate now runs clean against this
+  cache), `sqlx 0.9.0 → 0.9.1` (core / macros / mysql / postgres /
+  sqlite), and `url 2.5.8 → 2.5.9` + `form_urlencoded 1.2.2 → 1.2.3`
+  (RUSTSEC-2026-0592, "Stack overflow in `Url::origin()` on nested
+  `blob:` URLs", fixed in PR #301 and allowance-dropped in ANT-1312).
+  The cache also gains three Apple-target-only crates from the `url`
+  line (`libredox 0.1.25`, `objc2-core-foundation` /
+  `objc2-system-configuration` 0.3.2) — inert on the linux image build.
+  Toolchain unchanged: Rust 1.99.1, parent `rust:1.99.1-slim` still at
+  `sha256:f6c4a35d…`. The bake also carries workflow `main` at bake
+  time (`vreckan.workflow-sha` `01d5e270…` → `194651c3…`): the ANT-995
+  audit-ignore drop, the ANT-1312 Trivy allowlists for the platform
+  monorepo lockfiles and the inert `@paperclipai/server` advisories, and
+  the site pipeline rebase to `nginx:1.31.9-alpine`
+  (ANT-1284/ANT-1285) — the next nightly scans run with those. The
+  no-baked-`CARGO_BUILD_JOBS` caveat keeps standing (ANT-1040) — ad-hoc
+  `docker run` dev sessions should keep passing
+  `-e CARGO_BUILD_JOBS=4`.
+- **No app-source changes since v0.12.20** — `git log v0.12.20..HEAD`
+  is empty (v0.12.20 is the per-push cut of PR #302, landed
+  2026-11-22 9:33 PM MST), so this release is the base re-point above
+  and nothing else. The version number is assigned by the per-push
+  source gate on merge (ANT-1050): `.base-image-digest` is a source
+  path, so this merge auto-assigns the next patch number and the
+  `bump-and-tag` path auto-cuts the tag + release — no `VERSION` /
+  `Cargo.toml` / `Cargo.lock` change in this PR.
+
 ## 2026-11-22 — v2026.1117.0 base lineage lands on `main` (v0.12.19); paperclip01 control plane redeployed from merged main (QA sign-off pending)
 
 - **The Paperclip platform v2026.1117.0 base lineage is now on `main`**
