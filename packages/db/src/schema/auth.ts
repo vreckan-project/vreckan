@@ -1,4 +1,4 @@
-import { pgTable, text, timestamp, boolean, uniqueIndex } from "drizzle-orm/pg-core";
+import { pgTable, text, timestamp, boolean } from "drizzle-orm/pg-core";
 
 export const authUsers = pgTable("user", {
   id: text("id").primaryKey(),
@@ -28,18 +28,22 @@ export const authSessions = pgTable("session", {
  * `The field "<name>" does not exist in the "account" Drizzle schema`
  * when one is missing, which surfaces as a 500 on sign-up.
  *
- * `issuer` is the account namespace Better Auth 1.7 added. It is
- * `local:credential` for email/password accounts and
- * `local:oauth:<providerId>` for social accounts that do not declare an
- * issuer of their own, and it pairs with `account_id` as the stable
- * provider-side key — hence the unique index, which mirrors the
- * `(issuer, accountId)` unique index Better Auth declares on the model.
+ * `issuer` was the account namespace Better Auth 1.7.0-1.7.2 required
+ * (`local:credential` for email/password accounts,
+ * `local:oauth:<providerId>` for social providers that declare no issuer of
+ * their own); 1.7.3 removed it from the model — accounts are recognized by
+ * `provider_id` + `account_id` again. The column stays so pre-1.7.3 rows
+ * keep their backfilled values, but it is nullable and its
+ * `(issuer, account_id)` index is dropped: 1.7.3+ schema validation
+ * rejects any required column the adapter never writes, which would fail
+ * every account insert (1.7 upgrade guide, "Account identity keeps the
+ * provider key").
  */
 export const authAccounts = pgTable(
   "account",
   {
     id: text("id").primaryKey(),
-    issuer: text("issuer").notNull(),
+    issuer: text("issuer"),
     accountId: text("account_id").notNull(),
     providerId: text("provider_id").notNull(),
     userId: text("user_id").notNull().references(() => authUsers.id, { onDelete: "cascade" }),
@@ -53,9 +57,6 @@ export const authAccounts = pgTable(
     createdAt: timestamp("created_at", { withTimezone: true }).notNull(),
     updatedAt: timestamp("updated_at", { withTimezone: true }).notNull(),
   },
-  (table) => ({
-    issuerAccountIdUq: uniqueIndex("account_issuer_account_id_uq").on(table.issuer, table.accountId),
-  }),
 );
 
 export const authVerifications = pgTable("verification", {

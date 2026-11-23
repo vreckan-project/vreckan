@@ -41,20 +41,19 @@ async function migrationHash() {
 }
 
 describe("account issuer schema", () => {
-  it("declares the column Better Auth requires and the key it indexes on", () => {
+  it("keeps the legacy issuer column nullable and drops its unique index", () => {
     const config = getTableConfig(authAccounts);
     const issuer = config.columns.find((column) => column.name === "issuer");
     expect(issuer).toBeDefined();
-    expect(issuer?.notNull).toBe(true);
 
-    // Better Auth declares `(issuer, accountId)` unique on the account model
-    // and resolves accounts by that pair.
-    const unique = config.indexes.find((index) => index.config.name === UNIQUE_INDEX);
-    expect(unique?.config.unique).toBe(true);
-    expect(unique?.config.columns.map((column) => (column as { name: string }).name)).toEqual([
-      "issuer",
-      "account_id",
-    ]);
+    // Better Auth 1.7.3+ no longer writes `issuer` (accounts are keyed by
+    // provider_id + account_id) and its schema check rejects any required
+    // column it never writes, so the column must be nullable.
+    expect(issuer?.notNull).toBe(false);
+
+    // The `(issuer, accountId)` unique index only existed while 1.7.0-1.7.2
+    // resolved accounts by that pair; it is dropped by migration 0453.
+    expect(config.indexes.find((index) => index.config.name === UNIQUE_INDEX)).toBeUndefined();
   });
 });
 

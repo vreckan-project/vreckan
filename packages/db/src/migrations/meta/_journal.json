@@ -1228,7 +1228,7 @@
       "breakpoints": true
     },
     {
-      "idx": 178,
+      "idx": 177,
       "version": "7",
       "when": 1784241826832,
       "tag": "0177_activity_log_responsible_user",
@@ -3157,6 +3157,13 @@
       "version": "7",
       "when": 1794016148211,
       "tag": "0452_company_scheduling",
+      "breakpoints": true
+    },
+    {
+      "idx": 453,
+      "version": "7",
+      "when": 1795389280007,
+      "tag": "0453_better_auth_account_issuer_relax",
       "breakpoints": true
     }
   ]

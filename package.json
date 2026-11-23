@@ -135,7 +135,35 @@
       "react-dom": "^19.2.8",
       "@codemirror/state": "^6.7.2",
       "@codemirror/view": "^6.43.11",
-      "@lezer/common": "^1.5.2"
+      "@lezer/common": "^1.5.2",
+      "@connectrpc/connect-node>undici": "6.29.1",
+      "zod": "4.6.7",
+      "svix>uuid": "11.1.1",
+      "@mdxeditor/editor>js-yaml": "4.3.2",
+      "@tailwindcss/typography>postcss-selector-parser": "6.1.6",
+      "@azure/msal-node": "7.2.3",
+      "@esbuild-kit/core-utils>esbuild": "0.28.2",
+      "@ai-sdk/provider-utils>undici": "7.30.2",
+      "@discordjs/rest>undici": "6.29.1",
+      "discord.js>undici": "6.29.1",
+      "jsdom>undici": "8.13.1",
+      "qs": "6.17.1",
+      "hono": "^4.13.16",
+      "@modelcontextprotocol/sdk>@hono/node-server": "^2.1.6",
+      "pino-pretty>fast-copy": "^4.1.0",
+      "ajv>fast-uri": "^3.1.9",
+      "axios>follow-redirects": "^1.16.1",
+      "express-rate-limit>ip-address": "^10.7.4",
+      "source-map-js": "^1.2.2",
+      "mermaid>katex": "^0.18.2",
+      "router>path-to-regexp": "^8.4.0",
+      "superagent>form-data": "4.0.6",
+      "@joshwooding/vite-plugin-react-docgen-typescript>glob": "14.0.6"
+    },
+    "auditConfig": {
+      "ignoreGhsas": [
+        "GHSA-6cpc-mj5c-m9rq"
+      ]
     }
   }
 }
