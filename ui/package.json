@@ -40,7 +40,7 @@
     "@dnd-kit/utilities": "^3.2.2",
     "@lexical/clipboard": "0.48.0",
     "@lexical/link": "0.48.0",
-    "@lezer/highlight": "^1.2.3",
+    "@lezer/highlight": "^1.2.5",
     "@mdxeditor/editor": "^4.2.3",
     "@paperclipai/adapter-claude-local": "workspace:*",
     "@paperclipai/adapter-codex-local": "workspace:*",
