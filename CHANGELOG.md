@@ -13,7 +13,7 @@ record of what shipped in each release — see
 
 - **The Paperclip platform v2026.1117.0 base lineage is removed from the
   tree** (ANT-1389 Part B; the 2026-11-22 merge `b8bb44ed5` was its
-  landing). This is a **content removal, not a `git revert`**: all 14,838
+  landing). This is a **content removal, not a `git revert`**: all 14,837
   platform files (the platform's `server/src` + `server/package.json`,
   `ui/`, `packages/`, `cli/`, `doc/`, `rules/`, `skills/`, `docker/`, the
   platform workflows, and the 19 post-merge platform-side changes — dep
@@ -30,9 +30,12 @@ record of what shipped in each release — see
   are deleted from GitHub and the Gitea mirror post-merge; their content
   survives in `main`'s history (merge `b8bb44ed5` and descendants).
 - **Running control plane untouched.** paperclip01 keeps running image
-  `ant-1311-main-ec8862b4c` (deployed 2026-11-22, built from main @
-  `ec8862b4c` via the overlay `Dockerfile.ant-1275-gate`); the removal
-  does not redeploy or otherwise touch it. If a rebuild is ever needed,
+  `2026.1117.0-wikidist` (deployed 2026-11-22 7:44 PM MST, the
+  ANT-1322 cutover); `ant-1311-main-ec8862b4c` (the 2026-11-22
+  fork-overlay build from main @ `ec8862b4c` via
+  `Dockerfile.ant-1275-gate`) is the retained rollback artifact. The
+  removal does not redeploy or otherwise touch it. If a rebuild is ever
+  needed,
   the pre-removal source is still recoverable from git history (e.g.
   `git show b8bb44ed5:Dockerfile.ant-1275-gate`) — see
   `docs/control-plane.md` for the pointer.

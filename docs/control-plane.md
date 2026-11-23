@@ -6,12 +6,16 @@ longer lives in this repo, and per CEO decision it was not
 relocated to a new repo either — it is gone from our repos.
 
 The running control plane is the image
-`ghcr.io/paperclipai/paperclip:ant-1311-main-ec8862b4c` (deployed
-2026-11-22, built from this repo's main at `ec8862b4c` via the
-overlay `Dockerfile.ant-1275-gate`:
-`FROM ghcr.io/paperclipai/paperclip:2026.1117.0` + the files that
-diverge from the vendor release). The removal does not redeploy or
-otherwise touch the running control plane.
+`ghcr.io/paperclipai/paperclip:2026.1117.0-wikidist` (deployed
+2026-11-22 7:44 PM MST, the ANT-1322 cutover to the standard vendor
+release + the thin wiki-plugin dist-bake overlay). Its predecessor —
+`ghcr.io/paperclipai/paperclip:ant-1311-main-ec8862b4c`, deployed
+2026-11-22 and built from this repo's main at `ec8862b4c` via the
+overlay `Dockerfile.ant-1275-gate` (`FROM
+ghcr.io/paperclipai/paperclip:2026.1117.0` + the files that diverge
+from the vendor release) — is retained as the rollback artifact. The
+removal does not redeploy or otherwise touch the running control
+plane.
 
 If a rebuild is ever needed, the pre-removal source is still
 recoverable from this repo's git history: the merge commit

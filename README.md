@@ -236,7 +236,7 @@ endpoint is hot-reloaded without a restart.
 - **[docs/api.md](./docs/api.md)** — full REST/WS endpoint reference for the Rust port, with per-route auth and E2EE requirements.
 - **[docs/ops.md](./docs/ops.md)** — operations & deployment: the container and its host privileges (docker-sock, DRI, group add), image build and registries, the Gitea vLLM-pattern CI/CD flow, database backends, TLS / ACME, and the data layout.
 - **[docs/release.md](./docs/release.md)** — the release & changelog process (`bump-and-tag`, `.base-image-digest`, changelog conventions).
-- **[docs/control-plane.md](./docs/control-plane.md)** — the paperclip01 control plane: where the Paperclip platform tree lives in the repo (since the v2026.1117.0 base lineage landing), the `Dockerfile.ant-1275-gate` overlay image build, the tag/revision-metadata rule (tag must equal the build commit), the rollback artifact policy, and the durable `history/` lineage refs.
+- **[docs/control-plane.md](./docs/control-plane.md)** — the paperclip01 control plane: the source was removed from this repo without relocation (ANT-1389), the running image, and the rebuild-from-git-history path.
 - **[docs/port-status.md](./docs/port-status.md)** — living record of known gaps vs the Python original, sourced from the ANT-5 parity audit.
 - **[REWRITE_EVALUATION.md](./REWRITE_EVALUATION.md)** — the feasibility assessment that kicked off the Rust rewrite.
 - **[HISTORY.md](./HISTORY.md)** — the full record of the original SealSkin hard fork (pre-Rust).
@@ -253,6 +253,6 @@ The paperclip01 control plane is the Paperclip platform (v2026.1117.0
 lineage). Its source was in this repo until 2026-11-23 and was then removed
 without relocation ([ANT-1389](/ANT/issues/ANT-1389)) — it no longer lives
 in any repo. The running control plane image
-(`ant-1311-main-ec8862b4c`, deployed 2026-11-22) is unchanged; details and
-the rebuild-from-git-history path are in
+(`2026.1117.0-wikidist`, deployed 2026-11-22 7:44 PM MST) is
+unchanged; details and the rebuild-from-git-history path are in
 [docs/control-plane.md](./docs/control-plane.md).
