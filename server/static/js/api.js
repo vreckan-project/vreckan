@@ -9,6 +9,43 @@ import {
   getSession,
 } from "./crypto.js";
 
+// True when `parsed` is an E2EE response envelope ({ iv, ciphertext }).
+function isEncryptedEnvelope(parsed) {
+  return parsed && typeof parsed === "object" && parsed.iv && parsed.ciphertext;
+}
+
+// Best-effort readable form of an HTTP error body. E2EE routes encrypt the
+// error payload ({"detail": ...} inside the envelope) before it reaches the
+// client, so re-throwing the raw body would surface base64 ciphertext in
+// toasts. Decrypt it with the same session key as the success path and
+// surface the server's human-readable message; fall back to the raw text
+// when the body is not JSON, not an envelope, or decryption fails (stale
+// session — the 400 retry below still re-handshakes and recovers).
+async function readableErrorBody(text, sess) {
+  let parsed;
+  try {
+    parsed = JSON.parse(text);
+  } catch {
+    return text;
+  }
+  if (!isEncryptedEnvelope(parsed)) return text;
+  try {
+    const decrypted = await decryptAesGcm(sess.key, parsed.iv, parsed.ciphertext, sess.id);
+    try {
+      const inner = JSON.parse(decrypted);
+      if (inner && typeof inner === "object") {
+        if (typeof inner.detail === "string" && inner.detail) return inner.detail;
+        if (typeof inner.error === "string" && inner.error) return inner.error;
+      }
+    } catch {
+      // Decrypted payload is not JSON; surface the plaintext as-is.
+    }
+    return decrypted;
+  } catch {
+    return text;
+  }
+}
+
 export async function secureFetch(path, options = {}) {
   const { method = "GET", body } = options;
   let attempt = 0;
@@ -40,11 +77,13 @@ export async function secureFetch(path, options = {}) {
 
       const text = await response.text();
       if (!response.ok) {
-        throw new Error(`HTTP error! status: ${response.status} - ${text}`);
+        throw new Error(
+          `HTTP error! status: ${response.status} - ${await readableErrorBody(text, sess)}`
+        );
       }
 
       const parsed = JSON.parse(text);
-      if (parsed && typeof parsed === "object" && parsed.iv && parsed.ciphertext) {
+      if (isEncryptedEnvelope(parsed)) {
         const decrypted = await decryptAesGcm(sess.key, parsed.iv, parsed.ciphertext, sess.id);
         return JSON.parse(decrypted);
       }
