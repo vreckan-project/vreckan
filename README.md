@@ -247,20 +247,12 @@ endpoint is hot-reloaded without a restart.
 
 This README covers the Vreckan server. The web client is served by the server and requires no separate installation or documentation.
 
-## Platform base tree (v2026.1117.0 lineage)
+## Paperclip control plane (source removed)
 
-Since the v2026.1117.0 base lineage merge (ANT-1311 / ANT-1312, 2026-11-22)
-this repo also carries the full **Paperclip platform** source tree — the
-`server/` (Express control-plane API), `ui/` (React + Vite board UI),
-`packages/`, `cli/`, `doc/`, `rules/`, `skills/`, and the platform
-`Dockerfile`s — merged from `history/base-v2026.1117.0` (tag
-`base-v2026.1117.0-gate`) via a merge of unrelated histories. The vreckan
-Rust app (`crates/`, `Cargo.toml`/`Cargo.lock`, `server/` web client,
-`site/`) remains the primary project; the platform tree is the base the
-running paperclip01 control plane is built from.
-
-- **[docs/platform/README.md](./docs/platform/README.md)** — the platform's own README.
-- **[docs/platform/AGENTS.md](./docs/platform/AGENTS.md)** — platform working conventions (read `doc/DEVELOPING.md`, `doc/DATABASE.md`, and the scoped `rules/*.mdc` before touching platform code).
-- **[docs/platform/LICENSE.md](./docs/platform/LICENSE.md)** — the platform's MIT license (the repo root keeps Vreckan's MPL-2.0).
-- **`docker/Dockerfile.platform-base`** — the platform's node-based image build, relocated from the root (the root `Dockerfile` is the vreckan-app image); build it with `docker build -f docker/Dockerfile.platform-base .` from the repo root.
-- **`Dockerfile.ant-1275-gate`** — the scheduling-gate overlay image (`FROM ghcr.io/paperclipai/paperclip:2026.1117.0` + `PAPERCLIP_BUILD_COMMIT` ARG) used for the paperclip01 control-plane deploy; the operator runbook (build pattern, tag/revision rule, rollback policy) is [docs/control-plane.md](./docs/control-plane.md).
+The paperclip01 control plane is the Paperclip platform (v2026.1117.0
+lineage). Its source was in this repo until 2026-11-23 and was then removed
+without relocation ([ANT-1389](/ANT/issues/ANT-1389)) — it no longer lives
+in any repo. The running control plane image
+(`ant-1311-main-ec8862b4c`, deployed 2026-11-22) is unchanged; details and
+the rebuild-from-git-history path are in
+[docs/control-plane.md](./docs/control-plane.md).

@@ -1,1 +1,0 @@
-CREATE INDEX CONCURRENTLY IF NOT EXISTS "approvals_pending_retention_idx" ON "approvals" USING btree ("updated_at","id") WHERE "approvals"."status" = 'pending';

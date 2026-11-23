@@ -1,3 +1,0 @@
-ALTER TABLE "projects" ADD COLUMN "git_authorization_grant_id" uuid;--> statement-breakpoint
-ALTER TABLE "projects" ADD COLUMN "git_authorized_by_user_id" text;--> statement-breakpoint
-ALTER TABLE "projects" ADD CONSTRAINT "projects_git_authorization_grant_id_connection_grants_id_fk" FOREIGN KEY ("git_authorization_grant_id") REFERENCES "public"."connection_grants"("id") ON DELETE set null ON UPDATE no action;

@@ -1,1 +1,0 @@
-ALTER TABLE "status_cards" ADD COLUMN "next_eval_reason" text;

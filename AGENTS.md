@@ -87,28 +87,3 @@ naming pass flags explicitly-named, non-compose containers that miss the
 `ant-<issue>-<purpose>` convention, and an unattributable name like bare
 `vreckan` is swept once the owning issue's 24h terminal grace passes.
 `vreckan` is deliberately NOT on the B2 exemption list.
-
-## Platform base tree conventions (v2026.1117.0 lineage)
-
-Since ANT-1312 this repo also carries the Paperclip platform source tree
-(`server/`, `ui/`, `packages/`, `cli/`, `doc/`, `rules/`, `skills/`). The
-sections above are the **vreckan-app** conventions and stay the authority
-for the Rust app, its build image, and its worktree practice. For work that
-touches platform code, the platform's own conventions apply — see
-**[docs/platform/AGENTS.md](./docs/platform/AGENTS.md)** in full. The short
-version:
-
-- Read `doc/DEVELOPING.md`, `doc/DATABASE.md`, and `doc/SPEC-implementation.md`
-  before making platform changes; the platform's `doc/GOAL.md` / `PRODUCT.md`
-  / `SPEC.md` are the product context.
-- Before editing or reviewing platform files, read the matching scoped rules in
-  `rules/*.mdc` (frontmatter `globs` select scope; `alwaysApply: true` rules
-  apply repo-wide). They supplement, not replace, this file.
-- Dev setup is `pnpm install && pnpm dev` (embedded PGlite; leave
-  `DATABASE_URL` unset) — API and UI both on `http://localhost:3100`.
-- Keep changes company-scoped; company boundaries are enforced in routes and
-  services.
-- The platform image builds from `docker/Dockerfile.platform-base` (relocated
-  from the root by ANT-1312; the root `Dockerfile` is the vreckan-app image).
-  The platform's MIT license is preserved at `docs/platform/LICENSE.md`; the
-  repo root keeps Vreckan's MPL-2.0.

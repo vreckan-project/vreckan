@@ -1,8 +1,0 @@
-.instance.json
-test-results/
-playwright-report/
-
-.auth-instance.json
-test-results-auth/
-playwright-report-auth/
-qualification/

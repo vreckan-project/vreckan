@@ -1,1 +1,0 @@
-ALTER TABLE "native_run_finalizations" ADD COLUMN "controller_host_hash" text;
