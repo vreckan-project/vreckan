@@ -86,7 +86,7 @@
   "devDependencies": {
     "@lexical/rich-text": "0.48.0",
     "@paperclipai/plugin-sdk": "workspace:*",
-    "@sentry/browser": "10.71.0",
+    "@sentry/browser": "11.16.0",
     "@storybook/addon-a11y": "10.6.8",
     "@storybook/addon-docs": "10.6.8",
     "@storybook/react-vite": "10.5.10",
