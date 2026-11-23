@@ -1085,8 +1085,8 @@ importers:
         specifier: ^5.3.0
         version: 5.3.0
       heif2jpeg:
-        specifier: 0.1.6
-        version: 0.1.6
+        specifier: 0.1.7
+        version: 0.1.7
       jsdom:
         specifier: ^30.0.1
         version: 30.0.1(@noble/hashes@2.4.0)
@@ -2667,38 +2667,38 @@ packages:
     engines: {node: '>=6'}
     hasBin: true
 
-  '@heif2jpeg/heif2jpeg-darwin-arm64@0.1.6':
-    resolution: {integrity: sha512-HSXg4gGIb/RUwdUyRfXMopxvs8JpTLexW5+XLV3MqNZ8bMjUINv8aAigBECZ7It8dFWfcpui236S+z/LLMMFHQ==}
+  '@heif2jpeg/heif2jpeg-darwin-arm64@0.1.7':
+    resolution: {integrity: sha512-UjYx/lsUtepyj7QPJ/BcDWZXXTbG2QpTTnnpPuGr+XSxF7nFYx4H5ph9nTph/7a38VJNC0v/77YnhNAsyaCsvQ==}
     engines: {node: '>= 18'}
     cpu: [arm64]
     os: [darwin]
 
-  '@heif2jpeg/heif2jpeg-darwin-x64@0.1.6':
-    resolution: {integrity: sha512-2Rno3RuhB5jK61RoMThoD9XNG+p997xOs9qN+qAk4vlr8IVFvAamunWvmtumHiJOWQ97mL7WuvpTa4PGDadqcQ==}
+  '@heif2jpeg/heif2jpeg-darwin-x64@0.1.7':
+    resolution: {integrity: sha512-cWeWRYZ3KtDk4CjB39riwRHIT9xfxctbpj1ms7Py+P0vJu7yjL5GfxkpR+27oVn5pvDcY1CXRaWOXhCtYIIdaQ==}
     engines: {node: '>= 18'}
     cpu: [x64]
     os: [darwin]
 
-  '@heif2jpeg/heif2jpeg-linux-arm64-gnu@0.1.6':
-    resolution: {integrity: sha512-myeXEKyYG39tPz7Tir526LozlRKk8a70zdpiBoEIZs1vxft3NAyj7OiR2SHbEQVOuRmcdOtJ6wxswvbafzOtAw==}
+  '@heif2jpeg/heif2jpeg-linux-arm64-gnu@0.1.7':
+    resolution: {integrity: sha512-PR7ppe6xfAUUYZJKmBoXKxLTLtv44OiObDX94Tp4zLJsH09UHOs61vrUeiMYwMVZ62KvuJ7W7orp4Qx1+zUFDA==}
     engines: {node: '>= 18'}
     cpu: [arm64]
     os: [linux]
 
-  '@heif2jpeg/heif2jpeg-linux-x64-gnu@0.1.6':
-    resolution: {integrity: sha512-fvxLcCxbmXNHEvGpnKjVZmO3Wx1ew/e2+LvOOKW1vHbH5/5E7xdgYpbJVGcVa4s4nneKbybhNXDfaMdcZYqRgg==}
+  '@heif2jpeg/heif2jpeg-linux-x64-gnu@0.1.7':
+    resolution: {integrity: sha512-zX2fQikTJOtfazB+iyqxDkdHEd0j5XQJUSGsnR7HlykYhwkpgT4R78X+FSxslOdJZ3H/i1kIn81FHJph3iJ6Uw==}
     engines: {node: '>= 18'}
     cpu: [x64]
     os: [linux]
 
-  '@heif2jpeg/heif2jpeg-win32-arm64-msvc@0.1.6':
-    resolution: {integrity: sha512-WWh/rOngHL+q27Y8TXIwsBH111gBf5Z7kBc14LZg+LoD/EnK1KzXx5NcguIyhuKzAEQJk+BwTIqfP7HeFWCrmw==}
+  '@heif2jpeg/heif2jpeg-win32-arm64-msvc@0.1.7':
+    resolution: {integrity: sha512-JkBjEiPttTn1yCBhgRH/oFKLThsA2cBnpPSojiabKpLGR5u0JAC2QQ4OVx7AZsICZHy0fWxRq0ebNdEoAHgVKA==}
     engines: {node: '>= 18'}
     cpu: [arm64]
     os: [win32]
 
-  '@heif2jpeg/heif2jpeg-win32-x64-msvc@0.1.6':
-    resolution: {integrity: sha512-Op3rpPzCwUxXHbzJD9hHNFBlV2nLr2/j+oNg5v0v4utKhLJ5GZg7NbfMJa07T1MkYMRs6lS60QhY/IWwWbSlFQ==}
+  '@heif2jpeg/heif2jpeg-win32-x64-msvc@0.1.7':
+    resolution: {integrity: sha512-sfQljUc5nQRobdA88N4beKG1ra9RfhbyAJK1q1y1pbqKBLQtNumea2gEcoWyjsvQizdzDUfU9duzNFXdF6V/6Q==}
     engines: {node: '>= 18'}
     cpu: [x64]
     os: [win32]
@@ -7043,8 +7043,8 @@ packages:
   hast-util-whitespace@3.0.0:
     resolution: {integrity: sha512-88JUN06ipLwsnv+dVn+OIYOvAuvBMy/Qoi6O7mQHxdPXpjy+Cd6xRkWwux7DKO+4sYILtLBRIKgsdpS2gQc7qw==}
 
-  heif2jpeg@0.1.6:
-    resolution: {integrity: sha512-pXgHIbFS6HDcGhcYHkTltdKG+WSEb7Xtk8NSzQf7tVz3Nw8JzXojqyOqyqRfMLYLbHzxTuLN3a4FZKFlTHzcRA==}
+  heif2jpeg@0.1.7:
+    resolution: {integrity: sha512-DNqV6IcUH5jxlmG8fn/xGnKfKSHf51pdiMUMVFptRTxmT/xW2nmFeRtfg6Qb9f1n/WKgT0Bfb5lgZOJFa77rBA==}
     engines: {node: '>= 18'}
 
   help-me@5.0.0:
@@ -10693,22 +10693,22 @@ snapshots:
       protobufjs: 7.6.6
       yargs: 17.7.3
 
-  '@heif2jpeg/heif2jpeg-darwin-arm64@0.1.6':
+  '@heif2jpeg/heif2jpeg-darwin-arm64@0.1.7':
     optional: true
 
-  '@heif2jpeg/heif2jpeg-darwin-x64@0.1.6':
+  '@heif2jpeg/heif2jpeg-darwin-x64@0.1.7':
     optional: true
 
-  '@heif2jpeg/heif2jpeg-linux-arm64-gnu@0.1.6':
+  '@heif2jpeg/heif2jpeg-linux-arm64-gnu@0.1.7':
     optional: true
 
-  '@heif2jpeg/heif2jpeg-linux-x64-gnu@0.1.6':
+  '@heif2jpeg/heif2jpeg-linux-x64-gnu@0.1.7':
     optional: true
 
-  '@heif2jpeg/heif2jpeg-win32-arm64-msvc@0.1.6':
+  '@heif2jpeg/heif2jpeg-win32-arm64-msvc@0.1.7':
     optional: true
 
-  '@heif2jpeg/heif2jpeg-win32-x64-msvc@0.1.6':
+  '@heif2jpeg/heif2jpeg-win32-x64-msvc@0.1.7':
     optional: true
 
   '@hono/node-server@2.1.11(hono@4.13.20)':
@@ -14997,14 +14997,14 @@ snapshots:
     dependencies:
       '@types/hast': 3.0.5
 
-  heif2jpeg@0.1.6:
+  heif2jpeg@0.1.7:
     optionalDependencies:
-      '@heif2jpeg/heif2jpeg-darwin-arm64': 0.1.6
-      '@heif2jpeg/heif2jpeg-darwin-x64': 0.1.6
-      '@heif2jpeg/heif2jpeg-linux-arm64-gnu': 0.1.6
-      '@heif2jpeg/heif2jpeg-linux-x64-gnu': 0.1.6
-      '@heif2jpeg/heif2jpeg-win32-arm64-msvc': 0.1.6
-      '@heif2jpeg/heif2jpeg-win32-x64-msvc': 0.1.6
+      '@heif2jpeg/heif2jpeg-darwin-arm64': 0.1.7
+      '@heif2jpeg/heif2jpeg-darwin-x64': 0.1.7
+      '@heif2jpeg/heif2jpeg-linux-arm64-gnu': 0.1.7
+      '@heif2jpeg/heif2jpeg-linux-x64-gnu': 0.1.7
+      '@heif2jpeg/heif2jpeg-win32-arm64-msvc': 0.1.7
+      '@heif2jpeg/heif2jpeg-win32-x64-msvc': 0.1.7
 
   help-me@5.0.0: {}
 
