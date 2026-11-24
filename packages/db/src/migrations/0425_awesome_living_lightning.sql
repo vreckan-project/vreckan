@@ -1,1 +1,0 @@
-ALTER TABLE "mcp_attachment_uploads" ADD COLUMN IF NOT EXISTS "cleanup_verified_at" timestamp with time zone;

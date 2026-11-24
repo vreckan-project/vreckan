@@ -9,6 +9,45 @@ is committed normally in `vreckan`. The changelog is the authoritative
 record of what shipped in each release — see
 [`docs/release.md`](./docs/release.md) for the conventions.
 
+## 2026-11-23 — platform lineage removed from the tree (ANT-1389); not relocated
+
+- **The Paperclip platform v2026.1117.0 base lineage is removed from the
+  tree** (ANT-1389 Part B; the 2026-11-22 merge `b8bb44ed5` was its
+  landing). This is a **content removal, not a `git revert`**: all 14,837
+  platform files (the platform's `server/src` + `server/package.json`,
+  `ui/`, `packages/`, `cli/`, `doc/`, `rules/`, `skills/`, `docker/`, the
+  platform workflows, and the 19 post-merge platform-side changes — dep
+  bumps, migration 0453, scheduling-gate files) leave with the tree. The
+  repo shrinks from 15,075 tracked files to ~238; the vreckan app (root
+  files, `crates/`, `src/`, `site/`, 5 `docs/*.md`, `scripts/`, the two
+  remaining `.github/` entries, `server/static/**` +
+  `server/template_schema.yml`) is untouched.
+- **No relocation.** Per the CEO's 2026-11-23 decision the source was not
+  moved to a new repo — it is gone from our repos (the dedicated
+  control-plane repo plan, ANT-1389 Part A, was cancelled). The
+  vreckan-side lineage refs — branches `history/base-v2026.1117.0` and
+  `history/pre-bump-scheduling-gate`, and tag `base-v2026.1117.0-gate` —
+  are deleted from GitHub and the Gitea mirror post-merge; their content
+  survives in `main`'s history (merge `b8bb44ed5` and descendants).
+- **Running control plane untouched.** paperclip01 keeps running image
+  `2026.1117.0-wikidist` (deployed 2026-11-22 7:44 PM MST, the
+  ANT-1322 cutover); `ant-1311-main-ec8862b4c` (the 2026-11-22
+  fork-overlay build from main @ `ec8862b4c` via
+  `Dockerfile.ant-1275-gate`) is the retained rollback artifact. The
+  removal does not redeploy or otherwise touch it. If a rebuild is ever
+  needed,
+  the pre-removal source is still recoverable from git history (e.g.
+  `git show b8bb44ed5:Dockerfile.ant-1275-gate`) — see
+  `docs/control-plane.md` for the pointer.
+- **Housekeeping edits:** `.dockerignore` drops the platform section and
+  re-adds a `scripts/` exclusion (the platform Dockerfile that needed
+  `scripts/docker-entrypoint.sh` is gone); `.gitignore` and `AGENTS.md`
+  drop their platform sections; `README.md`'s "Platform base tree"
+  section becomes a short control-plane pointer. This merge touches
+  `server/` (platform files under it leave) and `.dockerignore` — both
+  `SOURCE_PATHS` of the bump-and-tag gate — so the per-push release cuts
+  a v0.12.x patch on the merge push; that is expected.
+
 ## 2026-11-23 — base-image bump + no app-source changes since v0.12.20
 
 - **The build base advanced to the 2026-11-22 10:32 PM MST bake**

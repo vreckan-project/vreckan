@@ -1,6 +1,0 @@
-{
-  "status": 409,
-  "body": {
-    "error": "PROVIDER_REAUTHORIZATION_REQUIRED"
-  }
-}

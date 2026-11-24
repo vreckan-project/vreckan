@@ -1,3 +1,0 @@
-interface:
-  display_name: "Honeycomb Tracing"
-  short_description: "Design and inspect readable Paperclip trace waterfalls"

@@ -1,1 +1,0 @@
-ALTER TABLE "mcp_oauth_requests" ADD COLUMN IF NOT EXISTS "requested_company_id" uuid;

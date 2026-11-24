@@ -1,8 +1,0 @@
-{
-  "extends": "./tsconfig.json",
-  "compilerOptions": {
-    "declaration": false,
-    "declarationMap": false
-  },
-  "references": [{ "path": "../../server/node_modules/.cache/paperclip-typecheck/tsconfig.declarations.json" }]
-}

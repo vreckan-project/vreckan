@@ -1,1 +1,0 @@
-ALTER TABLE "chat_endpoints" ADD COLUMN IF NOT EXISTS "require_at_mention" boolean DEFAULT false NOT NULL;

@@ -1,1 +1,0 @@
-CREATE INDEX CONCURRENTLY IF NOT EXISTS "heartbeat_runs_scheduled_retry_cancellation_idx" ON "heartbeat_runs" USING btree ("id") WHERE "heartbeat_runs"."status" = 'scheduled_retry' and jsonb_typeof("heartbeat_runs"."result_json"->'startupCancellation') = 'object';

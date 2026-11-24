@@ -1,1 +1,0 @@
-CREATE INDEX CONCURRENTLY IF NOT EXISTS "activity_log_company_entity_created_idx" ON "activity_log" USING btree ("company_id","entity_type","entity_id","created_at");
