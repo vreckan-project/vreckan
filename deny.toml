@@ -37,18 +37,18 @@ ignore = [
   # 0.40.0 (bundles SQLite 3.54.1, the fix) — cargo-deny reports the
   # advisory as not detected; mirrored in vreckan-workflow's
   # build-test-rust.yml, same PR pair.)
+  # (RUSTSEC-2026-0441 pin-utils 0.1.1 "archived/unmaintained" dropped in
+  # ANT-1405: the aws-config 1.12.0 -> 1.13.3 bump (PR #314) re-resolved the
+  # smithy stack (aws-smithy-http 0.64.1 -> 0.64.3, aws-smithy-runtime
+  # 1.16.0 -> 1.16.4, aws-smithy-types 1.8.1 -> 1.9.5) off pin-utils — no
+  # package left to allow; the stale allow entry read
+  # advisory-not-detected in cargo-deny (ANT-1413).)
   # rustls-pemfile 2.2 — archived/unmaintained. Thin wrapper over
   # rustls-pki-types (its parsing code moved there); accepted until we drop it.
   { id = "RUSTSEC-2025-0134", reason = "rustls-pemfile archived; thin wrapper over rustls-pki-types" },
   # unsafe-libyaml 0.2.11 — archived/unmaintained. Transitive dep of
   # serde_yaml (itself marked +deprecated); tracked for removal, low risk.
   { id = "RUSTSEC-2024-0449", reason = "unsafe-libyaml archived; transitive dep of serde_yaml (+deprecated)" },
-  # pin-utils 0.1.1 — archived/unmaintained (rust-lang team archived the repo
-  # 2026-10-01; RUSTSEC-2026-0441 informational, landed in the advisory DB
-  # 2026-11-05). Macros-only pinning helper; the only instance in this tree is
-  # transitive via aws-smithy-http (aws-sdk stack) <- acmex, which has no
-  # in-tree replacement. Accepted until the aws-sdk subtree changes.
-  { id = "RUSTSEC-2026-0441", reason = "pin-utils archived 2026-10-01; macros-only, transitive via aws-sdk (aws-smithy-http); no in-tree replacement" },
   # chrono 0.4.45 — unmaintained (chronotope/chrono#1768; RUSTSEC-2026-0543
   # INFO/unmaintained, landed in the advisory DB 2026-11-17; no patched
   # version, no known vulnerability). It is the datetime backbone of
