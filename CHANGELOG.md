@@ -9,6 +9,54 @@ is committed normally in `vreckan`. The changelog is the authoritative
 record of what shipped in each release — see
 [`docs/release.md`](./docs/release.md) for the conventions.
 
+## 2026-11-25 — base-image bump + AWS SDK cache refresh (no app-source changes since v0.12.24)
+
+- **The build base advanced to the 2026-11-24 10:36 PM MST bake**
+  (`vreckan-base-build` `sha256:de3cafb94580…` →
+  `sha256:d26890859334…`; `.base-image-digest` and the `Dockerfile`
+  build-stage `FROM` re-pointed together, ANT-277). The re-bake is
+  **lockfile-driven** — `vreckan.dep-digest` `9cda3a39…` →
+  `27390903…` — bringing the base's warm crates.io cache in line with
+  the `aws-config 1.12.0 → 1.13.3` lockfile bump that shipped in
+  v0.12.24 (PR #314, ANT-1405): `aws-sdk-sso 1.114.0 → 1.122.0`,
+  `aws-sdk-ssooidc 1.116.0 → 1.124.0`, `aws-sdk-sts 1.119.0 →
+  1.128.0`, `aws-credential-types 1.3.0 → 1.3.1`,
+  `aws-runtime 1.10.0 → 1.10.4`, `aws-sigv4 1.6.0 → 1.6.6`,
+  `aws-smithy-async 1.3.0 → 1.3.1`, `aws-smithy-http 0.64.1 →
+  0.64.3`, `aws-smithy-http-client 1.5.0 → 1.5.3`,
+  `aws-smithy-observability 0.3.0 → 0.3.1`, `aws-smithy-query
+  0.62.1 → 0.64.0`, `aws-smithy-runtime 1.16.0 → 1.16.4`,
+  `aws-smithy-runtime-api 1.19.0 → 1.22.0`,
+  `aws-smithy-runtime-api-macros 1.1.0 → 1.2.0`,
+  `aws-smithy-types 1.8.1 → 1.9.5`, `aws-types 1.6.0 → 1.7.0`,
+  plus the newly pulled `aws-smithy-json 0.65.1`,
+  `aws-smithy-schema 1.2.0`, `aws-smithy-xml 0.64.1`. The same bump
+  drops `pin-utils 0.1.1` from the tree (the RUSTSEC-2026-0441
+  advisory crate; its stale `deny.toml` allow line was dropped in
+  ANT-1413 / PR #316), so the cache no longer carries it.
+  Toolchain unchanged: Rust 1.99.1, parent `rust:1.99.1-slim` still
+  at `sha256:f6c4a35d…`. The bake also carries workflow `main` at
+  bake time (`vreckan.workflow-sha` `194651c3…` → `d9b3b5f9…`): the
+  ANT-1340 sweep-safety-net fix — the nightly `scan-rust.yml` now
+  mints the GitHub App token and runs the safety-net branch sweep
+  with `if: always()` so a failing upstream gate can no longer
+  orphan mirror branches, the nightly fs Trivy scan finally gets the
+  `rust-trivyignore` input it was missing (run 1545 on 11-23 failed
+  on already-allowlisted advisories), and the new 30-minute
+  `branch-sweep.yml` cron bounds the wait for the next sweep — the
+  next nightly scans run with those. The no-baked-`CARGO_BUILD_JOBS`
+  caveat keeps standing (ANT-1040) — ad-hoc `docker run` dev
+  sessions should keep passing `-e CARGO_BUILD_JOBS=4`.
+- **No app-source changes since v0.12.24** — `git log
+  v0.12.24..HEAD` is empty (v0.12.24 was cut 2026-11-24 8:35 AM MST,
+  per-push on the `aws-config` lockfile bump above), so this release
+  is the base re-point above and nothing else. The version number is
+  assigned by the per-push source gate on merge (ANT-1050):
+  `.base-image-digest` is a source path, so this merge auto-assigns
+  the next patch number and the `bump-and-tag` path auto-cuts the
+  tag + release — no `VERSION` / `Cargo.toml` / `Cargo.lock` change
+  in this PR.
+
 ## 2026-11-23 — platform lineage removed from the tree (ANT-1389); not relocated
 
 - **The Paperclip platform v2026.1117.0 base lineage is removed from the
