@@ -9,7 +9,7 @@ is committed normally in `vreckan`. The changelog is the authoritative
 record of what shipped in each release — see
 [`docs/release.md`](./docs/release.md) for the conventions.
 
-## 2026-11-25 — base-image bump + AWS SDK cache refresh (no app-source changes since v0.12.24)
+## 2026-11-25 — base-image bump + AWS SDK cache refresh + runtime libzstd security fix
 
 - **The build base advanced to the 2026-11-24 10:36 PM MST bake**
   (`vreckan-base-build` `sha256:de3cafb94580…` →
@@ -46,16 +46,30 @@ record of what shipped in each release — see
   `branch-sweep.yml` cron bounds the wait for the next sweep — the
   next nightly scans run with those. The no-baked-`CARGO_BUILD_JOBS`
   caveat keeps standing (ANT-1040) — ad-hoc `docker run` dev
-  sessions should keep passing `-e CARGO_BUILD_JOBS=4`.
-- **No app-source changes since v0.12.24** — `git log
-  v0.12.24..HEAD` is empty (v0.12.24 was cut 2026-11-24 8:35 AM MST,
-  per-push on the `aws-config` lockfile bump above), so this release
-  is the base re-point above and nothing else. The version number is
-  assigned by the per-push source gate on merge (ANT-1050):
-  `.base-image-digest` is a source path, so this merge auto-assigns
-  the next patch number and the `bump-and-tag` path auto-cuts the
-  tag + release — no `VERSION` / `Cargo.toml` / `Cargo.lock` change
-  in this PR.
+   sessions should keep passing `-e CARGO_BUILD_JOBS=4`.
+ - **Runtime image: upgrade `libzstd1` from trixie-security at build
+   time** (CVE-2026-124851, HIGH — "zstd: Information Disclosure via
+   Uninitialized Buffer", published 2026-11-24; fixed in
+   `1.5.7+dfsg-1+deb13u1`). The digest-pinned `debian:trixie-slim`
+   runtime base (2026-11-04 manifest) predates that trixie-security
+   upload, and the current Docker Hub `trixie-slim` tag still ships
+   the unpatched `1.5.7+dfsg-1`, so re-pinning the manifest would not
+   clear it. The runtime `RUN` now executes
+   `apt-get upgrade -y libzstd1` after the package install so apt
+   resolves the patch at build time — the same mechanism as the
+   existing `zlib1g` line. The first trip was the v0.12.25 gate
+   itself: Gitea scan runs 1686 (main) and 1687
+   (`release/bump-0.12.25`) failed on this CVE on 2026-11-25,
+   leaving the bump PR unmergeable (ANT-1426).
+ - **No other app-source changes since v0.12.24** — v0.12.24 was cut
+   2026-11-24 8:35 AM MST (per-push on the `aws-config` lockfile bump
+   above), so this release is the base re-point + the runtime
+   `libzstd1` fix above and nothing else. The version number is
+   assigned by the per-push source gate on merge (ANT-1050):
+   `.base-image-digest` and `Dockerfile` are source paths, so the
+   `libzstd1` fix PR's merge auto-assigns the next patch number and
+   the `bump-and-tag` path auto-cuts the tag + release — no
+   `VERSION` / `Cargo.toml` / `Cargo.lock` change in these PRs.
 
 ## 2026-11-23 — platform lineage removed from the tree (ANT-1389); not relocated
 

@@ -46,11 +46,22 @@ FROM debian:trixie-slim@sha256:a72b4433de1cf7d6bae0c4cee74d0547f58601a643b3375f0
 # 1:1.3.dfsg+really1.3.1-1+deb13u1. The digest-pinned trixie-slim base above
 # predates that update, so apt resolves the patch from trixie-security at
 # build time (ANT-849 unblock; base-image security track).
+# libzstd1 is already present in the slim base, so a plain install would
+# be a no-op: it carries the CVE-2026-124851 fix (zstd Information
+# Disclosure via Uninitialized Buffer, published 2026-11-24, fixed in
+# 1.5.7+dfsg-1+deb13u1) only via an explicit upgrade. The digest-pinned
+# base above (2026-11-04 manifest) predates the trixie-security upload,
+# and the current Docker Hub trixie-slim tag still ships the unpatched
+# 1.5.7+dfsg-1, so re-pinning the manifest would not clear it either —
+# apt resolves the patch from trixie-security at build time, same
+# mechanism as the zlib1g line (ANT-1426 unblock: v0.12.25 gate, scan
+# runs 1686/1687).
 RUN apt-get update -y && \
     DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends \
       ca-certificates \
       libssl3t64 \
       zlib1g && \
+    DEBIAN_FRONTEND=noninteractive apt-get upgrade -y libzstd1 && \
     apt-get clean && \
     rm -rf /var/lib/apt/lists/*
 
