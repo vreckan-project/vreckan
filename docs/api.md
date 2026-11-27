@@ -42,18 +42,26 @@ Three layers, the first two orthogonal:
      responses are deliberately plaintext in both ports (401 bypasses the
      E2EE wrapper).
 3. **Client identity and scheme (trusted proxies).** `X-Forwarded-For` (the
-   client IP the login limiter keys on) and `X-Forwarded-Proto` (the session
-   cookie's `Secure` flag, and the scheme of a derived OIDC `redirect_uri`) are
-   honoured **only when the direct TCP peer matches `VRECKAN_TRUSTED_PROXIES`**
-   (ANT-346/ANT-276); otherwise the peer address and the real connection
-   scheme — always `https`, the server terminates TLS itself — are used, and
-   malformed list entries never match. The setting is **environment-only**: it
-   is a `SettingDef` read from the env layer (`settings.trusted_proxies`), not
-   an admin-UI field, and it appears in no admin-settings payload — the
+   client IP the login limiter keys on), `X-Forwarded-Proto` (the session
+   cookie's `Secure` flag, and the scheme of a derived OIDC `redirect_uri`),
+   and `X-Forwarded-Host` (the public host of a derived OIDC `redirect_uri`
+   and the session-proxy redirect target) are honoured **only when the direct
+   TCP peer matches the effective `VRECKAN_TRUSTED_PROXIES` list**
+   (ANT-346/ANT-276/ANT-879); otherwise the peer address, the real connection
+   scheme — always `https`, the server terminates TLS itself — and the
+   request's own `Host` are used, and malformed list entries never match.
+   The effective list is resolved **DB-over-env per request**
+   (`settings.effective_trusted_proxies`, ANT-879): an `app_settings` row
+   `VRECKAN_TRUSTED_PROXIES`, when present, wins and takes effect on the next
+   request without a restart; otherwise the env layer value
+   (`settings.trusted_proxies`) is used. There is no admin-UI field and no
+   admin-settings API field that writes it — the row is written only by a
+   direct DB edit or a legacy Python instance — so in practice it remains an
+   environment setting. It appears in no admin-settings payload — the
    `values.*` object on `GET /api/admin/certificates` is the ACME config only,
-    and `GET /api/admin/global-settings` carries the GPU default plus the CORS
-    configuration (ANT-653 — `cors_mode`, `cors_allowed_origins`, and their
-    effective sources). See [ops.md §5](./ops.md) for the deployment guidance.
+   and `GET /api/admin/global-settings` carries the GPU default plus the CORS
+   configuration (ANT-653 — `cors_mode`, `cors_allowed_origins`, and their
+   effective sources). See [ops.md §5](./ops.md) for the deployment guidance.
 
 | Mark | Meaning |
 |---|---|
@@ -507,7 +515,7 @@ default), current certificate status, and the available DNS providers:
 | `values.token_length` | int | length of the stored token |
 | `values.acme_staging` | bool | use the LE staging endpoint |
 | `values.acme_auto_renew` | bool | background renewal on/off |
-| `values.acme_renew_check_hours` | int | renewal poll interval (h) |
+| `values.acme_renew_check_hours` | int | renewal poll interval (h); clamped to 1–24h on save and in the effective config (ANT-878) |
 | `values.acme_renew_before_days` | int | renew-within window (days) |
 | `values.acme_dns_provider` | string | `cloudflare` (default) \| `route53` \| `digitalocean` \| `linode` \| `azure` \| `google` \| `alibaba` \| `godaddy` \| `tencent` \| `huawei` \| `cloudns` |
 | `values.acme_cloudflare_zone_id` | string | optional Cloudflare zone pin |

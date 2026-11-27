@@ -650,17 +650,24 @@ covered there step by step.
   do terminate TLS at a proxy in front of it, set
   `VRECKAN_TRUSTED_PROXIES` to that proxy's IP or CIDR — comma-separated,
   e.g. `10.0.0.0/8, 192.168.1.5`. Only when the **direct TCP peer** matches
-  the list are `X-Forwarded-Proto` and the leftmost `X-Forwarded-For` entry
-  honoured. `X-Forwarded-Proto` drives the session cookie's `Secure` flag and
-  the scheme of the OIDC `redirect_uri` when that URI is derived from the
-  request rather than set explicitly (`VRECKAN_OIDC_REDIRECT_URI`); otherwise
-  the scheme is the real connection scheme, which is always `https` here. The
+  the effective list are `X-Forwarded-Proto`, `X-Forwarded-Host`, and the
+  leftmost `X-Forwarded-For` entry honoured. `X-Forwarded-Proto` drives the
+  session cookie's `Secure` flag and the scheme of the OIDC `redirect_uri`
+  when that URI is derived from the request rather than set explicitly
+  (`VRECKAN_OIDC_REDIRECT_URI`); otherwise the scheme is the real connection
+  scheme, which is always `https` here. `X-Forwarded-Host` drives the public
+  host of that derived `redirect_uri` and the session-proxy redirect target;
+  otherwise the request's own `Host` is used. The
   default empty value trusts no proxy — the safe posture for a directly
   exposed origin, and it also keeps the login limiter from keying on the
   proxy's address (§2), which is the usual reason to set this. Malformed
-  entries never match, so a typo fails closed. This is an environment setting
-  only: no admin-UI field, and it appears in no admin-settings payload (see
-  the API reference).
+  entries never match, so a typo fails closed. The effective value is
+  resolved DB-over-env per request (an `app_settings` row
+  `VRECKAN_TRUSTED_PROXIES`, when present, wins and takes effect on the next
+  request without a restart — ANT-879); there is no admin-UI field and no
+  admin-settings API field that writes it, so in practice it is still set via
+  the environment, and the row is written only by a direct DB edit or a
+  legacy Python instance (see the API reference).
 
 ## 6. Host privileges & devices (docker-sock, DRI, groups)
 
