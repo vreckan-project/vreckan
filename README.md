@@ -180,7 +180,7 @@ All persistent data lives under the data root (`VRECKAN_DATA_ROOT`, default `/da
 | `VRECKAN_LOGIN_LOCKOUT_SECONDS` | Length of the failed-login window and of the temporary lockout (seconds). Counters are in-memory only (a restart resets them); lockout events are logged at `warn`. | `900` |
 | `VRECKAN_SHARE_PASSWORD_MAX_ATTEMPTS` | Failed share-password guesses on one share within the lockout window before that share is temporarily locked out (the anonymous `/public` and `/share` password pages carry no caller identity, so the budget is per share; HTTP 429, fail closed). 0 disables the limiter. | `5` |
 | `VRECKAN_SHARE_PASSWORD_LOCKOUT_SECONDS` | Length of the failed share-password guess window and of the temporary lockout (seconds). Counters are in-memory only (a restart resets them). | `900` |
-| `VRECKAN_TRUSTED_PROXIES` | Comma-separated IPs/CIDRs of reverse proxies that may sit in front of the server. Only when the **direct TCP peer** matches this list are forwarded headers honoured: the leftmost `X-Forwarded-For` entry for the login limiter, and `X-Forwarded-Proto` for the session cookie's `Secure` flag and the OIDC redirect URL. Empty = trust no proxy (fail closed) — correct for a directly-exposed origin. Environment-only: there is no admin-UI field and no admin-settings API field for it. | _empty_ |
+| `VRECKAN_TRUSTED_PROXIES` | Comma-separated IPs/CIDRs of reverse proxies that may sit in front of the server. Only when the **direct TCP peer** matches the effective list are forwarded headers honoured: the leftmost `X-Forwarded-For` entry for the login limiter, `X-Forwarded-Proto` for the session cookie's `Secure` flag and the OIDC redirect URL, and `X-Forwarded-Host` for the derived public host (ANT-879). Empty = trust no proxy (fail closed) — correct for a directly-exposed origin. The effective value is resolved DB-over-env per request (an `app_settings` row `VRECKAN_TRUSTED_PROXIES`, when present, wins and takes effect on the next request without a restart); there is no admin-UI field and no admin-settings API field that writes it, so in practice it is still set via the environment. | _empty_ |
 | `VRECKAN_CORS_MODE` | CORS behaviour for API calls from a different origin (e.g. the same server reached via a different hostname, IP address, or port): `loose` (default) echoes the requesting `Origin` into `Access-Control-Allow-Origin` with `Access-Control-Allow-Credentials: true`, answers OPTIONS preflights, and issues the login cookie as `SameSite=None; Secure` so it can cross to the other alias; `strict` sends no CORS headers at all (same-origin only, the pre-v0.9.5 behaviour). Can also be set on the admin UI's Settings page (a value set there overrides the environment); changes take effect on the next request. See [ops.md §2](./docs/ops.md#21-cors-ant-653). | `loose` |
 | `VRECKAN_CORS_ALLOWED_ORIGINS` | Comma-separated origin allowlist for loose CORS mode (e.g. `https://a.example.com, https://b.example.com`). Empty = every origin is accepted. Can also be set on the admin UI's Settings page (a value set there overrides the environment). | _empty_ |
 
@@ -249,10 +249,12 @@ This README covers the Vreckan server. The web client is served by the server an
 
 ## Paperclip control plane (source removed)
 
-The paperclip01 control plane is the Paperclip platform (v2026.1117.0
-lineage). Its source was in this repo until 2026-11-23 and was then removed
-without relocation ([ANT-1389](/ANT/issues/ANT-1389)) — it no longer lives
-in any repo. The running control plane image
-(`2026.1117.0-wikidist`, deployed 2026-11-22 7:44 PM MST) is
-unchanged; details and the rebuild-from-git-history path are in
+The paperclip01 control plane runs the Paperclip platform. Its source was in
+this repo until 2026-11-23 and was then removed without relocation
+([ANT-1389](/ANT/issues/ANT-1389)) — it no longer lives in any repo. The
+board rolled the running plane back to the stock vendor release
+(`ghcr.io/paperclipai/paperclip:2026.1023.0` — no dist-bake, no fork) on
+2026-11-24 1:46 PM MST; the `2026.1117.0-wikidist` cutover of 2026-11-22 and
+the fork-overlay build are retained as rollback backstops. Details and the
+rebuild-from-git-history path are in
 [docs/control-plane.md](./docs/control-plane.md).

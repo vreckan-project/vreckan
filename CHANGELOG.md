@@ -71,6 +71,53 @@ record of what shipped in each release — see
    the `bump-and-tag` path auto-cuts the tag + release — no
    `VERSION` / `Cargo.toml` / `Cargo.lock` change in these PRs.
 
+## 2026-11-24 — v0.12.24: aws-config 1.13.3 lockfile bump (ANT-1405) + RUSTSEC-2026-0441 (pin-utils) tombstone (ANT-1413)
+
+- **`aws-config 1.12.0 → 1.13.3` (lockfile-only)** (PR #314,
+  ANT-1405). `Cargo.lock` re-resolves the aws-sdk smithy stack:
+  `aws-sdk-sso 1.114.0 → 1.122.0`, `aws-sdk-ssooidc 1.116.0 →
+  1.124.0`, `aws-sdk-sts 1.119.0 → 1.128.0`,
+  `aws-credential-types 1.3.0 → 1.3.1`, `aws-runtime 1.10.0 →
+  1.10.4`, `aws-sigv4 1.6.0 → 1.6.6`, `aws-smithy-async 1.3.0 →
+  1.3.1`, `aws-smithy-http 0.64.1 → 0.64.3`,
+  `aws-smithy-observability 0.3.0 → 0.3.1`, `aws-smithy-query
+  0.62.1 → 0.64.0`, `aws-smithy-runtime 1.16.0 → 1.16.4`,
+  `aws-smithy-runtime-api 1.19.0 → 1.22.0`,
+  `aws-smithy-runtime-api-macros 1.1.0 → 1.2.0`,
+  `aws-smithy-types 1.8.1 → 1.9.5`, `aws-types 1.6.0 → 1.7.0` —
+  the same set the 2026-11-25 base re-bake's warm cache carries. No
+  `Cargo.toml` dependency change and no app-source change; only the
+  lockfile plus the per-push `Cargo.toml` / `VERSION` bump.
+  Operator-transparent. This bump is what drives the 2026-11-25
+  base-image re-point (above).
+- **RUSTSEC-2026-0441 (pin-utils) allow-line tombstone** (PR #316,
+  ANT-1413). The smithy re-resolution above drops `pin-utils 0.1.1`
+  out of the tree entirely, so the `[advisories] ignore` entry added
+  in ANT-923 (PR #168) matched no crate and `cargo-deny` reported it
+  as `warning[advisory-not-detected]` (a stale allow-line).
+  `deny.toml` drops the entry, leaving a tombstone note in the style
+  of the ANT-1150 / ANT-995 entries. Verified with `cargo-deny
+  0.20.2` (the exact nightly `scan-rust` binary, advisory DB cloned
+  live) in both directions: pre-change `origin/main` shows the
+  `advisory-not-detected` warning, post-change it is gone and all four
+  checks pass. No `vreckan-workflow` change — the PR-gate
+  `cargo-audit` line carries no `--ignore` for this advisory, and the
+  crate is out of the lock.
+- **No other app-source changes** — v0.12.24 was cut 2026-11-24
+  8:35 AM MST (auto-bump PR #315 → `9c9b538ff`), the last cut of the
+  platform-exit window; after the 11-23 removal, `main` carries only
+  lockfile/allow-line churn until the next ordinary app-work cut.
+- **The paperclip01 control plane rolled back to the vanilla vendor
+  release the same day** (the board's direct action 1:46–1:58 PM
+  MST; the go/no-go issue ANT-1422 was cancelled 2:03 PM as
+  superseded). paperclip01 now runs the stock
+  `ghcr.io/paperclipai/paperclip:2026.1023.0` (no dist-bake, no
+  fork); the `2026.1117.0-wikidist` overlay image and the prebuilt
+  `ant-1311-main-ec8862b4c` image are retained as rollback backstops,
+  and the pre-swap DB backup is kept on the host with a do-not-prune
+  marker. Not part of the vreckan app image — see
+  [docs/control-plane.md](./docs/control-plane.md).
+
 ## 2026-11-23 — platform lineage removed from the tree (ANT-1389); not relocated
 
 - **The Paperclip platform v2026.1117.0 base lineage is removed from the
@@ -109,6 +156,31 @@ record of what shipped in each release — see
   `server/` (platform files under it leave) and `.dockerignore` — both
   `SOURCE_PATHS` of the bump-and-tag gate — so the per-push release cuts
   a v0.12.x patch on the merge push; that is expected.
+
+## 2026-11-23 — v0.12.22: secureFetch decrypts E2EE error envelopes (ANT-1341) + `@opentelemetry/sdk-trace` 3.1.1
+
+- **Web-console error toasts now show the server's message instead of
+  ciphertext** (ANT-1341, PR #309). E2EE routes encrypt the error
+  payload (`{"detail": …}` inside the `{ iv, ciphertext }` envelope)
+  before it reaches the browser, so `secureFetch`'s
+  `throw new Error(… - ${text})` was surfacing base64 ciphertext in
+  toasts. A `readableErrorBody` helper now parses the body, and when it
+  is an encrypted envelope decrypts it on the same per-session key path
+  as the success path, surfacing the decrypted `detail` / `error` (or
+  the decrypted plaintext). It falls back to the raw text when the body
+  is not JSON, not an envelope, or decryption fails (a stale session —
+  the existing 400 re-handshake retry still recovers). The success
+  path's inline envelope check is folded into the same
+  `isEncryptedEnvelope` helper. `server/static/js/api.js` only — no API
+  surface, no `VRECKAN_*` change.
+- **`@opentelemetry/sdk-trace` `2.10.0 → 3.1.1`** (dependabot PR #298,
+  `server/package.json` + `pnpm-lock.yaml`; a dev dependency of the
+  server's JS tooling, not the shipped runtime path). Operator-
+  transparent.
+- **No other app-source changes** — v0.12.22 was cut 2026-11-23
+  (auto-bump PR #311) from the two PRs above; the Rust tree is
+  unchanged (the `Cargo.toml` / `Cargo.lock` deltas are the per-push
+  version bump only).
 
 ## 2026-11-23 — base-image bump + no app-source changes since v0.12.20
 
